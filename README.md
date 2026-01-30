@@ -17,51 +17,44 @@ A web-based application for analyzing gene correlations from DepMap CRISPR scree
 
 ## How to Run
 
-### Option 1: Simple Local Server (Recommended)
+The app needs a local web server to load data files (browsers block direct file access for security).
 
-The app requires a local web server due to browser security restrictions when loading data files.
+### Option 1: Using RStudio (Recommended for R users)
 
-**Using Python (most common):**
-```bash
-# Python 3
-cd "correlation app green listed"
-python -m http.server 8000
-
-# Then open http://localhost:8000 in your browser
+**First time setup** - install the servr package:
+```r
+install.packages("servr")
 ```
 
-**Using Node.js:**
-```bash
-# Install serve globally (one time)
-npm install -g serve
+**To run the app:**
+```r
+# Set working directory to the app folder
+setwd("/path/to/correlation-web-app-")
 
-# Run the server
-cd "correlation app green listed"
-serve .
-
-# Then open the URL shown in terminal
+# Start the server
+servr::httd()
 ```
 
-**Using PHP:**
-```bash
-cd "correlation app green listed"
-php -S localhost:8000
+This will open your browser automatically. To stop the server, press **Escape** in RStudio or click the stop button.
 
-# Then open http://localhost:8000 in your browser
-```
+### Option 2: Double-click method (macOS)
 
-### Option 2: VS Code Live Server
+1. Open Terminal (search "Terminal" in Spotlight)
+2. Drag the app folder into Terminal
+3. Type: `python3 -m http.server 8000` and press Enter
+4. Open your browser and go to: **http://localhost:8000**
+5. To stop: press Ctrl+C in Terminal
 
-1. Install the "Live Server" extension in VS Code
-2. Open the project folder in VS Code
-3. Right-click on `index.html` and select "Open with Live Server"
+### Option 3: Host on GitHub Pages (No server needed - online)
 
-### Option 3: Host on GitHub Pages
+1. Go to your repository: https://github.com/fredrikwermeling/correlation-web-app-
+2. Click **Settings** (top menu)
+3. Click **Pages** (left sidebar)
+4. Under "Source", select **main** branch
+5. Click **Save**
+6. Wait 1-2 minutes, then access at: **https://fredrikwermeling.github.io/correlation-web-app-/**
 
-1. Push to GitHub
-2. Go to repository Settings > Pages
-3. Select "main" branch and save
-4. Access via `https://yourusername.github.io/correlation-web-app/`
+This hosts the app online so anyone can use it without installing anything.
 
 ## Data Sources
 
