@@ -307,10 +307,11 @@ class CorrelationExplorer {
         document.getElementById('byTissueBtn').addEventListener('click', () => this.showByTissueModal());
         document.getElementById('scatterFontSize')?.addEventListener('change', () => this.updateInspectPlot());
 
-        // Aspect ratio controls
-        document.getElementById('aspectRatioX')?.addEventListener('change', () => this.updateInspectPlot());
-        document.getElementById('aspectRatioY')?.addEventListener('change', () => this.updateInspectPlot());
-        document.getElementById('forceSquare')?.addEventListener('change', () => this.updateInspectPlot());
+        // Aspect ratio control
+        document.getElementById('aspectRatio')?.addEventListener('input', (e) => {
+            document.getElementById('aspectRatioValue').textContent = parseFloat(e.target.value).toFixed(1);
+            this.updateInspectPlot();
+        });
 
         // Table header sorting
         document.querySelectorAll('.data-table th[data-sort]').forEach(th => {
@@ -967,17 +968,26 @@ class CorrelationExplorer {
         const legendEl = document.getElementById('legendEdgeThickness');
         if (!legendEl) return;
 
-        // Calculate example widths for r=0.5, 0.7, 1.0
-        const width05 = Math.max(1, 1 + (0.5 - cutoff) / (1 - cutoff) * (edgeWidthBase * 3));
-        const width07 = Math.max(1, 1 + (0.7 - cutoff) / (1 - cutoff) * (edgeWidthBase * 3));
-        const width10 = Math.max(1, 1 + (1.0 - cutoff) / (1 - cutoff) * (edgeWidthBase * 3));
+        // Get actual correlation range from current network data
+        const correlations = this.results.correlations.map(c => Math.abs(c.correlation));
+        const minCorr = correlations.length > 0 ? Math.min(...correlations) : cutoff;
+        const maxCorr = correlations.length > 0 ? Math.max(...correlations) : 1.0;
+        const midCorr = (minCorr + maxCorr) / 2;
+
+        // Calculate widths for actual data range
+        const widthMin = Math.max(1, 1 + (minCorr - cutoff) / (1 - cutoff) * (edgeWidthBase * 3));
+        const widthMid = Math.max(1, 1 + (midCorr - cutoff) / (1 - cutoff) * (edgeWidthBase * 3));
+        const widthMax = Math.max(1, 1 + (maxCorr - cutoff) / (1 - cutoff) * (edgeWidthBase * 3));
 
         legendEl.innerHTML = `
             <strong>Edge Thickness:</strong>
-            <div class="legend-item"><span class="legend-line" style="background: #666; height: ${Math.round(width05)}px;"></span> r=${cutoff.toFixed(1)}</div>
-            <div class="legend-item"><span class="legend-line" style="background: #666; height: ${Math.round(width07)}px;"></span> r=0.7</div>
-            <div class="legend-item"><span class="legend-line" style="background: #666; height: ${Math.round(width10)}px;"></span> r=1.0</div>
+            <div class="legend-item"><span class="legend-line" style="background: #666; height: ${Math.round(widthMin)}px;"></span> r=${minCorr.toFixed(2)}</div>
+            <div class="legend-item"><span class="legend-line" style="background: #666; height: ${Math.round(widthMid)}px;"></span> r=${midCorr.toFixed(2)}</div>
+            <div class="legend-item"><span class="legend-line" style="background: #666; height: ${Math.round(widthMax)}px;"></span> r=${maxCorr.toFixed(2)}</div>
         `;
+
+        // Store for use in PNG/SVG export
+        this.edgeLegendValues = { minCorr, midCorr, maxCorr, widthMin, widthMid, widthMax };
     }
 
     displayCorrelationsTable() {
@@ -1087,6 +1097,15 @@ ${this.synonymsUsed.map(s => `  ${s.original} → ${s.replacement} (${s.source})
 `;
         }
 
+        // Build unrecognized genes section
+        let unrecognizedSection = '';
+        if (this.genesNotFound && this.genesNotFound.length > 0) {
+            unrecognizedSection = `
+Unrecognized Gene Names (${this.genesNotFound.length}):
+${this.genesNotFound.join(', ')}
+`;
+        }
+
         // Calculate number of clusters
         const numClusters = this.results.correlations.length > 0
             ? Math.max(...this.results.correlations.map(c => c.cluster))
@@ -1103,7 +1122,7 @@ Lineage Filter: ${lineage}
 
 Input Genes: ${this.results.geneList.length}
 ${this.results.geneList.join(', ')}
-${synonymsSection}
+${synonymsSection}${unrecognizedSection}
 Results:
 - Total correlations found: ${this.results.correlations.length}
 - Genes in network: ${this.results.clusters.length}
@@ -1258,39 +1277,40 @@ Results:
 
         legendX += 160;
 
-        // Edge thickness legend
+        // Edge thickness legend - use actual data values
         ctx.font = titleFont;
         ctx.fillText('Edge Thickness:', legendX, legendY);
         ctx.font = textFont;
         ctx.strokeStyle = '#666';
 
-        const cutoff = this.results?.cutoff || 0.5;
         const edgeWidthBase = parseInt(document.getElementById('netEdgeWidth').value) || 3;
+        const legendVals = this.edgeLegendValues || { minCorr: 0.5, midCorr: 0.75, maxCorr: 1.0 };
+        const cutoff = this.results?.cutoff || 0.5;
 
-        // r = cutoff
-        ctx.lineWidth = Math.max(2, 2 + (cutoff - cutoff) / (1 - cutoff) * (edgeWidthBase * 4));
+        // Min correlation
+        ctx.lineWidth = Math.max(2, 2 + (legendVals.minCorr - cutoff) / (1 - cutoff) * (edgeWidthBase * 4));
         ctx.beginPath();
         ctx.moveTo(legendX, legendY + 22);
         ctx.lineTo(legendX + 35, legendY + 22);
         ctx.stroke();
         ctx.fillStyle = '#333';
-        ctx.fillText(`r = ${cutoff.toFixed(2)}`, legendX + 42, legendY + 27);
+        ctx.fillText(`r = ${legendVals.minCorr.toFixed(2)}`, legendX + 42, legendY + 27);
 
-        // r = 0.7
-        ctx.lineWidth = Math.max(2, 2 + (0.7 - cutoff) / (1 - cutoff) * (edgeWidthBase * 4));
+        // Mid correlation
+        ctx.lineWidth = Math.max(2, 2 + (legendVals.midCorr - cutoff) / (1 - cutoff) * (edgeWidthBase * 4));
         ctx.beginPath();
         ctx.moveTo(legendX, legendY + 48);
         ctx.lineTo(legendX + 35, legendY + 48);
         ctx.stroke();
-        ctx.fillText('r = 0.70', legendX + 42, legendY + 53);
+        ctx.fillText(`r = ${legendVals.midCorr.toFixed(2)}`, legendX + 42, legendY + 53);
 
-        // r = 1.0
-        ctx.lineWidth = Math.max(2, 2 + (1.0 - cutoff) / (1 - cutoff) * (edgeWidthBase * 4));
+        // Max correlation
+        ctx.lineWidth = Math.max(2, 2 + (legendVals.maxCorr - cutoff) / (1 - cutoff) * (edgeWidthBase * 4));
         ctx.beginPath();
         ctx.moveTo(legendX, legendY + 74);
         ctx.lineTo(legendX + 35, legendY + 74);
         ctx.stroke();
-        ctx.fillText('r = 1.00', legendX + 42, legendY + 79);
+        ctx.fillText(`r = ${legendVals.maxCorr.toFixed(2)}`, legendX + 42, legendY + 79);
 
         legendX += 160;
 
@@ -1525,22 +1545,23 @@ Results:
         legendX += 110;
         legendX += 160;
 
-        // Edge thickness legend
+        // Edge thickness legend - use actual data values
         const cutoff = this.results?.cutoff || 0.5;
         const edgeWidthBase = parseInt(document.getElementById('netEdgeWidth').value) || 3;
+        const legendVals = this.edgeLegendValues || { minCorr: 0.5, midCorr: 0.75, maxCorr: 1.0 };
 
         svg += `  <text x="${legendX}" y="${legendY}" class="legend-title">Edge Thickness:</text>\n`;
 
-        const width1 = Math.max(2, 2 + (cutoff - cutoff) / (1 - cutoff) * (edgeWidthBase * 4));
-        const width2 = Math.max(2, 2 + (0.7 - cutoff) / (1 - cutoff) * (edgeWidthBase * 4));
-        const width3 = Math.max(2, 2 + (1.0 - cutoff) / (1 - cutoff) * (edgeWidthBase * 4));
+        const width1 = Math.max(2, 2 + (legendVals.minCorr - cutoff) / (1 - cutoff) * (edgeWidthBase * 4));
+        const width2 = Math.max(2, 2 + (legendVals.midCorr - cutoff) / (1 - cutoff) * (edgeWidthBase * 4));
+        const width3 = Math.max(2, 2 + (legendVals.maxCorr - cutoff) / (1 - cutoff) * (edgeWidthBase * 4));
 
         svg += `  <line x1="${legendX}" y1="${legendY + 22}" x2="${legendX + 35}" y2="${legendY + 22}" stroke="#666" stroke-width="${width1}"/>\n`;
-        svg += `  <text x="${legendX + 42}" y="${legendY + 27}" class="legend-text">r = ${cutoff.toFixed(2)}</text>\n`;
+        svg += `  <text x="${legendX + 42}" y="${legendY + 27}" class="legend-text">r = ${legendVals.minCorr.toFixed(2)}</text>\n`;
         svg += `  <line x1="${legendX}" y1="${legendY + 48}" x2="${legendX + 35}" y2="${legendY + 48}" stroke="#666" stroke-width="${width2}"/>\n`;
-        svg += `  <text x="${legendX + 42}" y="${legendY + 53}" class="legend-text">r = 0.70</text>\n`;
+        svg += `  <text x="${legendX + 42}" y="${legendY + 53}" class="legend-text">r = ${legendVals.midCorr.toFixed(2)}</text>\n`;
         svg += `  <line x1="${legendX}" y1="${legendY + 74}" x2="${legendX + 35}" y2="${legendY + 74}" stroke="#666" stroke-width="${width3}"/>\n`;
-        svg += `  <text x="${legendX + 42}" y="${legendY + 79}" class="legend-text">r = 1.00</text>\n`;
+        svg += `  <text x="${legendX + 42}" y="${legendY + 79}" class="legend-text">r = ${legendVals.maxCorr.toFixed(2)}</text>\n`;
 
         legendX += 160;
 
@@ -2185,7 +2206,7 @@ Results:
                 y: highlightData.map(d => d.y),
                 mode: 'markers+text',
                 type: 'scatter',
-                text: highlightData.map(d => d.cellLineName),
+                text: highlightData.map(d => `${d.cellLineName} (${d.lineage || 'Unknown'})`),
                 textposition: 'top center',
                 textfont: { size: fontSize * 3, color: '#000' },
                 hovertemplate: '%{text}<extra></extra>',
@@ -2263,9 +2284,8 @@ Results:
                 range: yRange,
                 zeroline: true,
                 zerolinecolor: '#ddd',
-                scaleanchor: document.getElementById('forceSquare')?.checked ? 'x' : undefined,
-                scaleratio: document.getElementById('forceSquare')?.checked ?
-                    (parseFloat(document.getElementById('aspectRatioY')?.value || 1) / parseFloat(document.getElementById('aspectRatioX')?.value || 1)) : undefined,
+                scaleanchor: 'x',
+                scaleratio: parseFloat(document.getElementById('aspectRatio')?.value || 1),
                 constrain: 'domain'
             },
             hovermode: 'closest',
@@ -2383,25 +2403,22 @@ Results:
             xaxis: { title: `${gene1} Effect`, range: xRange, domain: [0, 0.28], constrain: 'domain' },
             yaxis: {
                 title: `${gene2} Effect`, range: yRange,
-                scaleanchor: document.getElementById('forceSquare')?.checked ? 'x' : undefined,
-                scaleratio: document.getElementById('forceSquare')?.checked ?
-                    (parseFloat(document.getElementById('aspectRatioY')?.value || 1) / parseFloat(document.getElementById('aspectRatioX')?.value || 1)) : undefined,
+                scaleanchor: 'x',
+                scaleratio: parseFloat(document.getElementById('aspectRatio')?.value || 1),
                 constrain: 'domain'
             },
             xaxis2: { title: `${gene1} Effect`, range: xRange, domain: [0.36, 0.64], constrain: 'domain' },
             yaxis2: {
                 range: yRange, anchor: 'x2',
-                scaleanchor: document.getElementById('forceSquare')?.checked ? 'x2' : undefined,
-                scaleratio: document.getElementById('forceSquare')?.checked ?
-                    (parseFloat(document.getElementById('aspectRatioY')?.value || 1) / parseFloat(document.getElementById('aspectRatioX')?.value || 1)) : undefined,
+                scaleanchor: 'x2',
+                scaleratio: parseFloat(document.getElementById('aspectRatio')?.value || 1),
                 constrain: 'domain'
             },
             xaxis3: { title: `${gene1} Effect`, range: xRange, domain: [0.72, 1], constrain: 'domain' },
             yaxis3: {
                 range: yRange, anchor: 'x3',
-                scaleanchor: document.getElementById('forceSquare')?.checked ? 'x3' : undefined,
-                scaleratio: document.getElementById('forceSquare')?.checked ?
-                    (parseFloat(document.getElementById('aspectRatioY')?.value || 1) / parseFloat(document.getElementById('aspectRatioX')?.value || 1)) : undefined,
+                scaleanchor: 'x3',
+                scaleratio: parseFloat(document.getElementById('aspectRatio')?.value || 1),
                 constrain: 'domain'
             },
             annotations: [
@@ -2417,7 +2434,7 @@ Results:
     }
 
     renderCompareTable(filteredData, gene1, gene2, hotspotGene) {
-        // Group by cancer type (lineage)
+        // Group by cancer type (lineage) - comparing 0 vs 2+ mutations only
         const lineageGroups = {};
         filteredData.forEach(d => {
             if (!d.lineage) return;
@@ -2426,9 +2443,10 @@ Results:
             }
             if (d.mutationLevel === 0) {
                 lineageGroups[d.lineage].wt.push(d);
-            } else {
+            } else if (d.mutationLevel >= 2) {
                 lineageGroups[d.lineage].mut.push(d);
             }
+            // Note: mutationLevel === 1 is excluded from comparison
         });
 
         // Calculate stats for each lineage
@@ -2475,7 +2493,8 @@ Results:
         let html = `
             <h4 style="margin-bottom: 8px;">Mutation Effect on Correlation by Cancer Type</h4>
             <p style="font-size: 12px; color: #666; margin-bottom: 12px;">
-                Comparing correlation between WT (0 mutations) vs Mutant (1+2 mutations) cells, stratified by cancer type.
+                Comparing correlation between WT (0 mutations) vs Mutant (2+ mutations) cells, stratified by cancer type.
+                Note: Cells with exactly 1 mutation are excluded from this comparison.
             </p>
             <div style="overflow-x: auto;">
             <table class="data-table" style="width: 100%; font-size: 12px;">
@@ -2572,8 +2591,9 @@ Results:
     downloadScatterPNG() {
         const hotspotGene = document.getElementById('hotspotGene').value;
         const hotspotMode = document.getElementById('hotspotMode').value;
-        const width = hotspotMode === 'three_panel' ? 1600 : 1200;
-        const height = 900;
+        const width = hotspotMode === 'three_panel' ? 1600 : 1000;
+        // Use 1:1 aspect ratio for better text spacing
+        const height = hotspotMode === 'three_panel' ? 600 : 1000;
         const suffix = hotspotGene && hotspotMode !== 'none' ? `_${hotspotGene}` : '';
 
         Plotly.downloadImage('scatterPlot', {
@@ -2587,8 +2607,9 @@ Results:
     downloadScatterSVG() {
         const hotspotGene = document.getElementById('hotspotGene').value;
         const hotspotMode = document.getElementById('hotspotMode').value;
-        const width = hotspotMode === 'three_panel' ? 1600 : 1200;
-        const height = 900;
+        const width = hotspotMode === 'three_panel' ? 1600 : 1000;
+        // Use 1:1 aspect ratio for better text spacing
+        const height = hotspotMode === 'three_panel' ? 600 : 1000;
         const suffix = hotspotGene && hotspotMode !== 'none' ? `_${hotspotGene}` : '';
 
         Plotly.downloadImage('scatterPlot', {
@@ -2601,7 +2622,134 @@ Results:
 
     showByTissueModal() {
         if (!this.currentInspect) return;
-        alert('By tissue analysis coming soon. Use the Cancer Type filter to view specific lineages.');
+
+        const { gene1, gene2, data } = this.currentInspect;
+
+        // Group data by lineage
+        const tissueGroups = {};
+        data.forEach(d => {
+            const lineage = d.lineage || 'Unknown';
+            if (!tissueGroups[lineage]) {
+                tissueGroups[lineage] = [];
+            }
+            tissueGroups[lineage].push(d);
+        });
+
+        // Sort by sample count and take top 9 tissues (for 3x3 grid)
+        const sortedTissues = Object.entries(tissueGroups)
+            .sort((a, b) => b[1].length - a[1].length)
+            .slice(0, 9);
+
+        if (sortedTissues.length === 0) {
+            alert('No tissue data available');
+            return;
+        }
+
+        const traces = [];
+        const numTissues = sortedTissues.length;
+        const cols = Math.min(3, numTissues);
+        const rows = Math.ceil(numTissues / cols);
+
+        // Calculate global axis ranges
+        const allX = data.map(d => d.x);
+        const allY = data.map(d => d.y);
+        const xRange = [Math.min(...allX) - 0.2, Math.max(...allX) + 0.2];
+        const yRange = [Math.min(...allY) - 0.2, Math.max(...allY) + 0.2];
+
+        const annotations = [];
+
+        sortedTissues.forEach(([tissue, points], idx) => {
+            const row = Math.floor(idx / cols);
+            const col = idx % cols;
+            const xAxisNum = idx === 0 ? '' : (idx + 1);
+            const yAxisNum = idx === 0 ? '' : (idx + 1);
+
+            // Calculate stats for this tissue
+            const stats = this.pearsonWithSlope(points.map(d => d.x), points.map(d => d.y));
+
+            traces.push({
+                x: points.map(d => d.x),
+                y: points.map(d => d.y),
+                xaxis: `x${xAxisNum}`,
+                yaxis: `y${yAxisNum}`,
+                mode: 'markers',
+                type: 'scatter',
+                text: points.map(d => d.cellLineName),
+                hovertemplate: '%{text}<br>x: %{x:.3f}<br>y: %{y:.3f}<extra></extra>',
+                marker: { color: '#3b82f6', size: 6, opacity: 0.7 },
+                showlegend: false
+            });
+
+            // Add regression line if enough points
+            if (points.length >= 3 && !isNaN(stats.slope)) {
+                const meanX = points.reduce((a, d) => a + d.x, 0) / points.length;
+                const meanY = points.reduce((a, d) => a + d.y, 0) / points.length;
+                const intercept = meanY - stats.slope * meanX;
+
+                traces.push({
+                    x: xRange,
+                    y: [stats.slope * xRange[0] + intercept, stats.slope * xRange[1] + intercept],
+                    xaxis: `x${xAxisNum}`,
+                    yaxis: `y${yAxisNum}`,
+                    mode: 'lines',
+                    type: 'scatter',
+                    line: { color: '#16a34a', width: 2 },
+                    showlegend: false
+                });
+            }
+
+            // Calculate position for annotation
+            const xDomain = [col / cols + 0.02, (col + 1) / cols - 0.02];
+            const yDomain = [1 - (row + 1) / rows + 0.02, 1 - row / rows - 0.02];
+
+            annotations.push({
+                x: (xDomain[0] + xDomain[1]) / 2,
+                y: yDomain[1] + 0.03,
+                xref: 'paper',
+                yref: 'paper',
+                text: `<b>${tissue}</b><br>n=${points.length}, r=${stats.correlation.toFixed(2)}`,
+                showarrow: false,
+                font: { size: 10 }
+            });
+        });
+
+        // Build layout with subplots
+        const layout = {
+            title: {
+                text: `<b>${gene1} vs ${gene2} - By Tissue</b>`,
+                font: { size: 14 }
+            },
+            showlegend: false,
+            margin: { t: 60, r: 20, b: 40, l: 50 },
+            annotations: annotations,
+            plot_bgcolor: '#fafafa'
+        };
+
+        // Add axis configurations
+        sortedTissues.forEach((_, idx) => {
+            const row = Math.floor(idx / cols);
+            const col = idx % cols;
+            const xAxisNum = idx === 0 ? '' : (idx + 1);
+            const yAxisNum = idx === 0 ? '' : (idx + 1);
+
+            const xDomain = [col / cols + 0.05, (col + 1) / cols - 0.02];
+            const yDomain = [1 - (row + 1) / rows + 0.08, 1 - row / rows - 0.08];
+
+            layout[`xaxis${xAxisNum}`] = {
+                range: xRange,
+                domain: xDomain,
+                showticklabels: row === rows - 1,
+                title: row === rows - 1 ? gene1 : ''
+            };
+            layout[`yaxis${yAxisNum}`] = {
+                range: yRange,
+                domain: yDomain,
+                showticklabels: col === 0,
+                title: col === 0 ? gene2 : ''
+            };
+        });
+
+        Plotly.newPlot('scatterPlot', traces, layout, { responsive: true });
     }
 
     downloadScatterCSV() {

@@ -1074,7 +1074,7 @@
 
                     <div class="form-group">
                         <label class="form-label">Min Cell Lines:</label>
-                        <input type="number" id="minCellLines" class="form-control" value="10" min="3" max="50" style="width: 80px;">
+                        <input type="number" id="minCellLines" class="form-control" value="50" min="3" max="500" style="width: 80px;">
                     </div>
 
                     <div class="form-group">
@@ -1335,16 +1335,16 @@
 
                         <!-- Aspect Ratio -->
                         <div class="control-box-compact">
-                            <span class="control-label">Aspect Ratio (X:Y)</span>
-                            <div style="display: flex; align-items: center; gap: 6px;">
-                                <input type="number" id="aspectRatioX" value="1" min="0.1" max="5" step="0.1" style="width: 50px; padding: 4px; text-align: center;">
-                                <span>:</span>
-                                <input type="number" id="aspectRatioY" value="1" min="0.1" max="5" step="0.1" style="width: 50px; padding: 4px; text-align: center;">
-                                <label style="font-size: 11px; display: flex; align-items: center; gap: 4px; margin-left: 6px;">
-                                    <input type="checkbox" id="forceSquare" checked> Square
-                                </label>
+                            <span class="control-label">Aspect Ratio</span>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <input type="range" id="aspectRatio" min="0.5" max="2" step="0.1" value="1" style="flex: 1;">
+                                <span id="aspectRatioValue" style="font-size: 12px; min-width: 40px;">1.0</span>
                             </div>
-                            <p class="help-text" style="margin-top: 4px; font-size: 10px;">1:1 = square, 2:1 = wide, 1:2 = tall</p>
+                            <div style="display: flex; justify-content: space-between; font-size: 10px; color: #666; margin-top: 2px;">
+                                <span>Wide</span>
+                                <span>Square</span>
+                                <span>Tall</span>
+                            </div>
                         </div>
 
                         <!-- Filter by Cancer Type -->
@@ -1380,7 +1380,7 @@
                                 <option value="none">None</option>
                                 <option value="color" selected>Color by hotspot mutation (0/1/2)</option>
                                 <option value="three_panel">3-panel (0 / 1 / 2 hotspot mutations)</option>
-                                <option value="compare_table">Compare 0 vs 1+2 (table)</option>
+                                <option value="compare_table">Compare 0 vs 2+ (table)</option>
                             </select>
                         </div>
                     </div>
