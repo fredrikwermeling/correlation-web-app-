@@ -128,6 +128,14 @@ Click "Inspect" on any correlation to see detailed scatter plot:
 - **Original R Shiny App**: [Green Listed](https://greenlisted.cmm.se)
 - **Lab**: [Wermeling Lab](https://wermelinglab.com), Karolinska Institutet
 
+## Development
+
+For AI-assisted development (Claude, GPT, etc.), see **[CLAUDE.md](CLAUDE.md)** which contains:
+- Architecture overview and data flow
+- Key data structures and methods
+- Common modification patterns
+- Testing instructions
+
 ## License
 
 MIT License - Free to use and modify.
