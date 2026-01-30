@@ -991,9 +991,9 @@ class CorrelationExplorer {
 
         legendEl.innerHTML = `
             <strong>Edge Thickness:</strong>
-            <div class="legend-item"><span class="legend-line" style="background: #666; height: ${Math.round(widthMin)}px;"></span> r=${minCorr.toFixed(2)}</div>
-            <div class="legend-item"><span class="legend-line" style="background: #666; height: ${Math.round(widthMid)}px;"></span> r=${midCorr.toFixed(2)}</div>
-            <div class="legend-item"><span class="legend-line" style="background: #666; height: ${Math.round(widthMax)}px;"></span> r=${maxCorr.toFixed(2)}</div>
+            <div class="legend-item"><span class="legend-line" style="background: #666; height: ${Math.round(widthMin)}px;"></span> r=${minCorr.toFixed(1)}</div>
+            <div class="legend-item"><span class="legend-line" style="background: #666; height: ${Math.round(widthMid)}px;"></span> r=${midCorr.toFixed(1)}</div>
+            <div class="legend-item"><span class="legend-line" style="background: #666; height: ${Math.round(widthMax)}px;"></span> r=${maxCorr.toFixed(1)}</div>
         `;
 
         // Store for use in PNG/SVG export
@@ -2033,14 +2033,17 @@ Results:
             cancerBox.style.display = 'none';
         }
 
-        // Populate hotspot genes
+        // Populate hotspot genes (excluding HLA-A and HLA-B which have high variability)
         const hotspotSelect = document.getElementById('hotspotGene');
+        const excludedGenes = ['HLA-A', 'HLA-B'];
         if (this.mutations?.genes?.length > 0) {
             hotspotSelect.innerHTML = '<option value="">Select gene...</option>';
-            this.mutations.genes.forEach(g => {
-                const count = this.mutations.geneCounts?.[g] || 0;
-                hotspotSelect.innerHTML += `<option value="${g}">${g} (${count} mut)</option>`;
-            });
+            this.mutations.genes
+                .filter(g => !excludedGenes.includes(g))
+                .forEach(g => {
+                    const count = this.mutations.geneCounts?.[g] || 0;
+                    hotspotSelect.innerHTML += `<option value="${g}">${g} (${count} mut)</option>`;
+                });
             document.getElementById('mutationBox').style.display = 'block';
         } else {
             document.getElementById('mutationBox').style.display = 'none';
@@ -2413,6 +2416,42 @@ Results:
         addRegressionLine(mut1, mut1Stats, 'x2', 'y2', '#16a34a');
         addRegressionLine(mut2, mut2Stats, 'x3', 'y3', '#16a34a');
 
+        // Add highlighted cells for each panel
+        const addHighlights = (data, xaxis, yaxis) => {
+            const highlightData = data.filter(d =>
+                searchTerms.some(term =>
+                    d.cellLineName.toUpperCase().includes(term) ||
+                    d.cellLineId.toUpperCase().includes(term)
+                ) || this.clickedCells.has(d.cellLineName)
+            );
+
+            if (highlightData.length > 0) {
+                traces.push({
+                    x: highlightData.map(d => d.x),
+                    y: highlightData.map(d => d.y),
+                    xaxis: xaxis,
+                    yaxis: yaxis,
+                    mode: 'markers+text',
+                    type: 'scatter',
+                    text: highlightData.map(d => `${d.cellLineName} (${d.lineage || 'Unknown'})`),
+                    textposition: 'top center',
+                    textfont: { size: fontSize * 3, color: '#000' },
+                    hovertemplate: '%{text}<extra></extra>',
+                    marker: {
+                        color: '#f59e0b',
+                        size: 10,
+                        symbol: 'circle',
+                        line: { color: '#000', width: 2 }
+                    },
+                    showlegend: false
+                });
+            }
+        };
+
+        addHighlights(wt, 'x', 'y');
+        addHighlights(mut1, 'x2', 'y2');
+        addHighlights(mut2, 'x3', 'y3');
+
         const layout = {
             title: {
                 text: `<b>${gene1} vs ${gene2} - ${hotspotGene} hotspot mutation stratification</b>`,
@@ -2444,13 +2483,13 @@ Results:
             },
             annotations: [
                 { x: 0.14, y: 1.02, xref: 'paper', yref: 'paper',
-                  text: `<b>WT (0 mut)</b> n=${wt.length}<br>r=${wtStats.correlation.toFixed(2)}, slope=${wtStats.slope.toFixed(2)}<br>x̄=${wtExtra.meanX.toFixed(2)}, x̃=${wtExtra.medianX.toFixed(2)}<br>ȳ=${wtExtra.meanY.toFixed(2)}, ỹ=${wtExtra.medianY.toFixed(2)}`,
+                  text: `<b>WT (0 mut)</b> n=${wt.length}<br>r=${wtStats.correlation.toFixed(2)}, slope=${wtStats.slope.toFixed(2)}<br>mean: x=${wtExtra.meanX.toFixed(2)}, y=${wtExtra.meanY.toFixed(2)}<br>median: x=${wtExtra.medianX.toFixed(2)}, y=${wtExtra.medianY.toFixed(2)}`,
                   showarrow: false, font: { size: 9 } },
                 { x: 0.5, y: 1.02, xref: 'paper', yref: 'paper',
-                  text: `<b>1 mutation</b> n=${mut1.length}<br>r=${mut1Stats.correlation.toFixed(2)}, slope=${mut1Stats.slope.toFixed(2)}<br>x̄=${mut1Extra.meanX.toFixed(2)}, x̃=${mut1Extra.medianX.toFixed(2)}<br>ȳ=${mut1Extra.meanY.toFixed(2)}, ỹ=${mut1Extra.medianY.toFixed(2)}`,
+                  text: `<b>1 mutation</b> n=${mut1.length}<br>r=${mut1Stats.correlation.toFixed(2)}, slope=${mut1Stats.slope.toFixed(2)}<br>mean: x=${mut1Extra.meanX.toFixed(2)}, y=${mut1Extra.meanY.toFixed(2)}<br>median: x=${mut1Extra.medianX.toFixed(2)}, y=${mut1Extra.medianY.toFixed(2)}`,
                   showarrow: false, font: { size: 9 } },
                 { x: 0.86, y: 1.02, xref: 'paper', yref: 'paper',
-                  text: `<b>2 mutations</b> n=${mut2.length}<br>r=${mut2Stats.correlation.toFixed(2)}, slope=${mut2Stats.slope.toFixed(2)}<br>x̄=${mut2Extra.meanX.toFixed(2)}, x̃=${mut2Extra.medianX.toFixed(2)}<br>ȳ=${mut2Extra.meanY.toFixed(2)}, ỹ=${mut2Extra.medianY.toFixed(2)}`,
+                  text: `<b>2 mutations</b> n=${mut2.length}<br>r=${mut2Stats.correlation.toFixed(2)}, slope=${mut2Stats.slope.toFixed(2)}<br>mean: x=${mut2Extra.meanX.toFixed(2)}, y=${mut2Extra.meanY.toFixed(2)}<br>median: x=${mut2Extra.medianX.toFixed(2)}, y=${mut2Extra.medianY.toFixed(2)}`,
                   showarrow: false, font: { size: 9 } }
             ],
             margin: { t: 120, r: 30, b: 60, l: 60 },
@@ -2738,7 +2777,7 @@ Results:
                 y: yDomain[1] + 0.02,
                 xref: 'paper',
                 yref: 'paper',
-                text: `<b>${tissue}</b> (n=${points.length})<br>r=${stats.correlation.toFixed(2)}, slope=${stats.slope.toFixed(2)}<br>x̄=${meanX.toFixed(2)}, x̃=${medianX.toFixed(2)} | ȳ=${meanY.toFixed(2)}, ỹ=${medianY.toFixed(2)}`,
+                text: `<b>${tissue}</b> n=${points.length}, r=${stats.correlation.toFixed(2)}, slope=${stats.slope.toFixed(2)}<br>mean: x=${meanX.toFixed(2)} y=${meanY.toFixed(2)} | median: x=${medianX.toFixed(2)} y=${medianY.toFixed(2)}`,
                 showarrow: false,
                 font: { size: 9 }
             });
@@ -2765,10 +2804,10 @@ Results:
             const isBottomRow = row === rows - 1;
             const isLeftCol = col === 0;
 
-            // More vertical space between rows for annotations
+            // Vertical space between rows for annotations - reduced for larger graphs
             const rowHeight = 1 / rows;
-            const xDomain = [col / cols + 0.07, (col + 1) / cols - 0.03];
-            const yDomain = [1 - (row + 1) * rowHeight + 0.12, 1 - row * rowHeight - 0.12];
+            const xDomain = [col / cols + 0.07, (col + 1) / cols - 0.02];
+            const yDomain = [1 - (row + 1) * rowHeight + 0.04, 1 - row * rowHeight - 0.12];
 
             layout[`xaxis${xAxisNum}`] = {
                 range: xRange,
