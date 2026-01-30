@@ -980,8 +980,12 @@ class CorrelationExplorer {
 
         // Get actual correlation range from current network data
         const correlations = this.results.correlations.map(c => Math.abs(c.correlation));
-        const minCorr = correlations.length > 0 ? Math.min(...correlations) : cutoff;
-        const maxCorr = correlations.length > 0 ? Math.max(...correlations) : 1.0;
+        const rawMin = correlations.length > 0 ? Math.min(...correlations) : cutoff;
+        const rawMax = correlations.length > 0 ? Math.max(...correlations) : 1.0;
+
+        // Round min down and max up to ensure legend encompasses all data
+        const minCorr = Math.floor(rawMin * 10) / 10;
+        const maxCorr = Math.ceil(rawMax * 10) / 10;
         const midCorr = (minCorr + maxCorr) / 2;
 
         // Calculate widths for actual data range
@@ -2768,18 +2772,22 @@ Results:
                 });
             }
 
-            // Calculate position for annotation - with more stats
-            const xDomain = [col / cols + 0.02, (col + 1) / cols - 0.02];
-            const yDomain = [1 - (row + 1) / rows + 0.02, 1 - row / rows - 0.02];
+            // Calculate position for annotation - inside plot at top-left
+            const rowHeight = 1 / rows;
+            const xDomainCalc = [col / cols + 0.08, (col + 1) / cols - 0.02];
+            const yDomainCalc = [1 - (row + 1) * rowHeight + 0.08, 1 - row * rowHeight - 0.06];
 
             annotations.push({
-                x: (xDomain[0] + xDomain[1]) / 2,
-                y: yDomain[1] + 0.02,
+                x: xDomainCalc[0] + 0.01,
+                y: yDomainCalc[1] - 0.02,
                 xref: 'paper',
                 yref: 'paper',
-                text: `<b>${tissue}</b> n=${points.length}, r=${stats.correlation.toFixed(2)}, slope=${stats.slope.toFixed(2)}<br>mean: x=${meanX.toFixed(2)} y=${meanY.toFixed(2)} | median: x=${medianX.toFixed(2)} y=${medianY.toFixed(2)}`,
+                xanchor: 'left',
+                yanchor: 'top',
+                text: `<b>${tissue}</b> n=${points.length}, r=${stats.correlation.toFixed(2)}, slope=${stats.slope.toFixed(2)}<br>mean: x=${meanX.toFixed(2)} y=${meanY.toFixed(2)}<br>median: x=${medianX.toFixed(2)} y=${medianY.toFixed(2)}`,
                 showarrow: false,
-                font: { size: 9 }
+                font: { size: 8 },
+                bgcolor: 'rgba(255,255,255,0.8)'
             });
         });
 
@@ -2804,10 +2812,10 @@ Results:
             const isBottomRow = row === rows - 1;
             const isLeftCol = col === 0;
 
-            // Vertical space between rows for annotations - reduced for larger graphs
+            // Calculate domains with space for annotations inside plots
             const rowHeight = 1 / rows;
-            const xDomain = [col / cols + 0.07, (col + 1) / cols - 0.02];
-            const yDomain = [1 - (row + 1) * rowHeight + 0.04, 1 - row * rowHeight - 0.12];
+            const xDomain = [col / cols + 0.08, (col + 1) / cols - 0.02];
+            const yDomain = [1 - (row + 1) * rowHeight + 0.08, 1 - row * rowHeight - 0.06];
 
             layout[`xaxis${xAxisNum}`] = {
                 range: xRange,
