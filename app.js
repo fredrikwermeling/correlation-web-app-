@@ -304,7 +304,6 @@ class CorrelationExplorer {
         document.getElementById('downloadScatterPNG').addEventListener('click', () => this.downloadScatterPNG());
         document.getElementById('downloadScatterSVG').addEventListener('click', () => this.downloadScatterSVG());
         document.getElementById('downloadScatterCSV').addEventListener('click', () => this.downloadScatterCSV());
-        document.getElementById('byTissueBtn').addEventListener('click', () => this.showByTissueModal());
         document.getElementById('scatterFontSize')?.addEventListener('change', () => this.updateInspectPlot());
 
         // Aspect ratio control
@@ -1020,11 +1019,17 @@ class CorrelationExplorer {
                     <td>${c.slope.toFixed(3)}</td>
                     <td>${c.n}</td>
                     <td>${c.cluster}</td>
-                    <td><button class="btn btn-outline-primary btn-sm" data-gene1="${c.gene1}" data-gene2="${c.gene2}">Inspect</button></td>
+                    <td>
+                        <button class="btn btn-outline-primary btn-sm inspect-btn" data-gene1="${c.gene1}" data-gene2="${c.gene2}">Inspect</button>
+                        <button class="btn btn-outline-info btn-sm tissue-btn" data-gene1="${c.gene1}" data-gene2="${c.gene2}" style="margin-left: 4px;">By tissue</button>
+                    </td>
                 `;
-                // Add click handler to the button
-                tr.querySelector('button').addEventListener('click', () => {
+                // Add click handlers
+                tr.querySelector('.inspect-btn').addEventListener('click', () => {
                     this.openInspectByGenes(c.gene1, c.gene2);
+                });
+                tr.querySelector('.tissue-btn').addEventListener('click', () => {
+                    this.openByTissueByGenes(c.gene1, c.gene2);
                 });
                 tbody.appendChild(tr);
             });
@@ -1979,6 +1984,53 @@ Results:
             return;
         }
         this.openInspect(c);
+    }
+
+    openByTissueByGenes(gene1, gene2) {
+        // Find the correlation entry by gene names
+        const c = this.results.correlations.find(corr =>
+            (corr.gene1 === gene1 && corr.gene2 === gene2) ||
+            (corr.gene1 === gene2 && corr.gene2 === gene1)
+        );
+        if (!c) {
+            console.error('Correlation not found for', gene1, gene2);
+            return;
+        }
+
+        // Set up currentInspect with the data needed for By tissue
+        this.currentInspect = {
+            gene1: c.gene1,
+            gene2: c.gene2,
+            correlation: c.correlation
+        };
+
+        // Get data for both genes
+        const idx1 = this.geneIndex.get(c.gene1);
+        const idx2 = this.geneIndex.get(c.gene2);
+        const data1 = this.getGeneData(idx1);
+        const data2 = this.getGeneData(idx2);
+
+        // Prepare plot data
+        const plotData = [];
+        for (let i = 0; i < this.nCellLines; i++) {
+            if (!isNaN(data1[i]) && !isNaN(data2[i])) {
+                const cellLine = this.metadata.cellLines[i];
+                plotData.push({
+                    x: data1[i],
+                    y: data2[i],
+                    cellLineId: cellLine,
+                    cellLineName: this.getCellLineName(cellLine),
+                    lineage: this.getCellLineLineage(cellLine)
+                });
+            }
+        }
+        this.currentInspect.data = plotData;
+
+        // Open the inspect modal and show By tissue view
+        document.getElementById('inspectModal').classList.add('active');
+        document.getElementById('inspectTitle').textContent =
+            `${c.gene1} vs ${c.gene2} - By Tissue Breakdown`;
+        this.showByTissueModal();
     }
 
     openInspect(c) {
