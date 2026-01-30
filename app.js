@@ -2783,22 +2783,20 @@ Results:
             height: Math.max(400, tissueStats.length * 25 + 100)
         };
 
-        // Render bar chart in scatterPlot div
-        Plotly.newPlot('scatterPlot', [trace], layout, { responsive: true });
-
-        // Build and show statistics table in compareTable div
+        // Build statistics table HTML
         let tableHtml = `
-            <h4 style="margin-bottom: 10px;">Statistics by Lineage</h4>
-            <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+            <h4 style="margin: 0 0 10px 0;">Statistics by Lineage</h4>
+            <div style="max-height: 500px; overflow-y: auto;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
                 <thead>
-                    <tr style="background-color: #22c55e !important; color: white !important;">
-                        <th style="padding: 8px; border: 1px solid #16a34a; text-align: left; background-color: #22c55e; color: white;">Lineage</th>
-                        <th style="padding: 8px; border: 1px solid #16a34a; text-align: center; background-color: #22c55e; color: white;">N</th>
-                        <th style="padding: 8px; border: 1px solid #16a34a; text-align: center; background-color: #22c55e; color: white;">Correlation</th>
-                        <th style="padding: 8px; border: 1px solid #16a34a; text-align: center; background-color: #22c55e; color: white;">${gene1} Effect (mean)</th>
-                        <th style="padding: 8px; border: 1px solid #16a34a; text-align: center; background-color: #22c55e; color: white;">${gene1} Effect (SD)</th>
-                        <th style="padding: 8px; border: 1px solid #16a34a; text-align: center; background-color: #22c55e; color: white;">${gene2} Effect (mean)</th>
-                        <th style="padding: 8px; border: 1px solid #16a34a; text-align: center; background-color: #22c55e; color: white;">${gene2} Effect (SD)</th>
+                    <tr style="background-color: #22c55e; color: white;">
+                        <th style="padding: 6px; border: 1px solid #16a34a; text-align: left; position: sticky; top: 0; background-color: #22c55e;">Lineage</th>
+                        <th style="padding: 6px; border: 1px solid #16a34a; text-align: center; position: sticky; top: 0; background-color: #22c55e;">N</th>
+                        <th style="padding: 6px; border: 1px solid #16a34a; text-align: center; position: sticky; top: 0; background-color: #22c55e;">Corr</th>
+                        <th style="padding: 6px; border: 1px solid #16a34a; text-align: center; position: sticky; top: 0; background-color: #22c55e;">${gene1} (mean)</th>
+                        <th style="padding: 6px; border: 1px solid #16a34a; text-align: center; position: sticky; top: 0; background-color: #22c55e;">${gene1} (SD)</th>
+                        <th style="padding: 6px; border: 1px solid #16a34a; text-align: center; position: sticky; top: 0; background-color: #22c55e;">${gene2} (mean)</th>
+                        <th style="padding: 6px; border: 1px solid #16a34a; text-align: center; position: sticky; top: 0; background-color: #22c55e;">${gene2} (SD)</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -2809,24 +2807,43 @@ Results:
                 `rgba(34, 197, 94, ${Math.min(1, Math.abs(t.correlation))})` :
                 `rgba(239, 68, 68, ${Math.min(1, Math.abs(t.correlation))})`;
             tableHtml += `
-                <tr style="border-bottom: 1px solid #ddd;">
-                    <td style="padding: 6px; border: 1px solid #ddd;">${t.tissue}</td>
-                    <td style="padding: 6px; border: 1px solid #ddd; text-align: center;">${t.n}</td>
-                    <td style="padding: 6px; border: 1px solid #ddd; text-align: center; background: ${corrColor}; color: ${Math.abs(t.correlation) > 0.5 ? 'white' : 'black'}">${t.correlation.toFixed(2)}</td>
-                    <td style="padding: 6px; border: 1px solid #ddd; text-align: center;">${t.meanX.toFixed(2)}</td>
-                    <td style="padding: 6px; border: 1px solid #ddd; text-align: center;">${t.sdX.toFixed(2)}</td>
-                    <td style="padding: 6px; border: 1px solid #ddd; text-align: center;">${t.meanY.toFixed(2)}</td>
-                    <td style="padding: 6px; border: 1px solid #ddd; text-align: center;">${t.sdY.toFixed(2)}</td>
+                <tr>
+                    <td style="padding: 5px; border: 1px solid #ddd;">${t.tissue}</td>
+                    <td style="padding: 5px; border: 1px solid #ddd; text-align: center;">${t.n}</td>
+                    <td style="padding: 5px; border: 1px solid #ddd; text-align: center; background: ${corrColor}; color: ${Math.abs(t.correlation) > 0.5 ? 'white' : 'black'}">${t.correlation.toFixed(2)}</td>
+                    <td style="padding: 5px; border: 1px solid #ddd; text-align: center;">${t.meanX.toFixed(2)}</td>
+                    <td style="padding: 5px; border: 1px solid #ddd; text-align: center;">${t.sdX.toFixed(2)}</td>
+                    <td style="padding: 5px; border: 1px solid #ddd; text-align: center;">${t.meanY.toFixed(2)}</td>
+                    <td style="padding: 5px; border: 1px solid #ddd; text-align: center;">${t.sdY.toFixed(2)}</td>
                 </tr>
             `;
         });
 
-        tableHtml += '</tbody></table>';
+        tableHtml += '</tbody></table></div>';
 
-        // Show both chart and table
-        document.getElementById('scatterPlot').style.display = 'block';
-        document.getElementById('compareTable').style.display = 'block';
-        document.getElementById('compareTable').innerHTML = tableHtml;
+        // Hide scatterPlot, use compareTable for side-by-side layout
+        const scatterPlotEl = document.getElementById('scatterPlot');
+        const compareTableEl = document.getElementById('compareTable');
+
+        scatterPlotEl.style.display = 'none';
+
+        // Create side-by-side layout in compareTable
+        const chartHeight = Math.max(400, tissueStats.length * 22 + 80);
+        compareTableEl.style.display = 'block';
+        compareTableEl.style.maxHeight = 'none';
+        compareTableEl.innerHTML = `
+            <div style="display: flex; gap: 20px; align-items: flex-start;">
+                <div style="flex: 0 0 45%;">
+                    <div id="byTissueChart" style="height: ${chartHeight}px;"></div>
+                </div>
+                <div style="flex: 1; min-width: 0;">
+                    ${tableHtml}
+                </div>
+            </div>
+        `;
+
+        // Render bar chart in the new container
+        Plotly.newPlot('byTissueChart', [trace], { ...layout, height: chartHeight }, { responsive: true });
     }
 
     downloadScatterCSV() {
