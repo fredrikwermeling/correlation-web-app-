@@ -2750,16 +2750,24 @@ Results:
             }
         });
 
+        // Put n= text at the end of positive bars (right side), shown in hover for negative
         const trace = {
             type: 'bar',
             orientation: 'h',
             y: tissueStats.map(t => t.tissue),
             x: tissueStats.map(t => t.correlation),
             text: tissueStats.map(t => `n=${t.n}`),
-            textposition: 'outside',
+            textposition: tissueStats.map(t => t.correlation >= 0 ? 'outside' : 'inside'),
+            textfont: { size: 10 },
+            insidetextanchor: 'start',
             marker: { color: barColors },
-            hovertemplate: '%{y}<br>r=%{x:.2f}<br>%{text}<extra></extra>'
+            hovertemplate: '%{y}<br>r=%{x:.2f}<br>n=%{text}<extra></extra>',
+            cliponaxis: false
         };
+
+        // Find longest tissue name for dynamic left margin
+        const maxTissueLen = Math.max(...tissueStats.map(t => t.tissue.length));
+        const leftMargin = Math.max(150, maxTissueLen * 7);
 
         const layout = {
             title: {
@@ -2768,16 +2776,16 @@ Results:
             },
             xaxis: {
                 title: 'Correlation',
-                range: [-1, 1],
+                range: [-1.15, 1.15],
                 zeroline: true,
                 zerolinecolor: '#000',
                 zerolinewidth: 1
             },
             yaxis: {
                 automargin: true,
-                tickfont: { size: 10 }
+                tickfont: { size: 9 }
             },
-            margin: { t: 50, r: 20, b: 50, l: 150 },
+            margin: { t: 50, r: 50, b: 50, l: leftMargin },
             plot_bgcolor: '#fafafa',
             showlegend: false,
             height: Math.max(400, tissueStats.length * 25 + 100)
