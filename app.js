@@ -2789,16 +2789,16 @@ Results:
         // Build and show statistics table in compareTable div
         let tableHtml = `
             <h4 style="margin-bottom: 10px;">Statistics by Lineage</h4>
-            <table class="table table-sm table-striped" style="font-size: 12px;">
-                <thead style="background: #22c55e; color: white;">
-                    <tr>
-                        <th>Lineage</th>
-                        <th>N</th>
-                        <th>Correlation</th>
-                        <th>${gene1} Effect (mean)</th>
-                        <th>${gene1} Effect (SD)</th>
-                        <th>${gene2} Effect (mean)</th>
-                        <th>${gene2} Effect (SD)</th>
+            <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                <thead>
+                    <tr style="background-color: #22c55e !important; color: white !important;">
+                        <th style="padding: 8px; border: 1px solid #16a34a; text-align: left; background-color: #22c55e; color: white;">Lineage</th>
+                        <th style="padding: 8px; border: 1px solid #16a34a; text-align: center; background-color: #22c55e; color: white;">N</th>
+                        <th style="padding: 8px; border: 1px solid #16a34a; text-align: center; background-color: #22c55e; color: white;">Correlation</th>
+                        <th style="padding: 8px; border: 1px solid #16a34a; text-align: center; background-color: #22c55e; color: white;">${gene1} Effect (mean)</th>
+                        <th style="padding: 8px; border: 1px solid #16a34a; text-align: center; background-color: #22c55e; color: white;">${gene1} Effect (SD)</th>
+                        <th style="padding: 8px; border: 1px solid #16a34a; text-align: center; background-color: #22c55e; color: white;">${gene2} Effect (mean)</th>
+                        <th style="padding: 8px; border: 1px solid #16a34a; text-align: center; background-color: #22c55e; color: white;">${gene2} Effect (SD)</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -2809,14 +2809,14 @@ Results:
                 `rgba(34, 197, 94, ${Math.min(1, Math.abs(t.correlation))})` :
                 `rgba(239, 68, 68, ${Math.min(1, Math.abs(t.correlation))})`;
             tableHtml += `
-                <tr>
-                    <td>${t.tissue}</td>
-                    <td>${t.n}</td>
-                    <td style="background: ${corrColor}; color: ${Math.abs(t.correlation) > 0.5 ? 'white' : 'black'}">${t.correlation.toFixed(2)}</td>
-                    <td>${t.meanX.toFixed(2)}</td>
-                    <td>${t.sdX.toFixed(2)}</td>
-                    <td>${t.meanY.toFixed(2)}</td>
-                    <td>${t.sdY.toFixed(2)}</td>
+                <tr style="border-bottom: 1px solid #ddd;">
+                    <td style="padding: 6px; border: 1px solid #ddd;">${t.tissue}</td>
+                    <td style="padding: 6px; border: 1px solid #ddd; text-align: center;">${t.n}</td>
+                    <td style="padding: 6px; border: 1px solid #ddd; text-align: center; background: ${corrColor}; color: ${Math.abs(t.correlation) > 0.5 ? 'white' : 'black'}">${t.correlation.toFixed(2)}</td>
+                    <td style="padding: 6px; border: 1px solid #ddd; text-align: center;">${t.meanX.toFixed(2)}</td>
+                    <td style="padding: 6px; border: 1px solid #ddd; text-align: center;">${t.sdX.toFixed(2)}</td>
+                    <td style="padding: 6px; border: 1px solid #ddd; text-align: center;">${t.meanY.toFixed(2)}</td>
+                    <td style="padding: 6px; border: 1px solid #ddd; text-align: center;">${t.sdY.toFixed(2)}</td>
                 </tr>
             `;
         });
