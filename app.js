@@ -2705,135 +2705,128 @@ Results:
             tissueGroups[lineage].push(d);
         });
 
-        // Sort by sample count and take top 9 tissues (for 3x3 grid)
-        const sortedTissues = Object.entries(tissueGroups)
-            .sort((a, b) => b[1].length - a[1].length)
-            .slice(0, 9);
+        // Calculate stats for each tissue
+        const tissueStats = [];
+        Object.entries(tissueGroups).forEach(([tissue, points]) => {
+            if (points.length >= 3) {
+                const xVals = points.map(d => d.x);
+                const yVals = points.map(d => d.y);
+                const stats = this.pearsonWithSlope(xVals, yVals);
+                const meanX = xVals.reduce((a, b) => a + b, 0) / xVals.length;
+                const meanY = yVals.reduce((a, b) => a + b, 0) / yVals.length;
+                const sdX = Math.sqrt(xVals.reduce((a, b) => a + Math.pow(b - meanX, 2), 0) / xVals.length);
+                const sdY = Math.sqrt(yVals.reduce((a, b) => a + Math.pow(b - meanY, 2), 0) / yVals.length);
 
-        if (sortedTissues.length === 0) {
-            alert('No tissue data available');
+                tissueStats.push({
+                    tissue,
+                    n: points.length,
+                    correlation: stats.correlation,
+                    meanX,
+                    sdX,
+                    meanY,
+                    sdY
+                });
+            }
+        });
+
+        // Sort by correlation (highest first)
+        tissueStats.sort((a, b) => b.correlation - a.correlation);
+
+        if (tissueStats.length === 0) {
+            alert('No tissue data available (need at least 3 samples per tissue)');
             return;
         }
 
-        const traces = [];
-        const numTissues = sortedTissues.length;
-        const cols = Math.min(3, numTissues);
-        const rows = Math.ceil(numTissues / cols);
-
-        // Calculate global axis ranges
-        const allX = data.map(d => d.x);
-        const allY = data.map(d => d.y);
-        const xRange = [Math.min(...allX) - 0.2, Math.max(...allX) + 0.2];
-        const yRange = [Math.min(...allY) - 0.2, Math.max(...allY) + 0.2];
-
-        const annotations = [];
-
-        sortedTissues.forEach(([tissue, points], idx) => {
-            const row = Math.floor(idx / cols);
-            const col = idx % cols;
-            const xAxisNum = idx === 0 ? '' : (idx + 1);
-            const yAxisNum = idx === 0 ? '' : (idx + 1);
-
-            // Calculate stats for this tissue
-            const xVals = points.map(d => d.x);
-            const yVals = points.map(d => d.y);
-            const stats = this.pearsonWithSlope(xVals, yVals);
-            const meanX = xVals.reduce((a, b) => a + b, 0) / xVals.length;
-            const meanY = yVals.reduce((a, b) => a + b, 0) / yVals.length;
-            const medianX = this.median(xVals);
-            const medianY = this.median(yVals);
-
-            traces.push({
-                x: xVals,
-                y: yVals,
-                xaxis: `x${xAxisNum}`,
-                yaxis: `y${yAxisNum}`,
-                mode: 'markers',
-                type: 'scatter',
-                text: points.map(d => d.cellLineName),
-                hovertemplate: '%{text}<br>x: %{x:.3f}<br>y: %{y:.3f}<extra></extra>',
-                marker: { color: '#3b82f6', size: 6, opacity: 0.7 },
-                showlegend: false
-            });
-
-            // Add regression line if enough points
-            if (points.length >= 3 && !isNaN(stats.slope)) {
-                const intercept = meanY - stats.slope * meanX;
-
-                traces.push({
-                    x: xRange,
-                    y: [stats.slope * xRange[0] + intercept, stats.slope * xRange[1] + intercept],
-                    xaxis: `x${xAxisNum}`,
-                    yaxis: `y${yAxisNum}`,
-                    mode: 'lines',
-                    type: 'scatter',
-                    line: { color: '#16a34a', width: 2 },
-                    showlegend: false
-                });
+        // Create horizontal bar chart
+        const barColors = tissueStats.map(t => {
+            if (t.correlation > 0) {
+                // Green gradient for positive
+                const intensity = Math.min(1, t.correlation);
+                return `rgba(34, 197, 94, ${0.3 + intensity * 0.7})`;
+            } else {
+                // Red gradient for negative
+                const intensity = Math.min(1, Math.abs(t.correlation));
+                return `rgba(239, 68, 68, ${0.3 + intensity * 0.7})`;
             }
-
-            // Calculate position for annotation - inside plot at top-left
-            const rowHeight = 1 / rows;
-            const xDomainCalc = [col / cols + 0.08, (col + 1) / cols - 0.02];
-            const yDomainCalc = [1 - (row + 1) * rowHeight + 0.08, 1 - row * rowHeight - 0.06];
-
-            annotations.push({
-                x: xDomainCalc[0] + 0.01,
-                y: yDomainCalc[1] - 0.02,
-                xref: 'paper',
-                yref: 'paper',
-                xanchor: 'left',
-                yanchor: 'top',
-                text: `<b>${tissue}</b> n=${points.length}, r=${stats.correlation.toFixed(2)}, slope=${stats.slope.toFixed(2)}<br>mean: x=${meanX.toFixed(2)} y=${meanY.toFixed(2)}<br>median: x=${medianX.toFixed(2)} y=${medianY.toFixed(2)}`,
-                showarrow: false,
-                font: { size: 8 },
-                bgcolor: 'rgba(255,255,255,0.8)'
-            });
         });
 
-        // Build layout with subplots
-        const layout = {
-            title: {
-                text: `<b>${gene1} vs ${gene2} - By Tissue</b>`,
-                font: { size: 14 }
-            },
-            showlegend: false,
-            margin: { t: 50, r: 20, b: 50, l: 60 },
-            annotations: annotations,
-            plot_bgcolor: '#fafafa'
+        const trace = {
+            type: 'bar',
+            orientation: 'h',
+            y: tissueStats.map(t => t.tissue),
+            x: tissueStats.map(t => t.correlation),
+            text: tissueStats.map(t => `n=${t.n}`),
+            textposition: 'outside',
+            marker: { color: barColors },
+            hovertemplate: '%{y}<br>r=%{x:.2f}<br>%{text}<extra></extra>'
         };
 
-        // Add axis configurations with proper spacing
-        sortedTissues.forEach((_, idx) => {
-            const row = Math.floor(idx / cols);
-            const col = idx % cols;
-            const xAxisNum = idx === 0 ? '' : (idx + 1);
-            const yAxisNum = idx === 0 ? '' : (idx + 1);
-            const isBottomRow = row === rows - 1;
-            const isLeftCol = col === 0;
-
-            // Calculate domains with space for annotations inside plots
-            const rowHeight = 1 / rows;
-            const xDomain = [col / cols + 0.08, (col + 1) / cols - 0.02];
-            const yDomain = [1 - (row + 1) * rowHeight + 0.08, 1 - row * rowHeight - 0.06];
-
-            layout[`xaxis${xAxisNum}`] = {
-                range: xRange,
-                domain: xDomain,
-                showticklabels: isBottomRow,
-                title: isBottomRow ? gene1 : '',
+        const layout = {
+            title: {
+                text: `<b>${gene1} vs ${gene2}</b>`,
+                font: { size: 14 }
+            },
+            xaxis: {
+                title: 'Correlation',
+                range: [-1, 1],
+                zeroline: true,
+                zerolinecolor: '#000',
+                zerolinewidth: 1
+            },
+            yaxis: {
+                automargin: true,
                 tickfont: { size: 10 }
-            };
-            layout[`yaxis${yAxisNum}`] = {
-                range: yRange,
-                domain: yDomain,
-                showticklabels: isLeftCol,
-                title: isLeftCol ? gene2 : '',
-                tickfont: { size: 10 }
-            };
+            },
+            margin: { t: 50, r: 20, b: 50, l: 150 },
+            plot_bgcolor: '#fafafa',
+            showlegend: false,
+            height: Math.max(400, tissueStats.length * 25 + 100)
+        };
+
+        // Render bar chart in scatterPlot div
+        Plotly.newPlot('scatterPlot', [trace], layout, { responsive: true });
+
+        // Build and show statistics table in compareTable div
+        let tableHtml = `
+            <h4 style="margin-bottom: 10px;">Statistics by Lineage</h4>
+            <table class="table table-sm table-striped" style="font-size: 12px;">
+                <thead style="background: #22c55e; color: white;">
+                    <tr>
+                        <th>Lineage</th>
+                        <th>N</th>
+                        <th>Correlation</th>
+                        <th>${gene1} Effect (mean)</th>
+                        <th>${gene1} Effect (SD)</th>
+                        <th>${gene2} Effect (mean)</th>
+                        <th>${gene2} Effect (SD)</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        tissueStats.forEach(t => {
+            const corrColor = t.correlation > 0 ?
+                `rgba(34, 197, 94, ${Math.min(1, Math.abs(t.correlation))})` :
+                `rgba(239, 68, 68, ${Math.min(1, Math.abs(t.correlation))})`;
+            tableHtml += `
+                <tr>
+                    <td>${t.tissue}</td>
+                    <td>${t.n}</td>
+                    <td style="background: ${corrColor}; color: ${Math.abs(t.correlation) > 0.5 ? 'white' : 'black'}">${t.correlation.toFixed(2)}</td>
+                    <td>${t.meanX.toFixed(2)}</td>
+                    <td>${t.sdX.toFixed(2)}</td>
+                    <td>${t.meanY.toFixed(2)}</td>
+                    <td>${t.sdY.toFixed(2)}</td>
+                </tr>
+            `;
         });
 
-        Plotly.newPlot('scatterPlot', traces, layout, { responsive: true });
+        tableHtml += '</tbody></table>';
+
+        // Show both chart and table
+        document.getElementById('scatterPlot').style.display = 'block';
+        document.getElementById('compareTable').style.display = 'block';
+        document.getElementById('compareTable').innerHTML = tableHtml;
     }
 
     downloadScatterCSV() {
