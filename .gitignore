@@ -1,0 +1,30 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.bak
+
+# Large source data files (not needed for web app)
+*.csv
+
+# Screenshots and reference images
+*.png
+Screenshot*.png
+inspect.png
+
+# R Shiny app (separate project)
+app.R
+
+# Claude settings
+.claude/
