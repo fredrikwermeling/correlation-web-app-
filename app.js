@@ -304,6 +304,9 @@ class CorrelationExplorer {
         document.getElementById('downloadScatterPNG').addEventListener('click', () => this.downloadScatterPNG());
         document.getElementById('downloadScatterSVG').addEventListener('click', () => this.downloadScatterSVG());
         document.getElementById('downloadScatterCSV').addEventListener('click', () => this.downloadScatterCSV());
+        document.getElementById('downloadTissuePNG').addEventListener('click', () => this.downloadTissueChartPNG());
+        document.getElementById('downloadTissueSVG').addEventListener('click', () => this.downloadTissueChartSVG());
+        document.getElementById('downloadTissueCSV').addEventListener('click', () => this.downloadTissueTableCSV());
         document.getElementById('scatterFontSize')?.addEventListener('change', () => this.updateInspectPlot());
 
         // Aspect ratio control
@@ -2034,10 +2037,15 @@ Results:
         // Hide the scatter plot controls (not needed for By tissue view)
         document.querySelector('.inspect-controls').style.display = 'none';
 
-        // Hide scatter-specific download buttons, show only Close
+        // Hide scatter-specific download buttons
         document.getElementById('downloadScatterPNG').style.display = 'none';
         document.getElementById('downloadScatterSVG').style.display = 'none';
         document.getElementById('downloadScatterCSV').style.display = 'none';
+
+        // Show tissue-specific download buttons
+        document.getElementById('downloadTissuePNG').style.display = '';
+        document.getElementById('downloadTissueSVG').style.display = '';
+        document.getElementById('downloadTissueCSV').style.display = '';
 
         this.showByTissueModal();
     }
@@ -2127,6 +2135,11 @@ Results:
         document.getElementById('downloadScatterPNG').style.display = '';
         document.getElementById('downloadScatterSVG').style.display = '';
         document.getElementById('downloadScatterCSV').style.display = '';
+
+        // Hide tissue-specific buttons
+        document.getElementById('downloadTissuePNG').style.display = 'none';
+        document.getElementById('downloadTissueSVG').style.display = 'none';
+        document.getElementById('downloadTissueCSV').style.display = 'none';
 
         this.updateInspectPlot();
     }
@@ -2800,6 +2813,9 @@ Results:
         // Sort by correlation (highest first)
         tissueStats.sort((a, b) => b.correlation - a.correlation);
 
+        // Store for CSV download
+        this.currentTissueStats = tissueStats;
+
         if (tissueStats.length === 0) {
             alert('No tissue data available (need at least 3 samples per tissue)');
             return;
@@ -2947,6 +2963,48 @@ Results:
         const suffix = hotspotGene ? `_${hotspotGene}` : '';
         this.downloadFile(csv,
             `scatter_${this.currentInspect.gene1}_vs_${this.currentInspect.gene2}${suffix}.csv`,
+            'text/csv');
+    }
+
+    downloadTissueChartPNG() {
+        if (!this.currentInspect) return;
+        const chartEl = document.getElementById('byTissueChart');
+        if (!chartEl) return;
+
+        Plotly.downloadImage(chartEl, {
+            format: 'png',
+            width: 800,
+            height: Math.max(400, (this.currentTissueStats?.length || 10) * 25 + 100),
+            filename: `by_tissue_${this.currentInspect.gene1}_vs_${this.currentInspect.gene2}`
+        });
+    }
+
+    downloadTissueChartSVG() {
+        if (!this.currentInspect) return;
+        const chartEl = document.getElementById('byTissueChart');
+        if (!chartEl) return;
+
+        Plotly.downloadImage(chartEl, {
+            format: 'svg',
+            width: 800,
+            height: Math.max(400, (this.currentTissueStats?.length || 10) * 25 + 100),
+            filename: `by_tissue_${this.currentInspect.gene1}_vs_${this.currentInspect.gene2}`
+        });
+    }
+
+    downloadTissueTableCSV() {
+        if (!this.currentInspect || !this.currentTissueStats) return;
+
+        const { gene1, gene2 } = this.currentInspect;
+
+        let csv = `Lineage,N,Correlation,${gene1}_Effect_mean,${gene1}_Effect_SD,${gene2}_Effect_mean,${gene2}_Effect_SD\n`;
+
+        this.currentTissueStats.forEach(t => {
+            csv += `"${t.tissue}",${t.n},${t.correlation.toFixed(4)},${t.meanX.toFixed(4)},${t.sdX.toFixed(4)},${t.meanY.toFixed(4)},${t.sdY.toFixed(4)}\n`;
+        });
+
+        this.downloadFile(csv,
+            `by_tissue_${gene1}_vs_${gene2}.csv`,
             'text/csv');
     }
 }
