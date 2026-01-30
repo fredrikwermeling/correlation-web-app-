@@ -17,3 +17,4 @@
 - Could the correlation analysis include the chance of adding n genes (selected by the user) to try to find correlations between the user input gene set? eg maybe gene a and b are interacting via gene c (which is not included in the uploaded gene set). a feature could be that the user could say expand the network, correlations (still within the specified cut off) could be identified.
 - acknowledge depmap and how to cite (wait with this until everything is ready).
 - change the default number of cell lines used for correlation analysis to 50 (not 10 like now), ie if a gene pair is not represented by more than 50 cell lines, don't show it (default setting that can be changed in "3. set parameters")
+- How can the synonyms/ortholog be better?
