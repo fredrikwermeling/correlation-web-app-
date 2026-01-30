@@ -1,0 +1,18 @@
+- Could the uploaded gene list with statistics allow for a simpler format? eg just saved excel file as eg .tsv or .csv?
+- Could the inspect have a feature (table) comparing the correlation and slope difference for the different hotspot mutations, aiming to identify which hotspot mutations affect the correlation? It could be another table accessed via the drop-down menu. Not that this might introduce a bias in that specific mutations select for cancer types, and thus not directly supporting that the actual mutation directly affects the correlation.  
+- in the hotspot drop-down menu that compares 0 vs 1+2 (table. change to only comparing 0 to 2 mutations, ie 0 vs 2)
+- Could the network also allow for color by gene effect? both absolute and real (similar to the gene statistics
+- When highlighting a cell line in the inspect feature (text or clicking), also show the type of cancer within ().
+- Inspect has a filter by cancer type, could it also have a filter by hotspot mutation, i.e., only showing cells with the specific mutation?
+- All graphs for hotspot mutations should have information about n, r, slope, median gene x , and median gene b.
+- The 3-panel display of mutations in the inspect feature should have the same type of information above the respective graphs as the one-graph version. 
+- The exported images still seem to have a problem with text overlapping in the exported PNG/SVG. This is mainly related to the text above the graph overlapping. The idea is that any PNG/SVG should render exactly as it appears on screen.
+- In inspect, the aspect ratio feature works, but 1:1 is not square on my computer (perhaps something about which screen is used). The box that can be clicked called square can be removed, and the information stating that 1:2 = square could also be removed. It's enough to allow changing the x/y ratio. Also, cahngeing the x value and the y valkues, gives the same result. Perhaps it's enough with the increase or decrease ratio. Perhaps the aspect ratio could be incorporated into the axis ratio.    
+- The "By tissue" doesn't work. 
+- The summary should specify which gene names were not identified.
+- When a synonym is used, add * to the name, and add to the legend, * =synonym/orthologue used. If statsics is used, transfer the LFC/FDR to the synonym/orthologue used in the network (so no need for gray color).
+- When hovering over the node, also show LFC/FDR data if that is uploaded.
+- The edge thickness specified in the legend of the network should scale to the actual data in the network, the lowest should be close to the smallest, and the highest number to the thickest (but use one decimal)
+- Gene effect in the network, should also allow for +/- SD (clickable box to turn on/off)
+- Could the correlation analysis include the chance of adding n genes (selected by the user) to try to find correlations between the user input gene set? eg maybe gene a and b are interacting via gene c (which is not included in the uploaded gene set). a feature could be that the user could say expand the network, correlations (still within the specified cut off) could be identified.
+- acknowledge depmap and how to cite (wait with this until everything is ready).
