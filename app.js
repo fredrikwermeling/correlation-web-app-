@@ -300,6 +300,7 @@ class CorrelationExplorer {
         document.getElementById('scatterCancerFilter').addEventListener('change', () => this.updateInspectPlot());
         document.getElementById('hotspotGene').addEventListener('change', () => this.updateInspectPlot());
         document.getElementById('hotspotMode').addEventListener('change', () => this.updateInspectPlot());
+        document.getElementById('mutationFilter').addEventListener('change', () => this.updateInspectPlot());
 
         document.getElementById('downloadScatterPNG').addEventListener('click', () => this.downloadScatterPNG());
         document.getElementById('downloadScatterSVG').addEventListener('click', () => this.downloadScatterSVG());
@@ -406,7 +407,14 @@ class CorrelationExplorer {
     }
 
     parseStatsFile(content, filename) {
-        // Detect delimiter (comma or tab)
+        // Remove BOM (Byte Order Mark) if present (Excel UTF-8 exports)
+        if (content.charCodeAt(0) === 0xFEFF) {
+            content = content.slice(1);
+        }
+
+        // Normalize line endings (Windows \r\n, old Mac \r, Unix \n)
+        content = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
         const lines = content.trim().split('\n');
         if (lines.length < 2) {
             alert('File must have a header row and at least one data row');
@@ -414,7 +422,14 @@ class CorrelationExplorer {
         }
 
         const firstLine = lines[0];
-        const delimiter = firstLine.includes('\t') ? '\t' : ',';
+
+        // Detect delimiter: tab, comma, or semicolon (European Excel)
+        let delimiter = ',';
+        if (firstLine.includes('\t')) {
+            delimiter = '\t';
+        } else if (firstLine.includes(';') && !firstLine.includes(',')) {
+            delimiter = ';';
+        }
 
         // Parse header
         const headers = firstLine.split(delimiter).map(h => h.trim().replace(/^"|"$/g, ''));
@@ -858,6 +873,19 @@ class CorrelationExplorer {
         geneSet.forEach(gene => {
             const cluster = this.results.clusters.find(c => c.gene === gene);
             const isInput = this.results.geneList.includes(gene);
+            const geneStat = this.geneStats?.get(gene);
+
+            // Build title with available information
+            let titleLines = [gene];
+            titleLines.push(`Mean Effect: ${cluster?.meanEffect || 'N/A'}`);
+            titleLines.push(`SD: ${cluster?.sdEffect || 'N/A'}`);
+            if (geneStat?.lfc !== undefined && geneStat?.lfc !== null) {
+                titleLines.push(`LFC: ${geneStat.lfc.toFixed(3)}`);
+            }
+            if (geneStat?.fdr !== undefined && geneStat?.fdr !== null) {
+                titleLines.push(`FDR: ${geneStat.fdr.toExponential(2)}`);
+            }
+
             nodes.push({
                 id: gene,
                 label: gene,
@@ -869,7 +897,7 @@ class CorrelationExplorer {
                     border: '#ffffff'
                 },
                 borderWidth: 2,
-                title: `${gene}\nMean Effect: ${cluster?.meanEffect || 'N/A'}\nSD: ${cluster?.sdEffect || 'N/A'}`
+                title: titleLines.join('\n')
             });
         });
 
@@ -2192,6 +2220,20 @@ Results:
             mutationLevel: mutationMap.get(d.cellLineId) || 0
         }));
 
+        // Apply mutation filter (only if a hotspot gene is selected)
+        const mutationFilter = document.getElementById('mutationFilter').value;
+        if (hotspotGene && mutationFilter !== 'all') {
+            if (mutationFilter === '0') {
+                filteredData = filteredData.filter(d => d.mutationLevel === 0);
+            } else if (mutationFilter === '1') {
+                filteredData = filteredData.filter(d => d.mutationLevel === 1);
+            } else if (mutationFilter === '2') {
+                filteredData = filteredData.filter(d => d.mutationLevel >= 2);
+            } else if (mutationFilter === '1+') {
+                filteredData = filteredData.filter(d => d.mutationLevel >= 1);
+            }
+        }
+
         // Show/hide plot and table based on mode
         const scatterPlot = document.getElementById('scatterPlot');
         const compareTable = document.getElementById('compareTable');
@@ -2577,7 +2619,7 @@ Results:
                   text: `<b>2 mutations</b> n=${mut2.length}<br>r=${mut2Stats.correlation.toFixed(2)}, slope=${mut2Stats.slope.toFixed(2)}<br>mean: x=${mut2Extra.meanX.toFixed(2)}, y=${mut2Extra.meanY.toFixed(2)}<br>median: x=${mut2Extra.medianX.toFixed(2)}, y=${mut2Extra.medianY.toFixed(2)}`,
                   showarrow: false, font: { size: 9 } }
             ],
-            margin: { t: 120, r: 30, b: 60, l: 60 },
+            margin: { t: 140, r: 30, b: 60, l: 60 },
             plot_bgcolor: '#fafafa'
         };
 
@@ -2742,9 +2784,9 @@ Results:
     downloadScatterPNG() {
         const hotspotGene = document.getElementById('hotspotGene').value;
         const hotspotMode = document.getElementById('hotspotMode').value;
-        const width = hotspotMode === 'three_panel' ? 1600 : 1000;
-        // Use 1:1 aspect ratio for better text spacing
-        const height = hotspotMode === 'three_panel' ? 600 : 1000;
+        // Increase height for 3-panel to accommodate annotations without overlap
+        const width = hotspotMode === 'three_panel' ? 1800 : 1000;
+        const height = hotspotMode === 'three_panel' ? 800 : 1000;
         const suffix = hotspotGene && hotspotMode !== 'none' ? `_${hotspotGene}` : '';
 
         Plotly.downloadImage('scatterPlot', {
@@ -2758,9 +2800,9 @@ Results:
     downloadScatterSVG() {
         const hotspotGene = document.getElementById('hotspotGene').value;
         const hotspotMode = document.getElementById('hotspotMode').value;
-        const width = hotspotMode === 'three_panel' ? 1600 : 1000;
-        // Use 1:1 aspect ratio for better text spacing
-        const height = hotspotMode === 'three_panel' ? 600 : 1000;
+        // Increase height for 3-panel to accommodate annotations without overlap
+        const width = hotspotMode === 'three_panel' ? 1800 : 1000;
+        const height = hotspotMode === 'three_panel' ? 800 : 1000;
         const suffix = hotspotGene && hotspotMode !== 'none' ? `_${hotspotGene}` : '';
 
         Plotly.downloadImage('scatterPlot', {

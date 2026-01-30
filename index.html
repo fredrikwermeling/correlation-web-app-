@@ -1019,7 +1019,8 @@
                     <div class="input-panel" id="input-upload">
                         <div class="form-group">
                             <label class="form-label">Upload CSV/TSV:</label>
-                            <input type="file" id="statsFileInput" accept=".csv,.tsv,.txt" class="form-control" style="font-size: 11px; padding: 4px;">
+                            <input type="file" id="statsFileInput" accept=".csv,.tsv,.txt,.tab" class="form-control" style="font-size: 11px; padding: 4px;">
+                            <small style="color: #666; font-size: 10px;">Accepts CSV, TSV, or TXT (saved from Excel)</small>
                         </div>
                         <div id="statsColumnSelect" style="display: none;">
                             <div class="form-group">
@@ -1335,15 +1336,10 @@
 
                         <!-- Aspect Ratio -->
                         <div class="control-box-compact">
-                            <span class="control-label">Aspect Ratio</span>
+                            <span class="control-label">Y/X Ratio</span>
                             <div style="display: flex; align-items: center; gap: 8px;">
                                 <input type="range" id="aspectRatio" min="0.5" max="2" step="0.1" value="1" style="flex: 1;">
                                 <span id="aspectRatioValue" style="font-size: 12px; min-width: 40px;">1.0</span>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; font-size: 10px; color: #666; margin-top: 2px;">
-                                <span>Wide</span>
-                                <span>Square</span>
-                                <span>Tall</span>
                             </div>
                         </div>
 
@@ -1382,6 +1378,13 @@
                                 <option value="three_panel">3-panel (0 / 1 / 2 hotspot mutations)</option>
                                 <option value="compare_table">Compare 0 vs 2 (table)</option>
                             </select>
+                            <select id="mutationFilter" class="form-control" style="margin-top: 8px;">
+                                <option value="all">Show all cells</option>
+                                <option value="0">Only WT (0 mutations)</option>
+                                <option value="1">Only 1 mutation</option>
+                                <option value="2">Only 2+ mutations</option>
+                                <option value="1+">Only mutated (1 or 2+)</option>
+                            </select>
                         </div>
                     </div>
                     <div class="inspect-plot">
@@ -1408,6 +1411,6 @@
         <p><a href="https://wermelinglab.com" target="_blank">Wermeling Lab</a> | Karolinska Institutet</p>
     </footer>
 
-    <script src="app.js?v=20260130j"></script>
+    <script src="app.js?v=20260130k"></script>
 </body>
 </html>
