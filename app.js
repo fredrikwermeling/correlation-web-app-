@@ -2030,6 +2030,15 @@ Results:
         document.getElementById('inspectModal').classList.add('active');
         document.getElementById('inspectTitle').textContent =
             `${c.gene1} vs ${c.gene2} - By Tissue Breakdown`;
+
+        // Hide the scatter plot controls (not needed for By tissue view)
+        document.querySelector('.inspect-controls').style.display = 'none';
+
+        // Hide scatter-specific download buttons, show only Close
+        document.getElementById('downloadScatterPNG').style.display = 'none';
+        document.getElementById('downloadScatterSVG').style.display = 'none';
+        document.getElementById('downloadScatterCSV').style.display = 'none';
+
         this.showByTissueModal();
     }
 
@@ -2112,6 +2121,13 @@ Results:
 
         // Show modal and render plot
         document.getElementById('inspectModal').classList.add('active');
+
+        // Make sure controls are visible (may have been hidden by By tissue view)
+        document.querySelector('.inspect-controls').style.display = '';
+        document.getElementById('downloadScatterPNG').style.display = '';
+        document.getElementById('downloadScatterSVG').style.display = '';
+        document.getElementById('downloadScatterCSV').style.display = '';
+
         this.updateInspectPlot();
     }
 
