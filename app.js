@@ -763,6 +763,13 @@ class CorrelationExplorer {
         return { correlation, slope, n };
     }
 
+    median(arr) {
+        if (!arr || arr.length === 0) return NaN;
+        const sorted = [...arr].filter(v => !isNaN(v)).sort((a, b) => a - b);
+        const mid = Math.floor(sorted.length / 2);
+        return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+    }
+
     findClusters(correlations) {
         const genes = new Set();
         correlations.forEach(c => {
@@ -927,6 +934,9 @@ class CorrelationExplorer {
         } else {
             legendNodeType.innerHTML = '';
         }
+
+        // Update edge thickness legend with actual data values
+        this.updateEdgeLegend(edgeWidthBase, cutoff);
     }
 
     updateNetworkStyle() {
@@ -2254,12 +2264,12 @@ Results:
 
             annotations.push({
                 x: 0,
-                y: 1.12,
+                y: 1.08,
                 xref: 'paper',
                 yref: 'paper',
                 text: annotationLines.join('<br>'),
                 showarrow: false,
-                font: { size: 11, color: '#333' },
+                font: { size: 10, color: '#333' },
                 align: 'left',
                 xanchor: 'left'
             });
@@ -2269,8 +2279,8 @@ Results:
             title: {
                 text: titleText,
                 x: 0.5,
-                y: 0.98,
-                font: { size: 16 }
+                y: 0.99,
+                font: { size: 14 }
             },
             xaxis: {
                 title: `${gene1} CRISPR Effect`,
@@ -2289,7 +2299,7 @@ Results:
                 constrain: 'domain'
             },
             hovermode: 'closest',
-            margin: { t: (hotspotMode === 'color' && hotspotGene) ? 90 : 50, r: 150, b: 60, l: 60 },
+            margin: { t: (hotspotMode === 'color' && hotspotGene) ? 110 : 50, r: 150, b: 60, l: 60 },
             showlegend: hotspotMode === 'color' && hotspotGene,
             legend: {
                 x: 1.02,
@@ -2321,6 +2331,17 @@ Results:
         const wtStats = this.pearsonWithSlope(wt.map(d => d.x), wt.map(d => d.y));
         const mut1Stats = this.pearsonWithSlope(mut1.map(d => d.x), mut1.map(d => d.y));
         const mut2Stats = this.pearsonWithSlope(mut2.map(d => d.x), mut2.map(d => d.y));
+
+        // Calculate means and medians for each group
+        const calcGroupStats = (data) => ({
+            meanX: data.length > 0 ? data.reduce((a, d) => a + d.x, 0) / data.length : NaN,
+            meanY: data.length > 0 ? data.reduce((a, d) => a + d.y, 0) / data.length : NaN,
+            medianX: this.median(data.map(d => d.x)),
+            medianY: this.median(data.map(d => d.y))
+        });
+        const wtExtra = calcGroupStats(wt);
+        const mut1Extra = calcGroupStats(mut1);
+        const mut2Extra = calcGroupStats(mut2);
 
         const traces = [];
 
@@ -2422,11 +2443,17 @@ Results:
                 constrain: 'domain'
             },
             annotations: [
-                { x: 0.15, y: 1.02, xref: 'paper', yref: 'paper', text: `<b>WT (0 mut)</b><br>n=${wt.length}, r=${wtStats.correlation.toFixed(3)}`, showarrow: false, font: { size: 11 } },
-                { x: 0.5, y: 1.02, xref: 'paper', yref: 'paper', text: `<b>1 mutation</b><br>n=${mut1.length}, r=${mut1Stats.correlation.toFixed(3)}`, showarrow: false, font: { size: 11 } },
-                { x: 0.85, y: 1.02, xref: 'paper', yref: 'paper', text: `<b>2 mutations</b><br>n=${mut2.length}, r=${mut2Stats.correlation.toFixed(3)}`, showarrow: false, font: { size: 11 } }
+                { x: 0.14, y: 1.02, xref: 'paper', yref: 'paper',
+                  text: `<b>WT (0 mut)</b> n=${wt.length}<br>r=${wtStats.correlation.toFixed(2)}, slope=${wtStats.slope.toFixed(2)}<br>x̄=${wtExtra.meanX.toFixed(2)}, x̃=${wtExtra.medianX.toFixed(2)}<br>ȳ=${wtExtra.meanY.toFixed(2)}, ỹ=${wtExtra.medianY.toFixed(2)}`,
+                  showarrow: false, font: { size: 9 } },
+                { x: 0.5, y: 1.02, xref: 'paper', yref: 'paper',
+                  text: `<b>1 mutation</b> n=${mut1.length}<br>r=${mut1Stats.correlation.toFixed(2)}, slope=${mut1Stats.slope.toFixed(2)}<br>x̄=${mut1Extra.meanX.toFixed(2)}, x̃=${mut1Extra.medianX.toFixed(2)}<br>ȳ=${mut1Extra.meanY.toFixed(2)}, ỹ=${mut1Extra.medianY.toFixed(2)}`,
+                  showarrow: false, font: { size: 9 } },
+                { x: 0.86, y: 1.02, xref: 'paper', yref: 'paper',
+                  text: `<b>2 mutations</b> n=${mut2.length}<br>r=${mut2Stats.correlation.toFixed(2)}, slope=${mut2Stats.slope.toFixed(2)}<br>x̄=${mut2Extra.meanX.toFixed(2)}, x̃=${mut2Extra.medianX.toFixed(2)}<br>ȳ=${mut2Extra.meanY.toFixed(2)}, ỹ=${mut2Extra.medianY.toFixed(2)}`,
+                  showarrow: false, font: { size: 9 } }
             ],
-            margin: { t: 100, r: 30, b: 60, l: 60 },
+            margin: { t: 120, r: 30, b: 60, l: 60 },
             plot_bgcolor: '#fafafa'
         };
 
@@ -2434,7 +2461,7 @@ Results:
     }
 
     renderCompareTable(filteredData, gene1, gene2, hotspotGene) {
-        // Group by cancer type (lineage) - comparing 0 vs 2+ mutations only
+        // Group by cancer type (lineage) - comparing 0 vs 2 mutations only
         const lineageGroups = {};
         filteredData.forEach(d => {
             if (!d.lineage) return;
@@ -2493,7 +2520,7 @@ Results:
         let html = `
             <h4 style="margin-bottom: 8px;">Mutation Effect on Correlation by Cancer Type</h4>
             <p style="font-size: 12px; color: #666; margin-bottom: 12px;">
-                Comparing correlation between WT (0 mutations) vs Mutant (2+ mutations) cells, stratified by cancer type.
+                Comparing correlation between WT (0 mutations) vs Mutant (2 mutations) cells, stratified by cancer type.
                 Note: Cells with exactly 1 mutation are excluded from this comparison.
             </p>
             <div style="overflow-x: auto;">
@@ -2665,11 +2692,17 @@ Results:
             const yAxisNum = idx === 0 ? '' : (idx + 1);
 
             // Calculate stats for this tissue
-            const stats = this.pearsonWithSlope(points.map(d => d.x), points.map(d => d.y));
+            const xVals = points.map(d => d.x);
+            const yVals = points.map(d => d.y);
+            const stats = this.pearsonWithSlope(xVals, yVals);
+            const meanX = xVals.reduce((a, b) => a + b, 0) / xVals.length;
+            const meanY = yVals.reduce((a, b) => a + b, 0) / yVals.length;
+            const medianX = this.median(xVals);
+            const medianY = this.median(yVals);
 
             traces.push({
-                x: points.map(d => d.x),
-                y: points.map(d => d.y),
+                x: xVals,
+                y: yVals,
                 xaxis: `x${xAxisNum}`,
                 yaxis: `y${yAxisNum}`,
                 mode: 'markers',
@@ -2682,8 +2715,6 @@ Results:
 
             // Add regression line if enough points
             if (points.length >= 3 && !isNaN(stats.slope)) {
-                const meanX = points.reduce((a, d) => a + d.x, 0) / points.length;
-                const meanY = points.reduce((a, d) => a + d.y, 0) / points.length;
                 const intercept = meanY - stats.slope * meanX;
 
                 traces.push({
@@ -2698,18 +2729,18 @@ Results:
                 });
             }
 
-            // Calculate position for annotation
+            // Calculate position for annotation - with more stats
             const xDomain = [col / cols + 0.02, (col + 1) / cols - 0.02];
             const yDomain = [1 - (row + 1) / rows + 0.02, 1 - row / rows - 0.02];
 
             annotations.push({
                 x: (xDomain[0] + xDomain[1]) / 2,
-                y: yDomain[1] + 0.03,
+                y: yDomain[1] + 0.02,
                 xref: 'paper',
                 yref: 'paper',
-                text: `<b>${tissue}</b><br>n=${points.length}, r=${stats.correlation.toFixed(2)}`,
+                text: `<b>${tissue}</b> (n=${points.length})<br>r=${stats.correlation.toFixed(2)}, slope=${stats.slope.toFixed(2)}<br>x̄=${meanX.toFixed(2)}, x̃=${medianX.toFixed(2)} | ȳ=${meanY.toFixed(2)}, ỹ=${medianY.toFixed(2)}`,
                 showarrow: false,
-                font: { size: 10 }
+                font: { size: 9 }
             });
         });
 
@@ -2720,32 +2751,38 @@ Results:
                 font: { size: 14 }
             },
             showlegend: false,
-            margin: { t: 60, r: 20, b: 40, l: 50 },
+            margin: { t: 50, r: 20, b: 50, l: 60 },
             annotations: annotations,
             plot_bgcolor: '#fafafa'
         };
 
-        // Add axis configurations
+        // Add axis configurations with proper spacing
         sortedTissues.forEach((_, idx) => {
             const row = Math.floor(idx / cols);
             const col = idx % cols;
             const xAxisNum = idx === 0 ? '' : (idx + 1);
             const yAxisNum = idx === 0 ? '' : (idx + 1);
+            const isBottomRow = row === rows - 1;
+            const isLeftCol = col === 0;
 
-            const xDomain = [col / cols + 0.05, (col + 1) / cols - 0.02];
-            const yDomain = [1 - (row + 1) / rows + 0.08, 1 - row / rows - 0.08];
+            // More vertical space between rows for annotations
+            const rowHeight = 1 / rows;
+            const xDomain = [col / cols + 0.07, (col + 1) / cols - 0.03];
+            const yDomain = [1 - (row + 1) * rowHeight + 0.12, 1 - row * rowHeight - 0.12];
 
             layout[`xaxis${xAxisNum}`] = {
                 range: xRange,
                 domain: xDomain,
-                showticklabels: row === rows - 1,
-                title: row === rows - 1 ? gene1 : ''
+                showticklabels: isBottomRow,
+                title: isBottomRow ? gene1 : '',
+                tickfont: { size: 10 }
             };
             layout[`yaxis${yAxisNum}`] = {
                 range: yRange,
                 domain: yDomain,
-                showticklabels: col === 0,
-                title: col === 0 ? gene2 : ''
+                showticklabels: isLeftCol,
+                title: isLeftCol ? gene2 : '',
+                tickfont: { size: 10 }
             };
         });
 
