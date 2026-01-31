@@ -221,6 +221,12 @@
             background: var(--gray-200);
         }
 
+        .btn-secondary.btn-active {
+            background: var(--green-100);
+            border-color: var(--green-500);
+            color: var(--green-700);
+        }
+
         .btn-info {
             background: #0ea5e9;
             color: white;
@@ -1114,7 +1120,7 @@
 
                     <div class="form-group">
                         <label class="form-label">Correlation Cutoff: <span class="slider-value" id="cutoffValue">0.50</span></label>
-                        <input type="range" id="correlationCutoff" min="0.2" max="0.8" step="0.05" value="0.5">
+                        <input type="range" id="correlationCutoff" min="0.1" max="0.8" step="0.05" value="0.5">
                     </div>
 
                     <div class="form-group">
@@ -1250,7 +1256,7 @@
                             </div>
                             <div id="colorGEOptions" style="display: none; margin-left: 20px;">
                                 <div class="radio-group-inline">
-                                    <label><input type="radio" name="colorGEType" value="signed" checked> Signed</label>
+                                    <label><input type="radio" name="colorGEType" value="signed" checked> +/−</label>
                                     <label><input type="radio" name="colorGEType" value="absolute"> |GE|</label>
                                 </div>
                             </div>
@@ -1262,6 +1268,10 @@
                             <div class="button-group-horizontal" style="margin-bottom: 8px;">
                                 <button class="btn btn-secondary" id="fitNetwork">Fit to View</button>
                                 <button class="btn btn-secondary" id="showHiddenNodes">Show Hidden</button>
+                            </div>
+                            <div class="button-group-horizontal" style="margin-bottom: 8px;">
+                                <button class="btn btn-secondary" id="togglePhysics">Lock Nodes</button>
+                                <button class="btn btn-secondary" id="changeLayout">Change Layout</button>
                             </div>
                             <p class="help-text" style="font-size: 10px;">Double-click node to hide</p>
                             <label style="font-weight: 600; margin: 12px 0 8px 0; display: block;">Export Image + Legend:</label>

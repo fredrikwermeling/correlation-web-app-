@@ -34,6 +34,10 @@ class CorrelationExplorer {
         // Synonyms/orthologs used
         this.synonymsUsed = [];
 
+        // Network physics and layout state
+        this.physicsEnabled = true;
+        this.currentLayout = 0;
+
         this.init();
     }
 
@@ -308,8 +312,13 @@ class CorrelationExplorer {
         });
         document.getElementById('showGeneEffectSD').addEventListener('change', () => this.updateNetworkLabels());
 
-        // Color by gene effect controls
+        // Color by gene effect controls (mutually exclusive with stats)
         document.getElementById('colorByGeneEffect').addEventListener('change', (e) => {
+            if (e.target.checked) {
+                // Uncheck color by stats
+                document.getElementById('colorByStats').checked = false;
+                document.getElementById('colorStatsOptions').style.display = 'none';
+            }
             document.getElementById('colorGEOptions').style.display = e.target.checked ? 'block' : 'none';
             this.updateNetworkColors();
         });
@@ -321,12 +330,21 @@ class CorrelationExplorer {
         document.getElementById('downloadNetworkSVG').addEventListener('click', () => this.downloadNetworkSVG());
         document.getElementById('downloadAllData').addEventListener('click', () => this.downloadAllData());
 
-        // Color by stats controls
+        // Color by stats controls (mutually exclusive with GE)
         document.getElementById('colorByStats').addEventListener('change', (e) => {
+            if (e.target.checked) {
+                // Uncheck color by gene effect
+                document.getElementById('colorByGeneEffect').checked = false;
+                document.getElementById('colorGEOptions').style.display = 'none';
+            }
             document.getElementById('colorStatsOptions').style.display = e.target.checked ? 'block' : 'none';
             document.getElementById('legendNodeColor').style.display = e.target.checked ? 'block' : 'none';
             this.updateNetworkColors();
         });
+
+        // Physics toggle and layout change buttons
+        document.getElementById('togglePhysics').addEventListener('click', () => this.togglePhysics());
+        document.getElementById('changeLayout').addEventListener('click', () => this.changeNetworkLayout());
         document.querySelectorAll('input[name="colorStatType"]').forEach(radio => {
             radio.addEventListener('change', () => this.updateNetworkColors());
         });
@@ -720,6 +738,9 @@ class CorrelationExplorer {
     }
 
     runAnalysis() {
+        // Reset network settings to defaults when running new analysis
+        this.resetNetworkSettings();
+
         const geneList = this.getGeneList();
         const mode = document.querySelector('input[name="analysisMode"]:checked').value;
         const cutoff = parseFloat(document.getElementById('correlationCutoff').value);
@@ -1032,6 +1053,11 @@ class CorrelationExplorer {
             Array.from(geneSet).some(g => synonymLookup.has(g.toUpperCase()));
 
         const data = { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) };
+
+        // Adjust stabilization iterations based on network size
+        const nodeCount = nodes.length;
+        const stabilizationIterations = nodeCount > 50 ? 300 : 150;
+
         const options = {
             nodes: {
                 shape: 'dot',
@@ -1054,9 +1080,14 @@ class CorrelationExplorer {
                     gravitationalConstant: -50,
                     centralGravity: 0.01,
                     springLength: 100,
-                    springConstant: 0.08
+                    springConstant: 0.08,
+                    damping: 0.4
                 },
-                stabilization: { iterations: 150 }
+                stabilization: {
+                    enabled: true,
+                    iterations: stabilizationIterations,
+                    updateInterval: 25
+                }
             },
             interaction: {
                 hover: true,
@@ -1069,6 +1100,29 @@ class CorrelationExplorer {
         this.network = new vis.Network(container, data, options);
         this.networkData = data;
         this.hiddenNodes = [];
+
+        // Reset physics state for new network
+        this.physicsEnabled = true;
+        this.currentLayout = 0;
+        const layoutBtn = document.getElementById('changeLayout');
+        if (layoutBtn) layoutBtn.textContent = 'Change Layout';
+        const physicsBtn = document.getElementById('togglePhysics');
+        if (physicsBtn) {
+            physicsBtn.textContent = 'Lock Nodes';
+            physicsBtn.classList.remove('btn-active');
+        }
+
+        // For large networks, disable physics after stabilization
+        if (nodeCount > 30) {
+            this.network.once('stabilizationIterationsDone', () => {
+                this.network.setOptions({ physics: { enabled: false } });
+                this.physicsEnabled = false;
+                if (physicsBtn) {
+                    physicsBtn.textContent = 'Unlock Nodes';
+                    physicsBtn.classList.add('btn-active');
+                }
+            });
+        }
 
         // Double-click to hide node
         this.network.on('doubleClick', (params) => {
@@ -1979,9 +2033,9 @@ Results:
                     let bgColor = '#cccccc';
 
                     if (effect !== undefined && !isNaN(effect)) {
-                        // Blue (negative/essential) to White (0) to Red (positive)
+                        // Red (negative) to White (0) to Blue (positive)
                         const normalized = (effect + maxAbs) / (2 * maxAbs);
-                        bgColor = this.interpolateColor('#2166ac', '#f7f7f7', '#b2182b', normalized);
+                        bgColor = this.interpolateColor('#b2182b', '#f7f7f7', '#2166ac', normalized);
                     }
 
                     updates.push({
@@ -1991,13 +2045,12 @@ Results:
                 });
 
                 if (colorLegend) colorLegend.innerHTML = `
-                    <div class="legend-item">Gene Effect (signed)</div>
+                    <div class="legend-item">Gene Effect (+/−)</div>
                     <div style="display: flex; align-items: center; gap: 4px;">
                         <span style="font-size: 10px;">${minEffect.toFixed(2)}</span>
-                        <div style="width: 80px; height: 12px; background: linear-gradient(to right, #2166ac, #f7f7f7, #b2182b); border-radius: 2px;"></div>
+                        <div style="width: 80px; height: 12px; background: linear-gradient(to right, #b2182b, #f7f7f7, #2166ac); border-radius: 2px;"></div>
                         <span style="font-size: 10px;">${maxEffect.toFixed(2)}</span>
                     </div>
-                    <div class="legend-item" style="font-size: 9px; color: #666;">Blue=essential, Red=non-essential</div>
                 `;
             } else {
                 // Absolute gene effect
@@ -2077,9 +2130,9 @@ Results:
                     let bgColor = '#cccccc'; // Gray for missing
 
                     if (geneStat && geneStat.lfc !== null && !isNaN(geneStat.lfc)) {
-                        // Blue (-) to White (0) to Red (+)
+                        // Red (-) to White (0) to Blue (+)
                         const normalized = (geneStat.lfc + maxAbs) / (2 * maxAbs);
-                        bgColor = this.interpolateColor('#2166ac', '#f7f7f7', '#b2182b', normalized);
+                        bgColor = this.interpolateColor('#b2182b', '#f7f7f7', '#2166ac', normalized);
                     }
 
                     updates.push({
@@ -2090,10 +2143,10 @@ Results:
 
                 const scaleLabel = colorScale === 'network' ? ' (network)' : ' (all genes)';
                 if (colorLegend) colorLegend.innerHTML = `
-                    <div class="legend-item">Signed LFC${scaleLabel}</div>
+                    <div class="legend-item">LFC (+/−)${scaleLabel}</div>
                     <div style="display: flex; align-items: center; gap: 4px;">
                         <span style="font-size: 10px;">${minLfc.toFixed(1)}</span>
-                        <div style="width: 80px; height: 12px; background: linear-gradient(to right, #2166ac, #f7f7f7, #b2182b); border-radius: 2px;"></div>
+                        <div style="width: 80px; height: 12px; background: linear-gradient(to right, #b2182b, #f7f7f7, #2166ac); border-radius: 2px;"></div>
                         <span style="font-size: 10px;">${maxLfc.toFixed(1)}</span>
                     </div>
                     <div class="legend-item" style="margin-top: 4px;">Missing: <span style="display: inline-block; width: 12px; height: 12px; background: #cccccc; border-radius: 2px; vertical-align: middle;"></span></div>
@@ -2192,6 +2245,110 @@ Results:
         }
 
         return `rgb(${r},${g},${b})`;
+    }
+
+    togglePhysics() {
+        if (!this.network) return;
+
+        this.physicsEnabled = !this.physicsEnabled;
+        this.network.setOptions({ physics: { enabled: this.physicsEnabled } });
+
+        const btn = document.getElementById('togglePhysics');
+        if (this.physicsEnabled) {
+            btn.textContent = 'Lock Nodes';
+            btn.classList.remove('btn-active');
+        } else {
+            btn.textContent = 'Unlock Nodes';
+            btn.classList.add('btn-active');
+        }
+    }
+
+    changeNetworkLayout() {
+        if (!this.network) return;
+
+        // Cycle through layout options
+        const layouts = ['forceAtlas2Based', 'barnesHut', 'repulsion', 'hierarchical'];
+        this.currentLayout = this.currentLayout || 0;
+        this.currentLayout = (this.currentLayout + 1) % layouts.length;
+
+        const layoutName = layouts[this.currentLayout];
+
+        let options;
+        if (layoutName === 'hierarchical') {
+            options = {
+                physics: { enabled: false },
+                layout: {
+                    hierarchical: {
+                        enabled: true,
+                        direction: 'UD',
+                        sortMethod: 'hubsize',
+                        nodeSpacing: 150,
+                        levelSeparation: 150
+                    }
+                }
+            };
+        } else {
+            options = {
+                layout: { hierarchical: { enabled: false } },
+                physics: {
+                    enabled: true,
+                    solver: layoutName,
+                    stabilization: { iterations: 150 }
+                }
+            };
+        }
+
+        this.network.setOptions(options);
+        this.physicsEnabled = layoutName !== 'hierarchical';
+
+        // Update physics button state
+        const btn = document.getElementById('togglePhysics');
+        if (this.physicsEnabled) {
+            btn.textContent = 'Lock Nodes';
+            btn.classList.remove('btn-active');
+        } else {
+            btn.textContent = 'Unlock Nodes';
+            btn.classList.add('btn-active');
+        }
+
+        // Show which layout is active
+        const layoutNames = {
+            'forceAtlas2Based': 'Force Atlas',
+            'barnesHut': 'Barnes Hut',
+            'repulsion': 'Repulsion',
+            'hierarchical': 'Hierarchical'
+        };
+        document.getElementById('changeLayout').textContent = layoutNames[layoutName];
+    }
+
+    resetNetworkSettings() {
+        // Reset checkboxes
+        document.getElementById('showGeneEffect').checked = false;
+        document.getElementById('showGeneEffectSD').checked = false;
+        document.getElementById('colorByGeneEffect').checked = false;
+        document.getElementById('colorByStats').checked = false;
+
+        // Reset visibility of sub-options
+        document.getElementById('showGESDGroup').style.display = 'none';
+        document.getElementById('colorGEOptions').style.display = 'none';
+        document.getElementById('colorStatsOptions').style.display = 'none';
+
+        // Reset radio buttons
+        document.querySelector('input[name="colorGEType"][value="signed"]').checked = true;
+        document.querySelector('input[name="colorStatType"][value="signed_lfc"]').checked = true;
+        document.querySelector('input[name="colorScale"][value="all"]').checked = true;
+        document.querySelector('input[name="statsLabelDisplay"][value="none"]').checked = true;
+
+        // Reset layout state
+        this.currentLayout = 0;
+        this.physicsEnabled = true;
+        const layoutBtn = document.getElementById('changeLayout');
+        if (layoutBtn) layoutBtn.textContent = 'Change Layout';
+        const physicsBtn = document.getElementById('togglePhysics');
+        if (physicsBtn) {
+            physicsBtn.textContent = 'Lock Nodes';
+            physicsBtn.classList.remove('btn-active');
+        }
     }
 
     downloadAllData() {
