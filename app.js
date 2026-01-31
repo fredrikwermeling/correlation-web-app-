@@ -142,6 +142,24 @@ class CorrelationExplorer {
             });
             document.getElementById('lineageFilterGroup').style.display = 'block';
         }
+
+        // Also populate parameter hotspot filter
+        this.populateParamHotspotFilter();
+    }
+
+    populateParamHotspotFilter() {
+        if (this.mutations && this.mutations.geneData) {
+            const genes = Object.keys(this.mutations.geneData).sort();
+            const select = document.getElementById('paramHotspotGene');
+            select.innerHTML = '<option value="">No filter</option>';
+            genes.forEach(gene => {
+                const option = document.createElement('option');
+                option.value = gene;
+                option.textContent = gene;
+                select.appendChild(option);
+            });
+            document.getElementById('paramHotspotFilterGroup').style.display = 'block';
+        }
     }
 
     getCellLineName(cellLineId) {
@@ -605,17 +623,42 @@ class CorrelationExplorer {
 
     getFilteredCellLineIndices() {
         const lineageFilter = document.getElementById('lineageFilter').value;
-        if (!lineageFilter) {
-            return Array.from({ length: this.nCellLines }, (_, i) => i);
+        const hotspotGene = document.getElementById('paramHotspotGene').value;
+        const hotspotLevel = document.getElementById('paramHotspotLevel').value;
+
+        // Get mutation data for hotspot filter
+        let mutationData = null;
+        if (hotspotGene && this.mutations?.geneData?.[hotspotGene]) {
+            mutationData = this.mutations.geneData[hotspotGene].mutations;
         }
 
         const indices = [];
         this.metadata.cellLines.forEach((cellLine, idx) => {
-            if (this.cellLineMetadata.lineage &&
-                this.cellLineMetadata.lineage[cellLine] === lineageFilter) {
-                indices.push(idx);
+            // Check lineage filter
+            if (lineageFilter) {
+                if (!this.cellLineMetadata.lineage ||
+                    this.cellLineMetadata.lineage[cellLine] !== lineageFilter) {
+                    return;
+                }
             }
+
+            // Check hotspot mutation filter
+            if (mutationData && hotspotLevel !== 'all') {
+                const mutLevel = mutationData[cellLine] || 0;
+                if (hotspotLevel === '0' && mutLevel !== 0) return;
+                if (hotspotLevel === '1' && mutLevel !== 1) return;
+                if (hotspotLevel === '2' && mutLevel < 2) return;
+                if (hotspotLevel === '1+2' && mutLevel < 1) return;
+            }
+
+            indices.push(idx);
         });
+
+        // Return all indices if no filters applied
+        if (indices.length === 0 && !lineageFilter && (!hotspotGene || hotspotLevel === 'all')) {
+            return Array.from({ length: this.nCellLines }, (_, i) => i);
+        }
+
         return indices;
     }
 
@@ -2219,8 +2262,9 @@ Results:
             filteredData = filteredData.filter(d => {
                 const mutLevel = filterMutations[d.cellLineId] || 0;
                 if (mutFilterLevel === '0') return mutLevel === 0;
-                if (mutFilterLevel === '1+') return mutLevel >= 1;
-                if (mutFilterLevel === '2+') return mutLevel >= 2;
+                if (mutFilterLevel === '1') return mutLevel === 1;
+                if (mutFilterLevel === '2') return mutLevel >= 2;
+                if (mutFilterLevel === '1+2') return mutLevel >= 1;
                 return true;
             });
         }
@@ -2240,6 +2284,19 @@ Results:
             mutationLevel: mutationMap.get(d.cellLineId) || 0
         }));
 
+        // Build filter description for title
+        let filterParts = [];
+        if (cancerFilter) {
+            filterParts.push(`Cancer: ${cancerFilter}`);
+        }
+        if (mutFilterGene && mutFilterLevel !== 'all') {
+            const levelText = mutFilterLevel === '0' ? 'WT' :
+                              mutFilterLevel === '1' ? '1 mut' :
+                              mutFilterLevel === '2' ? '2 mut' : '1+2 mut';
+            filterParts.push(`${mutFilterGene}: ${levelText}`);
+        }
+        const filterDesc = filterParts.length > 0 ? filterParts.join(' | ') : '';
+
         // Show/hide plot and table based on mode
         const scatterPlot = document.getElementById('scatterPlot');
         const compareTable = document.getElementById('compareTable');
@@ -2247,7 +2304,7 @@ Results:
         if (hotspotMode === 'compare_table' && hotspotGene) {
             scatterPlot.style.display = 'none';
             compareTable.style.display = 'block';
-            this.renderCompareTable(filteredData, gene1, gene2, hotspotGene);
+            this.renderCompareTable(filteredData, gene1, gene2, hotspotGene, filterDesc);
             return;
         } else {
             scatterPlot.style.display = 'block';
@@ -2256,15 +2313,15 @@ Results:
 
         // Handle 3-panel mode
         if (hotspotMode === 'three_panel' && hotspotGene) {
-            this.renderThreePanelPlot(filteredData, gene1, gene2, hotspotGene, searchTerms, fontSize);
+            this.renderThreePanelPlot(filteredData, gene1, gene2, hotspotGene, searchTerms, fontSize, filterDesc);
             return;
         }
 
         // Single panel color mode
-        this.renderSinglePanelPlot(filteredData, gene1, gene2, hotspotGene, hotspotMode, searchTerms, fontSize);
+        this.renderSinglePanelPlot(filteredData, gene1, gene2, hotspotGene, hotspotMode, searchTerms, fontSize, filterDesc);
     }
 
-    renderSinglePanelPlot(filteredData, gene1, gene2, hotspotGene, hotspotMode, searchTerms, fontSize) {
+    renderSinglePanelPlot(filteredData, gene1, gene2, hotspotGene, hotspotMode, searchTerms, fontSize, filterDesc = '') {
         // Calculate stats for each mutation group
         const wt = filteredData.filter(d => d.mutationLevel === 0);
         const mut1 = filteredData.filter(d => d.mutationLevel === 1);
@@ -2387,6 +2444,9 @@ Results:
 
         // Build title and annotations
         let titleText = `<b>${gene1} vs ${gene2}</b>`;
+        if (filterDesc) {
+            titleText += `<br><span style="font-size: 11px; color: #666;">Filter: ${filterDesc}</span>`;
+        }
         let annotations = [];
 
         if (hotspotMode === 'color' && hotspotGene) {
@@ -2435,7 +2495,7 @@ Results:
                 constrain: 'domain'
             },
             hovermode: 'closest',
-            margin: { t: (hotspotMode === 'color' && hotspotGene) ? 110 : 50, r: 150, b: 60, l: 60 },
+            margin: { t: (hotspotMode === 'color' && hotspotGene) ? 110 : (filterDesc ? 70 : 50), r: 150, b: 60, l: 60 },
             showlegend: hotspotMode === 'color' && hotspotGene,
             legend: {
                 x: 1.02,
@@ -2454,7 +2514,7 @@ Results:
         this.setupScatterClickHandler(filteredData);
     }
 
-    renderThreePanelPlot(filteredData, gene1, gene2, hotspotGene, searchTerms, fontSize) {
+    renderThreePanelPlot(filteredData, gene1, gene2, hotspotGene, searchTerms, fontSize, filterDesc = '') {
         const wt = filteredData.filter(d => d.mutationLevel === 0);
         const mut1 = filteredData.filter(d => d.mutationLevel === 1);
         const mut2 = filteredData.filter(d => d.mutationLevel >= 2);
@@ -2585,9 +2645,15 @@ Results:
         addHighlights(mut1, 'x2', 'y2');
         addHighlights(mut2, 'x3', 'y3');
 
+        // Build title with filter info
+        let titleText = `<b>${gene1} vs ${gene2} - ${hotspotGene} hotspot mutation stratification</b>`;
+        if (filterDesc) {
+            titleText += `<br><span style="font-size: 11px; color: #666;">Filter: ${filterDesc}</span>`;
+        }
+
         const layout = {
             title: {
-                text: `<b>${gene1} vs ${gene2} - ${hotspotGene} hotspot mutation stratification</b>`,
+                text: titleText,
                 x: 0.5,
                 y: 0.98,
                 font: { size: 14 }
@@ -2625,14 +2691,14 @@ Results:
                   text: `<b>2 mutations</b> n=${mut2.length}<br>r=${mut2Stats.correlation.toFixed(2)}, slope=${mut2Stats.slope.toFixed(2)}<br>mean: x=${mut2Extra.meanX.toFixed(2)}, y=${mut2Extra.meanY.toFixed(2)}<br>median: x=${mut2Extra.medianX.toFixed(2)}, y=${mut2Extra.medianY.toFixed(2)}`,
                   showarrow: false, font: { size: 9 } }
             ],
-            margin: { t: 140, r: 30, b: 60, l: 60 },
+            margin: { t: filterDesc ? 160 : 140, r: 30, b: 60, l: 60 },
             plot_bgcolor: '#fafafa'
         };
 
         Plotly.newPlot('scatterPlot', traces, layout, { responsive: true });
     }
 
-    renderCompareTable(filteredData, gene1, gene2, hotspotGene) {
+    renderCompareTable(filteredData, gene1, gene2, hotspotGene, filterDesc = '') {
         // Group by cancer type (lineage) - comparing 0 vs 2 mutations only
         const lineageGroups = {};
         filteredData.forEach(d => {
@@ -2689,8 +2755,10 @@ Results:
         tableData.sort((a, b) => a.pR - b.pR);
 
         // Build HTML table
+        const filterInfo = filterDesc ? `<p style="font-size: 11px; color: #333; margin-bottom: 8px; background: #f0f9ff; padding: 4px 8px; border-radius: 4px;"><b>Filter:</b> ${filterDesc}</p>` : '';
         let html = `
             <h4 style="margin-bottom: 8px;">Mutation Effect on Correlation by Cancer Type</h4>
+            ${filterInfo}
             <p style="font-size: 12px; color: #666; margin-bottom: 12px;">
                 Comparing correlation between WT (0 mutations) vs Mutant (2 mutations) cells, stratified by cancer type.
                 Note: Cells with exactly 1 mutation are excluded from this comparison.

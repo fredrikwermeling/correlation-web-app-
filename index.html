@@ -1090,6 +1090,20 @@
                         </select>
                     </div>
 
+                    <div class="form-group" id="paramHotspotFilterGroup" style="display: none;">
+                        <label class="form-label">Hotspot Mutation Filter:</label>
+                        <select id="paramHotspotGene" class="form-control" style="margin-bottom: 4px;">
+                            <option value="">No filter</option>
+                        </select>
+                        <select id="paramHotspotLevel" class="form-control">
+                            <option value="all">All cells</option>
+                            <option value="0">Only WT (0 mutations)</option>
+                            <option value="1">Only 1 mutation</option>
+                            <option value="2">Only 2 mutations</option>
+                            <option value="1+2">Only mutated (1+2)</option>
+                        </select>
+                    </div>
+
                     <button class="btn btn-primary" id="runAnalysis" disabled style="width: 100%; margin-top: 8px;">
                         Run Analysis
                     </button>
@@ -1359,9 +1373,10 @@
                             </select>
                             <select id="mutationFilterLevel" class="form-control" style="margin-top: 4px;">
                                 <option value="all">All cells</option>
-                                <option value="0">Only WT (0 mut)</option>
-                                <option value="1+">Only mutated (1+)</option>
-                                <option value="2+">Only 2+ mutations</option>
+                                <option value="0">Only WT (0 mutations)</option>
+                                <option value="1">Only 1 mutation</option>
+                                <option value="2">Only 2 mutations</option>
+                                <option value="1+2">Only mutated (1+2)</option>
                             </select>
                         </div>
 
