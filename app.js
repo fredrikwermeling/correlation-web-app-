@@ -2433,6 +2433,11 @@ Results:
             compareTable.style.display = 'block';
             this.renderCompareTable(filteredData, gene1, gene2, hotspotGene, filterDesc);
             return;
+        } else if (hotspotMode === 'compare_mutations') {
+            scatterPlot.style.display = 'none';
+            compareTable.style.display = 'block';
+            this.renderMutationComparisonTable(data, gene1, gene2, filterDesc);
+            return;
         } else {
             scatterPlot.style.display = 'block';
             compareTable.style.display = 'none';
@@ -2947,6 +2952,129 @@ Results:
                 csv += `"${row.lineage}",${row.nWT},${row.rWT.toFixed(4)},${row.slopeWT.toFixed(4)},${row.nMut},${row.rMut.toFixed(4)},${row.slopeMut.toFixed(4)},${row.deltaR.toFixed(4)},${row.pR.toExponential(2)},${row.deltaSlope.toFixed(4)},${row.pSlope.toExponential(2)}\n`;
             });
             this.downloadFile(csv, `${gene1}_vs_${gene2}_${hotspotGene}_mutation_comparison.csv`, 'text/csv');
+        });
+    }
+
+    renderMutationComparisonTable(data, gene1, gene2, filterDesc = '') {
+        // Compare how different hotspot mutations affect the correlation
+        if (!this.mutations || !this.mutations.geneData) {
+            document.getElementById('compareTable').innerHTML = '<p>No mutation data available.</p>';
+            return;
+        }
+
+        const tableData = [];
+        const mutationGenes = Object.keys(this.mutations.geneData).sort();
+
+        mutationGenes.forEach(mutGene => {
+            const mutations = this.mutations.geneData[mutGene].mutations;
+
+            // Split data by mutation status for this gene
+            const wt = data.filter(d => (mutations[d.cellLineId] || 0) === 0);
+            const mut2 = data.filter(d => (mutations[d.cellLineId] || 0) >= 2);
+
+            // Need at least 3 samples in each group
+            if (wt.length >= 3 && mut2.length >= 3) {
+                const wtStats = this.pearsonWithSlope(wt.map(d => d.x), wt.map(d => d.y));
+                const mutStats = this.pearsonWithSlope(mut2.map(d => d.x), mut2.map(d => d.y));
+
+                const deltaR = mutStats.correlation - wtStats.correlation;
+                const deltaSlope = mutStats.slope - wtStats.slope;
+
+                // Fisher z-transformation for correlation difference p-value
+                const z1 = 0.5 * Math.log((1 + wtStats.correlation) / (1 - wtStats.correlation));
+                const z2 = 0.5 * Math.log((1 + mutStats.correlation) / (1 - mutStats.correlation));
+                const se = Math.sqrt(1/(wt.length - 3) + 1/(mut2.length - 3));
+                const zDiff = (z2 - z1) / se;
+                const pR = 2 * (1 - this.normalCDF(Math.abs(zDiff)));
+
+                tableData.push({
+                    mutGene,
+                    nWT: wt.length,
+                    rWT: wtStats.correlation,
+                    slopeWT: wtStats.slope,
+                    nMut: mut2.length,
+                    rMut: mutStats.correlation,
+                    slopeMut: mutStats.slope,
+                    deltaR,
+                    pR,
+                    deltaSlope
+                });
+            }
+        });
+
+        // Sort by p-value (most significant first)
+        tableData.sort((a, b) => a.pR - b.pR);
+
+        // Build HTML table
+        const filterInfo = filterDesc ? `<p style="font-size: 11px; color: #333; margin-bottom: 8px; background: #f0f9ff; padding: 4px 8px; border-radius: 4px;"><b>Filter:</b> ${filterDesc}</p>` : '';
+        let html = `
+            <h4 style="margin-bottom: 8px;">Effect of Different Hotspot Mutations on ${gene1} vs ${gene2} Correlation</h4>
+            ${filterInfo}
+            <p style="font-size: 12px; color: #666; margin-bottom: 12px;">
+                Comparing correlation between WT (0 mutations) vs Mutant (2+ mutations) for each hotspot mutation gene.
+                Sorted by p-value (most significant effect first).
+            </p>
+            <div style="overflow-x: auto;">
+            <table class="data-table" style="width: 100%; font-size: 12px;">
+                <thead>
+                    <tr>
+                        <th>Mutation Gene</th>
+                        <th>N (WT)</th>
+                        <th>r (WT)</th>
+                        <th>slope (WT)</th>
+                        <th>N (Mut)</th>
+                        <th>r (Mut)</th>
+                        <th>slope (Mut)</th>
+                        <th>Δr</th>
+                        <th>p(Δr)</th>
+                        <th>Δslope</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        tableData.forEach(row => {
+            const deltaRColor = row.deltaR < 0 ? '#dc2626' : '#16a34a';
+            const deltaSlopeColor = row.deltaSlope < 0 ? '#dc2626' : '#16a34a';
+            const pHighlight = row.pR < 0.05 ? 'background: #fef3c7;' : '';
+
+            html += `
+                <tr style="${pHighlight}">
+                    <td><b>${row.mutGene}</b></td>
+                    <td>${row.nWT}</td>
+                    <td>${row.rWT.toFixed(3)}</td>
+                    <td>${row.slopeWT.toFixed(3)}</td>
+                    <td>${row.nMut}</td>
+                    <td>${row.rMut.toFixed(3)}</td>
+                    <td>${row.slopeMut.toFixed(3)}</td>
+                    <td style="color: ${deltaRColor}; font-weight: 600;">${row.deltaR.toFixed(3)}</td>
+                    <td>${row.pR.toExponential(1)}</td>
+                    <td style="color: ${deltaSlopeColor}; font-weight: 600;">${row.deltaSlope.toFixed(3)}</td>
+                </tr>
+            `;
+        });
+
+        html += `
+                </tbody>
+            </table>
+            </div>
+            <p style="font-size: 11px; color: #666; margin-top: 8px;">
+                Note: Rows highlighted in yellow have p < 0.05. This analysis may be biased as specific mutations select for cancer types.
+            </p>
+            <div style="margin-top: 12px;">
+                <button class="btn btn-success btn-sm" id="downloadMutCompareCSV">Download CSV</button>
+            </div>
+        `;
+
+        document.getElementById('compareTable').innerHTML = html;
+
+        // Add download handler
+        document.getElementById('downloadMutCompareCSV')?.addEventListener('click', () => {
+            let csv = 'Mutation Gene,N (WT),r (WT),slope (WT),N (Mut),r (Mut),slope (Mut),Δr,p(Δr),Δslope\n';
+            tableData.forEach(row => {
+                csv += `${row.mutGene},${row.nWT},${row.rWT.toFixed(4)},${row.slopeWT.toFixed(4)},${row.nMut},${row.rMut.toFixed(4)},${row.slopeMut.toFixed(4)},${row.deltaR.toFixed(4)},${row.pR.toExponential(2)},${row.deltaSlope.toFixed(4)}\n`;
+            });
+            this.downloadFile(csv, `${gene1}_vs_${gene2}_all_mutations_comparison.csv`, 'text/csv');
         });
     }
 
