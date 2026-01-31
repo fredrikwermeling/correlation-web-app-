@@ -159,7 +159,49 @@ class CorrelationExplorer {
                 select.appendChild(option);
             });
             document.getElementById('paramHotspotFilterGroup').style.display = 'block';
+
+            // Update level dropdown with counts when gene changes
+            select.addEventListener('change', () => this.updateParamHotspotLevelCounts());
         }
+    }
+
+    updateParamHotspotLevelCounts() {
+        const gene = document.getElementById('paramHotspotGene').value;
+        const levelSelect = document.getElementById('paramHotspotLevel');
+
+        if (!gene || !this.mutations?.geneData?.[gene]) {
+            levelSelect.innerHTML = `
+                <option value="all">All cells</option>
+                <option value="0">Only WT (0 mutations)</option>
+                <option value="1">Only 1 mutation</option>
+                <option value="2">Only 2 mutations</option>
+                <option value="1+2">Only mutated (1+2)</option>
+            `;
+            return;
+        }
+
+        // Count mutations for selected gene
+        const mutations = this.mutations.geneData[gene].mutations;
+        const cellLines = this.metadata.cellLines;
+        let n0 = 0, n1 = 0, n2 = 0;
+
+        cellLines.forEach(cellLine => {
+            const level = mutations[cellLine] || 0;
+            if (level === 0) n0++;
+            else if (level === 1) n1++;
+            else n2++;
+        });
+
+        const nMut = n1 + n2;
+        const total = cellLines.length;
+
+        levelSelect.innerHTML = `
+            <option value="all">All cells (n=${total})</option>
+            <option value="0">Only WT (n=${n0})</option>
+            <option value="1">Only 1 mutation (n=${n1})</option>
+            <option value="2">Only 2 mutations (n=${n2})</option>
+            <option value="1+2">Only mutated 1+2 (n=${nMut})</option>
+        `;
     }
 
     getCellLineName(cellLineId) {
@@ -2448,45 +2490,31 @@ Results:
         const medianX = this.median(filteredData.map(d => d.x));
         const medianY = this.median(filteredData.map(d => d.y));
 
-        // Build title and annotations
-        let titleText = `<b>${gene1} vs ${gene2}</b>`;
-        let annotations = [];
-
-        // Build stats annotation (always show)
-        let statsLines = [];
+        // Build title with all stats (like 3-panel style)
+        let titleLines = [`<b>${gene1} vs ${gene2}</b>`];
         if (filterDesc) {
-            statsLines.push(`<b>Filter:</b> ${filterDesc}`);
+            titleLines.push(`<span style="font-size:11px;color:#666;">Filter: ${filterDesc}</span>`);
         }
-        statsLines.push(`n=${filteredData.length}, r=${allStats.correlation.toFixed(3)}, slope=${allStats.slope.toFixed(3)}`);
-        statsLines.push(`mean: x=${meanX.toFixed(2)}, y=${meanY.toFixed(2)} | median: x=${medianX.toFixed(2)}, y=${medianY.toFixed(2)}`);
+        titleLines.push(`<span style="font-size:11px;">n=${filteredData.length}, r=${allStats.correlation.toFixed(3)}, slope=${allStats.slope.toFixed(3)}</span>`);
+        titleLines.push(`<span style="font-size:10px;">mean: x=${meanX.toFixed(2)}, y=${meanY.toFixed(2)} | median: x=${medianX.toFixed(2)}, y=${medianY.toFixed(2)}</span>`);
 
         if (hotspotMode === 'color' && hotspotGene) {
-            // Add mutation-specific stats
-            statsLines.push(`<b>${hotspotGene}:</b> WT: n=${wt.length}, r=${wtStats.correlation.toFixed(3)}, slope=${wtStats.slope.toFixed(3)} | ` +
+            titleLines.push(`<span style="font-size:10px;"><b>${hotspotGene}:</b> WT: n=${wt.length}, r=${wtStats.correlation.toFixed(3)}, slope=${wtStats.slope.toFixed(3)} | ` +
                 `1mut: n=${mut1.length}, r=${mut1Stats.correlation.toFixed(3)}, slope=${mut1Stats.slope.toFixed(3)} | ` +
-                `2mut: n=${mut2.length}, r=${mut2Stats.correlation.toFixed(3)}, slope=${mut2Stats.slope.toFixed(3)}`);
+                `2mut: n=${mut2.length}, r=${mut2Stats.correlation.toFixed(3)}, slope=${mut2Stats.slope.toFixed(3)}</span>`);
         }
 
-        annotations.push({
-            x: 0,
-            y: 1.02,
-            xref: 'paper',
-            yref: 'paper',
-            text: statsLines.join('<br>'),
-            showarrow: false,
-            font: { size: 10, color: '#333' },
-            align: 'left',
-            xanchor: 'left'
-        });
+        const titleText = titleLines.join('<br>');
+        const annotations = [];
 
-        // Calculate margin based on content
-        const topMargin = 80 + (statsLines.length * 14);
+        // Calculate margin based on title lines
+        const topMargin = 40 + (titleLines.length * 16);
 
         const layout = {
             title: {
                 text: titleText,
                 x: 0.5,
-                y: 0.995,
+                y: 0.99,
                 font: { size: 14 }
             },
             xaxis: {
