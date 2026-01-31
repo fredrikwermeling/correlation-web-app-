@@ -380,6 +380,7 @@ class CorrelationExplorer {
         document.getElementById('downloadTissueSVG').addEventListener('click', () => this.downloadTissueChartSVG());
         document.getElementById('downloadTissueCSV').addEventListener('click', () => this.downloadTissueTableCSV());
         document.getElementById('scatterFontSize')?.addEventListener('change', () => this.updateInspectPlot());
+        document.getElementById('compareAllMutationsBtn')?.addEventListener('click', () => this.showCompareAllMutations());
 
         // Aspect ratio control
         document.getElementById('aspectRatio')?.addEventListener('input', (e) => {
@@ -2291,14 +2292,20 @@ Results:
         document.getElementById('scatterYmin').value = this.currentInspect.defaultYlim[0].toFixed(1);
         document.getElementById('scatterYmax').value = this.currentInspect.defaultYlim[1].toFixed(1);
 
-        // Populate cancer filter
+        // Populate cancer filter with counts
         const cancerFilter = document.getElementById('scatterCancerFilter');
         const cancerBox = document.getElementById('cancerFilterBox');
-        const lineages = [...new Set(plotData.map(d => d.lineage).filter(l => l))].sort();
+        const lineageCounts = {};
+        plotData.forEach(d => {
+            if (d.lineage) {
+                lineageCounts[d.lineage] = (lineageCounts[d.lineage] || 0) + 1;
+            }
+        });
+        const lineages = Object.keys(lineageCounts).sort();
         if (lineages.length > 0) {
-            cancerFilter.innerHTML = '<option value="">All cancer types</option>';
+            cancerFilter.innerHTML = `<option value="">All cancer types (n=${plotData.length})</option>`;
             lineages.forEach(l => {
-                cancerFilter.innerHTML += `<option value="${l}">${l}</option>`;
+                cancerFilter.innerHTML += `<option value="${l}">${l} (n=${lineageCounts[l]})</option>`;
             });
             cancerBox.style.display = 'block';
         } else {
@@ -2432,11 +2439,6 @@ Results:
             scatterPlot.style.display = 'none';
             compareTable.style.display = 'block';
             this.renderCompareTable(filteredData, gene1, gene2, hotspotGene, filterDesc);
-            return;
-        } else if (hotspotMode === 'compare_mutations') {
-            scatterPlot.style.display = 'none';
-            compareTable.style.display = 'block';
-            this.renderMutationComparisonTable(filteredData, gene1, gene2, filterDesc);
             return;
         } else {
             scatterPlot.style.display = 'block';
@@ -2956,6 +2958,52 @@ Results:
 
         // Make table sortable
         this.setupSortableTable('compareByCancerTable');
+    }
+
+    showCompareAllMutations() {
+        if (!this.currentInspect) return;
+
+        const { gene1, gene2, data } = this.currentInspect;
+
+        // Apply current filters
+        const cancerFilter = document.getElementById('scatterCancerFilter').value;
+        const mutFilterGene = document.getElementById('mutationFilterGene').value;
+        const mutFilterLevel = document.getElementById('mutationFilterLevel').value;
+
+        let filteredData = cancerFilter ?
+            data.filter(d => d.lineage === cancerFilter) : data;
+
+        // Apply mutation filter
+        if (mutFilterGene && this.mutations?.geneData?.[mutFilterGene] && mutFilterLevel !== 'all') {
+            const filterMutations = this.mutations.geneData[mutFilterGene].mutations;
+            filteredData = filteredData.filter(d => {
+                const mutLevel = filterMutations[d.cellLineId] || 0;
+                if (mutFilterLevel === '0') return mutLevel === 0;
+                if (mutFilterLevel === '1') return mutLevel === 1;
+                if (mutFilterLevel === '2') return mutLevel >= 2;
+                if (mutFilterLevel === '1+2') return mutLevel >= 1;
+                return true;
+            });
+        }
+
+        // Build filter description
+        let filterParts = [];
+        if (cancerFilter) {
+            filterParts.push(`Cancer: ${cancerFilter}`);
+        }
+        if (mutFilterGene && mutFilterLevel !== 'all') {
+            const levelText = mutFilterLevel === '0' ? 'WT' :
+                              mutFilterLevel === '1' ? '1 mut' :
+                              mutFilterLevel === '2' ? '2 mut' : '1+2 mut';
+            filterParts.push(`${mutFilterGene}: ${levelText}`);
+        }
+        const filterDesc = filterParts.length > 0 ? filterParts.join(' | ') : '';
+
+        // Show compare table
+        document.getElementById('scatterPlot').style.display = 'none';
+        document.getElementById('compareTable').style.display = 'block';
+
+        this.renderMutationComparisonTable(filteredData, gene1, gene2, filterDesc);
     }
 
     renderMutationComparisonTable(filteredData, gene1, gene2, filterDesc = '') {
