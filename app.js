@@ -2442,40 +2442,51 @@ Results:
             });
         }
 
+        // Calculate means and medians
+        const meanX = filteredData.reduce((a, d) => a + d.x, 0) / filteredData.length;
+        const meanY = filteredData.reduce((a, d) => a + d.y, 0) / filteredData.length;
+        const medianX = this.median(filteredData.map(d => d.x));
+        const medianY = this.median(filteredData.map(d => d.y));
+
         // Build title and annotations
         let titleText = `<b>${gene1} vs ${gene2}</b>`;
-        if (filterDesc) {
-            titleText += `<br><span style="font-size: 11px; color: #666;">Filter: ${filterDesc}</span>`;
-        }
         let annotations = [];
 
-        if (hotspotMode === 'color' && hotspotGene) {
-            // Add mutation stats annotation - positioned above the plot
-            const annotationLines = [
-                `<b>Overall:</b> r=${allStats.correlation.toFixed(3)}, slope=${allStats.slope.toFixed(3)}, n=${filteredData.length}`,
-                `<b>${hotspotGene}:</b> WT: n=${wt.length}, r=${wtStats.correlation.toFixed(3)}, slope=${wtStats.slope.toFixed(3)} | ` +
-                `1mut: n=${mut1.length}, r=${mut1Stats.correlation.toFixed(3)}, slope=${mut1Stats.slope.toFixed(3)} | ` +
-                `2mut: n=${mut2.length}, r=${mut2Stats.correlation.toFixed(3)}, slope=${mut2Stats.slope.toFixed(3)}`
-            ];
-
-            annotations.push({
-                x: 0,
-                y: 1.08,
-                xref: 'paper',
-                yref: 'paper',
-                text: annotationLines.join('<br>'),
-                showarrow: false,
-                font: { size: 10, color: '#333' },
-                align: 'left',
-                xanchor: 'left'
-            });
+        // Build stats annotation (always show)
+        let statsLines = [];
+        if (filterDesc) {
+            statsLines.push(`<b>Filter:</b> ${filterDesc}`);
         }
+        statsLines.push(`n=${filteredData.length}, r=${allStats.correlation.toFixed(3)}, slope=${allStats.slope.toFixed(3)}`);
+        statsLines.push(`mean: x=${meanX.toFixed(2)}, y=${meanY.toFixed(2)} | median: x=${medianX.toFixed(2)}, y=${medianY.toFixed(2)}`);
+
+        if (hotspotMode === 'color' && hotspotGene) {
+            // Add mutation-specific stats
+            statsLines.push(`<b>${hotspotGene}:</b> WT: n=${wt.length}, r=${wtStats.correlation.toFixed(3)}, slope=${wtStats.slope.toFixed(3)} | ` +
+                `1mut: n=${mut1.length}, r=${mut1Stats.correlation.toFixed(3)}, slope=${mut1Stats.slope.toFixed(3)} | ` +
+                `2mut: n=${mut2.length}, r=${mut2Stats.correlation.toFixed(3)}, slope=${mut2Stats.slope.toFixed(3)}`);
+        }
+
+        annotations.push({
+            x: 0,
+            y: 1.02,
+            xref: 'paper',
+            yref: 'paper',
+            text: statsLines.join('<br>'),
+            showarrow: false,
+            font: { size: 10, color: '#333' },
+            align: 'left',
+            xanchor: 'left'
+        });
+
+        // Calculate margin based on content
+        const topMargin = 80 + (statsLines.length * 14);
 
         const layout = {
             title: {
                 text: titleText,
                 x: 0.5,
-                y: 0.99,
+                y: 0.995,
                 font: { size: 14 }
             },
             xaxis: {
@@ -2495,7 +2506,7 @@ Results:
                 constrain: 'domain'
             },
             hovermode: 'closest',
-            margin: { t: (hotspotMode === 'color' && hotspotGene) ? 110 : (filterDesc ? 70 : 50), r: 150, b: 60, l: 60 },
+            margin: { t: topMargin, r: 150, b: 60, l: 60 },
             showlegend: hotspotMode === 'color' && hotspotGene,
             legend: {
                 x: 1.02,
