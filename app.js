@@ -2972,8 +2972,8 @@ Results:
             const mutations = this.mutations.geneData[mutGene].mutations;
 
             // Split data by mutation status for this gene
-            const wt = data.filter(d => (mutations[d.cellLineId] || 0) === 0);
-            const mut2 = data.filter(d => (mutations[d.cellLineId] || 0) >= 2);
+            const wt = filteredData.filter(d => (mutations[d.cellLineId] || 0) === 0);
+            const mut2 = filteredData.filter(d => (mutations[d.cellLineId] || 0) >= 2);
 
             // Need at least 3 samples in each group
             if (wt.length >= 3 && mut2.length >= 3) {
