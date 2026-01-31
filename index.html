@@ -1193,10 +1193,19 @@
                             </div>
                         </div>
 
-                        <!-- Column 3: Show gene effect -->
+                        <!-- Column 3: Gene effect options -->
                         <div class="control-column control-box">
-                            <div class="checkbox-group">
-                                <label><input type="checkbox" id="showGeneEffect"> Show gene effect (GE)</label>
+                            <div class="checkbox-group" style="margin-bottom: 6px;">
+                                <label><input type="checkbox" id="showGeneEffect"> Show GE in label</label>
+                            </div>
+                            <div class="checkbox-group" style="margin-bottom: 6px;">
+                                <label><input type="checkbox" id="colorByGeneEffect"> Color by GE</label>
+                            </div>
+                            <div id="colorGEOptions" style="display: none; margin-left: 20px;">
+                                <div class="radio-group-inline">
+                                    <label><input type="radio" name="colorGEType" value="signed" checked> Signed</label>
+                                    <label><input type="radio" name="colorGEType" value="absolute"> |GE|</label>
+                                </div>
                             </div>
                         </div>
 

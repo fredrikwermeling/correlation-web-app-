@@ -303,6 +303,16 @@ class CorrelationExplorer {
         });
         document.getElementById('showHiddenNodes').addEventListener('click', () => this.showHiddenNodes());
         document.getElementById('showGeneEffect').addEventListener('change', () => this.updateNetworkLabels());
+
+        // Color by gene effect controls
+        document.getElementById('colorByGeneEffect').addEventListener('change', (e) => {
+            document.getElementById('colorGEOptions').style.display = e.target.checked ? 'block' : 'none';
+            this.updateNetworkColors();
+        });
+        document.querySelectorAll('input[name="colorGEType"]').forEach(radio => {
+            radio.addEventListener('change', () => this.updateNetworkColors());
+        });
+
         document.getElementById('downloadNetworkPNG').addEventListener('click', () => this.downloadNetworkPNG());
         document.getElementById('downloadNetworkSVG').addEventListener('click', () => this.downloadNetworkSVG());
         document.getElementById('downloadAllData').addEventListener('click', () => this.downloadAllData());
@@ -1871,12 +1881,87 @@ Results:
         if (!this.network || !this.networkData) return;
 
         const colorByStats = document.getElementById('colorByStats').checked;
+        const colorByGeneEffect = document.getElementById('colorByGeneEffect').checked;
         const colorStatType = document.querySelector('input[name="colorStatType"]:checked')?.value || 'signed_lfc';
+        const colorGEType = document.querySelector('input[name="colorGEType"]:checked')?.value || 'signed';
         const colorScale = document.querySelector('input[name="colorScale"]:checked')?.value || 'all';
 
         const updates = [];
         const colorLegend = document.getElementById('nodeColorLegendContent');
         const legendSection = document.getElementById('legendNodeColor');
+
+        // Color by gene effect (from DepMap data) - takes precedence
+        if (colorByGeneEffect && this.results?.clusters) {
+            if (legendSection) legendSection.style.display = 'block';
+
+            // Build map of gene -> meanEffect
+            const effectMap = new Map();
+            this.results.clusters.forEach(c => effectMap.set(c.gene, c.meanEffect));
+
+            const effectValues = this.results.clusters.map(c => c.meanEffect).filter(v => !isNaN(v));
+
+            if (colorGEType === 'signed') {
+                const minEffect = Math.min(...effectValues);
+                const maxEffect = Math.max(...effectValues);
+                const maxAbs = Math.max(Math.abs(minEffect), Math.abs(maxEffect));
+
+                this.networkData.nodes.forEach(node => {
+                    const effect = effectMap.get(node.id);
+                    let bgColor = '#cccccc';
+
+                    if (effect !== undefined && !isNaN(effect)) {
+                        // Blue (negative/essential) to White (0) to Red (positive)
+                        const normalized = (effect + maxAbs) / (2 * maxAbs);
+                        bgColor = this.interpolateColor('#2166ac', '#f7f7f7', '#b2182b', normalized);
+                    }
+
+                    updates.push({
+                        id: node.id,
+                        color: { background: bgColor, border: '#ffffff' }
+                    });
+                });
+
+                if (colorLegend) colorLegend.innerHTML = `
+                    <div class="legend-item">Gene Effect (signed)</div>
+                    <div style="display: flex; align-items: center; gap: 4px;">
+                        <span style="font-size: 10px;">${minEffect.toFixed(2)}</span>
+                        <div style="width: 80px; height: 12px; background: linear-gradient(to right, #2166ac, #f7f7f7, #b2182b); border-radius: 2px;"></div>
+                        <span style="font-size: 10px;">${maxEffect.toFixed(2)}</span>
+                    </div>
+                    <div class="legend-item" style="font-size: 9px; color: #666;">Blue=essential, Red=non-essential</div>
+                `;
+            } else {
+                // Absolute gene effect
+                const maxAbsEffect = Math.max(...effectValues.map(v => Math.abs(v)));
+
+                this.networkData.nodes.forEach(node => {
+                    const effect = effectMap.get(node.id);
+                    let bgColor = '#cccccc';
+
+                    if (effect !== undefined && !isNaN(effect)) {
+                        const normalized = Math.abs(effect) / maxAbsEffect;
+                        bgColor = this.interpolateColor('#f5f5f5', '#fdae61', '#d7191c', normalized);
+                    }
+
+                    updates.push({
+                        id: node.id,
+                        color: { background: bgColor, border: '#ffffff' }
+                    });
+                });
+
+                if (colorLegend) colorLegend.innerHTML = `
+                    <div class="legend-item">|Gene Effect|</div>
+                    <div style="display: flex; align-items: center; gap: 4px;">
+                        <span style="font-size: 10px;">0</span>
+                        <div style="width: 80px; height: 12px; background: linear-gradient(to right, #f5f5f5, #fdae61, #d7191c); border-radius: 2px;"></div>
+                        <span style="font-size: 10px;">${maxAbsEffect.toFixed(2)}</span>
+                    </div>
+                `;
+            }
+
+            this.networkData.nodes.update(updates);
+            return;
+        }
 
         if (!colorByStats || !this.geneStats || this.geneStats.size === 0) {
             // Reset to default colors
@@ -2722,13 +2807,13 @@ Results:
             },
             annotations: [
                 { x: 0.14, y: 1.02, xref: 'paper', yref: 'paper',
-                  text: `<b>WT (0 mut)</b> n=${wt.length}<br>r=${wtStats.correlation.toFixed(2)}, slope=${wtStats.slope.toFixed(2)}<br>mean: x=${wtExtra.meanX.toFixed(2)}, y=${wtExtra.meanY.toFixed(2)}<br>median: x=${wtExtra.medianX.toFixed(2)}, y=${wtExtra.medianY.toFixed(2)}`,
+                  text: `<b>WT (0 mut)</b> n=${wt.length}<br>r=${wtStats.correlation.toFixed(3)}, slope=${wtStats.slope.toFixed(3)}<br>mean: x=${wtExtra.meanX.toFixed(2)}, y=${wtExtra.meanY.toFixed(2)}<br>median: x=${wtExtra.medianX.toFixed(2)}, y=${wtExtra.medianY.toFixed(2)}`,
                   showarrow: false, font: { size: 9 } },
                 { x: 0.5, y: 1.02, xref: 'paper', yref: 'paper',
-                  text: `<b>1 mutation</b> n=${mut1.length}<br>r=${mut1Stats.correlation.toFixed(2)}, slope=${mut1Stats.slope.toFixed(2)}<br>mean: x=${mut1Extra.meanX.toFixed(2)}, y=${mut1Extra.meanY.toFixed(2)}<br>median: x=${mut1Extra.medianX.toFixed(2)}, y=${mut1Extra.medianY.toFixed(2)}`,
+                  text: `<b>1 mutation</b> n=${mut1.length}<br>r=${mut1Stats.correlation.toFixed(3)}, slope=${mut1Stats.slope.toFixed(3)}<br>mean: x=${mut1Extra.meanX.toFixed(2)}, y=${mut1Extra.meanY.toFixed(2)}<br>median: x=${mut1Extra.medianX.toFixed(2)}, y=${mut1Extra.medianY.toFixed(2)}`,
                   showarrow: false, font: { size: 9 } },
                 { x: 0.86, y: 1.02, xref: 'paper', yref: 'paper',
-                  text: `<b>2 mutations</b> n=${mut2.length}<br>r=${mut2Stats.correlation.toFixed(2)}, slope=${mut2Stats.slope.toFixed(2)}<br>mean: x=${mut2Extra.meanX.toFixed(2)}, y=${mut2Extra.meanY.toFixed(2)}<br>median: x=${mut2Extra.medianX.toFixed(2)}, y=${mut2Extra.medianY.toFixed(2)}`,
+                  text: `<b>2 mutations</b> n=${mut2.length}<br>r=${mut2Stats.correlation.toFixed(3)}, slope=${mut2Stats.slope.toFixed(3)}<br>mean: x=${mut2Extra.meanX.toFixed(2)}, y=${mut2Extra.meanY.toFixed(2)}<br>median: x=${mut2Extra.medianX.toFixed(2)}, y=${mut2Extra.medianY.toFixed(2)}`,
                   showarrow: false, font: { size: 9 } }
             ],
             margin: { t: filterDesc ? 160 : 140, r: 30, b: 60, l: 60 },
