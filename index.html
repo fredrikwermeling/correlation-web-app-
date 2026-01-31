@@ -592,10 +592,10 @@
         .slider-ticks {
             display: flex;
             justify-content: space-between;
-            font-size: 10px;
-            color: var(--gray-400);
-            padding: 0 2px;
-            margin-top: 0;
+            font-size: 9px;
+            color: var(--gray-500);
+            padding: 0 6px;
+            margin-top: -2px;
         }
 
         .slider-ticks span {
@@ -609,14 +609,42 @@
             content: '';
             display: block;
             width: 1px;
-            height: 6px;
-            background-color: var(--gray-300);
+            height: 8px;
+            background-color: #999;
             margin-bottom: 2px;
         }
 
         .slider-group input[type="range"] {
             width: 100%;
-            margin: 4px 0;
+            margin: 4px 0 0 0;
+            -webkit-appearance: none;
+            appearance: none;
+            height: 6px;
+            background: linear-gradient(to right, var(--green-400), var(--green-200));
+            border-radius: 3px;
+            outline: none;
+        }
+
+        .slider-group input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            background: var(--green-600);
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+
+        .slider-group input[type="range"]::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            background: var(--green-600);
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
         }
 
         .checkbox-group {
