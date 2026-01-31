@@ -414,6 +414,19 @@ class CorrelationExplorer {
         document.querySelectorAll('.data-table th[data-sort]').forEach(th => {
             th.addEventListener('click', () => this.sortTable(th));
         });
+
+        // Infographic modal
+        document.getElementById('showInfoGraphic')?.addEventListener('click', () => {
+            document.getElementById('infographicModal').style.display = 'flex';
+        });
+        document.getElementById('closeInfoGraphic')?.addEventListener('click', () => {
+            document.getElementById('infographicModal').style.display = 'none';
+        });
+        document.getElementById('infographicModal')?.addEventListener('click', (e) => {
+            if (e.target.id === 'infographicModal') {
+                document.getElementById('infographicModal').style.display = 'none';
+            }
+        });
     }
 
     updateGeneCount() {
@@ -2513,14 +2526,121 @@ Edge Thickness:
         zip.file('summary.txt', summary);
         zip.file('legend.txt', legendTxt);
 
-        zip.generateAsync({ type: 'blob' }).then(content => {
+        // Add network images if network exists
+        const addNetworkImages = async () => {
+            if (this.network && this.networkData) {
+                // Get PNG as base64
+                const pngData = await this.getNetworkPNGData();
+                if (pngData) {
+                    // Remove data URL prefix to get just base64
+                    const base64 = pngData.split(',')[1];
+                    zip.file('network.png', base64, { base64: true });
+                }
+
+                // Get SVG
+                const svgData = this.getNetworkSVGData();
+                if (svgData) {
+                    zip.file('network.svg', svgData);
+                }
+            }
+
+            // Generate and download ZIP
+            const content = await zip.generateAsync({ type: 'blob' });
             const url = URL.createObjectURL(content);
             const a = document.createElement('a');
             a.href = url;
             a.download = 'correlation_analysis.zip';
             a.click();
             URL.revokeObjectURL(url);
+        };
+
+        addNetworkImages();
+    }
+
+    // Helper to get network PNG data for ZIP
+    async getNetworkPNGData() {
+        const networkCanvas = document.querySelector('#networkPlot canvas');
+        if (!networkCanvas) return null;
+
+        const legendHeight = 160;
+        const padding = 30;
+        const networkWidth = networkCanvas.width;
+        const networkHeight = networkCanvas.height;
+        const totalWidth = networkWidth;
+        const totalHeight = networkHeight + legendHeight + padding;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = totalWidth;
+        canvas.height = totalHeight;
+        const ctx = canvas.getContext('2d');
+
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, totalWidth, totalHeight);
+        ctx.drawImage(networkCanvas, 0, 0);
+
+        // Draw legend (simplified version)
+        ctx.fillStyle = '#f9fafb';
+        ctx.fillRect(15, networkHeight + 10, totalWidth - 30, legendHeight - 10);
+        ctx.strokeStyle = '#e5e7eb';
+        ctx.strokeRect(15, networkHeight + 10, totalWidth - 30, legendHeight - 10);
+
+        const legendY = networkHeight + padding + 10;
+        ctx.font = 'bold 14px Arial';
+        ctx.fillStyle = '#333';
+        ctx.fillText('Correlation: Blue=Positive, Red=Negative', 40, legendY);
+        ctx.fillText(`Cutoff: ${this.results?.cutoff || 0.5}`, 40, legendY + 25);
+
+        if (this.hasSynonymsInNetwork) {
+            ctx.fillText('* = synonym/orthologue used', 40, legendY + 50);
+        }
+
+        return canvas.toDataURL('image/png');
+    }
+
+    // Helper to get network SVG data for ZIP
+    getNetworkSVGData() {
+        if (!this.network || !this.networkData) return null;
+
+        const container = document.getElementById('networkPlot');
+        const width = container.clientWidth;
+        const networkHeight = container.clientHeight;
+        const positions = this.network.getPositions();
+
+        let svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${networkHeight}" viewBox="0 0 ${width} ${networkHeight}">
+<rect width="100%" height="100%" fill="white"/>
+`;
+
+        // Draw edges
+        this.networkData.edges.forEach(edge => {
+            const from = positions[edge.from];
+            const to = positions[edge.to];
+            if (from && to) {
+                const x1 = from.x + width/2;
+                const y1 = from.y + networkHeight/2;
+                const x2 = to.x + width/2;
+                const y2 = to.y + networkHeight/2;
+                const color = edge.color || '#3182ce';
+                const strokeWidth = edge.width || 2;
+                svg += `  <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${strokeWidth}" opacity="0.8"/>\n`;
+            }
         });
+
+        // Draw nodes
+        const nodeSize = parseInt(document.getElementById('netNodeSize')?.value) || 25;
+        this.networkData.nodes.forEach(node => {
+            const pos = positions[node.id];
+            if (pos) {
+                const cx = pos.x + width/2;
+                const cy = pos.y + networkHeight/2;
+                const bgColor = node.color?.background || '#16a34a';
+                svg += `  <circle cx="${cx}" cy="${cy}" r="${nodeSize/2}" fill="${bgColor}" stroke="white" stroke-width="2"/>\n`;
+                svg += `  <text x="${cx}" y="${cy + nodeSize/2 + 14}" text-anchor="middle" style="font-family: Arial; font-size: 12px; fill: #333;">${this.escapeXml(node.label || node.id)}</text>\n`;
+            }
+        });
+
+        svg += '</svg>';
+        return svg;
     }
 
     // Inspect Modal

@@ -1027,8 +1027,17 @@
 
     <!-- Header -->
     <div class="main-header">
-        <h1>Gene Correlation Explorer</h1>
-        <p>Analyze gene correlations from DepMap CRISPR screen data (Web Edition)</p>
+        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div>
+                <h1>Gene Correlation Explorer</h1>
+                <p>Analyze gene correlations from DepMap CRISPR screen data (Web Edition)</p>
+            </div>
+            <div style="text-align: right; font-size: 0.9em;">
+                <p style="margin: 0;"><a href="https://greenlisted.cmm.se" target="_blank" style="color: white; text-decoration: underline;">Green Listed</a> tool family</p>
+                <p style="margin: 4px 0 0 0;"><a href="https://wermelinglab.com" target="_blank" style="color: white; text-decoration: underline;">Wermeling Lab</a> | Karolinska Institutet</p>
+                <button id="showInfoGraphic" class="btn btn-secondary" style="margin-top: 8px; font-size: 12px; padding: 4px 10px;">Show Infographic</button>
+            </div>
+        </div>
     </div>
 
     <div class="container">
@@ -1039,6 +1048,15 @@
                 <div class="card-title">1. Reference Data</div>
                 <div id="referenceStatus" class="status-box status-warning">
                     Loading data...
+                </div>
+                <div style="font-size: 10px; color: #666; margin-top: 8px; line-height: 1.4;">
+                    <p style="margin: 0;">Data from <a href="https://depmap.org/portal/data_page/?tab=currentRelease" target="_blank">DepMap 25Q3</a>:</p>
+                    <ul style="margin: 4px 0 0 0; padding-left: 16px;">
+                        <li>CRISPRGeneEffect.csv</li>
+                        <li>Model.csv</li>
+                        <li>OmicsSomaticMutationsMatrixHotspot.csv</li>
+                    </ul>
+                    <p style="margin: 6px 0 0 0; font-style: italic;">Please acknowledge the DepMap project if you use this data.</p>
                 </div>
             </div>
 
@@ -1503,9 +1521,21 @@
 
     <!-- Footer -->
     <footer class="footer">
-        <p>Gene Correlation Explorer (Web Edition) | Part of the <a href="https://greenlisted.cmm.se" target="_blank">Green Listed</a> tool family</p>
-        <p><a href="https://wermelinglab.com" target="_blank">Wermeling Lab</a> | Karolinska Institutet</p>
+        <p>Gene Correlation Explorer (Web Edition) | Data from <a href="https://depmap.org/portal/" target="_blank">DepMap</a></p>
     </footer>
+
+    <!-- Infographic Modal -->
+    <div class="modal-overlay" id="infographicModal" style="display: none;">
+        <div class="modal" style="max-width: 90vw; max-height: 90vh; overflow: auto;">
+            <div class="modal-header">
+                <h3>Gene Correlation Explorer - Infographic</h3>
+                <button class="modal-close" id="closeInfoGraphic">&times;</button>
+            </div>
+            <div class="modal-body" style="padding: 10px; text-align: center;">
+                <img src="https://raw.githubusercontent.com/fredrikwermeling/correlation-app/main/infographic.png" alt="Gene Correlation Explorer Infographic" style="max-width: 100%; height: auto;">
+            </div>
+        </div>
+    </div>
 
     <script src="app.js?v=20260130l"></script>
 </body>
