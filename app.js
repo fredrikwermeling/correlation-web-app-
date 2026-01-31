@@ -1580,6 +1580,63 @@ Results:
             legendX += 140;
         }
 
+        // Color by Gene Effect legend
+        const colorByGeneEffect = document.getElementById('colorByGeneEffect').checked;
+        if (colorByGeneEffect && this.results?.clusters) {
+            const colorGEType = document.querySelector('input[name="colorGEType"]:checked')?.value || 'signed';
+            const effectValues = this.results.clusters.map(c => c.meanEffect).filter(v => !isNaN(v));
+
+            ctx.font = titleFont;
+            ctx.fillStyle = '#333';
+            ctx.fillText('Node Color:', legendX, legendY);
+            ctx.font = textFont;
+
+            const gradientWidth = 120;
+            const gradientHeight = 18;
+            const gradY = legendY + 18;
+
+            if (colorGEType === 'signed') {
+                const minEffect = Math.min(...effectValues);
+                const maxEffect = Math.max(...effectValues);
+
+                // Red (negative) to White (0) to Blue (positive)
+                const gradient = ctx.createLinearGradient(legendX, 0, legendX + gradientWidth, 0);
+                gradient.addColorStop(0, '#b2182b');
+                gradient.addColorStop(0.5, '#f7f7f7');
+                gradient.addColorStop(1, '#2166ac');
+                ctx.fillStyle = gradient;
+                ctx.fillRect(legendX, gradY, gradientWidth, gradientHeight);
+                ctx.strokeStyle = '#999';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(legendX, gradY, gradientWidth, gradientHeight);
+
+                ctx.fillStyle = '#333';
+                ctx.font = smallFont;
+                ctx.fillText(minEffect.toFixed(2), legendX, gradY + gradientHeight + 16);
+                ctx.fillText('Gene Effect (+/−)', legendX, gradY - 4);
+                ctx.fillText(maxEffect.toFixed(2), legendX + gradientWidth - 25, gradY + gradientHeight + 16);
+            } else {
+                const maxAbsEffect = Math.max(...effectValues.map(v => Math.abs(v)));
+
+                const gradient = ctx.createLinearGradient(legendX, 0, legendX + gradientWidth, 0);
+                gradient.addColorStop(0, '#f5f5f5');
+                gradient.addColorStop(0.5, '#fdae61');
+                gradient.addColorStop(1, '#d7191c');
+                ctx.fillStyle = gradient;
+                ctx.fillRect(legendX, gradY, gradientWidth, gradientHeight);
+                ctx.strokeStyle = '#999';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(legendX, gradY, gradientWidth, gradientHeight);
+
+                ctx.fillStyle = '#333';
+                ctx.font = smallFont;
+                ctx.fillText('0', legendX, gradY + gradientHeight + 16);
+                ctx.fillText('|Gene Effect|', legendX, gradY - 4);
+                ctx.fillText(maxAbsEffect.toFixed(2), legendX + gradientWidth - 25, gradY + gradientHeight + 16);
+            }
+            legendX += 170;
+        }
+
         // Color by stats legend
         const colorByStats = document.getElementById('colorByStats').checked;
         if (colorByStats && this.geneStats && this.geneStats.size > 0) {
@@ -1616,11 +1673,11 @@ Results:
                 const minLfc = Math.min(...lfcValues);
                 const maxLfc = Math.max(...lfcValues);
 
-                // Draw gradient
+                // Draw gradient - Red (negative) to White (0) to Blue (positive)
                 const gradient = ctx.createLinearGradient(legendX, 0, legendX + gradientWidth, 0);
-                gradient.addColorStop(0, '#2166ac');
+                gradient.addColorStop(0, '#b2182b');
                 gradient.addColorStop(0.5, '#f7f7f7');
-                gradient.addColorStop(1, '#b2182b');
+                gradient.addColorStop(1, '#2166ac');
                 ctx.fillStyle = gradient;
                 ctx.fillRect(legendX, gradY, gradientWidth, gradientHeight);
                 ctx.strokeStyle = '#999';
@@ -1631,7 +1688,7 @@ Results:
                 ctx.fillStyle = '#333';
                 ctx.font = smallFont;
                 ctx.fillText(minLfc.toFixed(1), legendX, gradY + gradientHeight + 16);
-                ctx.fillText('Signed LFC' + scaleLabel, legendX, gradY - 4);
+                ctx.fillText('LFC (+/−)' + scaleLabel, legendX, gradY - 4);
                 ctx.fillText(maxLfc.toFixed(1), legendX + gradientWidth - 20, gradY + gradientHeight + 16);
             } else if (colorStatType === 'abs_lfc') {
                 const lfcValues = stats.map(s => Math.abs(s.lfc)).filter(v => v !== null && !isNaN(v));
@@ -1672,15 +1729,14 @@ Results:
                 ctx.fillText('FDR' + scaleLabel, legendX, gradY - 4);
                 ctx.fillText('1', legendX + gradientWidth - 8, gradY + gradientHeight + 16);
             }
+            legendX += 170;
+        }
 
-            // Missing indicator
-            ctx.fillStyle = '#333';
+        // Synonym legend
+        if (this.hasSynonymsInNetwork) {
             ctx.font = textFont;
-            ctx.fillText('Missing:', legendX, gradY + gradientHeight + 42);
-            ctx.fillStyle = '#cccccc';
-            ctx.fillRect(legendX + 60, gradY + gradientHeight + 28, 18, 18);
-            ctx.strokeStyle = '#999';
-            ctx.strokeRect(legendX + 60, gradY + gradientHeight + 28, 18, 18);
+            ctx.fillStyle = '#333';
+            ctx.fillText('* = synonym/orthologue used', legendX, legendY + 25);
         }
 
         // Create download link
@@ -1707,12 +1763,12 @@ Results:
         let svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${totalHeight}" viewBox="0 0 ${width} ${totalHeight}">
 <defs>
-    <linearGradient id="signedLfcGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-        <stop offset="0%" style="stop-color:#2166ac;stop-opacity:1" />
+    <linearGradient id="signedGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" style="stop-color:#b2182b;stop-opacity:1" />
         <stop offset="50%" style="stop-color:#f7f7f7;stop-opacity:1" />
-        <stop offset="100%" style="stop-color:#b2182b;stop-opacity:1" />
+        <stop offset="100%" style="stop-color:#2166ac;stop-opacity:1" />
     </linearGradient>
-    <linearGradient id="absLfcGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+    <linearGradient id="absGradient" x1="0%" y1="0%" x2="100%" y2="0%">
         <stop offset="0%" style="stop-color:#f5f5f5;stop-opacity:1" />
         <stop offset="50%" style="stop-color:#fdae61;stop-opacity:1" />
         <stop offset="100%" style="stop-color:#d7191c;stop-opacity:1" />
@@ -1816,6 +1872,37 @@ Results:
             legendX += 140;
         }
 
+        // Color by Gene Effect legend
+        const colorByGeneEffect = document.getElementById('colorByGeneEffect').checked;
+        if (colorByGeneEffect && this.results?.clusters) {
+            const colorGEType = document.querySelector('input[name="colorGEType"]:checked')?.value || 'signed';
+            const effectValues = this.results.clusters.map(c => c.meanEffect).filter(v => !isNaN(v));
+
+            svg += `  <text x="${legendX}" y="${legendY}" class="legend-title">Node Color:</text>\n`;
+
+            const gradientWidth = 120;
+            const gradientHeight = 18;
+            const gradY = legendY + 18;
+
+            if (colorGEType === 'signed') {
+                const minEffect = Math.min(...effectValues);
+                const maxEffect = Math.max(...effectValues);
+
+                svg += `  <rect x="${legendX}" y="${gradY}" width="${gradientWidth}" height="${gradientHeight}" fill="url(#signedGradient)" stroke="#999"/>\n`;
+                svg += `  <text x="${legendX}" y="${gradY + gradientHeight + 16}" class="legend-small">${minEffect.toFixed(2)}</text>\n`;
+                svg += `  <text x="${legendX}" y="${gradY - 4}" class="legend-small">Gene Effect (+/−)</text>\n`;
+                svg += `  <text x="${legendX + gradientWidth - 25}" y="${gradY + gradientHeight + 16}" class="legend-small">${maxEffect.toFixed(2)}</text>\n`;
+            } else {
+                const maxAbsEffect = Math.max(...effectValues.map(v => Math.abs(v)));
+
+                svg += `  <rect x="${legendX}" y="${gradY}" width="${gradientWidth}" height="${gradientHeight}" fill="url(#absGradient)" stroke="#999"/>\n`;
+                svg += `  <text x="${legendX}" y="${gradY + gradientHeight + 16}" class="legend-small">0</text>\n`;
+                svg += `  <text x="${legendX}" y="${gradY - 4}" class="legend-small">|Gene Effect|</text>\n`;
+                svg += `  <text x="${legendX + gradientWidth - 25}" y="${gradY + gradientHeight + 16}" class="legend-small">${maxAbsEffect.toFixed(2)}</text>\n`;
+            }
+            legendX += 170;
+        }
+
         // Color by stats legend
         const colorByStats = document.getElementById('colorByStats').checked;
         if (colorByStats && this.geneStats && this.geneStats.size > 0) {
@@ -1848,15 +1935,15 @@ Results:
                 const minLfc = Math.min(...lfcValues);
                 const maxLfc = Math.max(...lfcValues);
 
-                svg += `  <rect x="${legendX}" y="${gradY}" width="${gradientWidth}" height="${gradientHeight}" fill="url(#signedLfcGradient)" stroke="#999"/>\n`;
+                svg += `  <rect x="${legendX}" y="${gradY}" width="${gradientWidth}" height="${gradientHeight}" fill="url(#signedGradient)" stroke="#999"/>\n`;
                 svg += `  <text x="${legendX}" y="${gradY + gradientHeight + 16}" class="legend-small">${minLfc.toFixed(1)}</text>\n`;
-                svg += `  <text x="${legendX}" y="${gradY - 4}" class="legend-small">Signed LFC${scaleLabel}</text>\n`;
+                svg += `  <text x="${legendX}" y="${gradY - 4}" class="legend-small">LFC (+/−)${scaleLabel}</text>\n`;
                 svg += `  <text x="${legendX + gradientWidth - 20}" y="${gradY + gradientHeight + 16}" class="legend-small">${maxLfc.toFixed(1)}</text>\n`;
             } else if (colorStatType === 'abs_lfc') {
                 const lfcValues = stats.map(s => Math.abs(s.lfc)).filter(v => v !== null && !isNaN(v));
                 const maxLfc = Math.max(...lfcValues);
 
-                svg += `  <rect x="${legendX}" y="${gradY}" width="${gradientWidth}" height="${gradientHeight}" fill="url(#absLfcGradient)" stroke="#999"/>\n`;
+                svg += `  <rect x="${legendX}" y="${gradY}" width="${gradientWidth}" height="${gradientHeight}" fill="url(#absGradient)" stroke="#999"/>\n`;
                 svg += `  <text x="${legendX}" y="${gradY + gradientHeight + 16}" class="legend-small">0</text>\n`;
                 svg += `  <text x="${legendX}" y="${gradY - 4}" class="legend-small">|LFC|${scaleLabel}</text>\n`;
                 svg += `  <text x="${legendX + gradientWidth - 20}" y="${gradY + gradientHeight + 16}" class="legend-small">${maxLfc.toFixed(1)}</text>\n`;
@@ -1869,10 +1956,12 @@ Results:
                 svg += `  <text x="${legendX}" y="${gradY - 4}" class="legend-small">FDR${scaleLabel}</text>\n`;
                 svg += `  <text x="${legendX + gradientWidth - 8}" y="${gradY + gradientHeight + 16}" class="legend-small">1</text>\n`;
             }
+            legendX += 170;
+        }
 
-            // Missing indicator
-            svg += `  <text x="${legendX}" y="${gradY + gradientHeight + 42}" class="legend-text">Missing:</text>\n`;
-            svg += `  <rect x="${legendX + 60}" y="${gradY + gradientHeight + 28}" width="18" height="18" fill="#cccccc" stroke="#999" rx="2"/>\n`;
+        // Synonym legend
+        if (this.hasSynonymsInNetwork) {
+            svg += `  <text x="${legendX}" y="${legendY + 25}" class="legend-text">* = synonym/orthologue used</text>\n`;
         }
 
         svg += '</svg>';
@@ -2149,7 +2238,6 @@ Results:
                         <div style="width: 80px; height: 12px; background: linear-gradient(to right, #b2182b, #f7f7f7, #2166ac); border-radius: 2px;"></div>
                         <span style="font-size: 10px;">${maxLfc.toFixed(1)}</span>
                     </div>
-                    <div class="legend-item" style="margin-top: 4px;">Missing: <span style="display: inline-block; width: 12px; height: 12px; background: #cccccc; border-radius: 2px; vertical-align: middle;"></span></div>
                 `;
             } else if (colorStatType === 'abs_lfc') {
                 const lfcValues = stats.map(s => Math.abs(s.lfc)).filter(v => v !== null && !isNaN(v));
@@ -2178,7 +2266,6 @@ Results:
                         <div style="width: 80px; height: 12px; background: linear-gradient(to right, #f5f5f5, #fdae61, #d7191c); border-radius: 2px;"></div>
                         <span style="font-size: 10px;">${maxLfc.toFixed(1)}</span>
                     </div>
-                    <div class="legend-item" style="margin-top: 4px;">Missing: <span style="display: inline-block; width: 12px; height: 12px; background: #cccccc; border-radius: 2px; vertical-align: middle;"></span></div>
                 `;
             } else if (colorStatType === 'fdr') {
                 const fdrValues = stats.map(s => s.fdr).filter(v => v !== null && !isNaN(v) && v > 0);
@@ -2210,7 +2297,6 @@ Results:
                         <div style="width: 80px; height: 12px; background: linear-gradient(to right, #d7191c, #fdae61, #f5f5f5); border-radius: 2px;"></div>
                         <span style="font-size: 10px;">1</span>
                     </div>
-                    <div class="legend-item" style="margin-top: 4px;">Missing: <span style="display: inline-block; width: 12px; height: 12px; background: #cccccc; border-radius: 2px; vertical-align: middle;"></span></div>
                 `;
             }
         }
@@ -2385,19 +2471,56 @@ Results:
 - Number of clusters: ${Math.max(...this.results.correlations.map(c => c.cluster))}
 `;
 
-        // For simplicity, download as separate files (ZIP would require a library)
-        // Download correlations
-        this.downloadFile(correlationsCSV, 'correlations.csv', 'text/csv');
+        // Create legend text
+        let legendTxt = `Network Legend
+==============
 
-        // Small delay then download clusters
-        setTimeout(() => {
-            this.downloadFile(clustersCSV, 'clusters.csv', 'text/csv');
-        }, 500);
+Correlation:
+- Blue lines = Positive correlation
+- Red lines = Negative correlation
 
-        // Small delay then download summary
-        setTimeout(() => {
-            this.downloadFile(summary, 'summary.txt', 'text/plain');
-        }, 1000);
+Edge Thickness:
+- Thicker edges = stronger correlation
+- Thinner edges = weaker correlation
+
+`;
+        if (this.results.mode === 'design') {
+            legendTxt += `Node Type:
+- Dark green = Input gene
+- Light green = Correlated gene (found by analysis)
+
+`;
+        }
+        if (this.hasSynonymsInNetwork) {
+            legendTxt += `* = synonym/orthologue used
+`;
+        }
+
+        // Create ZIP file using JSZip
+        if (typeof JSZip === 'undefined') {
+            // Fallback if JSZip not loaded
+            console.warn('JSZip not loaded, downloading files separately');
+            this.downloadFile(correlationsCSV, 'correlations.csv', 'text/csv');
+            setTimeout(() => this.downloadFile(clustersCSV, 'clusters.csv', 'text/csv'), 300);
+            setTimeout(() => this.downloadFile(summary, 'summary.txt', 'text/plain'), 600);
+            setTimeout(() => this.downloadFile(legendTxt, 'legend.txt', 'text/plain'), 900);
+            return;
+        }
+
+        const zip = new JSZip();
+        zip.file('correlations.csv', correlationsCSV);
+        zip.file('clusters.csv', clustersCSV);
+        zip.file('summary.txt', summary);
+        zip.file('legend.txt', legendTxt);
+
+        zip.generateAsync({ type: 'blob' }).then(content => {
+            const url = URL.createObjectURL(content);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'correlation_analysis.zip';
+            a.click();
+            URL.revokeObjectURL(url);
+        });
     }
 
     // Inspect Modal
@@ -2506,11 +2629,17 @@ Results:
         }
         this.currentInspect.data = plotData;
 
-        // Set axis limits
+        // Set axis limits with 10% padding on each side
         const xVals = plotData.map(d => d.x);
         const yVals = plotData.map(d => d.y);
-        this.currentInspect.defaultXlim = [Math.min(...xVals), Math.max(...xVals)];
-        this.currentInspect.defaultYlim = [Math.min(...yVals), Math.max(...yVals)];
+        const xMin = Math.min(...xVals);
+        const xMax = Math.max(...xVals);
+        const yMin = Math.min(...yVals);
+        const yMax = Math.max(...yVals);
+        const xPadding = (xMax - xMin) * 0.1;
+        const yPadding = (yMax - yMin) * 0.1;
+        this.currentInspect.defaultXlim = [xMin - xPadding, xMax + xPadding];
+        this.currentInspect.defaultYlim = [yMin - yPadding, yMax + yPadding];
 
         document.getElementById('scatterXmin').value = this.currentInspect.defaultXlim[0].toFixed(1);
         document.getElementById('scatterXmax').value = this.currentInspect.defaultXlim[1].toFixed(1);
