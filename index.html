@@ -1351,6 +1351,20 @@
                             </select>
                         </div>
 
+                        <!-- Filter by Hotspot Mutation -->
+                        <div class="control-box-compact" id="mutationFilterBox" style="display: none;">
+                            <span class="control-label">Filter by Hotspot Mutation</span>
+                            <select id="mutationFilterGene" class="form-control">
+                                <option value="">No filter</option>
+                            </select>
+                            <select id="mutationFilterLevel" class="form-control" style="margin-top: 4px;">
+                                <option value="all">All cells</option>
+                                <option value="0">Only WT (0 mut)</option>
+                                <option value="1+">Only mutated (1+)</option>
+                                <option value="2+">Only 2+ mutations</option>
+                            </select>
+                        </div>
+
                         <!-- Highlight Cell Lines -->
                         <div class="control-box-compact">
                             <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -1360,9 +1374,8 @@
                                     <input type="number" id="scatterFontSize" value="3" min="1" max="10" style="width: 45px; padding: 2px 4px; font-size: 11px; text-align: center;">
                                 </div>
                             </div>
-                            <textarea id="scatterCellSearch" class="form-control" style="min-height: 60px; font-size: 12px; margin-top: 6px;" placeholder="Type names or click plot..."></textarea>
-                            <button class="btn btn-secondary btn-sm" id="clearHighlights" style="margin-top: 6px;">Clear All</button>
-                            <p class="help-text" style="margin-top: 4px; font-size: 10px;">Name, ACH ID, or click points</p>
+                            <textarea id="scatterCellSearch" class="form-control" style="min-height: 40px; font-size: 12px; margin-top: 6px;" placeholder="Type names or click plot..."></textarea>
+                            <button class="btn btn-secondary btn-sm" id="clearHighlights" style="margin-top: 4px;">Clear All</button>
                         </div>
 
                         <!-- Mutation Overlay -->
@@ -1371,19 +1384,11 @@
                             <select id="hotspotGene" class="form-control">
                                 <option value="">Select gene...</option>
                             </select>
-                            <p class="help-text" style="margin-top: 4px; font-size: 10px;">Common mutations shown; type to search</p>
-                            <select id="hotspotMode" class="form-control" style="margin-top: 8px;">
+                            <select id="hotspotMode" class="form-control" style="margin-top: 6px;">
                                 <option value="none">None</option>
-                                <option value="color" selected>Color by hotspot mutation (0/1/2)</option>
-                                <option value="three_panel">3-panel (0 / 1 / 2 hotspot mutations)</option>
+                                <option value="color" selected>Color by mutation (0/1/2)</option>
+                                <option value="three_panel">3-panel (0 / 1 / 2 mutations)</option>
                                 <option value="compare_table">Compare 0 vs 2 (table)</option>
-                            </select>
-                            <select id="mutationFilter" class="form-control" style="margin-top: 8px;">
-                                <option value="all">Show all cells</option>
-                                <option value="0">Only WT (0 mutations)</option>
-                                <option value="1">Only 1 mutation</option>
-                                <option value="2">Only 2+ mutations</option>
-                                <option value="1+">Only mutated (1 or 2+)</option>
                             </select>
                         </div>
                     </div>
@@ -1411,6 +1416,6 @@
         <p><a href="https://wermelinglab.com" target="_blank">Wermeling Lab</a> | Karolinska Institutet</p>
     </footer>
 
-    <script src="app.js?v=20260130k"></script>
+    <script src="app.js?v=20260130l"></script>
 </body>
 </html>

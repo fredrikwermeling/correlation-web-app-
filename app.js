@@ -298,9 +298,10 @@ class CorrelationExplorer {
 
         document.getElementById('scatterCellSearch').addEventListener('input', () => this.updateInspectPlot());
         document.getElementById('scatterCancerFilter').addEventListener('change', () => this.updateInspectPlot());
+        document.getElementById('mutationFilterGene').addEventListener('change', () => this.updateInspectPlot());
+        document.getElementById('mutationFilterLevel').addEventListener('change', () => this.updateInspectPlot());
         document.getElementById('hotspotGene').addEventListener('change', () => this.updateInspectPlot());
         document.getElementById('hotspotMode').addEventListener('change', () => this.updateInspectPlot());
-        document.getElementById('mutationFilter').addEventListener('change', () => this.updateInspectPlot());
 
         document.getElementById('downloadScatterPNG').addEventListener('click', () => this.downloadScatterPNG());
         document.getElementById('downloadScatterSVG').addEventListener('click', () => this.downloadScatterSVG());
@@ -877,8 +878,8 @@ class CorrelationExplorer {
 
             // Build title with available information
             let titleLines = [gene];
-            titleLines.push(`Mean Effect: ${cluster?.meanEffect || 'N/A'}`);
-            titleLines.push(`SD: ${cluster?.sdEffect || 'N/A'}`);
+            titleLines.push(`GE mean: ${cluster?.meanEffect || 'N/A'}`);
+            titleLines.push(`GE SD: ${cluster?.sdEffect || 'N/A'}`);
             if (geneStat?.lfc !== undefined && geneStat?.lfc !== null) {
                 titleLines.push(`LFC: ${geneStat.lfc.toFixed(3)}`);
             }
@@ -2136,18 +2137,23 @@ Results:
 
         // Populate hotspot genes (excluding HLA-A and HLA-B which have high variability)
         const hotspotSelect = document.getElementById('hotspotGene');
+        const mutFilterGeneSelect = document.getElementById('mutationFilterGene');
         const excludedGenes = ['HLA-A', 'HLA-B'];
         if (this.mutations?.genes?.length > 0) {
             hotspotSelect.innerHTML = '<option value="">Select gene...</option>';
+            mutFilterGeneSelect.innerHTML = '<option value="">No filter</option>';
             this.mutations.genes
                 .filter(g => !excludedGenes.includes(g))
                 .forEach(g => {
                     const count = this.mutations.geneCounts?.[g] || 0;
                     hotspotSelect.innerHTML += `<option value="${g}">${g} (${count} mut)</option>`;
+                    mutFilterGeneSelect.innerHTML += `<option value="${g}">${g} (${count} mut)</option>`;
                 });
             document.getElementById('mutationBox').style.display = 'block';
+            document.getElementById('mutationFilterBox').style.display = 'block';
         } else {
             document.getElementById('mutationBox').style.display = 'none';
+            document.getElementById('mutationFilterBox').style.display = 'none';
         }
 
         // Update title with slope
@@ -2195,17 +2201,31 @@ Results:
 
         // Get filter settings
         const cancerFilter = document.getElementById('scatterCancerFilter').value;
+        const mutFilterGene = document.getElementById('mutationFilterGene').value;
+        const mutFilterLevel = document.getElementById('mutationFilterLevel').value;
         const searchTerms = document.getElementById('scatterCellSearch').value
             .split('\n').map(s => s.trim().toUpperCase()).filter(s => s);
         const fontSize = parseInt(document.getElementById('scatterFontSize')?.value) || 3;
         const hotspotGene = document.getElementById('hotspotGene').value;
         const hotspotMode = document.getElementById('hotspotMode').value;
 
-        // Filter data
+        // Filter by cancer type
         let filteredData = cancerFilter ?
             data.filter(d => d.lineage === cancerFilter) : data;
 
-        // Get mutation info from geneData
+        // Apply mutation filter (separate from overlay)
+        if (mutFilterGene && this.mutations?.geneData?.[mutFilterGene] && mutFilterLevel !== 'all') {
+            const filterMutations = this.mutations.geneData[mutFilterGene].mutations;
+            filteredData = filteredData.filter(d => {
+                const mutLevel = filterMutations[d.cellLineId] || 0;
+                if (mutFilterLevel === '0') return mutLevel === 0;
+                if (mutFilterLevel === '1+') return mutLevel >= 1;
+                if (mutFilterLevel === '2+') return mutLevel >= 2;
+                return true;
+            });
+        }
+
+        // Get mutation info for overlay (separate gene)
         let mutationMap = new Map();
         if (hotspotGene && this.mutations?.geneData?.[hotspotGene]) {
             const geneData = this.mutations.geneData[hotspotGene];
@@ -2214,25 +2234,11 @@ Results:
             });
         }
 
-        // Add mutation level to filtered data
+        // Add mutation level to filtered data (for overlay coloring)
         filteredData = filteredData.map(d => ({
             ...d,
             mutationLevel: mutationMap.get(d.cellLineId) || 0
         }));
-
-        // Apply mutation filter (only if a hotspot gene is selected)
-        const mutationFilter = document.getElementById('mutationFilter').value;
-        if (hotspotGene && mutationFilter !== 'all') {
-            if (mutationFilter === '0') {
-                filteredData = filteredData.filter(d => d.mutationLevel === 0);
-            } else if (mutationFilter === '1') {
-                filteredData = filteredData.filter(d => d.mutationLevel === 1);
-            } else if (mutationFilter === '2') {
-                filteredData = filteredData.filter(d => d.mutationLevel >= 2);
-            } else if (mutationFilter === '1+') {
-                filteredData = filteredData.filter(d => d.mutationLevel >= 1);
-            }
-        }
 
         // Show/hide plot and table based on mode
         const scatterPlot = document.getElementById('scatterPlot');
