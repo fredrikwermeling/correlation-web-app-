@@ -2436,7 +2436,7 @@ Results:
         } else if (hotspotMode === 'compare_mutations') {
             scatterPlot.style.display = 'none';
             compareTable.style.display = 'block';
-            this.renderMutationComparisonTable(data, gene1, gene2, filterDesc);
+            this.renderMutationComparisonTable(filteredData, gene1, gene2, filterDesc);
             return;
         } else {
             scatterPlot.style.display = 'block';
@@ -2894,20 +2894,20 @@ Results:
                 Note: Cells with exactly 1 mutation are excluded from this comparison.
             </p>
             <div style="overflow-x: auto;">
-            <table class="data-table" style="width: 100%; font-size: 12px;">
+            <table id="compareByCancerTable" class="data-table" style="width: 100%; font-size: 12px;">
                 <thead>
                     <tr>
-                        <th>Cancer Type</th>
-                        <th>N (WT)</th>
-                        <th>r (WT)</th>
-                        <th>slope (WT)</th>
-                        <th>N (Mut)</th>
-                        <th>r (Mut)</th>
-                        <th>slope (Mut)</th>
-                        <th>Δr</th>
-                        <th>p(Δr)</th>
-                        <th>Δslope</th>
-                        <th>p(Δslope)</th>
+                        <th data-col="0" style="cursor: pointer;">Cancer Type ▼</th>
+                        <th data-col="1" style="cursor: pointer;">N (WT)</th>
+                        <th data-col="2" style="cursor: pointer;">r (WT)</th>
+                        <th data-col="3" style="cursor: pointer;">slope (WT)</th>
+                        <th data-col="4" style="cursor: pointer;">N (Mut)</th>
+                        <th data-col="5" style="cursor: pointer;">r (Mut)</th>
+                        <th data-col="6" style="cursor: pointer;">slope (Mut)</th>
+                        <th data-col="7" style="cursor: pointer;">Δr</th>
+                        <th data-col="8" style="cursor: pointer;">p(Δr)</th>
+                        <th data-col="9" style="cursor: pointer;">Δslope</th>
+                        <th data-col="10" style="cursor: pointer;">p(Δslope)</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -2953,9 +2953,12 @@ Results:
             });
             this.downloadFile(csv, `${gene1}_vs_${gene2}_${hotspotGene}_mutation_comparison.csv`, 'text/csv');
         });
+
+        // Make table sortable
+        this.setupSortableTable('compareByCancerTable');
     }
 
-    renderMutationComparisonTable(data, gene1, gene2, filterDesc = '') {
+    renderMutationComparisonTable(filteredData, gene1, gene2, filterDesc = '') {
         // Compare how different hotspot mutations affect the correlation
         if (!this.mutations || !this.mutations.geneData) {
             document.getElementById('compareTable').innerHTML = '<p>No mutation data available.</p>';
@@ -3015,19 +3018,19 @@ Results:
                 Sorted by p-value (most significant effect first).
             </p>
             <div style="overflow-x: auto;">
-            <table class="data-table" style="width: 100%; font-size: 12px;">
+            <table id="compareMutationsTable" class="data-table" style="width: 100%; font-size: 12px;">
                 <thead>
                     <tr>
-                        <th>Mutation Gene</th>
-                        <th>N (WT)</th>
-                        <th>r (WT)</th>
-                        <th>slope (WT)</th>
-                        <th>N (Mut)</th>
-                        <th>r (Mut)</th>
-                        <th>slope (Mut)</th>
-                        <th>Δr</th>
-                        <th>p(Δr)</th>
-                        <th>Δslope</th>
+                        <th data-col="0" style="cursor: pointer;">Mutation Gene ▼</th>
+                        <th data-col="1" style="cursor: pointer;">N (WT)</th>
+                        <th data-col="2" style="cursor: pointer;">r (WT)</th>
+                        <th data-col="3" style="cursor: pointer;">slope (WT)</th>
+                        <th data-col="4" style="cursor: pointer;">N (Mut)</th>
+                        <th data-col="5" style="cursor: pointer;">r (Mut)</th>
+                        <th data-col="6" style="cursor: pointer;">slope (Mut)</th>
+                        <th data-col="7" style="cursor: pointer;">Δr</th>
+                        <th data-col="8" style="cursor: pointer;">p(Δr)</th>
+                        <th data-col="9" style="cursor: pointer;">Δslope</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -3076,6 +3079,9 @@ Results:
             });
             this.downloadFile(csv, `${gene1}_vs_${gene2}_all_mutations_comparison.csv`, 'text/csv');
         });
+
+        // Make table sortable
+        this.setupSortableTable('compareMutationsTable');
     }
 
     normalCDF(x) {
@@ -3171,6 +3177,7 @@ Results:
                     tissue,
                     n: points.length,
                     correlation: stats.correlation,
+                    slope: stats.slope,
                     meanX,
                     sdX,
                     meanY,
@@ -3244,20 +3251,21 @@ Results:
             height: Math.max(400, tissueStats.length * 25 + 100)
         };
 
-        // Build statistics table HTML
+        // Build statistics table HTML with sortable headers
         let tableHtml = `
             <h4 style="margin: 0 0 10px 0;">Statistics by Lineage</h4>
             <div style="max-height: 500px; overflow-y: auto;">
-            <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
+            <table id="byTissueTable" style="width: 100%; border-collapse: collapse; font-size: 11px;">
                 <thead>
                     <tr style="background-color: #22c55e; color: white;">
-                        <th style="padding: 6px; border: 1px solid #16a34a; text-align: left; position: sticky; top: 0; background-color: #22c55e;">Lineage</th>
-                        <th style="padding: 6px; border: 1px solid #16a34a; text-align: center; position: sticky; top: 0; background-color: #22c55e;">N</th>
-                        <th style="padding: 6px; border: 1px solid #16a34a; text-align: center; position: sticky; top: 0; background-color: #22c55e;">Corr</th>
-                        <th style="padding: 6px; border: 1px solid #16a34a; text-align: center; position: sticky; top: 0; background-color: #22c55e;">${gene1} (mean)</th>
-                        <th style="padding: 6px; border: 1px solid #16a34a; text-align: center; position: sticky; top: 0; background-color: #22c55e;">${gene1} (SD)</th>
-                        <th style="padding: 6px; border: 1px solid #16a34a; text-align: center; position: sticky; top: 0; background-color: #22c55e;">${gene2} (mean)</th>
-                        <th style="padding: 6px; border: 1px solid #16a34a; text-align: center; position: sticky; top: 0; background-color: #22c55e;">${gene2} (SD)</th>
+                        <th data-col="0" style="padding: 6px; border: 1px solid #16a34a; text-align: left; position: sticky; top: 0; background-color: #22c55e; cursor: pointer;">Lineage ▼</th>
+                        <th data-col="1" style="padding: 6px; border: 1px solid #16a34a; text-align: center; position: sticky; top: 0; background-color: #22c55e; cursor: pointer;">N</th>
+                        <th data-col="2" style="padding: 6px; border: 1px solid #16a34a; text-align: center; position: sticky; top: 0; background-color: #22c55e; cursor: pointer;">Corr</th>
+                        <th data-col="3" style="padding: 6px; border: 1px solid #16a34a; text-align: center; position: sticky; top: 0; background-color: #22c55e; cursor: pointer;">Slope</th>
+                        <th data-col="4" style="padding: 6px; border: 1px solid #16a34a; text-align: center; position: sticky; top: 0; background-color: #22c55e; cursor: pointer;">${gene1} (mean)</th>
+                        <th data-col="5" style="padding: 6px; border: 1px solid #16a34a; text-align: center; position: sticky; top: 0; background-color: #22c55e; cursor: pointer;">${gene1} (SD)</th>
+                        <th data-col="6" style="padding: 6px; border: 1px solid #16a34a; text-align: center; position: sticky; top: 0; background-color: #22c55e; cursor: pointer;">${gene2} (mean)</th>
+                        <th data-col="7" style="padding: 6px; border: 1px solid #16a34a; text-align: center; position: sticky; top: 0; background-color: #22c55e; cursor: pointer;">${gene2} (SD)</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -3272,6 +3280,7 @@ Results:
                     <td style="padding: 5px; border: 1px solid #ddd;">${t.tissue}</td>
                     <td style="padding: 5px; border: 1px solid #ddd; text-align: center;">${t.n}</td>
                     <td style="padding: 5px; border: 1px solid #ddd; text-align: center; background: ${corrColor}; color: ${Math.abs(t.correlation) > 0.5 ? 'white' : 'black'}">${t.correlation.toFixed(2)}</td>
+                    <td style="padding: 5px; border: 1px solid #ddd; text-align: center;">${t.slope.toFixed(3)}</td>
                     <td style="padding: 5px; border: 1px solid #ddd; text-align: center;">${t.meanX.toFixed(2)}</td>
                     <td style="padding: 5px; border: 1px solid #ddd; text-align: center;">${t.sdX.toFixed(2)}</td>
                     <td style="padding: 5px; border: 1px solid #ddd; text-align: center;">${t.meanY.toFixed(2)}</td>
@@ -3305,6 +3314,46 @@ Results:
 
         // Render bar chart in the new container
         Plotly.newPlot('byTissueChart', [trace], { ...layout, height: chartHeight }, { responsive: true });
+
+        // Add sortable table headers
+        this.setupSortableTable('byTissueTable');
+    }
+
+    setupSortableTable(tableId) {
+        const table = document.getElementById(tableId);
+        if (!table) return;
+
+        const headers = table.querySelectorAll('th[data-col]');
+        headers.forEach(th => {
+            th.addEventListener('click', () => {
+                const col = parseInt(th.dataset.col);
+                const tbody = table.querySelector('tbody');
+                const rows = Array.from(tbody.querySelectorAll('tr'));
+                const isAsc = th.dataset.dir !== 'asc';
+                th.dataset.dir = isAsc ? 'asc' : 'desc';
+
+                // Update header arrows
+                headers.forEach(h => {
+                    h.textContent = h.textContent.replace(/ [▲▼]$/, '');
+                });
+                th.textContent += isAsc ? ' ▲' : ' ▼';
+
+                rows.sort((a, b) => {
+                    const aVal = a.children[col]?.textContent || '';
+                    const bVal = b.children[col]?.textContent || '';
+
+                    // Try numeric sort first
+                    const aNum = parseFloat(aVal);
+                    const bNum = parseFloat(bVal);
+                    if (!isNaN(aNum) && !isNaN(bNum)) {
+                        return isAsc ? aNum - bNum : bNum - aNum;
+                    }
+                    return isAsc ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+                });
+
+                rows.forEach(row => tbody.appendChild(row));
+            });
+        });
     }
 
     downloadScatterCSV() {
