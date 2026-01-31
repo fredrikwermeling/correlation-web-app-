@@ -2508,13 +2508,14 @@ Results:
         const annotations = [];
 
         // Calculate margin based on title lines
-        const topMargin = 40 + (titleLines.length * 16);
+        const topMargin = 80 + (titleLines.length * 18);
 
         const layout = {
             title: {
                 text: titleText,
                 x: 0.5,
-                y: 0.99,
+                y: 0.98,
+                yanchor: 'top',
                 font: { size: 14 }
             },
             xaxis: {
