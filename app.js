@@ -2484,31 +2484,6 @@ Results:
 - Number of clusters: ${Math.max(...this.results.correlations.map(c => c.cluster))}
 `;
 
-        // Create legend text
-        let legendTxt = `Network Legend
-==============
-
-Correlation:
-- Blue lines = Positive correlation
-- Red lines = Negative correlation
-
-Edge Thickness:
-- Thicker edges = stronger correlation
-- Thinner edges = weaker correlation
-
-`;
-        if (this.results.mode === 'design') {
-            legendTxt += `Node Type:
-- Dark green = Input gene
-- Light green = Correlated gene (found by analysis)
-
-`;
-        }
-        if (this.hasSynonymsInNetwork) {
-            legendTxt += `* = synonym/orthologue used
-`;
-        }
-
         // Create ZIP file using JSZip
         if (typeof JSZip === 'undefined') {
             // Fallback if JSZip not loaded
@@ -2516,7 +2491,6 @@ Edge Thickness:
             this.downloadFile(correlationsCSV, 'correlations.csv', 'text/csv');
             setTimeout(() => this.downloadFile(clustersCSV, 'clusters.csv', 'text/csv'), 300);
             setTimeout(() => this.downloadFile(summary, 'summary.txt', 'text/plain'), 600);
-            setTimeout(() => this.downloadFile(legendTxt, 'legend.txt', 'text/plain'), 900);
             return;
         }
 
@@ -2524,7 +2498,6 @@ Edge Thickness:
         zip.file('correlations.csv', correlationsCSV);
         zip.file('clusters.csv', clustersCSV);
         zip.file('summary.txt', summary);
-        zip.file('legend.txt', legendTxt);
 
         // Add network images if network exists
         const addNetworkImages = async () => {
