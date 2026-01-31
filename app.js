@@ -302,7 +302,11 @@ class CorrelationExplorer {
             if (this.network) this.network.fit();
         });
         document.getElementById('showHiddenNodes').addEventListener('click', () => this.showHiddenNodes());
-        document.getElementById('showGeneEffect').addEventListener('change', () => this.updateNetworkLabels());
+        document.getElementById('showGeneEffect').addEventListener('change', (e) => {
+            document.getElementById('showGESDGroup').style.display = e.target.checked ? 'inline' : 'none';
+            this.updateNetworkLabels();
+        });
+        document.getElementById('showGeneEffectSD').addEventListener('change', () => this.updateNetworkLabels());
 
         // Color by gene effect controls
         document.getElementById('colorByGeneEffect').addEventListener('change', (e) => {
@@ -966,14 +970,34 @@ class CorrelationExplorer {
             });
         });
 
+        // Build reverse lookup: replacement gene -> original gene name
+        const synonymLookup = new Map();
+        if (this.synonymsUsed && this.synonymsUsed.length > 0) {
+            this.synonymsUsed.forEach(s => {
+                synonymLookup.set(s.replacement.toUpperCase(), s.original);
+            });
+        }
+
         // Create nodes
         geneSet.forEach(gene => {
             const cluster = this.results.clusters.find(c => c.gene === gene);
             const isInput = this.results.geneList.includes(gene);
-            const geneStat = this.geneStats?.get(gene);
+
+            // Check if this gene is a synonym replacement
+            const originalName = synonymLookup.get(gene.toUpperCase());
+            const isSynonym = !!originalName;
+
+            // Look up stats - try replacement name first, then original name
+            let geneStat = this.geneStats?.get(gene);
+            if (!geneStat && originalName) {
+                geneStat = this.geneStats?.get(originalName);
+            }
 
             // Build title with available information
             let titleLines = [gene];
+            if (isSynonym) {
+                titleLines.push(`(synonym of ${originalName})`);
+            }
             titleLines.push(`GE mean: ${cluster?.meanEffect || 'N/A'}`);
             titleLines.push(`GE SD: ${cluster?.sdEffect || 'N/A'}`);
             if (geneStat?.lfc !== undefined && geneStat?.lfc !== null) {
@@ -983,9 +1007,12 @@ class CorrelationExplorer {
                 titleLines.push(`FDR: ${geneStat.fdr.toExponential(2)}`);
             }
 
+            // Add * to label if synonym
+            const label = isSynonym ? `${gene}*` : gene;
+
             nodes.push({
                 id: gene,
-                label: gene,
+                label: label,
                 size: nodeSize,
                 font: { size: fontSize, color: '#333' },
                 color: {
@@ -994,9 +1021,15 @@ class CorrelationExplorer {
                     border: '#ffffff'
                 },
                 borderWidth: 2,
-                title: titleLines.join('\n')
+                title: titleLines.join('\n'),
+                isSynonym: isSynonym,
+                originalName: originalName
             });
         });
+
+        // Track if any synonyms are in the network for legend display
+        this.hasSynonymsInNetwork = synonymLookup.size > 0 &&
+            Array.from(geneSet).some(g => synonymLookup.has(g.toUpperCase()));
 
         const data = { nodes: new vis.DataSet(nodes), edges: new vis.DataSet(edges) };
         const options = {
@@ -1060,6 +1093,12 @@ class CorrelationExplorer {
             `;
         } else {
             legendNodeType.innerHTML = '';
+        }
+
+        // Show synonym legend if synonyms are used in the network
+        const legendSynonym = document.getElementById('legendSynonym');
+        if (legendSynonym) {
+            legendSynonym.style.display = this.hasSynonymsInNetwork ? 'block' : 'none';
         }
 
         // Update edge thickness legend with actual data values
@@ -1826,14 +1865,21 @@ Results:
         if (!this.network || !this.networkData) return;
 
         const showGE = document.getElementById('showGeneEffect').checked;
+        const showSD = document.getElementById('showGeneEffectSD').checked;
         const updates = [];
 
         this.networkData.nodes.forEach(node => {
             const cluster = this.results?.clusters?.find(c => c.gene === node.id);
-            let label = node.id;
+            // Add * suffix if this is a synonym
+            const baseName = node.isSynonym ? `${node.id}*` : node.id;
+            let label = baseName;
 
             if (showGE && cluster) {
-                label = `${node.id}\n(GE:${cluster.meanEffect})`;
+                if (showSD && cluster.sdEffect) {
+                    label = `${baseName}\n(GE:${cluster.meanEffect}±${cluster.sdEffect})`;
+                } else {
+                    label = `${baseName}\n(GE:${cluster.meanEffect})`;
+                }
             }
 
             updates.push({
@@ -1850,16 +1896,38 @@ Results:
 
         const statsDisplay = document.querySelector('input[name="statsLabelDisplay"]:checked')?.value || 'none';
         const showGE = document.getElementById('showGeneEffect').checked;
+        const showSD = document.getElementById('showGeneEffectSD').checked;
         const updates = [];
+
+        // Build reverse lookup for synonyms to find stats from original name
+        const synonymLookup = new Map();
+        if (this.synonymsUsed && this.synonymsUsed.length > 0) {
+            this.synonymsUsed.forEach(s => {
+                synonymLookup.set(s.replacement.toUpperCase(), s.original);
+            });
+        }
 
         this.networkData.nodes.forEach(node => {
             const cluster = this.results?.clusters?.find(c => c.gene === node.id);
-            const geneStat = this.geneStats?.get(node.id);
-            let label = node.id;
+
+            // Look up stats - try replacement name first, then original name
+            let geneStat = this.geneStats?.get(node.id);
+            const originalName = synonymLookup.get(node.id.toUpperCase());
+            if (!geneStat && originalName) {
+                geneStat = this.geneStats?.get(originalName);
+            }
+
+            // Add * suffix if this is a synonym
+            const baseName = node.isSynonym ? `${node.id}*` : node.id;
+            let label = baseName;
 
             // Add gene effect if checked
             if (showGE && cluster) {
-                label = `${node.id}\n(GE:${cluster.meanEffect})`;
+                if (showSD && cluster.sdEffect) {
+                    label = `${baseName}\n(GE:${cluster.meanEffect}±${cluster.sdEffect})`;
+                } else {
+                    label = `${baseName}\n(GE:${cluster.meanEffect})`;
+                }
             }
 
             // Add stats label if selected

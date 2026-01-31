@@ -1241,6 +1241,9 @@
                         <div class="control-column control-box">
                             <div class="checkbox-group" style="margin-bottom: 6px;">
                                 <label><input type="checkbox" id="showGeneEffect"> Show GE in label</label>
+                                <span id="showGESDGroup" style="margin-left: 8px; display: none;">
+                                    <label><input type="checkbox" id="showGeneEffectSD"> ± SD</label>
+                                </span>
                             </div>
                             <div class="checkbox-group" style="margin-bottom: 6px;">
                                 <label><input type="checkbox" id="colorByGeneEffect"> Color by GE</label>
@@ -1301,6 +1304,9 @@
                             <strong>Node Type:</strong>
                             <div class="legend-item"><span class="legend-dot" style="background: #16a34a;"></span> Input gene</div>
                             <div class="legend-item"><span class="legend-dot" style="background: #86efac;"></span> Correlated gene</div>
+                        </div>
+                        <div class="legend-section" id="legendSynonym" style="display: none;">
+                            <strong>*</strong> = synonym/orthologue used
                         </div>
                     </div>
                 </div>
