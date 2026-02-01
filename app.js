@@ -461,7 +461,7 @@ class CorrelationExplorer {
         document.getElementById('loadTestGenes').addEventListener('click', () => {
             const testGenes = ['TP53', 'BRCA1', 'BRCA2', 'MYC', 'KRAS', 'EGFR', 'PTEN',
                 'RB1', 'APC', 'VHL', 'CDKN2A', 'NOTCH1', 'PIK3CA', 'BRAF',
-                'ATM', 'ERBB2', 'CDK4', 'MDM2', 'NRAS', 'ARID1A'];
+                'ATM', 'ERBB2', 'CDK4', 'MDM2', 'NRAS', 'ARID1A', 'TSC1', 'TSC2'];
             document.getElementById('geneTextarea').value = testGenes.join('\n');
             this.updateGeneCount();
         });
@@ -974,7 +974,9 @@ class CorrelationExplorer {
             { gene: 'NFE2L2', lfc: -1.2, fdr: 0.015 },
             { gene: 'KEAP1', lfc: 0.8, fdr: 0.05 },
             { gene: 'STK11', lfc: -0.9, fdr: 0.04 },
-            { gene: 'CREBBP', lfc: 0.4, fdr: 0.18 }
+            { gene: 'CREBBP', lfc: 0.4, fdr: 0.18 },
+            { gene: 'TSC1', lfc: 1.0, fdr: 0.02 },
+            { gene: 'TSC2', lfc: 0.9, fdr: 0.03 }
         ];
 
         this.geneStats = new Map();
