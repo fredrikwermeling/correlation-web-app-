@@ -213,6 +213,44 @@ class CorrelationExplorer {
         `;
     }
 
+    updateAnalysisModeUI() {
+        const mode = document.querySelector('input[name="analysisMode"]:checked').value;
+        const isMutationMode = mode === 'mutation';
+
+        // Toggle visibility of correlation/slope params
+        document.getElementById('correlationParams').style.display = isMutationMode ? 'none' : 'block';
+        document.getElementById('slopeParams').style.display = isMutationMode ? 'none' : 'block';
+
+        // Toggle visibility of mutation-specific params
+        document.getElementById('mutationHotspotGroup').style.display = isMutationMode ? 'block' : 'none';
+        document.getElementById('pValueThresholdGroup').style.display = isMutationMode ? 'block' : 'none';
+
+        // Show/hide mutation tab
+        document.getElementById('mutationTab').style.display = isMutationMode ? 'inline-block' : 'none';
+
+        // Populate hotspot selector if not already done
+        if (isMutationMode) {
+            this.populateMutationHotspotSelector();
+        }
+    }
+
+    populateMutationHotspotSelector() {
+        const select = document.getElementById('mutationHotspotSelect');
+        if (select.options.length > 1) return; // Already populated
+
+        if (this.mutations && this.mutations.geneData) {
+            const genes = Object.keys(this.mutations.geneData).sort();
+            genes.forEach(gene => {
+                const data = this.mutations.geneData[gene];
+                const nMut = (data.counts['1'] || 0) + (data.counts['2'] || 0);
+                const option = document.createElement('option');
+                option.value = gene;
+                option.textContent = `${gene} (${nMut} mutated cells)`;
+                select.appendChild(option);
+            });
+        }
+    }
+
     getCellLineName(cellLineId) {
         if (this.cellLineMetadata && this.cellLineMetadata.strippedCellLineName) {
             return this.cellLineMetadata.strippedCellLineName[cellLineId] ||
@@ -293,6 +331,21 @@ class CorrelationExplorer {
 
         // Run analysis
         document.getElementById('runAnalysis').addEventListener('click', () => this.runAnalysis());
+
+        // Analysis mode change
+        document.querySelectorAll('input[name="analysisMode"]').forEach(radio => {
+            radio.addEventListener('change', () => this.updateAnalysisModeUI());
+        });
+
+        // Mutation results search
+        document.getElementById('mutationSearch').addEventListener('input', (e) => {
+            this.filterMutationTable(e.target.value);
+        });
+
+        // Download mutation results
+        document.getElementById('downloadMutationResults').addEventListener('click', () => {
+            this.downloadMutationResults();
+        });
 
         // Network controls with slider bubble updates
         document.getElementById('netFontSize').addEventListener('input', (e) => {
@@ -854,8 +907,15 @@ class CorrelationExplorer {
         // Reset network settings to defaults when running new analysis
         this.resetNetworkSettings();
 
-        const geneList = this.getGeneList();
         const mode = document.querySelector('input[name="analysisMode"]:checked').value;
+
+        // Handle mutation analysis mode separately
+        if (mode === 'mutation') {
+            this.runMutationAnalysis();
+            return;
+        }
+
+        const geneList = this.getGeneList();
         const cutoff = parseFloat(document.getElementById('correlationCutoff').value);
         const minN = parseInt(document.getElementById('minCellLines').value);
         const minSlope = parseFloat(document.getElementById('minSlope').value);
@@ -894,6 +954,406 @@ class CorrelationExplorer {
                 this.showStatus('error', 'Analysis failed: ' + error.message);
             }
         }, 50);
+    }
+
+    runMutationAnalysis() {
+        const hotspotGene = document.getElementById('mutationHotspotSelect').value;
+        const minN = parseInt(document.getElementById('minCellLines').value);
+        const pThreshold = parseFloat(document.getElementById('pValueThreshold').value);
+        const lineageFilter = document.getElementById('lineageFilter').value;
+
+        if (!hotspotGene) {
+            this.showStatus('error', 'Please select a hotspot mutation');
+            return;
+        }
+
+        this.showStatus('info', 'Running mutation analysis...');
+
+        // Use setTimeout to allow UI to update
+        setTimeout(() => {
+            try {
+                const results = this.calculateMutationAnalysis(hotspotGene, minN, lineageFilter);
+
+                // Filter by p-value threshold
+                const significantResults = results.filter(r => r.p_mut < pThreshold || r.p_2 < pThreshold);
+
+                // Sort by p-value (1+2 vs 0)
+                significantResults.sort((a, b) => a.p_mut - b.p_mut);
+
+                this.mutationResults = {
+                    hotspotGene,
+                    pThreshold,
+                    lineageFilter,
+                    allResults: results,
+                    significantResults
+                };
+
+                this.displayMutationResults();
+
+                // Switch to mutation tab
+                document.querySelectorAll('.nav-link').forEach(link => link.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+                document.querySelector('[data-tab="mutation"]').classList.add('active');
+                document.getElementById('tab-mutation').classList.add('active');
+
+                this.showStatus('success',
+                    `&#10003; Mutation analysis complete: ${significantResults.length} genes with p < ${pThreshold}`);
+            } catch (error) {
+                console.error('Mutation analysis error:', error);
+                this.showStatus('error', 'Mutation analysis failed: ' + error.message);
+            }
+        }, 50);
+    }
+
+    calculateMutationAnalysis(hotspotGene, minN, lineageFilter) {
+        const mutationData = this.mutations.geneData[hotspotGene];
+        if (!mutationData) {
+            throw new Error(`No mutation data for ${hotspotGene}`);
+        }
+
+        const cellLines = this.metadata.cellLines;
+        const results = [];
+
+        // Categorize cell lines by mutation status and lineage filter
+        const wtCellIndices = [];
+        const mut1CellIndices = [];
+        const mut2CellIndices = [];
+
+        cellLines.forEach((cellLine, idx) => {
+            // Check lineage filter
+            if (lineageFilter && this.cellLineMetadata?.lineage?.[cellLine] !== lineageFilter) {
+                return;
+            }
+
+            const mutLevel = mutationData.mutations[cellLine] || 0;
+            if (mutLevel === 0) {
+                wtCellIndices.push(idx);
+            } else if (mutLevel === 1) {
+                mut1CellIndices.push(idx);
+            } else {
+                mut2CellIndices.push(idx);
+            }
+        });
+
+        const mutAllCellIndices = [...mut1CellIndices, ...mut2CellIndices];
+
+        // Check minimum cell count
+        if (wtCellIndices.length < 3 || mutAllCellIndices.length < 3) {
+            throw new Error(`Not enough cell lines: WT=${wtCellIndices.length}, Mutated=${mutAllCellIndices.length}`);
+        }
+
+        // Analyze each gene
+        for (let geneIdx = 0; geneIdx < this.nGenes; geneIdx++) {
+            const gene = this.geneNames[geneIdx];
+
+            // Get gene effect values for each group
+            const wtEffects = this.getGeneEffectsForCells(geneIdx, wtCellIndices);
+            const mutAllEffects = this.getGeneEffectsForCells(geneIdx, mutAllCellIndices);
+            const mut2Effects = this.getGeneEffectsForCells(geneIdx, mut2CellIndices);
+
+            // Skip if not enough valid values
+            if (wtEffects.length < minN || mutAllEffects.length < 3) continue;
+
+            // Calculate statistics for WT vs 1+2
+            const wtMean = this.mean(wtEffects);
+            const mutMean = this.mean(mutAllEffects);
+            const diff_mut = mutMean - wtMean;
+            const tTest_mut = this.welchTTest(wtEffects, mutAllEffects);
+
+            // Calculate statistics for WT vs 2 (if enough cells)
+            let n_2 = mut2Effects.length;
+            let mean_2 = NaN;
+            let diff_2 = NaN;
+            let p_2 = 1;
+
+            if (mut2Effects.length >= 3) {
+                mean_2 = this.mean(mut2Effects);
+                diff_2 = mean_2 - wtMean;
+                const tTest_2 = this.welchTTest(wtEffects, mut2Effects);
+                p_2 = tTest_2.p;
+            }
+
+            results.push({
+                gene,
+                n_wt: wtEffects.length,
+                mean_wt: wtMean,
+                n_mut: mutAllEffects.length,
+                mean_mut: mutMean,
+                diff_mut,
+                p_mut: tTest_mut.p,
+                n_2,
+                mean_2,
+                diff_2,
+                p_2
+            });
+        }
+
+        return results;
+    }
+
+    getGeneEffectsForCells(geneIdx, cellIndices) {
+        const effects = [];
+        for (const cellIdx of cellIndices) {
+            const value = this.geneEffects[geneIdx * this.nCellLines + cellIdx];
+            if (!isNaN(value)) {
+                effects.push(value);
+            }
+        }
+        return effects;
+    }
+
+    mean(arr) {
+        if (arr.length === 0) return NaN;
+        return arr.reduce((a, b) => a + b, 0) / arr.length;
+    }
+
+    variance(arr) {
+        if (arr.length < 2) return 0;
+        const m = this.mean(arr);
+        return arr.reduce((acc, val) => acc + (val - m) ** 2, 0) / (arr.length - 1);
+    }
+
+    welchTTest(group1, group2) {
+        // Welch's t-test for unequal variances
+        const n1 = group1.length;
+        const n2 = group2.length;
+        const m1 = this.mean(group1);
+        const m2 = this.mean(group2);
+        const v1 = this.variance(group1);
+        const v2 = this.variance(group2);
+
+        if (n1 < 2 || n2 < 2) {
+            return { t: NaN, df: NaN, p: 1 };
+        }
+
+        const se = Math.sqrt(v1 / n1 + v2 / n2);
+        if (se === 0) {
+            return { t: 0, df: n1 + n2 - 2, p: 1 };
+        }
+
+        const t = (m1 - m2) / se;
+
+        // Welch-Satterthwaite degrees of freedom
+        const df = Math.pow(v1 / n1 + v2 / n2, 2) /
+            (Math.pow(v1 / n1, 2) / (n1 - 1) + Math.pow(v2 / n2, 2) / (n2 - 1));
+
+        // Two-tailed p-value using t-distribution approximation
+        const p = this.tDistributionPValue(Math.abs(t), df);
+
+        return { t, df, p };
+    }
+
+    tDistributionPValue(t, df) {
+        // Approximation of two-tailed p-value for t-distribution
+        // Using normal approximation for large df, or beta approximation for small df
+        if (df <= 0 || isNaN(t) || isNaN(df)) return 1;
+
+        // For large df, approximate with normal distribution
+        if (df > 100) {
+            return 2 * (1 - this.normalCDF(t));
+        }
+
+        // Beta function approximation for t-distribution CDF
+        const x = df / (df + t * t);
+        const a = df / 2;
+        const b = 0.5;
+
+        // Incomplete beta function approximation
+        const betaInc = this.incompleteBeta(x, a, b);
+        return betaInc;
+    }
+
+    incompleteBeta(x, a, b) {
+        // Simplified incomplete beta function for t-distribution p-value
+        // This is an approximation suitable for statistical testing
+        if (x <= 0) return 0;
+        if (x >= 1) return 1;
+
+        // Use continued fraction expansion (simplified)
+        const bt = Math.exp(
+            this.logGamma(a + b) - this.logGamma(a) - this.logGamma(b) +
+            a * Math.log(x) + b * Math.log(1 - x)
+        );
+
+        if (x < (a + 1) / (a + b + 2)) {
+            return bt * this.betaCF(x, a, b) / a;
+        } else {
+            return 1 - bt * this.betaCF(1 - x, b, a) / b;
+        }
+    }
+
+    betaCF(x, a, b) {
+        // Continued fraction for incomplete beta
+        const maxIter = 100;
+        const eps = 1e-10;
+
+        let qab = a + b;
+        let qap = a + 1;
+        let qam = a - 1;
+        let c = 1;
+        let d = 1 - qab * x / qap;
+        if (Math.abs(d) < 1e-30) d = 1e-30;
+        d = 1 / d;
+        let h = d;
+
+        for (let m = 1; m <= maxIter; m++) {
+            let m2 = 2 * m;
+            let aa = m * (b - m) * x / ((qam + m2) * (a + m2));
+            d = 1 + aa * d;
+            if (Math.abs(d) < 1e-30) d = 1e-30;
+            c = 1 + aa / c;
+            if (Math.abs(c) < 1e-30) c = 1e-30;
+            d = 1 / d;
+            h *= d * c;
+
+            aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2));
+            d = 1 + aa * d;
+            if (Math.abs(d) < 1e-30) d = 1e-30;
+            c = 1 + aa / c;
+            if (Math.abs(c) < 1e-30) c = 1e-30;
+            d = 1 / d;
+            let del = d * c;
+            h *= del;
+
+            if (Math.abs(del - 1) < eps) break;
+        }
+
+        return h;
+    }
+
+    logGamma(x) {
+        // Lanczos approximation for log gamma function
+        const g = 7;
+        const c = [
+            0.99999999999980993,
+            676.5203681218851,
+            -1259.1392167224028,
+            771.32342877765313,
+            -176.61502916214059,
+            12.507343278686905,
+            -0.13857109526572012,
+            9.9843695780195716e-6,
+            1.5056327351493116e-7
+        ];
+
+        if (x < 0.5) {
+            return Math.log(Math.PI / Math.sin(Math.PI * x)) - this.logGamma(1 - x);
+        }
+
+        x -= 1;
+        let a = c[0];
+        for (let i = 1; i < g + 2; i++) {
+            a += c[i] / (x + i);
+        }
+
+        const t = x + g + 0.5;
+        return 0.5 * Math.log(2 * Math.PI) + (x + 0.5) * Math.log(t) - t + Math.log(a);
+    }
+
+    displayMutationResults() {
+        if (!this.mutationResults) return;
+
+        const results = this.mutationResults.significantResults;
+        const tbody = document.getElementById('mutationTableBody');
+        tbody.innerHTML = '';
+
+        results.forEach(r => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${r.gene}</td>
+                <td>${r.n_wt}</td>
+                <td>${r.mean_wt.toFixed(3)}</td>
+                <td>${r.n_mut}</td>
+                <td>${r.mean_mut.toFixed(3)}</td>
+                <td class="${r.diff_mut < 0 ? 'negative' : 'positive'}">${r.diff_mut.toFixed(3)}</td>
+                <td>${r.p_mut < 0.001 ? r.p_mut.toExponential(2) : r.p_mut.toFixed(4)}</td>
+                <td>${r.n_2}</td>
+                <td>${isNaN(r.mean_2) ? '-' : r.mean_2.toFixed(3)}</td>
+                <td class="${r.diff_2 < 0 ? 'negative' : 'positive'}">${isNaN(r.diff_2) ? '-' : r.diff_2.toFixed(3)}</td>
+                <td>${r.p_2 >= 1 ? '-' : (r.p_2 < 0.001 ? r.p_2.toExponential(2) : r.p_2.toFixed(4))}</td>
+            `;
+            tbody.appendChild(row);
+        });
+
+        document.getElementById('mutationResultsCount').textContent =
+            `${results.length} genes with p < ${this.mutationResults.pThreshold}`;
+
+        // Store for sorting
+        this.mutationTableData = results;
+    }
+
+    filterMutationTable(query) {
+        const tbody = document.getElementById('mutationTableBody');
+        const rows = tbody.querySelectorAll('tr');
+        const lowerQuery = query.toLowerCase();
+
+        rows.forEach(row => {
+            const gene = row.cells[0].textContent.toLowerCase();
+            row.style.display = gene.includes(lowerQuery) ? '' : 'none';
+        });
+    }
+
+    sortMutationTable(th) {
+        if (!this.mutationTableData) return;
+
+        const col = th.dataset.col;
+        const currentDir = th.dataset.sortDir === 'asc' ? 'desc' : 'asc';
+        th.dataset.sortDir = currentDir;
+
+        // Update header indicators
+        th.closest('tr').querySelectorAll('th').forEach(h => {
+            h.textContent = h.textContent.replace(' ▲', '').replace(' ▼', '');
+        });
+        th.textContent += currentDir === 'asc' ? ' ▲' : ' ▼';
+
+        // Sort data
+        this.mutationTableData.sort((a, b) => {
+            let valA = a[col];
+            let valB = b[col];
+
+            if (typeof valA === 'string') {
+                return currentDir === 'asc' ?
+                    valA.localeCompare(valB) : valB.localeCompare(valA);
+            } else {
+                if (isNaN(valA)) valA = currentDir === 'asc' ? Infinity : -Infinity;
+                if (isNaN(valB)) valB = currentDir === 'asc' ? Infinity : -Infinity;
+                return currentDir === 'asc' ? valA - valB : valB - valA;
+            }
+        });
+
+        // Update significant results reference for export
+        this.mutationResults.significantResults = this.mutationTableData;
+
+        // Re-render table
+        this.displayMutationResults();
+    }
+
+    downloadMutationResults() {
+        if (!this.mutationResults) return;
+
+        const results = this.mutationResults.significantResults;
+        const headers = ['Gene', 'N_WT', 'Mean_GE_WT', 'N_1+2', 'Mean_GE_1+2', 'Delta_GE', 'pValue_1+2_vs_0',
+                        'N_2', 'Mean_GE_2', 'Delta_GE_2vs0', 'pValue_2_vs_0'];
+
+        let csv = headers.join(',') + '\n';
+        results.forEach(r => {
+            csv += [
+                r.gene,
+                r.n_wt,
+                r.mean_wt.toFixed(4),
+                r.n_mut,
+                r.mean_mut.toFixed(4),
+                r.diff_mut.toFixed(4),
+                r.p_mut.toExponential(4),
+                r.n_2,
+                isNaN(r.mean_2) ? '' : r.mean_2.toFixed(4),
+                isNaN(r.diff_2) ? '' : r.diff_2.toFixed(4),
+                r.p_2 >= 1 ? '' : r.p_2.toExponential(4)
+            ].join(',') + '\n';
+        });
+
+        const filename = `mutation_analysis_${this.mutationResults.hotspotGene}_${new Date().toISOString().slice(0, 10)}.csv`;
+        this.downloadFile(csv, filename, 'text/csv');
     }
 
     calculateCorrelations(geneList, mode, cutoff, minN, minSlope, cellLineIndices) {

@@ -942,6 +942,10 @@
         .corr-positive { color: var(--green-700); font-weight: 600; }
         .corr-negative { color: #dc2626; font-weight: 600; }
 
+        /* Gene effect difference colors */
+        .positive { color: #2563eb; } /* Blue for positive (less essential) */
+        .negative { color: #dc2626; } /* Red for negative (more essential) */
+
         /* Loading overlay */
         .loading-overlay {
             position: fixed;
@@ -1134,10 +1138,14 @@
                                 <input type="radio" name="analysisMode" value="design">
                                 Design (find correlated)
                             </label>
+                            <label>
+                                <input type="radio" name="analysisMode" value="mutation">
+                                Mutation Analysis (differential GE)
+                            </label>
                         </div>
                     </div>
 
-                    <div class="form-group">
+                    <div class="form-group" id="correlationParams">
                         <label class="form-label">Correlation Cutoff: <span class="slider-value" id="cutoffValue">0.50</span></label>
                         <input type="range" id="correlationCutoff" min="0.1" max="0.8" step="0.05" value="0.5">
                     </div>
@@ -1147,9 +1155,21 @@
                         <input type="number" id="minCellLines" class="form-control" value="50" min="3" max="500" style="width: 80px;">
                     </div>
 
-                    <div class="form-group">
+                    <div class="form-group" id="slopeParams">
                         <label class="form-label">Min Slope: <span class="slider-value" id="slopeValue">0.10</span></label>
                         <input type="range" id="minSlope" min="0" max="2" step="0.05" value="0.1">
+                    </div>
+
+                    <div class="form-group" id="mutationHotspotGroup" style="display: none;">
+                        <label class="form-label">Hotspot Mutation (required):</label>
+                        <select id="mutationHotspotSelect" class="form-control">
+                            <option value="">Select hotspot gene...</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group" id="pValueThresholdGroup" style="display: none;">
+                        <label class="form-label">P-value Threshold:</label>
+                        <input type="number" id="pValueThreshold" class="form-control" value="0.05" min="0.001" max="1" step="0.01" style="width: 80px;">
                     </div>
 
                     <div class="form-group" id="lineageFilterGroup" style="display: none;">
@@ -1191,6 +1211,7 @@
                     <li><button class="nav-link active" data-tab="network">Network</button></li>
                     <li><button class="nav-link" data-tab="correlations">Correlations</button></li>
                     <li><button class="nav-link" data-tab="clusters">Clusters</button></li>
+                    <li><button class="nav-link" data-tab="mutation" style="display: none;" id="mutationTab">Mutation Analysis</button></li>
                     <li><button class="nav-link" data-tab="summary">Summary</button></li>
                 </ul>
 
@@ -1388,6 +1409,40 @@
                             </thead>
                             <tbody id="clustersBody">
                                 <tr><td colspan="4" style="text-align: center; color: var(--gray-500); padding: 40px;">Run analysis to view clusters</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Mutation Analysis Tab -->
+                <div class="tab-content" id="tab-mutation">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <div>
+                            <span id="mutationResultsCount">0 genes with p < 0.05</span>
+                        </div>
+                        <div>
+                            <input type="text" id="mutationSearch" class="form-control" placeholder="Search genes..." style="width: 200px; display: inline-block; margin-right: 10px;">
+                            <button class="btn btn-success btn-sm" id="downloadMutationResults">Export CSV</button>
+                        </div>
+                    </div>
+                    <div class="table-container" style="max-height: 600px; overflow-y: auto;">
+                        <table class="data-table" id="mutationTable">
+                            <thead>
+                                <tr>
+                                    <th onclick="app.sortMutationTable(this)" data-col="gene">Gene ▼</th>
+                                    <th onclick="app.sortMutationTable(this)" data-col="n_wt">N (WT)</th>
+                                    <th onclick="app.sortMutationTable(this)" data-col="mean_wt">Mean GE (WT)</th>
+                                    <th onclick="app.sortMutationTable(this)" data-col="n_mut">N (1+2)</th>
+                                    <th onclick="app.sortMutationTable(this)" data-col="mean_mut">Mean GE (1+2)</th>
+                                    <th onclick="app.sortMutationTable(this)" data-col="diff_mut">Δ GE</th>
+                                    <th onclick="app.sortMutationTable(this)" data-col="p_mut">p-value</th>
+                                    <th onclick="app.sortMutationTable(this)" data-col="n_2">N (2)</th>
+                                    <th onclick="app.sortMutationTable(this)" data-col="mean_2">Mean GE (2)</th>
+                                    <th onclick="app.sortMutationTable(this)" data-col="diff_2">Δ GE (2v0)</th>
+                                    <th onclick="app.sortMutationTable(this)" data-col="p_2">p-value (2v0)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="mutationTableBody">
                             </tbody>
                         </table>
                     </div>
