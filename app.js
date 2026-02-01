@@ -1580,8 +1580,21 @@ class CorrelationExplorer {
             });
         }
 
+        // Build subtitle with filter info
+        let filterInfo = [];
+        if (mr.lineageFilter) {
+            filterInfo.push(`Lineage: ${mr.lineageFilter}`);
+        }
+        if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
+            filterInfo.push(`${mr.additionalHotspot}: ${mr.additionalHotspotLevel}`);
+        }
+        const subtitle = filterInfo.length > 0 ? filterInfo.join(' | ') : 'All lineages';
+
         const layout = {
-            title: `${gene} Gene Effect by ${hotspotGene} Mutation Status`,
+            title: {
+                text: `${gene} Gene Effect by ${hotspotGene} Mutation Status<br><sub style="font-size:12px;color:#666">${subtitle}</sub>`,
+                font: { size: 16 }
+            },
             xaxis: {
                 title: `${gene} Gene Effect`,
                 range: [xMin, xMax]
@@ -1594,8 +1607,14 @@ class CorrelationExplorer {
                 range: [-0.5, 2.5]
             },
             showlegend: true,
-            legend: { x: 1, y: 1, xanchor: 'right' },
-            margin: { t: 50, r: 150, b: 50, l: 60 }
+            legend: {
+                orientation: 'h',
+                x: 0.5,
+                y: -0.15,
+                xanchor: 'center',
+                yanchor: 'top'
+            },
+            margin: { t: 70, r: 30, b: 80, l: 60 }
         };
 
         // Show modal
