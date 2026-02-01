@@ -548,10 +548,15 @@
             gap: 12px;
             padding: 10px;
             background: #f9fafb;
-            font-size: 11px;
             border: 1px solid var(--gray-200);
             border-radius: 8px;
             margin-bottom: 15px;
+        }
+
+        /* Make buttons in network controls smaller */
+        .network-controls-grid .btn {
+            padding: 4px 8px;
+            font-size: 11px;
         }
 
         .control-column {
@@ -1411,7 +1416,10 @@
 
                 <!-- Clusters Tab -->
                 <div class="tab-content" id="tab-clusters">
-                    <p class="help-text" style="margin-bottom: 15px;">Mean_Effect and SD_Effect are from DepMap CRISPR data. * indicates genes from your input list (Design mode).</p>
+                    <div id="clustersFilterInfo" style="background: #f0f9ff; border: 1px solid #0ea5e9; border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; font-size: 12px; display: none;">
+                        <strong>Filters:</strong> <span id="clustersFilterText"></span>
+                    </div>
+                    <p class="help-text" style="margin-bottom: 15px;">Mean (All) = all cells, Mean (Filt) = filtered cells. * indicates genes from your input list (Design mode).</p>
                     <div class="table-controls">
                         <input type="text" class="table-search" id="clustersSearch" placeholder="Search...">
                         <button class="btn btn-success btn-sm" id="downloadClusters">Download CSV</button>

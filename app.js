@@ -2308,6 +2308,24 @@ class CorrelationExplorer {
         const hasStats = this.geneStats && this.geneStats.size > 0;
         const isFiltered = this.results.isFiltered;
 
+        // Show filter info
+        const filterInfoDiv = document.getElementById('clustersFilterInfo');
+        const filterTextSpan = document.getElementById('clustersFilterText');
+        if (filterInfoDiv && filterTextSpan) {
+            const lineage = document.getElementById('lineageFilter').value;
+            const subLineage = document.getElementById('subLineageFilter')?.value;
+
+            if (isFiltered && (lineage || subLineage)) {
+                let filterText = `Lineage: ${lineage || 'All'}`;
+                if (subLineage) filterText += ` | Subtype: ${subLineage}`;
+                filterText += ` | Filtered cells: ${this.results.nCellLines}`;
+                filterTextSpan.textContent = filterText;
+                filterInfoDiv.style.display = 'block';
+            } else {
+                filterInfoDiv.style.display = 'none';
+            }
+        }
+
         // Build header based on what data we have
         let headerCells = `
             <th data-sort="gene">Gene</th>
@@ -2471,13 +2489,24 @@ Results:
             filename = 'correlations.csv';
         } else {
             const isFiltered = this.results.isFiltered;
+            const lineage = document.getElementById('lineageFilter').value || 'All lineages';
+            const subLineage = document.getElementById('subLineageFilter')?.value;
+
+            // Add filter info as comments
+            csv = `# Clusters Export\n`;
+            csv += `# Lineage filter: ${lineage}\n`;
+            if (subLineage) csv += `# Subtype filter: ${subLineage}\n`;
+            csv += `# Filtered cell lines: ${this.results.nCellLines}\n`;
+            csv += `# Date: ${new Date().toISOString().slice(0, 10)}\n`;
+            csv += '#\n';
+
             if (isFiltered) {
-                csv = 'Gene,Cluster,Mean_Effect_All,SD_Effect_All,Mean_Effect_Filtered,SD_Effect_Filtered\n';
+                csv += 'Gene,Cluster,Mean_Effect_All,SD_Effect_All,Mean_Effect_Filtered,SD_Effect_Filtered\n';
                 this.results.clusters.forEach(c => {
                     csv += `${c.gene},${c.cluster},${c.meanEffect},${c.sdEffect},${c.meanEffectFiltered},${c.sdEffectFiltered}\n`;
                 });
             } else {
-                csv = 'Gene,Cluster,Mean_Effect,SD_Effect\n';
+                csv += 'Gene,Cluster,Mean_Effect,SD_Effect\n';
                 this.results.clusters.forEach(c => {
                     csv += `${c.gene},${c.cluster},${c.meanEffect},${c.sdEffect}\n`;
                 });
@@ -3828,16 +3857,24 @@ Results:
         }
 
         // Populate hotspot genes (excluding HLA-A and HLA-B which have high variability)
+        // Count mutations based on cell lines with valid data (plotData)
         const hotspotSelect = document.getElementById('hotspotGene');
         const mutFilterGeneSelect = document.getElementById('mutationFilterGene');
         const excludedGenes = ['HLA-A', 'HLA-B'];
+        const cellLinesInPlot = new Set(plotData.map(d => d.cellLineId));
+
         if (this.mutations?.genes?.length > 0) {
             hotspotSelect.innerHTML = '<option value="">Select gene...</option>';
             mutFilterGeneSelect.innerHTML = '<option value="">No filter</option>';
             this.mutations.genes
                 .filter(g => !excludedGenes.includes(g))
                 .forEach(g => {
-                    const count = this.mutations.geneCounts?.[g] || 0;
+                    // Count mutations only in cell lines with valid data
+                    const mutData = this.mutations.geneData?.[g]?.mutations || {};
+                    let count = 0;
+                    cellLinesInPlot.forEach(cl => {
+                        if (mutData[cl] && mutData[cl] > 0) count++;
+                    });
                     hotspotSelect.innerHTML += `<option value="${g}">${g} (${count} mut)</option>`;
                     mutFilterGeneSelect.innerHTML += `<option value="${g}">${g} (${count} mut)</option>`;
                 });
