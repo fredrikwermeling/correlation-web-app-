@@ -133,50 +133,170 @@ class CorrelationExplorer {
     }
 
     populateLineageFilter() {
-        const lineages = new Set();
+        // Count cell lines per lineage
+        const lineageCounts = {};
+        const subLineageCounts = {};
+
         if (this.cellLineMetadata && this.cellLineMetadata.lineage) {
-            Object.values(this.cellLineMetadata.lineage).forEach(l => {
-                if (l) lineages.add(l);
+            const cellLines = this.metadata.cellLines;
+            cellLines.forEach(cellLine => {
+                const lineage = this.cellLineMetadata.lineage[cellLine];
+                const subLineage = this.cellLineMetadata.lineageSubtype?.[cellLine] || '';
+
+                if (lineage) {
+                    lineageCounts[lineage] = (lineageCounts[lineage] || 0) + 1;
+
+                    if (subLineage) {
+                        const key = `${lineage}|${subLineage}`;
+                        subLineageCounts[key] = (subLineageCounts[key] || 0) + 1;
+                    }
+                }
             });
         }
 
-        if (lineages.size > 0) {
+        this.lineageCounts = lineageCounts;
+        this.subLineageCounts = subLineageCounts;
+
+        if (Object.keys(lineageCounts).length > 0) {
             const select = document.getElementById('lineageFilter');
-            select.innerHTML = '<option value="">All lineages</option>';
-            Array.from(lineages).sort().forEach(lineage => {
+            const total = this.metadata.cellLines.length;
+            select.innerHTML = `<option value="">All lineages (n=${total})</option>`;
+
+            Object.keys(lineageCounts).sort().forEach(lineage => {
                 const option = document.createElement('option');
                 option.value = lineage;
-                option.textContent = lineage;
+                option.textContent = `${lineage} (n=${lineageCounts[lineage]})`;
                 select.appendChild(option);
             });
             document.getElementById('lineageFilterGroup').style.display = 'block';
+
+            // Update sub-lineage when lineage changes
+            select.addEventListener('change', () => this.updateSubLineageFilter());
         }
 
         // Also populate parameter hotspot filter
         this.populateParamHotspotFilter();
     }
 
+    updateSubLineageFilter() {
+        const lineage = document.getElementById('lineageFilter').value;
+        const subSelect = document.getElementById('subLineageFilter');
+        const isMutationMode = document.querySelector('input[name="analysisMode"]:checked')?.value === 'mutation';
+
+        if (!lineage) {
+            document.getElementById('subLineageFilterGroup').style.display = 'none';
+            subSelect.innerHTML = '<option value="">All subtypes</option>';
+            // Update hotspot counts for all lineages
+            this.updateHotspotCountsForCurrentFilters();
+            return;
+        }
+
+        // Find sub-lineages for this lineage
+        const subLineages = {};
+        Object.keys(this.subLineageCounts).forEach(key => {
+            if (key.startsWith(lineage + '|')) {
+                const subLineage = key.split('|')[1];
+                subLineages[subLineage] = this.subLineageCounts[key];
+            }
+        });
+
+        if (Object.keys(subLineages).length > 0) {
+            const lineageCount = this.lineageCounts[lineage];
+            subSelect.innerHTML = `<option value="">All subtypes (n=${lineageCount})</option>`;
+
+            Object.keys(subLineages).sort().forEach(sub => {
+                const option = document.createElement('option');
+                option.value = sub;
+                option.textContent = `${sub} (n=${subLineages[sub]})`;
+                subSelect.appendChild(option);
+            });
+            document.getElementById('subLineageFilterGroup').style.display = 'block';
+
+            // Add listener for sub-lineage changes (only add once)
+            if (!subSelect.hasAttribute('data-listener-attached')) {
+                subSelect.addEventListener('change', () => {
+                    this.updateHotspotCountsForCurrentFilters();
+                });
+                subSelect.setAttribute('data-listener-attached', 'true');
+            }
+        } else {
+            document.getElementById('subLineageFilterGroup').style.display = 'none';
+        }
+
+        // Update hotspot counts for selected lineage
+        this.updateHotspotCountsForCurrentFilters();
+    }
+
+    updateHotspotCountsForCurrentFilters() {
+        if (this.mutations?.geneData) {
+            this.updateParamHotspotGeneCounts();
+
+            // Also update mutation mode selector if in mutation mode
+            const isMutationMode = document.querySelector('input[name="analysisMode"]:checked')?.value === 'mutation';
+            if (isMutationMode) {
+                this.populateMutationHotspotSelector();
+            }
+        }
+    }
+
     populateParamHotspotFilter() {
         if (this.mutations && this.mutations.geneData) {
-            const genes = Object.keys(this.mutations.geneData).sort();
             const select = document.getElementById('paramHotspotGene');
-            select.innerHTML = '<option value="">No filter</option>';
-            genes.forEach(gene => {
-                const option = document.createElement('option');
-                option.value = gene;
-                option.textContent = gene;
-                select.appendChild(option);
-            });
             document.getElementById('paramHotspotFilterGroup').style.display = 'block';
 
             // Update level dropdown with counts when gene changes
             select.addEventListener('change', () => this.updateParamHotspotLevelCounts());
+
+            // Initial population
+            this.updateParamHotspotGeneCounts();
         }
+    }
+
+    updateParamHotspotGeneCounts() {
+        const genes = Object.keys(this.mutations.geneData).sort();
+        const select = document.getElementById('paramHotspotGene');
+        const cellLines = this.metadata.cellLines;
+        const lineageFilter = document.getElementById('lineageFilter').value;
+        const subLineageFilter = document.getElementById('subLineageFilter')?.value;
+        const currentValue = select.value;
+
+        select.innerHTML = '<option value="">No filter</option>';
+        genes.forEach(gene => {
+            // Count mutations for this gene (respecting lineage filter)
+            const mutations = this.mutations.geneData[gene].mutations;
+            let nMut = 0;
+            cellLines.forEach(cl => {
+                // Apply lineage filter
+                if (lineageFilter && this.cellLineMetadata?.lineage?.[cl] !== lineageFilter) {
+                    return;
+                }
+                // Apply sub-lineage filter
+                if (subLineageFilter && this.cellLineMetadata?.lineageSubtype?.[cl] !== subLineageFilter) {
+                    return;
+                }
+                if (mutations[cl] && mutations[cl] > 0) nMut++;
+            });
+
+            const option = document.createElement('option');
+            option.value = gene;
+            option.textContent = `${gene} (n=${nMut} mutated)`;
+            select.appendChild(option);
+        });
+
+        // Restore selection if it was set
+        if (currentValue) {
+            select.value = currentValue;
+        }
+
+        // Also update level counts
+        this.updateParamHotspotLevelCounts();
     }
 
     updateParamHotspotLevelCounts() {
         const gene = document.getElementById('paramHotspotGene').value;
         const levelSelect = document.getElementById('paramHotspotLevel');
+        const lineageFilter = document.getElementById('lineageFilter').value;
+        const subLineageFilter = document.getElementById('subLineageFilter')?.value;
 
         if (!gene || !this.mutations?.geneData?.[gene]) {
             levelSelect.innerHTML = `
@@ -189,12 +309,21 @@ class CorrelationExplorer {
             return;
         }
 
-        // Count mutations for selected gene
+        // Count mutations for selected gene (respecting lineage filter)
         const mutations = this.mutations.geneData[gene].mutations;
         const cellLines = this.metadata.cellLines;
         let n0 = 0, n1 = 0, n2 = 0;
 
         cellLines.forEach(cellLine => {
+            // Apply lineage filter
+            if (lineageFilter && this.cellLineMetadata?.lineage?.[cellLine] !== lineageFilter) {
+                return;
+            }
+            // Apply sub-lineage filter
+            if (subLineageFilter && this.cellLineMetadata?.lineageSubtype?.[cellLine] !== subLineageFilter) {
+                return;
+            }
+
             const level = mutations[cellLine] || 0;
             if (level === 0) n0++;
             else if (level === 1) n1++;
@@ -202,7 +331,7 @@ class CorrelationExplorer {
         });
 
         const nMut = n1 + n2;
-        const total = cellLines.length;
+        const total = n0 + n1 + n2;
 
         levelSelect.innerHTML = `
             <option value="all">All cells (n=${total})</option>
@@ -240,18 +369,41 @@ class CorrelationExplorer {
 
     populateMutationHotspotSelector() {
         const select = document.getElementById('mutationHotspotSelect');
-        if (select.options.length > 1) return; // Already populated
+        const lineageFilter = document.getElementById('lineageFilter').value;
+        const subLineageFilter = document.getElementById('subLineageFilter')?.value;
+        const currentValue = select.value;
 
-        if (this.mutations && this.mutations.geneData) {
-            const genes = Object.keys(this.mutations.geneData).sort();
-            genes.forEach(gene => {
-                const data = this.mutations.geneData[gene];
-                const nMut = (data.counts['1'] || 0) + (data.counts['2'] || 0);
-                const option = document.createElement('option');
-                option.value = gene;
-                option.textContent = `${gene} (${nMut} mutated cells)`;
-                select.appendChild(option);
+        if (!this.mutations || !this.mutations.geneData) return;
+
+        const genes = Object.keys(this.mutations.geneData).sort();
+        const cellLines = this.metadata.cellLines;
+
+        select.innerHTML = '<option value="">Select hotspot gene...</option>';
+        genes.forEach(gene => {
+            const mutations = this.mutations.geneData[gene].mutations;
+            let nMut = 0;
+
+            cellLines.forEach(cl => {
+                // Apply lineage filter
+                if (lineageFilter && this.cellLineMetadata?.lineage?.[cl] !== lineageFilter) {
+                    return;
+                }
+                // Apply sub-lineage filter
+                if (subLineageFilter && this.cellLineMetadata?.lineageSubtype?.[cl] !== subLineageFilter) {
+                    return;
+                }
+                if (mutations[cl] && mutations[cl] > 0) nMut++;
             });
+
+            const option = document.createElement('option');
+            option.value = gene;
+            option.textContent = `${gene} (${nMut} mutated cells)`;
+            select.appendChild(option);
+        });
+
+        // Restore selection if it was set
+        if (currentValue) {
+            select.value = currentValue;
         }
     }
 
@@ -1603,18 +1755,11 @@ class CorrelationExplorer {
                 title: `${hotspotGene} Mutations`,
                 tickmode: 'array',
                 tickvals: [0, 1, 2],
-                ticktext: ['0 (WT)', '1', '2'],
+                ticktext: [`0 WT (n=${data.wt.length})`, `1 (n=${data.mut1.length})`, `2 (n=${data.mut2.length})`],
                 range: [-0.5, 2.5]
             },
-            showlegend: true,
-            legend: {
-                orientation: 'h',
-                x: 0.5,
-                y: -0.22,
-                xanchor: 'center',
-                yanchor: 'top'
-            },
-            margin: { t: 70, r: 30, b: 100, l: 60 }
+            showlegend: false,
+            margin: { t: 70, r: 30, b: 50, l: 120 }
         };
 
         // Show modal
@@ -1727,23 +1872,38 @@ class CorrelationExplorer {
         // Assign clusters using simple connected components
         const clusters = this.findClusters(correlations);
 
-        // Calculate mean effect for each gene
+        // Calculate mean effect for each gene (both all cells and filtered cells)
         const clusterData = clusters.map(gene => {
             const idx = this.geneIndex.get(gene);
-            const data = this.getGeneData(idx);
-            const validData = Array.from(data).filter(v => !isNaN(v));
-            const mean = validData.reduce((a, b) => a + b, 0) / validData.length;
-            const variance = validData.reduce((a, b) => a + (b - mean) ** 2, 0) / validData.length;
-            const sd = Math.sqrt(variance);
+            const fullData = this.getGeneData(idx);
+
+            // Stats for ALL cells
+            const allValidData = Array.from(fullData).filter(v => !isNaN(v));
+            const allMean = allValidData.length > 0 ? allValidData.reduce((a, b) => a + b, 0) / allValidData.length : NaN;
+            const allVariance = allValidData.length > 0 ? allValidData.reduce((a, b) => a + (b - allMean) ** 2, 0) / allValidData.length : NaN;
+            const allSd = Math.sqrt(allVariance);
+
+            // Stats for FILTERED cells
+            const filteredData = cellLineIndices.map(i => fullData[i]).filter(v => !isNaN(v));
+            const filtMean = filteredData.length > 0 ? filteredData.reduce((a, b) => a + b, 0) / filteredData.length : NaN;
+            const filtVariance = filteredData.length > 0 ? filteredData.reduce((a, b) => a + (b - filtMean) ** 2, 0) / filteredData.length : NaN;
+            const filtSd = Math.sqrt(filtVariance);
 
             return {
                 gene: gene,
                 cluster: correlations.find(c => c.gene1 === gene || c.gene2 === gene)?.cluster || 0,
-                meanEffect: Math.round(mean * 100) / 100,
-                sdEffect: Math.round(sd * 100) / 100,
+                meanEffect: Math.round(allMean * 100) / 100,
+                sdEffect: Math.round(allSd * 100) / 100,
+                meanEffectFiltered: Math.round(filtMean * 100) / 100,
+                sdEffectFiltered: Math.round(filtSd * 100) / 100,
+                nAll: allValidData.length,
+                nFiltered: filteredData.length,
                 inGeneList: geneList.includes(gene)
             };
         });
+
+        // Check if filtering was applied
+        const isFiltered = cellLineIndices.length < this.nCellLines;
 
         return {
             success: true,
@@ -1752,7 +1912,8 @@ class CorrelationExplorer {
             geneList: geneList,
             mode: mode,
             cutoff: cutoff,
-            nCellLines: cellLineIndices.length
+            nCellLines: cellLineIndices.length,
+            isFiltered: isFiltered
         };
     }
 
@@ -2143,31 +2304,33 @@ class CorrelationExplorer {
         const thead = document.getElementById('clustersHead');
         tbody.innerHTML = '';
 
-        // Check if we have stats
+        // Check if we have stats and if filtering was applied
         const hasStats = this.geneStats && this.geneStats.size > 0;
+        const isFiltered = this.results.isFiltered;
 
-        // Update header based on whether we have stats
-        if (hasStats) {
-            thead.innerHTML = `
-                <tr>
-                    <th data-sort="gene">Gene</th>
-                    <th data-sort="cluster">Cluster</th>
-                    <th data-sort="meanEffect">Mean Effect</th>
-                    <th data-sort="sdEffect">SD</th>
-                    <th data-sort="lfc">LFC</th>
-                    <th data-sort="fdr">FDR</th>
-                </tr>
-            `;
-        } else {
-            thead.innerHTML = `
-                <tr>
-                    <th data-sort="gene">Gene</th>
-                    <th data-sort="cluster">Cluster</th>
-                    <th data-sort="meanEffect">Mean Effect</th>
-                    <th data-sort="sdEffect">SD</th>
-                </tr>
+        // Build header based on what data we have
+        let headerCells = `
+            <th data-sort="gene">Gene</th>
+            <th data-sort="cluster">Cluster</th>
+            <th data-sort="meanEffect">Mean (All)</th>
+            <th data-sort="sdEffect">SD (All)</th>
+        `;
+
+        if (isFiltered) {
+            headerCells += `
+            <th data-sort="meanEffectFiltered">Mean (Filt)</th>
+            <th data-sort="sdEffectFiltered">SD (Filt)</th>
             `;
         }
+
+        if (hasStats) {
+            headerCells += `
+            <th data-sort="lfc">LFC</th>
+            <th data-sort="fdr">FDR</th>
+            `;
+        }
+
+        thead.innerHTML = `<tr>${headerCells}</tr>`;
 
         // Re-attach sorting event listeners
         thead.querySelectorAll('th[data-sort]').forEach(th => {
@@ -2180,28 +2343,32 @@ class CorrelationExplorer {
                 const tr = document.createElement('tr');
                 const geneStat = this.geneStats?.get(c.gene);
 
+                let rowHtml = `
+                    <td>${c.gene}${c.inGeneList && this.results.mode === 'design' ? '*' : ''}</td>
+                    <td>${c.cluster}</td>
+                    <td>${c.meanEffect}</td>
+                    <td>${c.sdEffect}</td>
+                `;
+
+                if (isFiltered) {
+                    rowHtml += `
+                    <td>${c.meanEffectFiltered}</td>
+                    <td>${c.sdEffectFiltered}</td>
+                    `;
+                }
+
                 if (hasStats) {
                     const lfc = geneStat?.lfc !== null && geneStat?.lfc !== undefined
                         ? geneStat.lfc.toFixed(2) : '-';
                     const fdr = geneStat?.fdr !== null && geneStat?.fdr !== undefined
                         ? geneStat.fdr.toExponential(2) : '-';
-
-                    tr.innerHTML = `
-                        <td>${c.gene}${c.inGeneList && this.results.mode === 'design' ? '*' : ''}</td>
-                        <td>${c.cluster}</td>
-                        <td>${c.meanEffect}</td>
-                        <td>${c.sdEffect}</td>
-                        <td>${lfc}</td>
-                        <td>${fdr}</td>
-                    `;
-                } else {
-                    tr.innerHTML = `
-                        <td>${c.gene}${c.inGeneList && this.results.mode === 'design' ? '*' : ''}</td>
-                        <td>${c.cluster}</td>
-                        <td>${c.meanEffect}</td>
-                        <td>${c.sdEffect}</td>
+                    rowHtml += `
+                    <td>${lfc}</td>
+                    <td>${fdr}</td>
                     `;
                 }
+
+                tr.innerHTML = rowHtml;
                 tbody.appendChild(tr);
             });
     }
@@ -2303,10 +2470,18 @@ Results:
             });
             filename = 'correlations.csv';
         } else {
-            csv = 'Gene,Cluster,Mean_Effect,SD_Effect\n';
-            this.results.clusters.forEach(c => {
-                csv += `${c.gene},${c.cluster},${c.meanEffect},${c.sdEffect}\n`;
-            });
+            const isFiltered = this.results.isFiltered;
+            if (isFiltered) {
+                csv = 'Gene,Cluster,Mean_Effect_All,SD_Effect_All,Mean_Effect_Filtered,SD_Effect_Filtered\n';
+                this.results.clusters.forEach(c => {
+                    csv += `${c.gene},${c.cluster},${c.meanEffect},${c.sdEffect},${c.meanEffectFiltered},${c.sdEffectFiltered}\n`;
+                });
+            } else {
+                csv = 'Gene,Cluster,Mean_Effect,SD_Effect\n';
+                this.results.clusters.forEach(c => {
+                    csv += `${c.gene},${c.cluster},${c.meanEffect},${c.sdEffect}\n`;
+                });
+            }
             filename = 'clusters.csv';
         }
 
@@ -3317,6 +3492,22 @@ Results:
             physicsBtn.textContent = 'Lock Nodes';
             physicsBtn.classList.remove('btn-active');
         }
+
+        // Reset tabs to show appropriate ones based on mode
+        const mode = document.querySelector('input[name="analysisMode"]:checked').value;
+        const mutationTab = document.getElementById('mutationTab');
+        if (mode === 'mutation') {
+            mutationTab.style.display = 'inline-block';
+        } else {
+            mutationTab.style.display = 'none';
+            // If mutation tab was active, switch to network tab
+            if (mutationTab.classList.contains('active')) {
+                document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+                document.querySelector('[data-tab="network"]').classList.add('active');
+                document.getElementById('tab-network').classList.add('active');
+            }
+        }
     }
 
     downloadAllData() {
@@ -3329,10 +3520,18 @@ Results:
         });
 
         // Create clusters CSV
-        let clustersCSV = 'Gene,Cluster,Mean_Effect,SD_Effect\n';
-        this.results.clusters.forEach(c => {
-            clustersCSV += `${c.gene},${c.cluster},${c.meanEffect},${c.sdEffect}\n`;
-        });
+        let clustersCSV;
+        if (this.results.isFiltered) {
+            clustersCSV = 'Gene,Cluster,Mean_Effect_All,SD_Effect_All,Mean_Effect_Filtered,SD_Effect_Filtered\n';
+            this.results.clusters.forEach(c => {
+                clustersCSV += `${c.gene},${c.cluster},${c.meanEffect},${c.sdEffect},${c.meanEffectFiltered},${c.sdEffectFiltered}\n`;
+            });
+        } else {
+            clustersCSV = 'Gene,Cluster,Mean_Effect,SD_Effect\n';
+            this.results.clusters.forEach(c => {
+                clustersCSV += `${c.gene},${c.cluster},${c.meanEffect},${c.sdEffect}\n`;
+            });
+        }
 
         // Create summary
         const lineage = document.getElementById('lineageFilter').value || 'All lineages';

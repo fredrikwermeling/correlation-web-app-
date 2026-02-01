@@ -535,7 +535,7 @@
 
         /* Network - exact Shiny visNetwork match */
         .network-container {
-            height: 550px;
+            height: 440px;
             border: 1px solid var(--gray-200);
             border-radius: 6px;
             background: white;
@@ -545,9 +545,10 @@
         .network-controls-grid {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
-            gap: 20px;
-            padding: 15px;
+            gap: 12px;
+            padding: 10px;
             background: #f9fafb;
+            font-size: 11px;
             border: 1px solid var(--gray-200);
             border-radius: 8px;
             margin-bottom: 15px;
@@ -556,7 +557,7 @@
         .control-column {
             display: flex;
             flex-direction: column;
-            gap: 12px;
+            gap: 8px;
         }
 
         .slider-group {
@@ -1123,13 +1124,20 @@
 
                     <div class="form-group" id="pValueThresholdGroup" style="display: none;">
                         <label class="form-label">P-value Threshold:</label>
-                        <input type="number" id="pValueThreshold" class="form-control" value="0.05" min="0.001" max="1" step="0.01" style="width: 80px;">
+                        <input type="number" id="pValueThreshold" class="form-control" value="0.001" min="0.0001" max="1" step="0.001" style="width: 80px;">
                     </div>
 
                     <div class="form-group" id="lineageFilterGroup" style="display: none;">
                         <label class="form-label">Lineage Filter:</label>
                         <select id="lineageFilter" class="form-control">
                             <option value="">All lineages</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group" id="subLineageFilterGroup" style="display: none;">
+                        <label class="form-label">Subtype Filter:</label>
+                        <select id="subLineageFilter" class="form-control">
+                            <option value="">All subtypes</option>
                         </select>
                     </div>
 
@@ -1427,9 +1435,12 @@
 
                 <!-- Mutation Analysis Tab -->
                 <div class="tab-content" id="tab-mutation">
+                    <div style="background: #fef3c7; border: 1px solid #f59e0b; border-radius: 4px; padding: 8px 12px; margin-bottom: 12px; font-size: 11px; color: #92400e;">
+                        <strong>Note:</strong> Differential gene effects may reflect selection bias (e.g., mutations enriched in certain cancer types) rather than direct functional consequences of the mutation. Consider filtering by lineage to control for tissue-specific effects.
+                    </div>
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                         <div>
-                            <span id="mutationResultsCount">0 genes with p < 0.05</span>
+                            <span id="mutationResultsCount">0 genes with p < 0.001</span>
                         </div>
                         <div>
                             <input type="text" id="mutationSearch" class="form-control" placeholder="Search genes..." style="width: 200px; display: inline-block; margin-right: 10px;">
