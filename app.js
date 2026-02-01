@@ -2179,6 +2179,17 @@ class CorrelationExplorer {
             }
         });
 
+        // Click on edge to open inspect modal
+        this.network.on('click', (params) => {
+            if (params.edges.length > 0 && params.nodes.length === 0) {
+                const edgeId = params.edges[0];
+                const edge = this.networkData.edges.get(edgeId);
+                if (edge) {
+                    this.openInspectByGenes(edge.from, edge.to);
+                }
+            }
+        });
+
         // Show legend
         document.getElementById('networkLegend').style.display = 'flex';
         const legendNodeType = document.getElementById('legendNodeType');
