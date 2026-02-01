@@ -946,6 +946,17 @@
         .positive { color: #2563eb; } /* Blue for positive (less essential) */
         .negative { color: #dc2626; } /* Red for negative (more essential) */
 
+        /* Inspect link in tables */
+        .inspect-link {
+            color: #2563eb;
+            text-decoration: none;
+            font-size: 11px;
+            cursor: pointer;
+        }
+        .inspect-link:hover {
+            text-decoration: underline;
+        }
+
         /* Loading overlay */
         .loading-overlay {
             position: fixed;
@@ -1049,7 +1060,7 @@
         <div class="sidebar">
             <!-- Reference Data Card -->
             <div class="card">
-                <div class="card-title">1. Reference Data</div>
+                <div class="card-title">Reference Data</div>
                 <div id="referenceStatus" class="status-box status-warning">
                     Loading data...
                 </div>
@@ -1060,72 +1071,15 @@
                         <li>Model.csv</li>
                         <li>OmicsSomaticMutationsMatrixHotspot.csv</li>
                     </ul>
-                    <p style="margin: 6px 0 0 0; font-style: italic;">Please acknowledge the DepMap project if you use this data.</p>
+                    <p style="margin: 6px 0 0 0; font-style: italic;"><a href="https://depmap.org/portal/data_page/?tab=overview#how-to-cite" target="_blank">Please acknowledge DepMap</a> if you use this data.</p>
                 </div>
             </div>
 
-            <!-- Two-column layout for Input Genes and Parameters -->
+            <!-- Two-column layout for Parameters and Input Genes -->
             <div class="sidebar-row">
-                <!-- Gene Input Card -->
-                <div class="card sidebar-card-half">
-                    <div class="card-title">2. Input Genes</div>
-
-                    <!-- Input method tabs -->
-                    <div class="input-tabs">
-                        <button class="input-tab active" data-input="paste">Paste/Type</button>
-                        <button class="input-tab" data-input="upload">Upload Stats</button>
-                    </div>
-
-                    <!-- Paste/Type panel -->
-                    <div class="input-panel active" id="input-paste">
-                        <div class="form-group">
-                            <label class="form-label">Gene symbols (one per line):</label>
-                            <textarea id="geneTextarea" class="form-control" placeholder="TP53&#10;BRCA1&#10;MYC&#10;..." style="min-height: 100px;"></textarea>
-                        </div>
-                        <div class="button-row">
-                            <button class="btn btn-secondary btn-sm" id="clearGenes">Clear</button>
-                            <button class="btn btn-info btn-sm" id="loadTestGenes">Test Genes</button>
-                        </div>
-                    </div>
-
-                    <!-- Upload with Stats panel -->
-                    <div class="input-panel" id="input-upload">
-                        <div class="form-group">
-                            <label class="form-label">Upload CSV/TSV:</label>
-                            <input type="file" id="statsFileInput" accept=".csv,.tsv,.txt,.tab" class="form-control" style="font-size: 11px; padding: 4px;">
-                            <small style="color: #666; font-size: 10px;">Accepts CSV, TSV, or TXT (saved from Excel)</small>
-                        </div>
-                        <div id="statsColumnSelect" style="display: none;">
-                            <div class="form-group">
-                                <label class="form-label">Gene column:</label>
-                                <select id="statsGeneCol" class="form-control"></select>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">LFC column (optional):</label>
-                                <select id="statsLfcCol" class="form-control"><option value="">None</option></select>
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">FDR column (optional):</label>
-                                <select id="statsFdrCol" class="form-control"><option value="">None</option></select>
-                            </div>
-                            <button class="btn btn-success btn-sm" id="loadStatsBtn">Load Stats</button>
-                        </div>
-                        <div style="margin-top: 8px; display: flex; gap: 8px;">
-                            <button class="btn btn-info btn-sm" id="loadTestStats">Test w/ Stats</button>
-                            <button class="btn btn-secondary btn-sm" id="downloadSampleStats" title="Download sample file showing stats format">Download Sample</button>
-                        </div>
-                    </div>
-
-                    <div id="geneCountDisplay" style="margin-top: 8px;"></div>
-                    <div id="geneValidationDisplay"></div>
-                    <button class="btn btn-warning btn-sm" id="findSynonyms" style="display: none; margin-top: 8px;">
-                        Find Synonyms
-                    </button>
-                </div>
-
                 <!-- Parameters Card -->
                 <div class="card sidebar-card-half">
-                    <div class="card-title">3. Set Parameters</div>
+                    <div class="card-title">1. Set Parameters</div>
 
                     <div class="form-group">
                         <label class="form-label">Analysis Mode:</label>
@@ -1198,6 +1152,63 @@
                     </button>
 
                     <div id="analysisStatus"></div>
+                </div>
+
+                <!-- Gene Input Card -->
+                <div class="card sidebar-card-half">
+                    <div class="card-title">2. Input Genes</div>
+
+                    <!-- Input method tabs -->
+                    <div class="input-tabs">
+                        <button class="input-tab active" data-input="paste">Paste/Type</button>
+                        <button class="input-tab" data-input="upload">Upload Stats</button>
+                    </div>
+
+                    <!-- Paste/Type panel -->
+                    <div class="input-panel active" id="input-paste">
+                        <div class="form-group">
+                            <label class="form-label">Gene symbols (one per line):</label>
+                            <textarea id="geneTextarea" class="form-control" placeholder="TP53&#10;BRCA1&#10;MYC&#10;..." style="min-height: 180px;"></textarea>
+                        </div>
+                        <div class="button-row">
+                            <button class="btn btn-secondary btn-sm" id="clearGenes">Clear</button>
+                            <button class="btn btn-info btn-sm" id="loadTestGenes">Test Genes</button>
+                        </div>
+                    </div>
+
+                    <!-- Upload with Stats panel -->
+                    <div class="input-panel" id="input-upload">
+                        <div class="form-group">
+                            <label class="form-label">Upload CSV/TSV:</label>
+                            <input type="file" id="statsFileInput" accept=".csv,.tsv,.txt,.tab" class="form-control" style="font-size: 11px; padding: 4px;">
+                            <small style="color: #666; font-size: 10px;">Accepts CSV, TSV, or TXT (saved from Excel)</small>
+                        </div>
+                        <div id="statsColumnSelect" style="display: none;">
+                            <div class="form-group">
+                                <label class="form-label">Gene column:</label>
+                                <select id="statsGeneCol" class="form-control"></select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">LFC column (optional):</label>
+                                <select id="statsLfcCol" class="form-control"><option value="">None</option></select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">FDR column (optional):</label>
+                                <select id="statsFdrCol" class="form-control"><option value="">None</option></select>
+                            </div>
+                            <button class="btn btn-success btn-sm" id="loadStatsBtn">Load Stats</button>
+                        </div>
+                        <div style="margin-top: 8px; display: flex; gap: 8px;">
+                            <button class="btn btn-info btn-sm" id="loadTestStats">Test w/ Stats</button>
+                            <button class="btn btn-secondary btn-sm" id="downloadSampleStats" title="Download sample file showing stats format">Download Sample</button>
+                        </div>
+                    </div>
+
+                    <div id="geneCountDisplay" style="margin-top: 8px;"></div>
+                    <div id="geneValidationDisplay"></div>
+                    <button class="btn btn-warning btn-sm" id="findSynonyms" style="display: none; margin-top: 8px;">
+                        Find Synonyms
+                    </button>
                 </div>
             </div>
         </div>

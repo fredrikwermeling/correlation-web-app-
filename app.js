@@ -1295,9 +1295,9 @@ class CorrelationExplorer {
     }
 
     formatPValue(p) {
-        // Format p-value with 1 decimal in exponent, minimum 2.2e-16
+        // Format p-value with 1 decimal in exponent
         if (p >= 1 || isNaN(p)) return '-';
-        if (p < 2.2e-16) return '< 2.2e-16';
+        if (p === 0 || p < 1e-300) return '1.0e-300';
         if (p < 0.001) {
             // Format as exponential with 1 decimal (e.g., 2.2e-10)
             const exp = Math.floor(Math.log10(p));
@@ -1318,7 +1318,7 @@ class CorrelationExplorer {
         results.forEach(r => {
             const row = document.createElement('tr');
             row.innerHTML = `
-                <td><button class="btn btn-small" onclick="app.showGeneEffectDistribution('${r.gene}')" title="View distribution">📊</button></td>
+                <td><a href="#" class="inspect-link" onclick="app.showGeneEffectDistribution('${r.gene}'); return false;">Inspect</a></td>
                 <td>${r.gene}</td>
                 <td>${r.n_wt}</td>
                 <td>${r.mean_wt.toFixed(3)}</td>
@@ -1610,11 +1610,11 @@ class CorrelationExplorer {
             legend: {
                 orientation: 'h',
                 x: 0.5,
-                y: -0.15,
+                y: -0.22,
                 xanchor: 'center',
                 yanchor: 'top'
             },
-            margin: { t: 70, r: 30, b: 80, l: 60 }
+            margin: { t: 70, r: 30, b: 100, l: 60 }
         };
 
         // Show modal
@@ -1628,7 +1628,7 @@ class CorrelationExplorer {
         Plotly.downloadImage('geneEffectPlot', {
             format: 'png',
             width: 900,
-            height: 500,
+            height: 550,
             filename: `gene_effect_${this.currentGeneEffectGene}_${this.mutationResults.hotspotGene}`
         });
     }
@@ -1637,7 +1637,7 @@ class CorrelationExplorer {
         Plotly.downloadImage('geneEffectPlot', {
             format: 'svg',
             width: 900,
-            height: 500,
+            height: 550,
             filename: `gene_effect_${this.currentGeneEffectGene}_${this.mutationResults.hotspotGene}`
         });
     }
