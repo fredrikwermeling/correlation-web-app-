@@ -46,21 +46,21 @@
         /* Logo Header - centered like Green Listed */
         .logo-header {
             text-align: center;
-            padding: 20px 20px 10px 20px;
+            padding: 15px 20px 5px 20px;
             background: white;
         }
 
         .logo-header img {
-            max-width: 500px;
+            max-width: 700px;
             height: auto;
         }
 
         /* Navigation bar - Green Listed style */
         .nav-bar {
             text-align: center;
-            padding: 10px 20px 15px 20px;
+            padding: 5px 20px 12px 20px;
             background: white;
-            margin-bottom: 20px;
+            margin-bottom: 15px;
         }
 
         .nav-bar a {
@@ -567,7 +567,7 @@
         /* New horizontal grid layout for network controls */
         .network-controls-grid {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(3, 1fr);
             gap: 12px;
             padding: 10px;
             background: #f9fafb;
@@ -741,13 +741,13 @@
             flex: 1;
         }
 
-        @media (max-width: 1200px) {
+        @media (max-width: 1000px) {
             .network-controls-grid {
                 grid-template-columns: repeat(2, 1fr);
             }
         }
 
-        @media (max-width: 800px) {
+        @media (max-width: 700px) {
             .network-controls-grid {
                 grid-template-columns: 1fr;
             }
@@ -1351,29 +1351,22 @@
                             </div>
                         </div>
 
-                        <!-- Column 4: View Controls -->
+                        <!-- Column 3: View Controls + Export + Download -->
                         <div class="control-column control-box">
-                            <label style="font-weight: 600; margin-bottom: 8px; display: block;">View Controls:</label>
-                            <div class="button-group-horizontal" style="margin-bottom: 8px;">
-                                <button class="btn btn-secondary" id="fitNetwork">Fit to View</button>
+                            <label style="font-weight: 600; margin-bottom: 6px; display: block;">View Controls:</label>
+                            <div class="button-group-horizontal" style="margin-bottom: 6px;">
+                                <button class="btn btn-secondary" id="fitNetwork">Fit</button>
                                 <button class="btn btn-secondary" id="showHiddenNodes">Show Hidden</button>
+                                <button class="btn btn-secondary" id="togglePhysics">Lock</button>
+                                <button class="btn btn-secondary" id="changeLayout">Layout</button>
                             </div>
+                            <p class="help-text" style="font-size: 9px; margin-bottom: 8px;">Double-click node to hide</p>
+                            <label style="font-weight: 600; margin-bottom: 6px; display: block;">Export:</label>
                             <div class="button-group-horizontal" style="margin-bottom: 8px;">
-                                <button class="btn btn-secondary" id="togglePhysics">Lock Nodes</button>
-                                <button class="btn btn-secondary" id="changeLayout">Change Layout</button>
-                            </div>
-                            <p class="help-text" style="font-size: 10px;">Double-click node to hide</p>
-                            <label style="font-weight: 600; margin: 12px 0 8px 0; display: block;">Export Image + Legend:</label>
-                            <div class="button-group-horizontal">
                                 <button class="btn btn-secondary" id="downloadNetworkPNG">PNG</button>
                                 <button class="btn btn-secondary" id="downloadNetworkSVG">SVG</button>
+                                <button class="btn btn-primary" id="downloadAllData">All Data (ZIP)</button>
                             </div>
-                        </div>
-
-                        <!-- Column 5: Download All -->
-                        <div class="control-column">
-                            <button class="btn btn-primary" id="downloadAllData" style="width: 100%;">Download All Data</button>
-                            <p class="help-text" style="margin-top: 4px; font-size: 10px;">ZIP: correlation tables, clusters, summary, legend</p>
                         </div>
                     </div>
 
