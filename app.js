@@ -484,7 +484,7 @@ class CorrelationExplorer {
             if (this.synonymLookup) {
                 const match = this.synonymLookup[upperGene];
                 if (match && this.geneIndex.has(match.d.toUpperCase())) {
-                    const sourceLabel = match.r === 'l' ? 'low-risk synonym' : 'mid-risk synonym';
+                    const sourceLabel = match.r === 'l' ? 'low-risk' : 'mid-risk';
                     replacements.push({
                         original: gene,
                         replacement: match.d.toUpperCase(),
@@ -538,6 +538,10 @@ class CorrelationExplorer {
         if (replacements.length > 0) {
             // Store synonyms used for summary
             this.synonymsUsed = replacements;
+
+            // Remove replaced genes from genesNotFound
+            const replacedOriginals = new Set(replacements.map(r => r.original.toUpperCase()));
+            this.genesNotFound = this.genesNotFound.filter(g => !replacedOriginals.has(g.toUpperCase()));
 
             // Update textarea
             const textarea = document.getElementById('geneTextarea');
