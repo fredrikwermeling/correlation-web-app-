@@ -962,6 +962,10 @@ class CorrelationExplorer {
         const pThreshold = parseFloat(document.getElementById('pValueThreshold').value);
         const lineageFilter = document.getElementById('lineageFilter').value;
 
+        // Get additional hotspot filter (from parameter section)
+        const additionalHotspot = document.getElementById('paramHotspotGene').value;
+        const additionalHotspotLevel = document.getElementById('paramHotspotLevel').value;
+
         if (!hotspotGene) {
             this.showStatus('error', 'Please select a hotspot mutation');
             return;
@@ -972,10 +976,10 @@ class CorrelationExplorer {
         // Use setTimeout to allow UI to update
         setTimeout(() => {
             try {
-                const results = this.calculateMutationAnalysis(hotspotGene, minN, lineageFilter);
+                const analysisResult = this.calculateMutationAnalysis(hotspotGene, minN, lineageFilter, additionalHotspot, additionalHotspotLevel);
 
                 // Filter by p-value threshold
-                const significantResults = results.filter(r => r.p_mut < pThreshold || r.p_2 < pThreshold);
+                const significantResults = analysisResult.results.filter(r => r.p_mut < pThreshold || r.p_2 < pThreshold);
 
                 // Sort by p-value (1+2 vs 0)
                 significantResults.sort((a, b) => a.p_mut - b.p_mut);
@@ -983,8 +987,14 @@ class CorrelationExplorer {
                 this.mutationResults = {
                     hotspotGene,
                     pThreshold,
+                    minN,
                     lineageFilter,
-                    allResults: results,
+                    additionalHotspot,
+                    additionalHotspotLevel,
+                    nWT: analysisResult.nWT,
+                    nMut: analysisResult.nMut,
+                    n2: analysisResult.n2,
+                    allResults: analysisResult.results,
                     significantResults
                 };
 
@@ -1005,11 +1015,14 @@ class CorrelationExplorer {
         }, 50);
     }
 
-    calculateMutationAnalysis(hotspotGene, minN, lineageFilter) {
+    calculateMutationAnalysis(hotspotGene, minN, lineageFilter, additionalHotspot, additionalHotspotLevel) {
         const mutationData = this.mutations.geneData[hotspotGene];
         if (!mutationData) {
             throw new Error(`No mutation data for ${hotspotGene}`);
         }
+
+        // Get additional hotspot mutation data if specified
+        const additionalMutData = additionalHotspot ? this.mutations.geneData[additionalHotspot] : null;
 
         const cellLines = this.metadata.cellLines;
         const results = [];
@@ -1023,6 +1036,15 @@ class CorrelationExplorer {
             // Check lineage filter
             if (lineageFilter && this.cellLineMetadata?.lineage?.[cellLine] !== lineageFilter) {
                 return;
+            }
+
+            // Check additional hotspot filter
+            if (additionalMutData && additionalHotspotLevel !== 'all') {
+                const addMutLevel = additionalMutData.mutations[cellLine] || 0;
+                if (additionalHotspotLevel === '0' && addMutLevel !== 0) return;
+                if (additionalHotspotLevel === '1' && addMutLevel !== 1) return;
+                if (additionalHotspotLevel === '2' && addMutLevel < 2) return;
+                if (additionalHotspotLevel === '1+2' && addMutLevel === 0) return;
             }
 
             const mutLevel = mutationData.mutations[cellLine] || 0;
@@ -1088,7 +1110,12 @@ class CorrelationExplorer {
             });
         }
 
-        return results;
+        return {
+            results,
+            nWT: wtCellIndices.length,
+            nMut: mutAllCellIndices.length,
+            n2: mut2CellIndices.length
+        };
     }
 
     getGeneEffectsForCells(geneIdx, cellIndices) {
@@ -1250,10 +1277,24 @@ class CorrelationExplorer {
         return 0.5 * Math.log(2 * Math.PI) + (x + 0.5) * Math.log(t) - t + Math.log(a);
     }
 
+    formatPValue(p) {
+        // Format p-value with 1 decimal in exponent, minimum 2.2e-16
+        if (p >= 1 || isNaN(p)) return '-';
+        if (p < 2.2e-16) return '< 2.2e-16';
+        if (p < 0.001) {
+            // Format as exponential with 1 decimal (e.g., 2.2e-10)
+            const exp = Math.floor(Math.log10(p));
+            const mantissa = p / Math.pow(10, exp);
+            return `${mantissa.toFixed(1)}e${exp}`;
+        }
+        return p.toFixed(4);
+    }
+
     displayMutationResults() {
         if (!this.mutationResults) return;
 
-        const results = this.mutationResults.significantResults;
+        const mr = this.mutationResults;
+        const results = mr.significantResults;
         const tbody = document.getElementById('mutationTableBody');
         tbody.innerHTML = '';
 
@@ -1266,17 +1307,29 @@ class CorrelationExplorer {
                 <td>${r.n_mut}</td>
                 <td>${r.mean_mut.toFixed(3)}</td>
                 <td class="${r.diff_mut < 0 ? 'negative' : 'positive'}">${r.diff_mut.toFixed(3)}</td>
-                <td>${r.p_mut < 0.001 ? r.p_mut.toExponential(2) : r.p_mut.toFixed(4)}</td>
+                <td>${this.formatPValue(r.p_mut)}</td>
                 <td>${r.n_2}</td>
                 <td>${isNaN(r.mean_2) ? '-' : r.mean_2.toFixed(3)}</td>
                 <td class="${r.diff_2 < 0 ? 'negative' : 'positive'}">${isNaN(r.diff_2) ? '-' : r.diff_2.toFixed(3)}</td>
-                <td>${r.p_2 >= 1 ? '-' : (r.p_2 < 0.001 ? r.p_2.toExponential(2) : r.p_2.toFixed(4))}</td>
+                <td>${this.formatPValue(r.p_2)}</td>
             `;
             tbody.appendChild(row);
         });
 
-        document.getElementById('mutationResultsCount').textContent =
-            `${results.length} genes with p < ${this.mutationResults.pThreshold}`;
+        // Build settings summary
+        let settingsText = `Hotspot: ${mr.hotspotGene} | `;
+        settingsText += `WT: ${mr.nWT} cells | Mutated: ${mr.nMut} cells | `;
+        settingsText += `Min cells: ${mr.minN} | p < ${mr.pThreshold}`;
+        if (mr.lineageFilter) {
+            settingsText += ` | Lineage: ${mr.lineageFilter}`;
+        }
+        if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
+            settingsText += ` | Filter: ${mr.additionalHotspot} ${mr.additionalHotspotLevel}`;
+        }
+
+        document.getElementById('mutationResultsCount').innerHTML =
+            `<strong>${results.length} genes</strong> with p < ${mr.pThreshold}<br>
+            <small style="color: #666;">${settingsText}</small>`;
 
         // Store for sorting
         this.mutationTableData = results;
@@ -1331,11 +1384,28 @@ class CorrelationExplorer {
     downloadMutationResults() {
         if (!this.mutationResults) return;
 
-        const results = this.mutationResults.significantResults;
+        const mr = this.mutationResults;
+        const results = mr.significantResults;
+
+        // Build settings header
+        let csv = '# Mutation Analysis Results\n';
+        csv += `# Hotspot Mutation: ${mr.hotspotGene}\n`;
+        csv += `# WT cells (0 mutations): ${mr.nWT}\n`;
+        csv += `# Mutated cells (1+2 mutations): ${mr.nMut}\n`;
+        csv += `# Cells with 2 mutations: ${mr.n2}\n`;
+        csv += `# Min cell lines: ${mr.minN}\n`;
+        csv += `# P-value threshold: ${mr.pThreshold}\n`;
+        csv += `# Lineage filter: ${mr.lineageFilter || 'All lineages'}\n`;
+        if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
+            csv += `# Additional hotspot filter: ${mr.additionalHotspot} = ${mr.additionalHotspotLevel}\n`;
+        }
+        csv += `# Date: ${new Date().toISOString().slice(0, 10)}\n`;
+        csv += '#\n';
+
         const headers = ['Gene', 'N_WT', 'Mean_GE_WT', 'N_1+2', 'Mean_GE_1+2', 'Delta_GE', 'pValue_1+2_vs_0',
                         'N_2', 'Mean_GE_2', 'Delta_GE_2vs0', 'pValue_2_vs_0'];
 
-        let csv = headers.join(',') + '\n';
+        csv += headers.join(',') + '\n';
         results.forEach(r => {
             csv += [
                 r.gene,
@@ -1344,15 +1414,15 @@ class CorrelationExplorer {
                 r.n_mut,
                 r.mean_mut.toFixed(4),
                 r.diff_mut.toFixed(4),
-                r.p_mut.toExponential(4),
+                this.formatPValue(r.p_mut),
                 r.n_2,
                 isNaN(r.mean_2) ? '' : r.mean_2.toFixed(4),
                 isNaN(r.diff_2) ? '' : r.diff_2.toFixed(4),
-                r.p_2 >= 1 ? '' : r.p_2.toExponential(4)
+                this.formatPValue(r.p_2)
             ].join(',') + '\n';
         });
 
-        const filename = `mutation_analysis_${this.mutationResults.hotspotGene}_${new Date().toISOString().slice(0, 10)}.csv`;
+        const filename = `mutation_analysis_${mr.hotspotGene}_${new Date().toISOString().slice(0, 10)}.csv`;
         this.downloadFile(csv, filename, 'text/csv');
     }
 
