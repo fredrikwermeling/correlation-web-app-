@@ -2286,7 +2286,18 @@ class CorrelationExplorer {
         const tbody = document.getElementById('correlationsBody');
         tbody.innerHTML = '';
 
-        this.results.correlations
+        // Deduplicate correlations (A-B is same as B-A)
+        const seenPairs = new Set();
+        const uniqueCorrelations = this.results.correlations.filter(c => {
+            const pairKey = [c.gene1, c.gene2].sort().join('|');
+            if (seenPairs.has(pairKey)) {
+                return false;
+            }
+            seenPairs.add(pairKey);
+            return true;
+        });
+
+        uniqueCorrelations
             .sort((a, b) => Math.abs(b.correlation) - Math.abs(a.correlation))
             .forEach((c) => {
                 const tr = document.createElement('tr');
@@ -4456,10 +4467,10 @@ Results:
         // Build HTML table
         const filterInfo = filterDesc ? `<p style="font-size: 11px; color: #333; margin-bottom: 8px; background: #f0f9ff; padding: 4px 8px; border-radius: 4px;"><b>Filter:</b> ${filterDesc}</p>` : '';
         let html = `
-            <h4 style="margin-bottom: 8px;">Mutation Effect on Correlation by Cancer Type</h4>
+            <h4 style="margin-bottom: 8px;">Effect of <span style="color: #0066cc;">${hotspotGene}</span> Mutation on ${gene1} vs ${gene2} Correlation</h4>
             ${filterInfo}
             <p style="font-size: 12px; color: #666; margin-bottom: 12px;">
-                Comparing correlation between WT (0 mutations) vs Mutant (2 mutations) cells, stratified by cancer type.
+                Comparing correlation between WT (0 ${hotspotGene} mutations) vs Mutant (2+ ${hotspotGene} mutations) cells, stratified by cancer type.
                 Note: Cells with exactly 1 mutation are excluded from this comparison.
             </p>
             <div style="overflow-x: auto;">
@@ -4508,11 +4519,18 @@ Results:
             </table>
             </div>
             <div style="margin-top: 12px;">
+                <button class="btn btn-primary btn-sm" id="backToGraphBtn2" style="margin-right: 8px;">← Back to Graph</button>
                 <button class="btn btn-success btn-sm" id="downloadCompareCSV">Download CSV</button>
             </div>
         `;
 
         document.getElementById('compareTable').innerHTML = html;
+
+        // Add back to graph handler
+        document.getElementById('backToGraphBtn2')?.addEventListener('click', () => {
+            document.getElementById('compareTable').style.display = 'none';
+            document.getElementById('scatterPlot').style.display = 'block';
+        });
 
         // Add download handler
         document.getElementById('downloadCompareCSV')?.addEventListener('click', () => {
@@ -4680,11 +4698,18 @@ Results:
                 Note: Rows highlighted in yellow have p < 0.05. This analysis may be biased as specific mutations select for cancer types.
             </p>
             <div style="margin-top: 12px;">
+                <button class="btn btn-primary btn-sm" id="backToGraphBtn" style="margin-right: 8px;">← Back to Graph</button>
                 <button class="btn btn-success btn-sm" id="downloadMutCompareCSV">Download CSV</button>
             </div>
         `;
 
         document.getElementById('compareTable').innerHTML = html;
+
+        // Add back to graph handler
+        document.getElementById('backToGraphBtn')?.addEventListener('click', () => {
+            document.getElementById('compareTable').style.display = 'none';
+            document.getElementById('scatterPlot').style.display = 'block';
+        });
 
         // Add download handler
         document.getElementById('downloadMutCompareCSV')?.addEventListener('click', () => {
