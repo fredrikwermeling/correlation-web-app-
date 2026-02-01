@@ -2188,8 +2188,10 @@ class CorrelationExplorer {
                 <span class="legend-item"><span class="legend-dot" style="background: #16a34a;"></span> Input</span>
                 <span class="legend-item"><span class="legend-dot" style="background: #86efac;"></span> Correlated</span>
             `;
+            legendNodeType.style.display = 'block';
         } else {
             legendNodeType.innerHTML = '';
+            legendNodeType.style.display = 'none';
         }
 
         // Show synonym legend if synonyms are used in the network
