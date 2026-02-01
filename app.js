@@ -228,9 +228,13 @@ class CorrelationExplorer {
         // Show/hide mutation tab
         document.getElementById('mutationTab').style.display = isMutationMode ? 'inline-block' : 'none';
 
-        // Populate hotspot selector if not already done
+        // Set default min cell lines based on mode
+        const minCellLinesInput = document.getElementById('minCellLines');
         if (isMutationMode) {
+            minCellLinesInput.value = '20';
             this.populateMutationHotspotSelector();
+        } else {
+            minCellLinesInput.value = '50';
         }
     }
 
@@ -346,6 +350,19 @@ class CorrelationExplorer {
         document.getElementById('downloadMutationResults').addEventListener('click', () => {
             this.downloadMutationResults();
         });
+
+        // Gene effect distribution modal
+        document.getElementById('closeGeneEffect').addEventListener('click', () => {
+            document.getElementById('geneEffectModal').style.display = 'none';
+        });
+        document.getElementById('geneEffectModal').addEventListener('click', (e) => {
+            if (e.target.id === 'geneEffectModal') {
+                document.getElementById('geneEffectModal').style.display = 'none';
+            }
+        });
+        document.getElementById('downloadGeneEffectPNG').addEventListener('click', () => this.downloadGeneEffectPNG());
+        document.getElementById('downloadGeneEffectSVG').addEventListener('click', () => this.downloadGeneEffectSVG());
+        document.getElementById('downloadGeneEffectCSV').addEventListener('click', () => this.downloadGeneEffectCSV());
 
         // Network controls with slider bubble updates
         document.getElementById('netFontSize').addEventListener('input', (e) => {
@@ -1301,6 +1318,7 @@ class CorrelationExplorer {
         results.forEach(r => {
             const row = document.createElement('tr');
             row.innerHTML = `
+                <td><button class="btn btn-small" onclick="app.showGeneEffectDistribution('${r.gene}')" title="View distribution">📊</button></td>
                 <td>${r.gene}</td>
                 <td>${r.n_wt}</td>
                 <td>${r.mean_wt.toFixed(3)}</td>
@@ -1423,6 +1441,208 @@ class CorrelationExplorer {
         });
 
         const filename = `mutation_analysis_${mr.hotspotGene}_${new Date().toISOString().slice(0, 10)}.csv`;
+        this.downloadFile(csv, filename, 'text/csv');
+    }
+
+    showGeneEffectDistribution(gene) {
+        if (!this.mutationResults) return;
+
+        const mr = this.mutationResults;
+        const hotspotGene = mr.hotspotGene;
+        const mutationData = this.mutations.geneData[hotspotGene];
+        const geneIdx = this.geneIndex.get(gene.toUpperCase());
+
+        if (geneIdx === undefined) {
+            alert(`Gene ${gene} not found`);
+            return;
+        }
+
+        // Collect data for each cell line
+        const cellLines = this.metadata.cellLines;
+        const data = { wt: [], mut1: [], mut2: [] };
+        this.currentGeneEffectData = []; // Store for CSV export
+
+        cellLines.forEach((cellLine, idx) => {
+            // Apply same filters as mutation analysis
+            if (mr.lineageFilter && this.cellLineMetadata?.lineage?.[cellLine] !== mr.lineageFilter) {
+                return;
+            }
+
+            // Check additional hotspot filter
+            if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
+                const addMutData = this.mutations.geneData[mr.additionalHotspot];
+                if (addMutData) {
+                    const addMutLevel = addMutData.mutations[cellLine] || 0;
+                    if (mr.additionalHotspotLevel === '0' && addMutLevel !== 0) return;
+                    if (mr.additionalHotspotLevel === '1' && addMutLevel !== 1) return;
+                    if (mr.additionalHotspotLevel === '2' && addMutLevel < 2) return;
+                    if (mr.additionalHotspotLevel === '1+2' && addMutLevel === 0) return;
+                }
+            }
+
+            const ge = this.geneEffects[geneIdx * this.nCellLines + idx];
+            if (isNaN(ge)) return;
+
+            const mutLevel = mutationData.mutations[cellLine] || 0;
+            const cellName = this.getCellLineName(cellLine);
+            const lineage = this.getCellLineLineage(cellLine);
+
+            const point = { ge, cellLine, cellName, lineage, mutLevel };
+            this.currentGeneEffectData.push(point);
+
+            if (mutLevel === 0) {
+                data.wt.push(point);
+            } else if (mutLevel === 1) {
+                data.mut1.push(point);
+            } else {
+                data.mut2.push(point);
+            }
+        });
+
+        // Store current gene for downloads
+        this.currentGeneEffectGene = gene;
+
+        // Create jitter for y-axis
+        const jitter = (base, spread = 0.15) => base + (Math.random() - 0.5) * spread;
+
+        // Build Plotly traces
+        const traces = [
+            {
+                x: data.wt.map(d => d.ge),
+                y: data.wt.map(() => jitter(0)),
+                mode: 'markers',
+                type: 'scatter',
+                name: `WT (n=${data.wt.length})`,
+                marker: { color: '#888888', size: 8, opacity: 0.7 },
+                text: data.wt.map(d => `${d.cellName}<br>${d.lineage}<br>GE: ${d.ge.toFixed(3)}`),
+                hoverinfo: 'text'
+            },
+            {
+                x: data.mut1.map(d => d.ge),
+                y: data.mut1.map(() => jitter(1)),
+                mode: 'markers',
+                type: 'scatter',
+                name: `1 mutation (n=${data.mut1.length})`,
+                marker: { color: '#3b82f6', size: 8, opacity: 0.7 },
+                text: data.mut1.map(d => `${d.cellName}<br>${d.lineage}<br>GE: ${d.ge.toFixed(3)}`),
+                hoverinfo: 'text'
+            },
+            {
+                x: data.mut2.map(d => d.ge),
+                y: data.mut2.map(() => jitter(2)),
+                mode: 'markers',
+                type: 'scatter',
+                name: `2 mutations (n=${data.mut2.length})`,
+                marker: { color: '#dc2626', size: 8, opacity: 0.7 },
+                text: data.mut2.map(d => `${d.cellName}<br>${d.lineage}<br>GE: ${d.ge.toFixed(3)}`),
+                hoverinfo: 'text'
+            }
+        ];
+
+        // Calculate means for each group
+        const meanWT = data.wt.length > 0 ? this.mean(data.wt.map(d => d.ge)) : NaN;
+        const meanMut1 = data.mut1.length > 0 ? this.mean(data.mut1.map(d => d.ge)) : NaN;
+        const meanMut2 = data.mut2.length > 0 ? this.mean(data.mut2.map(d => d.ge)) : NaN;
+
+        // Add mean lines
+        const allGE = [...data.wt, ...data.mut1, ...data.mut2].map(d => d.ge);
+        const xMin = Math.min(...allGE) - 0.1;
+        const xMax = Math.max(...allGE) + 0.1;
+
+        if (!isNaN(meanWT)) {
+            traces.push({
+                x: [meanWT, meanWT],
+                y: [-0.3, 0.3],
+                mode: 'lines',
+                line: { color: '#888888', width: 3 },
+                showlegend: false,
+                hoverinfo: 'skip'
+            });
+        }
+        if (!isNaN(meanMut1)) {
+            traces.push({
+                x: [meanMut1, meanMut1],
+                y: [0.7, 1.3],
+                mode: 'lines',
+                line: { color: '#3b82f6', width: 3 },
+                showlegend: false,
+                hoverinfo: 'skip'
+            });
+        }
+        if (!isNaN(meanMut2)) {
+            traces.push({
+                x: [meanMut2, meanMut2],
+                y: [1.7, 2.3],
+                mode: 'lines',
+                line: { color: '#dc2626', width: 3 },
+                showlegend: false,
+                hoverinfo: 'skip'
+            });
+        }
+
+        const layout = {
+            title: `${gene} Gene Effect by ${hotspotGene} Mutation Status`,
+            xaxis: {
+                title: `${gene} Gene Effect`,
+                range: [xMin, xMax]
+            },
+            yaxis: {
+                title: `${hotspotGene} Mutations`,
+                tickmode: 'array',
+                tickvals: [0, 1, 2],
+                ticktext: ['0 (WT)', '1', '2'],
+                range: [-0.5, 2.5]
+            },
+            showlegend: true,
+            legend: { x: 1, y: 1, xanchor: 'right' },
+            margin: { t: 50, r: 150, b: 50, l: 60 }
+        };
+
+        // Show modal
+        document.getElementById('geneEffectModal').style.display = 'flex';
+        document.getElementById('geneEffectTitle').textContent = `${gene} Gene Effect by ${hotspotGene} Mutation`;
+
+        Plotly.newPlot('geneEffectPlot', traces, layout, { responsive: true });
+    }
+
+    downloadGeneEffectPNG() {
+        Plotly.downloadImage('geneEffectPlot', {
+            format: 'png',
+            width: 900,
+            height: 500,
+            filename: `gene_effect_${this.currentGeneEffectGene}_${this.mutationResults.hotspotGene}`
+        });
+    }
+
+    downloadGeneEffectSVG() {
+        Plotly.downloadImage('geneEffectPlot', {
+            format: 'svg',
+            width: 900,
+            height: 500,
+            filename: `gene_effect_${this.currentGeneEffectGene}_${this.mutationResults.hotspotGene}`
+        });
+    }
+
+    downloadGeneEffectCSV() {
+        if (!this.currentGeneEffectData || !this.currentGeneEffectGene) return;
+
+        const mr = this.mutationResults;
+        let csv = `# Gene Effect Distribution Data\n`;
+        csv += `# Gene: ${this.currentGeneEffectGene}\n`;
+        csv += `# Hotspot Mutation: ${mr.hotspotGene}\n`;
+        csv += `# Lineage filter: ${mr.lineageFilter || 'All lineages'}\n`;
+        if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
+            csv += `# Additional filter: ${mr.additionalHotspot} = ${mr.additionalHotspotLevel}\n`;
+        }
+        csv += `# Date: ${new Date().toISOString().slice(0, 10)}\n`;
+        csv += '#\n';
+        csv += 'CellLine,CellLineName,Lineage,GeneEffect,MutationLevel\n';
+
+        this.currentGeneEffectData.forEach(d => {
+            csv += `${d.cellLine},${d.cellName},${d.lineage},${d.ge.toFixed(4)},${d.mutLevel}\n`;
+        });
+
+        const filename = `gene_effect_${this.currentGeneEffectGene}_${mr.hotspotGene}_data.csv`;
         this.downloadFile(csv, filename, 'text/csv');
     }
 
