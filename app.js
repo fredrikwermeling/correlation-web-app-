@@ -34,6 +34,9 @@ class CorrelationExplorer {
         // Synonyms/orthologs used
         this.synonymsUsed = [];
 
+        // Extended synonym lookup (low/mid risk)
+        this.synonymLookup = null;
+
         // Network physics and layout state
         this.physicsEnabled = true;
         this.currentLayout = 0;
@@ -64,17 +67,19 @@ class CorrelationExplorer {
         this.updateLoadingText('Loading metadata...');
 
         // Load all JSON files in parallel
-        const [metadataRes, cellLineRes, mutationsRes, orthologsRes] = await Promise.all([
+        const [metadataRes, cellLineRes, mutationsRes, orthologsRes, synonymsRes] = await Promise.all([
             fetch('web_data/metadata.json'),
             fetch('web_data/cellLineMetadata.json'),
             fetch('web_data/mutations.json'),
-            fetch('web_data/orthologs.json')
+            fetch('web_data/orthologs.json'),
+            fetch('web_data/synonyms.json')
         ]);
 
         this.metadata = await metadataRes.json();
         this.cellLineMetadata = await cellLineRes.json();
         this.mutations = await mutationsRes.json();
         this.orthologs = await orthologsRes.json();
+        this.synonymLookup = await synonymsRes.json();
 
         this.nGenes = this.metadata.nGenes;
         this.nCellLines = this.metadata.nCellLines;
@@ -268,7 +273,7 @@ class CorrelationExplorer {
         });
 
         // Find synonyms button
-        document.getElementById('findSynonyms').addEventListener('click', () => this.findSynonymsForMissingGenes());
+        document.getElementById('findSynonyms').addEventListener('click', async () => await this.findSynonymsForMissingGenes());
 
         // Input method tabs
         document.querySelectorAll('.input-tab').forEach(tab => {
@@ -464,19 +469,71 @@ class CorrelationExplorer {
         }
     }
 
-    findSynonymsForMissingGenes() {
+    async findSynonymsForMissingGenes() {
         if (!this.genesNotFound || this.genesNotFound.length === 0) return;
 
         const replacements = [];
+        const stillNotFound = [];
         const notFound = this.genesNotFound;
 
+        // First pass: check local lookups (synonym table + ortholog table)
         notFound.forEach(gene => {
-            // Check ortholog lookup
+            const upperGene = gene.toUpperCase();
+
+            // First check extended synonym lookup (low/mid risk from DepMap reference)
+            if (this.synonymLookup) {
+                const match = this.synonymLookup[upperGene];
+                if (match && this.geneIndex.has(match.d.toUpperCase())) {
+                    const sourceLabel = match.r === 'l' ? 'low-risk synonym' : 'mid-risk synonym';
+                    replacements.push({
+                        original: gene,
+                        replacement: match.d.toUpperCase(),
+                        source: sourceLabel
+                    });
+                    return;
+                }
+            }
+
+            // Fallback: Check ortholog lookup (mouse to human)
             const humanGene = this.orthologs?.mouseToHuman?.[gene];
             if (humanGene && this.geneIndex.has(humanGene.toUpperCase())) {
-                replacements.push({ original: gene, replacement: humanGene.toUpperCase(), source: 'ortholog' });
+                replacements.push({
+                    original: gene,
+                    replacement: humanGene.toUpperCase(),
+                    source: 'ortholog'
+                });
+                return;
             }
+
+            // Still not found - will try API
+            stillNotFound.push(gene);
         });
+
+        // Second pass: try MyGene.info API for remaining genes
+        if (stillNotFound.length > 0) {
+            const btn = document.getElementById('findSynonyms');
+            const originalText = btn.textContent;
+            btn.textContent = 'Searching API...';
+            btn.disabled = true;
+
+            try {
+                const apiResults = await this.queryMyGeneAPI(stillNotFound);
+                apiResults.forEach(r => {
+                    if (r.replacement && this.geneIndex.has(r.replacement.toUpperCase())) {
+                        replacements.push({
+                            original: r.original,
+                            replacement: r.replacement.toUpperCase(),
+                            source: 'MyGene.info API'
+                        });
+                    }
+                });
+            } catch (error) {
+                console.warn('MyGene.info API query failed:', error);
+            } finally {
+                btn.textContent = originalText;
+                btn.disabled = false;
+            }
+        }
 
         if (replacements.length > 0) {
             // Store synonyms used for summary
@@ -494,11 +551,50 @@ class CorrelationExplorer {
             textarea.value = text;
             this.updateGeneCount();
 
-            const msg = replacements.map(r => `${r.original} → ${r.replacement} [${r.source}]`).join(', ');
+            const msg = replacements.map(r => `${r.original} → ${r.replacement} [${r.source}]`).join('\n');
             alert(`Replaced ${replacements.length} gene(s):\n${msg}`);
         } else {
             alert('No synonyms or orthologs found for the missing genes');
         }
+    }
+
+    async queryMyGeneAPI(genes) {
+        // Query MyGene.info API for gene synonyms
+        // API docs: https://docs.mygene.info/en/latest/
+        const results = [];
+
+        // Query in batches of 10 to avoid overloading
+        const batchSize = 10;
+        for (let i = 0; i < genes.length; i += batchSize) {
+            const batch = genes.slice(i, i + batchSize);
+
+            await Promise.all(batch.map(async (gene) => {
+                try {
+                    const url = `https://mygene.info/v3/query?q=${encodeURIComponent(gene)}&scopes=symbol,alias&fields=symbol&species=human`;
+                    const response = await fetch(url);
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.hits && data.hits.length > 0) {
+                            // Take the first hit's symbol
+                            const symbol = data.hits[0].symbol;
+                            if (symbol && symbol.toUpperCase() !== gene.toUpperCase()) {
+                                results.push({ original: gene, replacement: symbol });
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.warn(`MyGene.info query failed for ${gene}:`, error);
+                }
+            }));
+
+            // Small delay between batches to be nice to the API
+            if (i + batchSize < genes.length) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+            }
+        }
+
+        return results;
     }
 
     handleStatsFileUpload(event) {
