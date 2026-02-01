@@ -13,20 +13,21 @@
         @import url('https://fonts.googleapis.com/css2?family=Source+Sans+Pro:wght@300;400;600;700&family=Roboto+Mono:wght@400;500&display=swap');
 
         :root {
-            --green-900: #14532d;
-            --green-800: #166534;
-            --green-700: #15803d;
-            --green-600: #16a34a;
-            --green-500: #22c55e;
-            --green-400: #4ade80;
-            --green-300: #86efac;
-            --green-200: #bbf7d0;
-            --green-100: #dcfce7;
-            --green-50: #f0fdf4;
+            --green-900: #2d5a27;
+            --green-800: #3a7333;
+            --green-700: #4a8c3f;
+            --green-600: #5a9f4a;
+            --green-500: #6ab257;
+            --green-400: #8bc77a;
+            --green-300: #a8d89a;
+            --green-200: #c5e8bc;
+            --green-100: #e2f4de;
+            --green-50: #f0f9ef;
             --gray-600: #4b5563;
             --gray-500: #6b7280;
             --gray-200: #e5e7eb;
             --gray-100: #f3f4f6;
+            --brand-green: #4a8c3f;
         }
 
         * {
@@ -35,34 +36,49 @@
 
         body {
             font-family: 'Source Sans Pro', -apple-system, BlinkMacSystemFont, sans-serif;
-            background-color: var(--green-50);
+            background-color: #ffffff;
             min-height: 100vh;
             color: #1f2937;
             margin: 0;
-            padding: 15px;
+            padding: 0;
         }
 
-        /* Main Header - matches Shiny exactly */
-        .main-header {
-            background: linear-gradient(135deg, var(--green-700) 0%, var(--green-600) 100%);
-            color: white;
-            padding: 25px 30px;
-            margin: -15px -15px 25px -15px;
-            border-bottom: 3px solid var(--green-400);
+        /* Logo Header - centered like Green Listed */
+        .logo-header {
+            text-align: center;
+            padding: 20px 20px 10px 20px;
+            background: white;
         }
 
-        .main-header h1 {
-            margin: 0;
-            font-weight: 700;
-            font-size: 1.8em;
-            letter-spacing: -0.3px;
+        .logo-header img {
+            max-width: 500px;
+            height: auto;
         }
 
-        .main-header p {
-            margin: 8px 0 0 0;
-            opacity: 0.9;
-            font-size: 1.05em;
-            font-weight: 300;
+        /* Navigation bar - Green Listed style */
+        .nav-bar {
+            text-align: center;
+            padding: 12px 20px;
+            background: white;
+            border-bottom: 1px solid #e5e7eb;
+            margin-bottom: 20px;
+        }
+
+        .nav-bar a {
+            color: #4a8c3f;
+            text-decoration: none;
+            margin: 0 20px;
+            font-size: 15px;
+            font-weight: 500;
+        }
+
+        .nav-bar a:hover {
+            text-decoration: underline;
+        }
+
+        /* Main content area */
+        .main-content {
+            padding: 0 20px 20px 20px;
         }
 
         /* Layout - 4/8 column split like Shiny */
@@ -87,6 +103,9 @@
         .sidebar-card-half {
             flex: 1;
             min-width: 0;
+        }
+
+        .sidebar-card-half .card-content {
             padding: 15px;
         }
 
@@ -95,8 +114,8 @@
         }
 
         .sidebar-card-half .card-title {
-            margin-bottom: 12px;
             font-size: 0.95em;
+            padding: 10px 15px;
         }
 
         .sidebar-card-half textarea.form-control {
@@ -156,23 +175,28 @@
             min-width: 0;
         }
 
-        /* Cards - exact Shiny match */
+        /* Cards - Green Listed style */
         .card {
             background: white;
             border-radius: 8px;
-            padding: 20px;
             margin-bottom: 16px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-            border: 1px solid var(--gray-200);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border: 1px solid #ddd;
+            overflow: hidden;
         }
 
         .card-title {
             font-weight: 600;
-            font-size: 1em;
-            color: var(--green-800);
-            margin-bottom: 16px;
-            padding-bottom: 10px;
-            border-bottom: 2px solid var(--green-100);
+            font-size: 1.05em;
+            color: white;
+            background: #4a8c3f;
+            margin: 0;
+            padding: 12px 20px;
+            border-radius: 7px 7px 0 0;
+        }
+
+        .card-content {
+            padding: 20px;
         }
 
         /* Buttons - exact Shiny match */
@@ -1046,38 +1070,38 @@
         <div class="loading-text" id="loadingText">Loading gene effect data...</div>
     </div>
 
-    <!-- Header -->
-    <div class="main-header">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-            <div>
-                <h1>Gene Correlation Explorer</h1>
-                <p>Analyze gene correlations from DepMap CRISPR screen data (Web Edition)</p>
-            </div>
-            <div style="text-align: right; font-size: 0.9em;">
-                <p style="margin: 0;"><a href="https://greenlisted.cmm.se" target="_blank" style="color: white; text-decoration: underline;">Green Listed</a> tool family</p>
-                <p style="margin: 4px 0 0 0;"><a href="https://wermelinglab.com" target="_blank" style="color: white; text-decoration: underline;">Wermeling Lab</a> | Karolinska Institutet</p>
-                <button id="showInfoGraphic" class="btn btn-secondary" style="margin-top: 8px; font-size: 12px; padding: 4px 10px;">Show Infographic</button>
-            </div>
-        </div>
+    <!-- Logo Header -->
+    <div class="logo-header">
+        <img src="web_data/correlate_logo.png" alt="Correlate - a CRISPR Screen Analysis Tool">
     </div>
 
+    <!-- Navigation Bar -->
+    <div class="nav-bar">
+        <a href="#" id="showInfoGraphic">How it works</a>
+        <a href="https://greenlisted.cmm.se" target="_blank">Green Listed</a>
+        <a href="https://wermelinglab.com" target="_blank">Wermeling Lab</a>
+    </div>
+
+    <div class="main-content">
     <div class="container">
         <!-- Left Sidebar -->
         <div class="sidebar">
             <!-- Reference Data Card -->
             <div class="card">
                 <div class="card-title">Reference Data</div>
-                <div id="referenceStatus" class="status-box status-warning">
-                    Loading data...
-                </div>
-                <div style="font-size: 10px; color: #666; margin-top: 8px; line-height: 1.4;">
-                    <p style="margin: 0;">Data from <a href="https://depmap.org/portal/data_page/?tab=currentRelease" target="_blank">DepMap 25Q3</a>:</p>
-                    <ul style="margin: 4px 0 0 0; padding-left: 16px;">
-                        <li>CRISPRGeneEffect.csv</li>
-                        <li>Model.csv</li>
-                        <li>OmicsSomaticMutationsMatrixHotspot.csv</li>
-                    </ul>
-                    <p style="margin: 6px 0 0 0; font-style: italic;"><a href="https://depmap.org/portal/data_page/?tab=overview#how-to-cite" target="_blank">Please acknowledge DepMap</a> if you use this data.</p>
+                <div class="card-content">
+                    <div id="referenceStatus" class="status-box status-warning">
+                        Loading data...
+                    </div>
+                    <div style="font-size: 10px; color: #666; margin-top: 8px; line-height: 1.4;">
+                        <p style="margin: 0;">Data from <a href="https://depmap.org/portal/data_page/?tab=currentRelease" target="_blank">DepMap 25Q3</a>:</p>
+                        <ul style="margin: 4px 0 0 0; padding-left: 16px;">
+                            <li>CRISPRGeneEffect.csv</li>
+                            <li>Model.csv</li>
+                            <li>OmicsSomaticMutationsMatrixHotspot.csv</li>
+                        </ul>
+                        <p style="margin: 6px 0 0 0; font-style: italic;"><a href="https://depmap.org/portal/data_page/?tab=overview#how-to-cite" target="_blank">Please acknowledge DepMap</a> if you use this data.</p>
+                    </div>
                 </div>
             </div>
 
@@ -1086,7 +1110,7 @@
                 <!-- Parameters Card -->
                 <div class="card sidebar-card-half">
                     <div class="card-title">1. Set Parameters</div>
-
+                    <div class="card-content">
                     <div class="form-group">
                         <label class="form-label">Analysis Mode:</label>
                         <div class="radio-group">
@@ -1165,12 +1189,13 @@
                     </button>
 
                     <div id="analysisStatus"></div>
+                    </div> <!-- end card-content -->
                 </div>
 
                 <!-- Gene Input Card -->
                 <div class="card sidebar-card-half">
                     <div class="card-title">2. Input Genes</div>
-
+                    <div class="card-content">
                     <!-- Input method tabs -->
                     <div class="input-tabs">
                         <button class="input-tab active" data-input="paste">Paste/Type</button>
@@ -1222,6 +1247,7 @@
                     <button class="btn btn-warning btn-sm" id="findSynonyms" style="display: none; margin-top: 8px;">
                         Find Synonyms
                     </button>
+                    </div> <!-- end card-content -->
                 </div>
             </div>
         </div>
@@ -1229,8 +1255,8 @@
         <!-- Main Panel -->
         <div class="main-panel">
             <div class="card" style="padding-bottom: 0;">
-                <div class="card-title" style="margin-bottom: 12px;">Results</div>
-
+                <div class="card-title">3. Results</div>
+                <div class="card-content" style="padding-bottom: 0;">
                 <ul class="nav-tabs">
                     <li><button class="nav-link active" data-tab="network">Network</button></li>
                     <li><button class="nav-link" data-tab="correlations">Correlations</button></li>
@@ -1484,9 +1510,11 @@
                     <button class="btn btn-success btn-sm" id="downloadSummary" style="margin-bottom: 15px;">Download Summary</button>
                     <div class="summary-text" id="summaryText">Run analysis to view summary</div>
                 </div>
+                </div> <!-- end card-content -->
             </div>
         </div>
     </div>
+    </div> <!-- end main-content -->
 
     <!-- Inspect Modal -->
     <div class="modal-overlay" id="inspectModal">
