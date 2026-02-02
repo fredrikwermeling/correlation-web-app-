@@ -107,26 +107,33 @@
             gap: 16px;
             max-width: 1350px;
             margin: 0 auto;
+            align-items: stretch;
         }
 
         .sidebar {
             width: 415px;
             min-width: 390px;
             flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
         }
 
         .sidebar-row {
             display: flex;
             gap: 12px;
+            flex: 1;
         }
 
         .sidebar-card-half {
             flex: 1;
             min-width: 0;
+            display: flex;
+            flex-direction: column;
         }
 
         .sidebar-card-half .card-content {
             padding: 15px;
+            flex: 1;
         }
 
         .sidebar-card-half .form-group {
