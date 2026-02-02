@@ -79,21 +79,21 @@
         /* Navigation bar - Green Listed style */
         .nav-bar {
             text-align: center;
-            padding: 0 20px 10px 20px;
+            padding: 0 20px 8px 20px;
             background: white;
             margin-bottom: 12px;
         }
 
         .nav-bar a {
             color: #0066cc;
-            text-decoration: none;
-            margin: 0 15px;
-            font-size: 15px;
+            text-decoration: underline;
+            margin: 0 12px;
+            font-size: 13px;
             font-weight: 400;
         }
 
         .nav-bar a:hover {
-            text-decoration: underline;
+            color: #004499;
         }
 
         /* Main content area */
@@ -613,6 +613,7 @@
             border: 1px solid var(--gray-200);
             border-radius: 8px;
             margin-bottom: 15px;
+            align-items: start;
         }
 
         /* Make buttons in network controls smaller */
@@ -780,13 +781,13 @@
             flex: 1;
         }
 
-        @media (max-width: 1000px) {
+        @media (max-width: 800px) {
             .network-controls-grid {
                 grid-template-columns: repeat(2, 1fr);
             }
         }
 
-        @media (max-width: 700px) {
+        @media (max-width: 500px) {
             .network-controls-grid {
                 grid-template-columns: 1fr;
             }
@@ -1133,13 +1134,13 @@
                         Loading data...
                     </div>
                     <div style="font-size: 10px; color: #666; margin-top: 8px; line-height: 1.4;">
-                        <p style="margin: 0;">Data from <a href="https://depmap.org/portal/data_page/?tab=currentRelease" target="_blank">DepMap 25Q3</a>:</p>
+                        <p style="margin: 0;">Data from <a href="https://depmap.org/portal/data_page/?tab=currentRelease" target="_blank" style="color: #0066cc;">DepMap 25Q3</a>:</p>
                         <ul style="margin: 4px 0 0 0; padding-left: 16px;">
                             <li>CRISPRGeneEffect.csv</li>
                             <li>Model.csv</li>
                             <li>OmicsSomaticMutationsMatrixHotspot.csv</li>
                         </ul>
-                        <p style="margin: 6px 0 0 0; font-style: italic;"><a href="https://depmap.org/portal/data_page/?tab=overview#how-to-cite" target="_blank">Please acknowledge DepMap</a> if you use this data.</p>
+                        <p style="margin: 6px 0 0 0; font-style: italic;"><a href="https://depmap.org/portal/data_page/?tab=overview#how-to-cite" target="_blank" style="color: #0066cc;">Please acknowledge DepMap</a> if you use this data.</p>
                     </div>
                 </div>
             </div>
