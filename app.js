@@ -485,6 +485,30 @@ class CorrelationExplorer {
         document.getElementById('loadTestStats').addEventListener('click', () => this.loadTestGenesWithStats());
         document.getElementById('downloadSampleStats').addEventListener('click', () => this.downloadSampleStatsFile());
 
+        // Stats sub-tabs (file upload vs manual entry)
+        document.querySelectorAll('.stats-sub-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.stats-sub-tab').forEach(t => {
+                    t.classList.remove('active');
+                    t.style.background = 'transparent';
+                    t.style.color = '#6b7280';
+                });
+                document.querySelectorAll('.stats-sub-panel').forEach(p => {
+                    p.classList.remove('active');
+                    p.style.display = 'none';
+                });
+                tab.classList.add('active');
+                tab.style.background = '#68A948';
+                tab.style.color = 'white';
+                const panel = document.getElementById('stats-' + tab.dataset.statsInput);
+                panel.classList.add('active');
+                panel.style.display = 'block';
+            });
+        });
+
+        // Manual stats entry
+        document.getElementById('loadManualStatsBtn').addEventListener('click', () => this.loadManualStats());
+
         // Run analysis
         document.getElementById('runAnalysis').addEventListener('click', () => this.runAnalysis());
 
@@ -940,6 +964,81 @@ class CorrelationExplorer {
         // Show stats controls if we have statistics
         const hasLfc = lfcColIdx !== '';
         const hasFdr = fdrColIdx !== '';
+        if (hasLfc || hasFdr) {
+            document.getElementById('statsControls').style.display = 'block';
+        }
+
+        // Show stats loaded message
+        let msg = `Loaded ${genes.length} genes`;
+        if (hasLfc || hasFdr) {
+            msg += ` with statistics (${hasLfc ? 'LFC' : ''}${hasLfc && hasFdr ? ', ' : ''}${hasFdr ? 'FDR' : ''})`;
+        }
+        alert(msg);
+    }
+
+    loadManualStats() {
+        const text = document.getElementById('manualStatsTextarea').value.trim();
+        if (!text) {
+            alert('Please enter gene data in the text area.');
+            return;
+        }
+
+        const lines = text.split('\n').filter(l => l.trim());
+        if (lines.length === 0) return;
+
+        // Detect separator (tab, comma, or semicolon)
+        const firstLine = lines[0];
+        let separator = '\t';
+        if (firstLine.includes('\t')) separator = '\t';
+        else if (firstLine.includes(',')) separator = ',';
+        else if (firstLine.includes(';')) separator = ';';
+
+        // Parse header to detect columns
+        const firstParts = firstLine.split(separator).map(p => p.trim().toLowerCase());
+        let hasHeader = firstParts.some(p => ['gene', 'symbol', 'lfc', 'logfc', 'log2fc', 'fdr', 'padj', 'pvalue', 'p-value'].includes(p));
+
+        // Determine column indices
+        let geneCol = 0, lfcCol = -1, fdrCol = -1;
+        if (hasHeader) {
+            firstParts.forEach((col, i) => {
+                if (['gene', 'symbol', 'geneid', 'gene_symbol', 'genename'].includes(col)) geneCol = i;
+                else if (['lfc', 'logfc', 'log2fc', 'log2foldchange', 'log_fc'].includes(col)) lfcCol = i;
+                else if (['fdr', 'padj', 'adj.p.val', 'adjpval', 'q', 'qvalue', 'q.value'].includes(col)) fdrCol = i;
+            });
+        } else {
+            // Assume: Gene, LFC, FDR order if 3 columns; Gene only if 1 column
+            if (firstParts.length >= 2) lfcCol = 1;
+            if (firstParts.length >= 3) fdrCol = 2;
+        }
+
+        const genes = [];
+        this.geneStats = new Map();
+        const startLine = hasHeader ? 1 : 0;
+
+        for (let i = startLine; i < lines.length; i++) {
+            const parts = lines[i].split(separator).map(p => p.trim());
+            const gene = parts[geneCol]?.toUpperCase();
+            if (!gene) continue;
+
+            genes.push(gene);
+
+            const stats = { gene };
+            if (lfcCol >= 0 && parts[lfcCol]) {
+                stats.lfc = parseFloat(parts[lfcCol]) || null;
+            }
+            if (fdrCol >= 0 && parts[fdrCol]) {
+                stats.fdr = parseFloat(parts[fdrCol]) || null;
+            }
+            this.geneStats.set(gene, stats);
+        }
+
+        // Update textarea in paste panel
+        document.getElementById('geneTextarea').value = genes.join('\n');
+        this.updateGeneCount();
+
+        // Show stats controls if we have statistics
+        const hasLfc = lfcCol >= 0;
+        const hasFdr = fdrCol >= 0;
         if (hasLfc || hasFdr) {
             document.getElementById('statsControls').style.display = 'block';
         }
@@ -3882,18 +3981,16 @@ Results:
             cancerBox.style.display = 'none';
         }
 
-        // Populate hotspot genes (excluding HLA-A and HLA-B which have high variability)
+        // Populate hotspot genes
         // Count mutations based on cell lines with valid data (plotData)
         const hotspotSelect = document.getElementById('hotspotGene');
         const mutFilterGeneSelect = document.getElementById('mutationFilterGene');
-        const excludedGenes = ['HLA-A', 'HLA-B'];
         const cellLinesInPlot = new Set(plotData.map(d => d.cellLineId));
 
         if (this.mutations?.genes?.length > 0) {
             hotspotSelect.innerHTML = '<option value="">Select gene...</option>';
             mutFilterGeneSelect.innerHTML = '<option value="">No filter</option>';
             this.mutations.genes
-                .filter(g => !excludedGenes.includes(g))
                 .forEach(g => {
                     // Count mutations only in cell lines with valid data
                     const mutData = this.mutations.geneData?.[g]?.mutations || {};

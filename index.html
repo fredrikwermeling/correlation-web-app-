@@ -110,8 +110,8 @@
         }
 
         .sidebar {
-            width: 360px;
-            min-width: 340px;
+            width: 415px;
+            min-width: 390px;
             flex-shrink: 0;
         }
 
@@ -188,6 +188,24 @@
 
         .input-panel.active {
             display: block;
+        }
+
+        .stats-sub-panel {
+            display: none;
+        }
+
+        .stats-sub-panel.active {
+            display: block;
+        }
+
+        .stats-sub-tab:hover {
+            background: #e2f4de !important;
+            color: #4a8c3f !important;
+        }
+
+        .stats-sub-tab.active {
+            background: #68A948 !important;
+            color: white !important;
         }
 
         .main-panel {
@@ -1220,7 +1238,7 @@
                     <!-- Input method tabs -->
                     <div class="input-tabs">
                         <button class="input-tab active" data-input="paste">Paste/Type</button>
-                        <button class="input-tab" data-input="upload">Upload Stats</button>
+                        <button class="input-tab" data-input="upload">With Stats</button>
                     </div>
 
                     <!-- Paste/Type panel -->
@@ -1235,28 +1253,48 @@
                         </div>
                     </div>
 
-                    <!-- Upload with Stats panel -->
+                    <!-- With Stats panel -->
                     <div class="input-panel" id="input-upload">
-                        <div class="form-group">
-                            <label class="form-label">Upload CSV/TSV:</label>
-                            <input type="file" id="statsFileInput" accept=".csv,.tsv,.txt,.tab" class="form-control" style="font-size: 11px; padding: 4px;">
-                            <small style="color: #666; font-size: 10px;">Accepts CSV, TSV, or TXT (saved from Excel)</small>
+                        <!-- Sub-tabs for file upload vs manual entry -->
+                        <div style="display: flex; gap: 8px; margin-bottom: 10px; border-bottom: 1px solid #e5e7eb; padding-bottom: 6px;">
+                            <button class="stats-sub-tab active" data-stats-input="file" style="padding: 3px 8px; font-size: 10px; border: none; background: #68A948; color: white; border-radius: 3px; cursor: pointer;">Upload File</button>
+                            <button class="stats-sub-tab" data-stats-input="manual" style="padding: 3px 8px; font-size: 10px; border: none; background: transparent; color: #6b7280; border-radius: 3px; cursor: pointer;">Manual Entry</button>
                         </div>
-                        <div id="statsColumnSelect" style="display: none;">
+
+                        <!-- File upload sub-panel -->
+                        <div class="stats-sub-panel active" id="stats-file">
                             <div class="form-group">
-                                <label class="form-label">Gene column:</label>
-                                <select id="statsGeneCol" class="form-control"></select>
+                                <label class="form-label">Upload CSV/TSV:</label>
+                                <input type="file" id="statsFileInput" accept=".csv,.tsv,.txt,.tab" class="form-control" style="font-size: 11px; padding: 4px;">
+                                <small style="color: #666; font-size: 10px;">Accepts CSV, TSV, or TXT (saved from Excel)</small>
                             </div>
-                            <div class="form-group">
-                                <label class="form-label">LFC column (optional):</label>
-                                <select id="statsLfcCol" class="form-control"><option value="">None</option></select>
+                            <div id="statsColumnSelect" style="display: none;">
+                                <div class="form-group">
+                                    <label class="form-label">Gene column:</label>
+                                    <select id="statsGeneCol" class="form-control"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">LFC column (optional):</label>
+                                    <select id="statsLfcCol" class="form-control"><option value="">None</option></select>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">FDR column (optional):</label>
+                                    <select id="statsFdrCol" class="form-control"><option value="">None</option></select>
+                                </div>
+                                <button class="btn btn-success btn-sm" id="loadStatsBtn">Load Stats</button>
                             </div>
-                            <div class="form-group">
-                                <label class="form-label">FDR column (optional):</label>
-                                <select id="statsFdrCol" class="form-control"><option value="">None</option></select>
-                            </div>
-                            <button class="btn btn-success btn-sm" id="loadStatsBtn">Load Stats</button>
                         </div>
+
+                        <!-- Manual entry sub-panel -->
+                        <div class="stats-sub-panel" id="stats-manual" style="display: none;">
+                            <div class="form-group">
+                                <label class="form-label">Enter Gene, LFC, FDR (tab or comma separated):</label>
+                                <textarea id="manualStatsTextarea" class="form-control" placeholder="Gene&#9;LFC&#9;FDR&#10;TP53&#9;-2.5&#9;0.001&#10;BRCA1&#9;1.2&#9;0.05&#10;MYC&#9;-0.8&#9;0.1" style="min-height: 140px; font-family: 'Roboto Mono', monospace; font-size: 11px;"></textarea>
+                                <small style="color: #666; font-size: 10px;">First row can be header. Use Tab, comma, or semicolon as separator.</small>
+                            </div>
+                            <button class="btn btn-success btn-sm" id="loadManualStatsBtn">Load Stats</button>
+                        </div>
+
                         <div style="margin-top: 8px; display: flex; gap: 8px;">
                             <button class="btn btn-info btn-sm" id="loadTestStats">Test w/ Stats</button>
                             <button class="btn btn-secondary btn-sm" id="downloadSampleStats" title="Download sample file showing stats format">Download Sample</button>
