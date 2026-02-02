@@ -627,6 +627,30 @@ class CorrelationExplorer {
             if (e.target.id === 'inspectModal') this.closeInspectModal();
         });
 
+        // Global keyboard handler for closing modals with Enter or Escape
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' || e.key === 'Enter') {
+                // Close inspect modal if open
+                const inspectModal = document.getElementById('inspectModal');
+                if (inspectModal && inspectModal.classList.contains('active')) {
+                    this.closeInspectModal();
+                    return;
+                }
+                // Close gene effect modal if open
+                const geneEffectModal = document.getElementById('geneEffectModal');
+                if (geneEffectModal && geneEffectModal.style.display !== 'none') {
+                    geneEffectModal.style.display = 'none';
+                    return;
+                }
+                // Close infographic modal if open
+                const infographicModal = document.getElementById('infographicModal');
+                if (infographicModal && infographicModal.style.display !== 'none') {
+                    infographicModal.style.display = 'none';
+                    return;
+                }
+            }
+        });
+
         // Inspect controls
         document.getElementById('resetAxes').addEventListener('click', () => this.resetInspectAxes());
         document.getElementById('clearHighlights').addEventListener('click', () => {
