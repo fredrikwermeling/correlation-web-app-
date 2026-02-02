@@ -2723,7 +2723,13 @@ Results:
         const textFont = '14px Arial';
         const smallFont = '13px Arial';
 
-        let legendX = 40;
+        // Calculate total legend width to center it
+        let totalLegendWidth = 160 + 160; // Correlation + Edge Thickness
+        if (this.results?.mode === 'design') totalLegendWidth += 140;
+        if (document.getElementById('colorByGeneEffect').checked && this.results?.clusters) totalLegendWidth += 170;
+        if (document.getElementById('colorByStats').checked && this.geneStats && this.geneStats.size > 0) totalLegendWidth += 200;
+
+        let legendX = Math.max(40, (totalWidth - totalLegendWidth) / 2);
 
         // Correlation legend
         ctx.font = titleFont;
@@ -3061,7 +3067,14 @@ Results:
 
         // Draw legend - LARGER for publication
         const legendY = networkHeight + 35;
-        let legendX = 40;
+
+        // Calculate total legend width to center it
+        let totalLegendWidth = 160 + 160; // Correlation + Edge Thickness (note: 110+160 is used but let's use similar calc)
+        if (this.results?.mode === 'design') totalLegendWidth += 140;
+        if (document.getElementById('colorByGeneEffect').checked && this.results?.clusters) totalLegendWidth += 170;
+        if (document.getElementById('colorByStats').checked && this.geneStats && this.geneStats.size > 0) totalLegendWidth += 200;
+
+        let legendX = Math.max(40, (width - totalLegendWidth) / 2);
 
         // Legend background
         svg += `  <rect x="15" y="${networkHeight + 10}" width="${width - 30}" height="145" fill="#f9fafb" stroke="#e5e7eb" rx="4"/>\n`;
