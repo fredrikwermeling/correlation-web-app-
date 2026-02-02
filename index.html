@@ -1367,62 +1367,62 @@
                             </div>
                         </div>
 
-                        <!-- Column 2: Gene Statistics (shown when stats loaded) -->
-                        <div class="control-column control-box" id="statsControls" style="display: none;">
-                            <label style="font-weight: 600; margin-bottom: 8px;">Gene Statistics:</label>
-                            <div class="radio-group-inline" style="margin-bottom: 8px;">
-                                <label><input type="radio" name="statsLabelDisplay" value="none" checked> None</label>
-                                <label><input type="radio" name="statsLabelDisplay" value="lfc"> LFC</label>
-                                <label><input type="radio" name="statsLabelDisplay" value="fdr"> FDR</label>
-                            </div>
-                            <div class="checkbox-group" style="margin-bottom: 8px;">
-                                <label><input type="checkbox" id="colorByStats"> Color by stats</label>
-                            </div>
-                            <div id="colorStatsOptions" style="display: none; margin-left: 20px;">
-                                <div class="radio-group-inline" style="margin-bottom: 6px;">
-                                    <label><input type="radio" name="colorStatType" value="signed_lfc" checked> Signed LFC</label>
-                                    <label><input type="radio" name="colorStatType" value="abs_lfc"> |LFC|</label>
-                                    <label><input type="radio" name="colorStatType" value="fdr"> FDR</label>
-                                </div>
-                                <label style="font-weight: 600; font-size: 11px;">Scale:</label>
-                                <div class="radio-group-inline">
-                                    <label><input type="radio" name="colorScale" value="all" checked> All genes</label>
-                                    <label><input type="radio" name="colorScale" value="network"> Network only</label>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Column 3: Gene effect options -->
+                        <!-- Column 2: Gene Effect + Gene Statistics -->
                         <div class="control-column control-box">
-                            <div class="checkbox-group" style="margin-bottom: 6px;">
+                            <!-- Gene Effect options (always shown) -->
+                            <div class="checkbox-group" style="margin-bottom: 4px;">
                                 <label><input type="checkbox" id="showGeneEffect"> Show GE in label</label>
                                 <span id="showGESDGroup" style="margin-left: 8px; display: none;">
                                     <label><input type="checkbox" id="showGeneEffectSD"> ± SD</label>
                                 </span>
                             </div>
-                            <div class="checkbox-group" style="margin-bottom: 6px;">
+                            <div class="checkbox-group" style="margin-bottom: 4px;">
                                 <label><input type="checkbox" id="colorByGeneEffect"> Color by GE</label>
                             </div>
-                            <div id="colorGEOptions" style="display: none; margin-left: 20px;">
+                            <div id="colorGEOptions" style="display: none; margin-left: 20px; margin-bottom: 4px;">
                                 <div class="radio-group-inline">
                                     <label><input type="radio" name="colorGEType" value="signed" checked> +/−</label>
                                     <label><input type="radio" name="colorGEType" value="absolute"> |GE|</label>
                                 </div>
                             </div>
+                            <!-- Gene Statistics options (shown when stats loaded) -->
+                            <div id="statsControls" style="display: none; border-top: 1px solid #ddd; padding-top: 6px; margin-top: 4px;">
+                                <label style="font-weight: 600; font-size: 11px; margin-bottom: 4px; display: block;">Gene Statistics:</label>
+                                <div class="radio-group-inline" style="margin-bottom: 4px;">
+                                    <label><input type="radio" name="statsLabelDisplay" value="none" checked> None</label>
+                                    <label><input type="radio" name="statsLabelDisplay" value="lfc"> LFC</label>
+                                    <label><input type="radio" name="statsLabelDisplay" value="fdr"> FDR</label>
+                                </div>
+                                <div class="checkbox-group" style="margin-bottom: 4px;">
+                                    <label><input type="checkbox" id="colorByStats"> Color by stats</label>
+                                </div>
+                                <div id="colorStatsOptions" style="display: none; margin-left: 20px;">
+                                    <div class="radio-group-inline" style="margin-bottom: 4px;">
+                                        <label><input type="radio" name="colorStatType" value="signed_lfc" checked> Signed LFC</label>
+                                        <label><input type="radio" name="colorStatType" value="abs_lfc"> |LFC|</label>
+                                        <label><input type="radio" name="colorStatType" value="fdr"> FDR</label>
+                                    </div>
+                                    <label style="font-weight: 600; font-size: 10px;">Scale:</label>
+                                    <div class="radio-group-inline">
+                                        <label><input type="radio" name="colorScale" value="all" checked> All genes</label>
+                                        <label><input type="radio" name="colorScale" value="network"> Network only</label>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
-                        <!-- Column 3: View Controls + Export + Download -->
+                        <!-- Column 3: View Controls + Export -->
                         <div class="control-column control-box">
-                            <label style="font-weight: 600; margin-bottom: 6px; display: block;">View Controls:</label>
-                            <div class="button-group-horizontal" style="margin-bottom: 6px;">
+                            <label style="font-weight: 600; margin-bottom: 4px; display: block;">View Controls:</label>
+                            <div class="button-group-horizontal" style="margin-bottom: 4px;">
                                 <button class="btn btn-secondary" id="fitNetwork">Fit</button>
                                 <button class="btn btn-secondary" id="showHiddenNodes">Show Hidden</button>
                                 <button class="btn btn-secondary" id="togglePhysics">Lock</button>
                                 <button class="btn btn-secondary" id="changeLayout">Layout</button>
                             </div>
-                            <p class="help-text" style="font-size: 9px; margin-bottom: 8px;">Double-click node to hide</p>
-                            <label style="font-weight: 600; margin-bottom: 6px; display: block;">Export:</label>
-                            <div class="button-group-horizontal" style="margin-bottom: 8px;">
+                            <p class="help-text" style="font-size: 9px; margin-bottom: 6px;">Double-click node to hide</p>
+                            <label style="font-weight: 600; margin-bottom: 4px; display: block;">Export:</label>
+                            <div class="button-group-horizontal">
                                 <button class="btn btn-secondary" id="downloadNetworkPNG">PNG</button>
                                 <button class="btn btn-secondary" id="downloadNetworkSVG">SVG</button>
                                 <button class="btn btn-primary" id="downloadAllData">All Data (ZIP)</button>
