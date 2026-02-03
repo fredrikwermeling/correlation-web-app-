@@ -1297,7 +1297,8 @@
                         <div class="stats-sub-panel" id="stats-manual" style="display: none;">
                             <div class="form-group">
                                 <label class="form-label">Enter Gene, LFC, FDR (tab or comma separated):</label>
-                                <textarea id="manualStatsTextarea" class="form-control" placeholder="Gene&#9;LFC&#9;FDR&#10;TP53&#9;-2.5&#9;0.001&#10;BRCA1&#9;1.2&#9;0.05&#10;MYC&#9;-0.8&#9;0.1" style="min-height: 140px; font-family: 'Roboto Mono', monospace; font-size: 11px;"></textarea>
+                                <textarea id="manualStatsTextarea" class="form-control" style="min-height: 140px; font-family: 'Roboto Mono', monospace; font-size: 11px;">Gene	LFC	FDR
+</textarea>
                                 <small style="color: #666; font-size: 10px;">First row can be header. Use Tab, comma, or semicolon as separator.</small>
                             </div>
                             <button class="btn btn-success btn-sm" id="loadManualStatsBtn">Load Stats</button>
@@ -1379,7 +1380,7 @@
                         <div class="control-column control-box">
                             <!-- Gene Effect options (always shown) -->
                             <div class="checkbox-group" style="margin-bottom: 4px;">
-                                <label><input type="checkbox" id="showGeneEffect"> Show GE in label</label>
+                                <label><input type="checkbox" id="showGeneEffect"> Show gene effect (GE) in label</label>
                                 <span id="showGESDGroup" style="margin-left: 8px; display: none;">
                                     <label><input type="checkbox" id="showGeneEffectSD"> ± SD</label>
                                 </span>
@@ -1462,8 +1463,8 @@
                         </div>
                         <div class="legend-section" id="legendNodeType" style="display: none;">
                             <strong>Node Type:</strong>
-                            <div class="legend-item"><span class="legend-dot" style="background: #16a34a;"></span> Input gene</div>
-                            <div class="legend-item"><span class="legend-dot" style="background: #86efac;"></span> Correlated gene</div>
+                            <div class="legend-item"><span class="legend-dot" style="background: #5a9f4a;"></span> Input gene</div>
+                            <div class="legend-item"><span class="legend-dot" style="background: #a8d89a;"></span> Correlated gene</div>
                         </div>
                         <div class="legend-section" id="legendSynonym" style="display: none;">
                             <strong>*</strong> = synonym/orthologue used

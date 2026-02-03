@@ -44,6 +44,14 @@ class CorrelationExplorer {
         this.init();
     }
 
+    // Helper to format numbers with proper minus sign (− instead of -)
+    formatNum(value, decimals = 3) {
+        if (value === null || value === undefined || isNaN(value)) return '-';
+        const formatted = value.toFixed(decimals);
+        // Replace hyphen-minus with proper minus sign for negative numbers
+        return formatted.replace(/^-/, '−');
+    }
+
     async init() {
         try {
             await this.loadData();
@@ -498,7 +506,7 @@ class CorrelationExplorer {
                     p.style.display = 'none';
                 });
                 tab.classList.add('active');
-                tab.style.background = '#68A948';
+                tab.style.background = '#5a9f4a';
                 tab.style.color = 'white';
                 const panel = document.getElementById('stats-' + tab.dataset.statsInput);
                 panel.classList.add('active');
@@ -508,6 +516,13 @@ class CorrelationExplorer {
 
         // Manual stats entry
         document.getElementById('loadManualStatsBtn').addEventListener('click', () => this.loadManualStats());
+
+        // Prevent keyboard events from propagating to network when typing in textareas/inputs
+        document.querySelectorAll('textarea, input[type="text"], input[type="number"]').forEach(el => {
+            el.addEventListener('keydown', (e) => {
+                e.stopPropagation();
+            });
+        });
 
         // Run analysis
         document.getElementById('runAnalysis').addEventListener('click', () => this.runAnalysis());
@@ -2206,7 +2221,7 @@ class CorrelationExplorer {
                 font: { size: fontSize, color: '#333' },
                 color: {
                     background: this.results.mode === 'design' ?
-                        (isInput ? '#16a34a' : '#86efac') : '#16a34a',
+                        (isInput ? '#5a9f4a' : '#a8d89a') : '#5a9f4a',
                     border: '#ffffff'
                 },
                 borderWidth: 2,
@@ -2321,8 +2336,8 @@ class CorrelationExplorer {
         if (this.results.mode === 'design') {
             legendNodeType.innerHTML = `
                 <strong>Node Type:</strong>
-                <span class="legend-item"><span class="legend-dot" style="background: #16a34a;"></span> Input</span>
-                <span class="legend-item"><span class="legend-dot" style="background: #86efac;"></span> Correlated</span>
+                <span class="legend-item"><span class="legend-dot" style="background: #5a9f4a;"></span> Input</span>
+                <span class="legend-item"><span class="legend-dot" style="background: #a8d89a;"></span> Correlated</span>
             `;
             legendNodeType.style.display = 'block';
         } else {
@@ -2833,7 +2848,7 @@ Results:
             ctx.font = textFont;
 
             // Input gene
-            ctx.fillStyle = '#16a34a';
+            ctx.fillStyle = '#5a9f4a';
             ctx.beginPath();
             ctx.arc(legendX + 12, legendY + 25, 10, 0, Math.PI * 2);
             ctx.fill();
@@ -2841,7 +2856,7 @@ Results:
             ctx.fillText('Input', legendX + 28, legendY + 30);
 
             // Correlated gene
-            ctx.fillStyle = '#86efac';
+            ctx.fillStyle = '#a8d89a';
             ctx.beginPath();
             ctx.arc(legendX + 12, legendY + 52, 10, 0, Math.PI * 2);
             ctx.fill();
@@ -3083,7 +3098,7 @@ Results:
             if (pos) {
                 const cx = pos.x + width/2;
                 const cy = pos.y + networkHeight/2;
-                const bgColor = node.color?.background || '#16a34a';
+                const bgColor = node.color?.background || '#5a9f4a';
                 svg += `  <circle cx="${cx}" cy="${cy}" r="${nodeSize/2}" fill="${bgColor}" stroke="white" stroke-width="2"/>\n`;
 
                 // Handle multi-line labels
@@ -3142,9 +3157,9 @@ Results:
         // Node type legend (for design mode)
         if (this.results?.mode === 'design') {
             svg += `  <text x="${legendX}" y="${legendY}" class="legend-title">Node Type:</text>\n`;
-            svg += `  <circle cx="${legendX + 12}" cy="${legendY + 25}" r="10" fill="#16a34a"/>\n`;
+            svg += `  <circle cx="${legendX + 12}" cy="${legendY + 25}" r="10" fill="#5a9f4a"/>\n`;
             svg += `  <text x="${legendX + 28}" y="${legendY + 30}" class="legend-text">Input</text>\n`;
-            svg += `  <circle cx="${legendX + 12}" cy="${legendY + 52}" r="10" fill="#86efac"/>\n`;
+            svg += `  <circle cx="${legendX + 12}" cy="${legendY + 52}" r="10" fill="#a8d89a"/>\n`;
             svg += `  <text x="${legendX + 28}" y="${legendY + 57}" class="legend-text">Correlated</text>\n`;
 
             legendX += 140;
@@ -3460,7 +3475,7 @@ Results:
                     id: node.id,
                     color: {
                         background: this.results?.mode === 'design' ?
-                            (isInput ? '#16a34a' : '#86efac') : '#16a34a',
+                            (isInput ? '#5a9f4a' : '#a8d89a') : '#5a9f4a',
                         border: '#ffffff'
                     }
                 });
@@ -3840,20 +3855,271 @@ Results:
         ctx.fillRect(0, 0, totalWidth, totalHeight);
         ctx.drawImage(networkCanvas, 0, 0);
 
-        // Draw legend (simplified version)
+        // Draw legend background
         ctx.fillStyle = '#f9fafb';
-        ctx.fillRect(15, networkHeight + 10, totalWidth - 30, legendHeight - 10);
         ctx.strokeStyle = '#e5e7eb';
+        ctx.lineWidth = 1;
+        ctx.fillRect(15, networkHeight + 10, totalWidth - 30, legendHeight - 10);
         ctx.strokeRect(15, networkHeight + 10, totalWidth - 30, legendHeight - 10);
 
+        // Draw legend - LARGER fonts for publication
         const legendY = networkHeight + padding + 10;
-        ctx.font = 'bold 14px Arial';
-        ctx.fillStyle = '#333';
-        ctx.fillText('Correlation: Blue=Positive, Red=Negative', 40, legendY);
-        ctx.fillText(`Cutoff: ${this.results?.cutoff || 0.5}`, 40, legendY + 25);
+        const titleFont = 'bold 16px Arial';
+        const textFont = '14px Arial';
+        const smallFont = '13px Arial';
 
+        // Calculate total legend width to center it
+        let totalLegendWidth = 160 + 160; // Correlation + Edge Thickness
+        if (this.results?.mode === 'design') totalLegendWidth += 140;
+        if (document.getElementById('colorByGeneEffect').checked && this.results?.clusters) totalLegendWidth += 170;
+        if (document.getElementById('colorByStats').checked && this.geneStats && this.geneStats.size > 0) totalLegendWidth += 200;
+
+        let legendX = Math.max(40, (totalWidth - totalLegendWidth) / 2);
+
+        // Correlation legend
+        ctx.font = titleFont;
+        ctx.fillStyle = '#333';
+        ctx.fillText('Correlation:', legendX, legendY);
+        ctx.font = textFont;
+
+        // Positive correlation line
+        ctx.strokeStyle = '#3182ce';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(legendX, legendY + 22);
+        ctx.lineTo(legendX + 35, legendY + 22);
+        ctx.stroke();
+        ctx.fillStyle = '#333';
+        ctx.fillText('Positive', legendX + 42, legendY + 27);
+
+        // Negative correlation line
+        ctx.strokeStyle = '#e53e3e';
+        ctx.beginPath();
+        ctx.moveTo(legendX, legendY + 48);
+        ctx.lineTo(legendX + 35, legendY + 48);
+        ctx.stroke();
+        ctx.fillStyle = '#333';
+        ctx.fillText('Negative', legendX + 42, legendY + 53);
+
+        legendX += 160;
+
+        // Edge thickness legend - use actual data values
+        ctx.font = titleFont;
+        ctx.fillText('Edge Thickness:', legendX, legendY);
+        ctx.font = textFont;
+        ctx.strokeStyle = '#666';
+
+        const edgeWidthBase = parseInt(document.getElementById('netEdgeWidth').value) || 3;
+        const legendVals = this.edgeLegendValues || { minCorr: 0.5, midCorr: 0.75, maxCorr: 1.0 };
+        const cutoff = this.results?.cutoff || 0.5;
+
+        // Min correlation
+        ctx.lineWidth = Math.max(2, 2 + (legendVals.minCorr - cutoff) / (1 - cutoff) * (edgeWidthBase * 4));
+        ctx.beginPath();
+        ctx.moveTo(legendX, legendY + 22);
+        ctx.lineTo(legendX + 35, legendY + 22);
+        ctx.stroke();
+        ctx.fillStyle = '#333';
+        ctx.fillText(`r = ${legendVals.minCorr.toFixed(2)}`, legendX + 42, legendY + 27);
+
+        // Mid correlation
+        ctx.lineWidth = Math.max(2, 2 + (legendVals.midCorr - cutoff) / (1 - cutoff) * (edgeWidthBase * 4));
+        ctx.beginPath();
+        ctx.moveTo(legendX, legendY + 48);
+        ctx.lineTo(legendX + 35, legendY + 48);
+        ctx.stroke();
+        ctx.fillText(`r = ${legendVals.midCorr.toFixed(2)}`, legendX + 42, legendY + 53);
+
+        // Max correlation
+        ctx.lineWidth = Math.max(2, 2 + (legendVals.maxCorr - cutoff) / (1 - cutoff) * (edgeWidthBase * 4));
+        ctx.beginPath();
+        ctx.moveTo(legendX, legendY + 74);
+        ctx.lineTo(legendX + 35, legendY + 74);
+        ctx.stroke();
+        ctx.fillText(`r = ${legendVals.maxCorr.toFixed(2)}`, legendX + 42, legendY + 79);
+
+        legendX += 160;
+
+        // Node type legend (for design mode)
+        if (this.results?.mode === 'design') {
+            ctx.font = titleFont;
+            ctx.fillStyle = '#333';
+            ctx.fillText('Node Type:', legendX, legendY);
+            ctx.font = textFont;
+
+            // Input gene
+            ctx.fillStyle = '#5a9f4a';
+            ctx.beginPath();
+            ctx.arc(legendX + 12, legendY + 25, 10, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#333';
+            ctx.fillText('Input', legendX + 28, legendY + 30);
+
+            // Correlated gene
+            ctx.fillStyle = '#a8d89a';
+            ctx.beginPath();
+            ctx.arc(legendX + 12, legendY + 52, 10, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#333';
+            ctx.fillText('Correlated', legendX + 28, legendY + 57);
+
+            legendX += 140;
+        }
+
+        // Color by Gene Effect legend
+        const colorByGeneEffect = document.getElementById('colorByGeneEffect').checked;
+        if (colorByGeneEffect && this.results?.clusters) {
+            const colorGEType = document.querySelector('input[name="colorGEType"]:checked')?.value || 'signed';
+            const effectValues = this.results.clusters.map(c => c.meanEffect).filter(v => !isNaN(v));
+
+            ctx.font = titleFont;
+            ctx.fillStyle = '#333';
+            ctx.fillText('Node Color:', legendX, legendY);
+            ctx.font = textFont;
+
+            const gradientWidth = 120;
+            const gradientHeight = 18;
+            const gradY = legendY + 18;
+
+            if (colorGEType === 'signed') {
+                const minEffect = Math.min(...effectValues);
+                const maxEffect = Math.max(...effectValues);
+
+                // Red (negative) to White (0) to Blue (positive)
+                const gradient = ctx.createLinearGradient(legendX, 0, legendX + gradientWidth, 0);
+                gradient.addColorStop(0, '#b2182b');
+                gradient.addColorStop(0.5, '#f7f7f7');
+                gradient.addColorStop(1, '#2166ac');
+                ctx.fillStyle = gradient;
+                ctx.fillRect(legendX, gradY, gradientWidth, gradientHeight);
+                ctx.strokeStyle = '#999';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(legendX, gradY, gradientWidth, gradientHeight);
+
+                ctx.fillStyle = '#333';
+                ctx.font = smallFont;
+                ctx.fillText(minEffect.toFixed(2), legendX, gradY + gradientHeight + 16);
+                ctx.fillText('Gene Effect (+/−)', legendX, gradY - 4);
+                ctx.fillText(maxEffect.toFixed(2), legendX + gradientWidth - 25, gradY + gradientHeight + 16);
+            } else {
+                const maxAbsEffect = Math.max(...effectValues.map(v => Math.abs(v)));
+
+                const gradient = ctx.createLinearGradient(legendX, 0, legendX + gradientWidth, 0);
+                gradient.addColorStop(0, '#f5f5f5');
+                gradient.addColorStop(0.5, '#fdae61');
+                gradient.addColorStop(1, '#d7191c');
+                ctx.fillStyle = gradient;
+                ctx.fillRect(legendX, gradY, gradientWidth, gradientHeight);
+                ctx.strokeStyle = '#999';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(legendX, gradY, gradientWidth, gradientHeight);
+
+                ctx.fillStyle = '#333';
+                ctx.font = smallFont;
+                ctx.fillText('0', legendX, gradY + gradientHeight + 16);
+                ctx.fillText('|Gene Effect|', legendX, gradY - 4);
+                ctx.fillText(maxAbsEffect.toFixed(2), legendX + gradientWidth - 25, gradY + gradientHeight + 16);
+            }
+            legendX += 170;
+        }
+
+        // Color by stats legend
+        const colorByStats = document.getElementById('colorByStats').checked;
+        if (colorByStats && this.geneStats && this.geneStats.size > 0) {
+            const colorStatType = document.querySelector('input[name="colorStatType"]:checked')?.value || 'signed_lfc';
+            const colorScale = document.querySelector('input[name="colorScale"]:checked')?.value || 'all';
+
+            // Get stats based on scale option
+            let stats;
+            if (colorScale === 'network') {
+                const networkGenes = [];
+                this.networkData.nodes.forEach(node => {
+                    const geneStat = this.geneStats.get(node.id);
+                    if (geneStat) networkGenes.push(geneStat);
+                });
+                stats = networkGenes;
+            } else {
+                stats = Array.from(this.geneStats.values());
+            }
+
+            const scaleLabel = colorScale === 'network' ? ' (network)' : ' (all genes)';
+
+            ctx.font = titleFont;
+            ctx.fillStyle = '#333';
+            ctx.fillText('Node Color:', legendX, legendY);
+            ctx.font = textFont;
+
+            const gradientWidth = 120;
+            const gradientHeight = 18;
+            const gradY = legendY + 18;
+
+            if (colorStatType === 'signed_lfc') {
+                const lfcValues = stats.map(s => s.lfc).filter(v => v !== null && !isNaN(v));
+                const minLfc = Math.min(...lfcValues);
+                const maxLfc = Math.max(...lfcValues);
+
+                const gradient = ctx.createLinearGradient(legendX, 0, legendX + gradientWidth, 0);
+                gradient.addColorStop(0, '#b2182b');
+                gradient.addColorStop(0.5, '#f7f7f7');
+                gradient.addColorStop(1, '#2166ac');
+                ctx.fillStyle = gradient;
+                ctx.fillRect(legendX, gradY, gradientWidth, gradientHeight);
+                ctx.strokeStyle = '#999';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(legendX, gradY, gradientWidth, gradientHeight);
+
+                ctx.fillStyle = '#333';
+                ctx.font = smallFont;
+                ctx.fillText(minLfc.toFixed(1), legendX, gradY + gradientHeight + 16);
+                ctx.fillText(`LFC (+/−)${scaleLabel}`, legendX, gradY - 4);
+                ctx.fillText(maxLfc.toFixed(1), legendX + gradientWidth - 20, gradY + gradientHeight + 16);
+            } else if (colorStatType === 'abs_lfc') {
+                const lfcValues = stats.map(s => Math.abs(s.lfc)).filter(v => v !== null && !isNaN(v));
+                const maxLfc = Math.max(...lfcValues);
+
+                const gradient = ctx.createLinearGradient(legendX, 0, legendX + gradientWidth, 0);
+                gradient.addColorStop(0, '#f5f5f5');
+                gradient.addColorStop(0.5, '#fdae61');
+                gradient.addColorStop(1, '#d7191c');
+                ctx.fillStyle = gradient;
+                ctx.fillRect(legendX, gradY, gradientWidth, gradientHeight);
+                ctx.strokeStyle = '#999';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(legendX, gradY, gradientWidth, gradientHeight);
+
+                ctx.fillStyle = '#333';
+                ctx.font = smallFont;
+                ctx.fillText('0', legendX, gradY + gradientHeight + 16);
+                ctx.fillText(`|LFC|${scaleLabel}`, legendX, gradY - 4);
+                ctx.fillText(maxLfc.toFixed(1), legendX + gradientWidth - 20, gradY + gradientHeight + 16);
+            } else if (colorStatType === 'fdr') {
+                const fdrValues = stats.map(s => s.fdr).filter(v => v !== null && !isNaN(v) && v > 0);
+                const minFdr = Math.min(...fdrValues);
+
+                const gradient = ctx.createLinearGradient(legendX, 0, legendX + gradientWidth, 0);
+                gradient.addColorStop(0, '#d7191c');
+                gradient.addColorStop(0.5, '#fdae61');
+                gradient.addColorStop(1, '#f5f5f5');
+                ctx.fillStyle = gradient;
+                ctx.fillRect(legendX, gradY, gradientWidth, gradientHeight);
+                ctx.strokeStyle = '#999';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(legendX, gradY, gradientWidth, gradientHeight);
+
+                ctx.fillStyle = '#333';
+                ctx.font = smallFont;
+                ctx.fillText(minFdr.toExponential(1), legendX - 5, gradY + gradientHeight + 16);
+                ctx.fillText(`FDR${scaleLabel}`, legendX, gradY - 4);
+                ctx.fillText('1', legendX + gradientWidth - 8, gradY + gradientHeight + 16);
+            }
+            legendX += 170;
+        }
+
+        // Synonym legend
         if (this.hasSynonymsInNetwork) {
-            ctx.fillText('* = synonym/orthologue used', 40, legendY + 50);
+            ctx.font = textFont;
+            ctx.fillStyle = '#333';
+            ctx.fillText('* = synonym/orthologue used', legendX, legendY + 25);
         }
 
         return canvas.toDataURL('image/png');
@@ -3866,10 +4132,37 @@ Results:
         const container = document.getElementById('networkPlot');
         const width = container.clientWidth;
         const networkHeight = container.clientHeight;
+        const legendHeight = 160;  // Larger for publication
+        const totalHeight = networkHeight + legendHeight;
+
+        // Get positions from vis.js
         const positions = this.network.getPositions();
 
         let svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${networkHeight}" viewBox="0 0 ${width} ${networkHeight}">
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${totalHeight}" viewBox="0 0 ${width} ${totalHeight}">
+<defs>
+    <linearGradient id="signedGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" style="stop-color:#b2182b;stop-opacity:1" />
+        <stop offset="50%" style="stop-color:#f7f7f7;stop-opacity:1" />
+        <stop offset="100%" style="stop-color:#2166ac;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="absGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" style="stop-color:#f5f5f5;stop-opacity:1" />
+        <stop offset="50%" style="stop-color:#fdae61;stop-opacity:1" />
+        <stop offset="100%" style="stop-color:#d7191c;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="fdrGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" style="stop-color:#d7191c;stop-opacity:1" />
+        <stop offset="50%" style="stop-color:#fdae61;stop-opacity:1" />
+        <stop offset="100%" style="stop-color:#f5f5f5;stop-opacity:1" />
+    </linearGradient>
+</defs>
+<style>
+  .node-label { font-family: Arial, sans-serif; font-size: 14px; fill: #333; }
+  .legend-title { font-family: Arial, sans-serif; font-size: 16px; font-weight: bold; fill: #333; }
+  .legend-text { font-family: Arial, sans-serif; font-size: 14px; fill: #333; }
+  .legend-small { font-family: Arial, sans-serif; font-size: 13px; fill: #333; }
+</style>
 <rect width="100%" height="100%" fill="white"/>
 `;
 
@@ -3889,17 +4182,170 @@ Results:
         });
 
         // Draw nodes
-        const nodeSize = parseInt(document.getElementById('netNodeSize')?.value) || 25;
+        const nodeSize = parseInt(document.getElementById('netNodeSize').value) || 25;
+        const fontSize = parseInt(document.getElementById('netFontSize').value) || 16;
         this.networkData.nodes.forEach(node => {
             const pos = positions[node.id];
             if (pos) {
                 const cx = pos.x + width/2;
                 const cy = pos.y + networkHeight/2;
-                const bgColor = node.color?.background || '#16a34a';
+                const bgColor = node.color?.background || '#5a9f4a';
                 svg += `  <circle cx="${cx}" cy="${cy}" r="${nodeSize/2}" fill="${bgColor}" stroke="white" stroke-width="2"/>\n`;
-                svg += `  <text x="${cx}" y="${cy + nodeSize/2 + 14}" text-anchor="middle" style="font-family: Arial; font-size: 12px; fill: #333;">${this.escapeXml(node.label || node.id)}</text>\n`;
+
+                // Handle multi-line labels
+                const labelLines = (node.label || node.id).split('\n');
+                labelLines.forEach((line, i) => {
+                    const yOffset = cy + nodeSize/2 + 14 + (i * (fontSize - 2));
+                    svg += `  <text x="${cx}" y="${yOffset}" text-anchor="middle" style="font-family: Arial; font-size: ${fontSize - 2}px; fill: #333;">${this.escapeXml(line)}</text>\n`;
+                });
             }
         });
+
+        // Draw legend - LARGER for publication
+        const legendY = networkHeight + 35;
+
+        // Calculate total legend width to center it
+        let totalLegendWidth = 160 + 160; // Correlation + Edge Thickness
+        if (this.results?.mode === 'design') totalLegendWidth += 140;
+        if (document.getElementById('colorByGeneEffect').checked && this.results?.clusters) totalLegendWidth += 170;
+        if (document.getElementById('colorByStats').checked && this.geneStats && this.geneStats.size > 0) totalLegendWidth += 200;
+
+        let legendX = Math.max(40, (width - totalLegendWidth) / 2);
+
+        // Legend background
+        svg += `  <rect x="15" y="${networkHeight + 10}" width="${width - 30}" height="145" fill="#f9fafb" stroke="#e5e7eb" rx="4"/>\n`;
+
+        // Correlation legend
+        svg += `  <text x="${legendX}" y="${legendY}" class="legend-title">Correlation:</text>\n`;
+        svg += `  <line x1="${legendX}" y1="${legendY + 22}" x2="${legendX + 35}" y2="${legendY + 22}" stroke="#3182ce" stroke-width="4"/>\n`;
+        svg += `  <text x="${legendX + 42}" y="${legendY + 27}" class="legend-text">Positive</text>\n`;
+        svg += `  <line x1="${legendX}" y1="${legendY + 48}" x2="${legendX + 35}" y2="${legendY + 48}" stroke="#e53e3e" stroke-width="4"/>\n`;
+        svg += `  <text x="${legendX + 42}" y="${legendY + 53}" class="legend-text">Negative</text>\n`;
+
+        legendX += 160;
+
+        // Edge thickness legend - use actual data values
+        const cutoff = this.results?.cutoff || 0.5;
+        const edgeWidthBase = parseInt(document.getElementById('netEdgeWidth').value) || 3;
+        const legendVals = this.edgeLegendValues || { minCorr: 0.5, midCorr: 0.75, maxCorr: 1.0 };
+
+        svg += `  <text x="${legendX}" y="${legendY}" class="legend-title">Edge Thickness:</text>\n`;
+
+        const width1 = Math.max(2, 2 + (legendVals.minCorr - cutoff) / (1 - cutoff) * (edgeWidthBase * 4));
+        const width2 = Math.max(2, 2 + (legendVals.midCorr - cutoff) / (1 - cutoff) * (edgeWidthBase * 4));
+        const width3 = Math.max(2, 2 + (legendVals.maxCorr - cutoff) / (1 - cutoff) * (edgeWidthBase * 4));
+
+        svg += `  <line x1="${legendX}" y1="${legendY + 22}" x2="${legendX + 35}" y2="${legendY + 22}" stroke="#666" stroke-width="${width1}"/>\n`;
+        svg += `  <text x="${legendX + 42}" y="${legendY + 27}" class="legend-text">r = ${legendVals.minCorr.toFixed(2)}</text>\n`;
+        svg += `  <line x1="${legendX}" y1="${legendY + 48}" x2="${legendX + 35}" y2="${legendY + 48}" stroke="#666" stroke-width="${width2}"/>\n`;
+        svg += `  <text x="${legendX + 42}" y="${legendY + 53}" class="legend-text">r = ${legendVals.midCorr.toFixed(2)}</text>\n`;
+        svg += `  <line x1="${legendX}" y1="${legendY + 74}" x2="${legendX + 35}" y2="${legendY + 74}" stroke="#666" stroke-width="${width3}"/>\n`;
+        svg += `  <text x="${legendX + 42}" y="${legendY + 79}" class="legend-text">r = ${legendVals.maxCorr.toFixed(2)}</text>\n`;
+
+        legendX += 160;
+
+        // Node type legend (for design mode)
+        if (this.results?.mode === 'design') {
+            svg += `  <text x="${legendX}" y="${legendY}" class="legend-title">Node Type:</text>\n`;
+            svg += `  <circle cx="${legendX + 12}" cy="${legendY + 25}" r="10" fill="#5a9f4a"/>\n`;
+            svg += `  <text x="${legendX + 28}" y="${legendY + 30}" class="legend-text">Input</text>\n`;
+            svg += `  <circle cx="${legendX + 12}" cy="${legendY + 52}" r="10" fill="#a8d89a"/>\n`;
+            svg += `  <text x="${legendX + 28}" y="${legendY + 57}" class="legend-text">Correlated</text>\n`;
+
+            legendX += 140;
+        }
+
+        // Color by Gene Effect legend
+        const colorByGeneEffect = document.getElementById('colorByGeneEffect').checked;
+        if (colorByGeneEffect && this.results?.clusters) {
+            const colorGEType = document.querySelector('input[name="colorGEType"]:checked')?.value || 'signed';
+            const effectValues = this.results.clusters.map(c => c.meanEffect).filter(v => !isNaN(v));
+
+            svg += `  <text x="${legendX}" y="${legendY}" class="legend-title">Node Color:</text>\n`;
+
+            const gradientWidth = 120;
+            const gradientHeight = 18;
+            const gradY = legendY + 18;
+
+            if (colorGEType === 'signed') {
+                const minEffect = Math.min(...effectValues);
+                const maxEffect = Math.max(...effectValues);
+
+                svg += `  <rect x="${legendX}" y="${gradY}" width="${gradientWidth}" height="${gradientHeight}" fill="url(#signedGradient)" stroke="#999"/>\n`;
+                svg += `  <text x="${legendX}" y="${gradY + gradientHeight + 16}" class="legend-small">${minEffect.toFixed(2)}</text>\n`;
+                svg += `  <text x="${legendX}" y="${gradY - 4}" class="legend-small">Gene Effect (+/−)</text>\n`;
+                svg += `  <text x="${legendX + gradientWidth - 25}" y="${gradY + gradientHeight + 16}" class="legend-small">${maxEffect.toFixed(2)}</text>\n`;
+            } else {
+                const maxAbsEffect = Math.max(...effectValues.map(v => Math.abs(v)));
+
+                svg += `  <rect x="${legendX}" y="${gradY}" width="${gradientWidth}" height="${gradientHeight}" fill="url(#absGradient)" stroke="#999"/>\n`;
+                svg += `  <text x="${legendX}" y="${gradY + gradientHeight + 16}" class="legend-small">0</text>\n`;
+                svg += `  <text x="${legendX}" y="${gradY - 4}" class="legend-small">|Gene Effect|</text>\n`;
+                svg += `  <text x="${legendX + gradientWidth - 25}" y="${gradY + gradientHeight + 16}" class="legend-small">${maxAbsEffect.toFixed(2)}</text>\n`;
+            }
+            legendX += 170;
+        }
+
+        // Color by stats legend
+        const colorByStats = document.getElementById('colorByStats').checked;
+        if (colorByStats && this.geneStats && this.geneStats.size > 0) {
+            const colorStatType = document.querySelector('input[name="colorStatType"]:checked')?.value || 'signed_lfc';
+            const colorScale = document.querySelector('input[name="colorScale"]:checked')?.value || 'all';
+
+            // Get stats based on scale option
+            let stats;
+            if (colorScale === 'network') {
+                const networkGenes = [];
+                this.networkData.nodes.forEach(node => {
+                    const geneStat = this.geneStats.get(node.id);
+                    if (geneStat) networkGenes.push(geneStat);
+                });
+                stats = networkGenes;
+            } else {
+                stats = Array.from(this.geneStats.values());
+            }
+
+            const scaleLabel = colorScale === 'network' ? ' (network)' : ' (all genes)';
+
+            svg += `  <text x="${legendX}" y="${legendY}" class="legend-title">Node Color:</text>\n`;
+
+            const gradientWidth = 120;
+            const gradientHeight = 18;
+            const gradY = legendY + 18;
+
+            if (colorStatType === 'signed_lfc') {
+                const lfcValues = stats.map(s => s.lfc).filter(v => v !== null && !isNaN(v));
+                const minLfc = Math.min(...lfcValues);
+                const maxLfc = Math.max(...lfcValues);
+
+                svg += `  <rect x="${legendX}" y="${gradY}" width="${gradientWidth}" height="${gradientHeight}" fill="url(#signedGradient)" stroke="#999"/>\n`;
+                svg += `  <text x="${legendX}" y="${gradY + gradientHeight + 16}" class="legend-small">${minLfc.toFixed(1)}</text>\n`;
+                svg += `  <text x="${legendX}" y="${gradY - 4}" class="legend-small">LFC (+/−)${scaleLabel}</text>\n`;
+                svg += `  <text x="${legendX + gradientWidth - 20}" y="${gradY + gradientHeight + 16}" class="legend-small">${maxLfc.toFixed(1)}</text>\n`;
+            } else if (colorStatType === 'abs_lfc') {
+                const lfcValues = stats.map(s => Math.abs(s.lfc)).filter(v => v !== null && !isNaN(v));
+                const maxLfc = Math.max(...lfcValues);
+
+                svg += `  <rect x="${legendX}" y="${gradY}" width="${gradientWidth}" height="${gradientHeight}" fill="url(#absGradient)" stroke="#999"/>\n`;
+                svg += `  <text x="${legendX}" y="${gradY + gradientHeight + 16}" class="legend-small">0</text>\n`;
+                svg += `  <text x="${legendX}" y="${gradY - 4}" class="legend-small">|LFC|${scaleLabel}</text>\n`;
+                svg += `  <text x="${legendX + gradientWidth - 20}" y="${gradY + gradientHeight + 16}" class="legend-small">${maxLfc.toFixed(1)}</text>\n`;
+            } else if (colorStatType === 'fdr') {
+                const fdrValues = stats.map(s => s.fdr).filter(v => v !== null && !isNaN(v) && v > 0);
+                const minFdr = Math.min(...fdrValues);
+
+                svg += `  <rect x="${legendX}" y="${gradY}" width="${gradientWidth}" height="${gradientHeight}" fill="url(#fdrGradient)" stroke="#999"/>\n`;
+                svg += `  <text x="${legendX - 5}" y="${gradY + gradientHeight + 16}" class="legend-small">${minFdr.toExponential(1)}</text>\n`;
+                svg += `  <text x="${legendX}" y="${gradY - 4}" class="legend-small">FDR${scaleLabel}</text>\n`;
+                svg += `  <text x="${legendX + gradientWidth - 8}" y="${gradY + gradientHeight + 16}" class="legend-small">1</text>\n`;
+            }
+            legendX += 170;
+        }
+
+        // Synonym legend
+        if (this.hasSynonymsInNetwork) {
+            svg += `  <text x="${legendX}" y="${legendY + 25}" class="legend-text">* = synonym/orthologue used</text>\n`;
+        }
 
         svg += '</svg>';
         return svg;
@@ -4090,7 +4536,7 @@ Results:
         // Calculate stats for ALL cells (unfiltered) for the title
         const allCellsStats = this.pearsonWithSlope(plotData.map(d => d.x), plotData.map(d => d.y));
         document.getElementById('inspectTitle').textContent =
-            `${c.gene1} vs ${c.gene2} | r=${allCellsStats.correlation.toFixed(3)}, slope=${allCellsStats.slope.toFixed(3)}, n=${plotData.length} (all cells)`;
+            `${c.gene1} vs ${c.gene2} | r=${this.formatNum(allCellsStats.correlation)}, slope=${this.formatNum(allCellsStats.slope)}, n=${plotData.length} (all cells)`;
 
         // Show modal and render plot
         document.getElementById('inspectModal').classList.add('active');
@@ -4323,7 +4769,7 @@ Results:
                 y: [allStats.slope * xRange[0] + intercept, allStats.slope * xRange[1] + intercept],
                 mode: 'lines',
                 type: 'scatter',
-                line: { color: '#16a34a', width: 3 },
+                line: { color: '#5a9f4a', width: 3 },
                 fill: 'none',
                 name: 'Regression',
                 showlegend: false
@@ -4491,9 +4937,9 @@ Results:
             }
         };
 
-        addRegressionLine(wt, wtStats, 'x', 'y', '#16a34a');
-        addRegressionLine(mut1, mut1Stats, 'x2', 'y2', '#16a34a');
-        addRegressionLine(mut2, mut2Stats, 'x3', 'y3', '#16a34a');
+        addRegressionLine(wt, wtStats, 'x', 'y', '#5a9f4a');
+        addRegressionLine(mut1, mut1Stats, 'x2', 'y2', '#5a9f4a');
+        addRegressionLine(mut2, mut2Stats, 'x3', 'y3', '#5a9f4a');
 
         // Add highlighted cells for each panel
         const addHighlights = (data, xaxis, yaxis) => {
@@ -4670,8 +5116,8 @@ Results:
         `;
 
         tableData.forEach(row => {
-            const deltaRColor = row.deltaR < 0 ? '#dc2626' : '#16a34a';
-            const deltaSlopeColor = row.deltaSlope < 0 ? '#dc2626' : '#16a34a';
+            const deltaRColor = row.deltaR < 0 ? '#dc2626' : '#5a9f4a';
+            const deltaSlopeColor = row.deltaSlope < 0 ? '#dc2626' : '#5a9f4a';
 
             html += `
                 <tr>
@@ -4846,8 +5292,8 @@ Results:
         `;
 
         tableData.forEach(row => {
-            const deltaRColor = row.deltaR < 0 ? '#dc2626' : '#16a34a';
-            const deltaSlopeColor = row.deltaSlope < 0 ? '#dc2626' : '#16a34a';
+            const deltaRColor = row.deltaR < 0 ? '#dc2626' : '#5a9f4a';
+            const deltaSlopeColor = row.deltaSlope < 0 ? '#dc2626' : '#5a9f4a';
             const pHighlight = row.pR < 0.05 ? 'background: #fef3c7;' : '';
 
             html += `
@@ -5073,15 +5519,15 @@ Results:
             <div style="max-height: 500px; overflow-y: auto;">
             <table id="byTissueTable" style="width: 100%; border-collapse: collapse; font-size: 11px;">
                 <thead>
-                    <tr style="background-color: #22c55e; color: white;">
-                        <th data-col="0" style="padding: 6px; border: 1px solid #16a34a; text-align: left; position: sticky; top: 0; background-color: #22c55e; cursor: pointer;">Lineage ▼</th>
-                        <th data-col="1" style="padding: 6px; border: 1px solid #16a34a; text-align: center; position: sticky; top: 0; background-color: #22c55e; cursor: pointer;">N</th>
-                        <th data-col="2" style="padding: 6px; border: 1px solid #16a34a; text-align: center; position: sticky; top: 0; background-color: #22c55e; cursor: pointer;">Corr</th>
-                        <th data-col="3" style="padding: 6px; border: 1px solid #16a34a; text-align: center; position: sticky; top: 0; background-color: #22c55e; cursor: pointer;">Slope</th>
-                        <th data-col="4" style="padding: 6px; border: 1px solid #16a34a; text-align: center; position: sticky; top: 0; background-color: #22c55e; cursor: pointer;">${gene1} (mean)</th>
-                        <th data-col="5" style="padding: 6px; border: 1px solid #16a34a; text-align: center; position: sticky; top: 0; background-color: #22c55e; cursor: pointer;">${gene1} (SD)</th>
-                        <th data-col="6" style="padding: 6px; border: 1px solid #16a34a; text-align: center; position: sticky; top: 0; background-color: #22c55e; cursor: pointer;">${gene2} (mean)</th>
-                        <th data-col="7" style="padding: 6px; border: 1px solid #16a34a; text-align: center; position: sticky; top: 0; background-color: #22c55e; cursor: pointer;">${gene2} (SD)</th>
+                    <tr style="background-color: #5a9f4a; color: white;">
+                        <th data-col="0" style="padding: 6px; border: 1px solid #5a9f4a; text-align: left; position: sticky; top: 0; background-color: #5a9f4a; cursor: pointer;">Lineage ▼</th>
+                        <th data-col="1" style="padding: 6px; border: 1px solid #5a9f4a; text-align: center; position: sticky; top: 0; background-color: #5a9f4a; cursor: pointer;">N</th>
+                        <th data-col="2" style="padding: 6px; border: 1px solid #5a9f4a; text-align: center; position: sticky; top: 0; background-color: #5a9f4a; cursor: pointer;">Corr</th>
+                        <th data-col="3" style="padding: 6px; border: 1px solid #5a9f4a; text-align: center; position: sticky; top: 0; background-color: #5a9f4a; cursor: pointer;">Slope</th>
+                        <th data-col="4" style="padding: 6px; border: 1px solid #5a9f4a; text-align: center; position: sticky; top: 0; background-color: #5a9f4a; cursor: pointer;">${gene1} (mean)</th>
+                        <th data-col="5" style="padding: 6px; border: 1px solid #5a9f4a; text-align: center; position: sticky; top: 0; background-color: #5a9f4a; cursor: pointer;">${gene1} (SD)</th>
+                        <th data-col="6" style="padding: 6px; border: 1px solid #5a9f4a; text-align: center; position: sticky; top: 0; background-color: #5a9f4a; cursor: pointer;">${gene2} (mean)</th>
+                        <th data-col="7" style="padding: 6px; border: 1px solid #5a9f4a; text-align: center; position: sticky; top: 0; background-color: #5a9f4a; cursor: pointer;">${gene2} (SD)</th>
                     </tr>
                 </thead>
                 <tbody>
