@@ -6110,6 +6110,9 @@ Results:
         const data = this.currentGeneEffect.data;
         const gene = this.currentGeneEffect.gene;
 
+        // Get all gene effects for comparison
+        const allEffects = data.map(d => d.geneEffect);
+
         // Group by cancer type
         const groups = {};
         data.forEach(d => {
@@ -6118,58 +6121,89 @@ Results:
             groups[lineage].push(d.geneEffect);
         });
 
-        // Calculate stats for each group
+        // Calculate stats for each group including p-value vs all cells
         const stats = [];
         Object.entries(groups).forEach(([lineage, effects]) => {
             if (effects.length >= 3) {
                 const mean = effects.reduce((a, b) => a + b, 0) / effects.length;
                 const sd = Math.sqrt(effects.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / effects.length);
-                stats.push({ group: lineage, n: effects.length, mean, sd });
+
+                // Calculate p-value comparing this group to all other cells
+                const otherEffects = allEffects.filter((_, i) => {
+                    const d = data[i];
+                    return (d.lineage || 'Unknown') !== lineage;
+                });
+                const tTest = this.welchTTest(effects, otherEffects);
+
+                stats.push({
+                    group: lineage,
+                    n: effects.length,
+                    mean,
+                    sd,
+                    pValue: tTest.pValue
+                });
             }
         });
 
-        // Sort by mean gene effect (low to high for horizontal bar - most negative at bottom)
+        // Sort by mean gene effect (most positive at top for table, reversed for chart)
         stats.sort((a, b) => b.mean - a.mean);
         this.currentGEStats = stats;
 
-        // Create horizontal bar chart
-        const barColors = stats.map(s => {
-            if (s.mean < -0.5) return 'rgba(220, 38, 38, 0.7)';
-            if (s.mean > 0) return 'rgba(34, 197, 94, 0.5)';
-            return 'rgba(156, 163, 175, 0.6)';
+        // For chart display, reverse so most negative is at bottom
+        const chartStats = [...stats].reverse();
+
+        // Create horizontal bar chart with error bars
+        const barColors = chartStats.map(s => {
+            if (s.pValue < 0.05) {
+                return s.mean < -0.5 ? 'rgba(220, 38, 38, 0.7)' : s.mean > 0 ? 'rgba(34, 197, 94, 0.7)' : 'rgba(156, 163, 175, 0.6)';
+            }
+            return s.mean < -0.5 ? 'rgba(220, 38, 38, 0.4)' : s.mean > 0 ? 'rgba(34, 197, 94, 0.3)' : 'rgba(156, 163, 175, 0.4)';
         });
 
         const trace = {
             type: 'bar',
             orientation: 'h',
-            y: stats.map(s => s.group),
-            x: stats.map(s => s.mean),
-            text: stats.map(s => `n=${s.n}`),
+            y: chartStats.map(s => s.group),
+            x: chartStats.map(s => s.mean),
+            error_x: {
+                type: 'data',
+                array: chartStats.map(s => s.sd),
+                visible: true,
+                color: '#374151',
+                thickness: 1.5,
+                width: 3
+            },
+            text: chartStats.map(s => `n=${s.n}`),
             textposition: 'outside',
             textfont: { size: 8 },
             marker: { color: barColors },
-            hovertemplate: '<b>%{y}</b><br>Mean GE: %{x:.3f}<br>n=%{text}<extra></extra>'
+            hovertemplate: '<b>%{y}</b><br>Mean GE: %{x:.3f} ± SD<br>n=%{text}<extra></extra>'
         };
 
         // Calculate dynamic font size based on number of entries
-        const numEntries = stats.length;
+        const numEntries = chartStats.length;
         const tickFontSize = numEntries > 30 ? 7 : numEntries > 20 ? 8 : 9;
         const barHeight = numEntries > 30 ? 12 : numEntries > 20 ? 14 : 16;
         const chartHeight = Math.max(300, numEntries * barHeight + 80);
 
-        const maxLabelLen = Math.max(...stats.map(s => s.group.length));
+        const maxLabelLen = Math.max(...chartStats.map(s => s.group.length));
         const leftMargin = Math.max(100, maxLabelLen * 4.5);
+
+        // Calculate x-axis range to fit error bars and text
+        const minX = Math.min(...chartStats.map(s => s.mean - s.sd)) - 0.3;
+        const maxX = Math.max(...chartStats.map(s => s.mean + s.sd)) + 0.5;
 
         const layout = {
             title: { text: `${gene} by Cancer Type`, font: { size: 13 } },
             xaxis: {
-                title: 'Mean Gene Effect',
+                title: 'Mean Gene Effect (± SD)',
                 zeroline: true,
                 zerolinecolor: '#374151',
-                zerolinewidth: 2
+                zerolinewidth: 2,
+                range: [minX, maxX]
             },
             yaxis: { automargin: true, tickfont: { size: tickFontSize } },
-            margin: { t: 40, b: 40, l: leftMargin, r: 50 },
+            margin: { t: 40, b: 40, l: leftMargin, r: 60 },
             height: chartHeight,
             paper_bgcolor: 'white',
             plot_bgcolor: 'white'
@@ -6189,7 +6223,7 @@ Results:
 
         if (!this.mutations?.genes || this.mutations.genes.length === 0) {
             document.getElementById('geneEffectHotspotPlot').innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #6b7280;">No hotspot mutation data available</div>';
-            document.getElementById('geneEffectTableBody').innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px; color: #6b7280;">No mutation data</td></tr>';
+            document.getElementById('geneEffectTableBody').innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: #6b7280;">No mutation data</td></tr>';
             return;
         }
 
@@ -6218,6 +6252,7 @@ Results:
             if (mutEffects.length >= 3 && wtEffects.length >= 3) {
                 const wtMean = wtEffects.reduce((a, b) => a + b, 0) / wtEffects.length;
                 const mutMean = mutEffects.reduce((a, b) => a + b, 0) / mutEffects.length;
+                const mutSD = Math.sqrt(mutEffects.reduce((a, b) => a + Math.pow(b - mutMean, 2), 0) / mutEffects.length);
                 const diff = mutMean - wtMean;
                 const tTest = this.welchTTest(wtEffects, mutEffects);
 
@@ -6228,6 +6263,7 @@ Results:
                     n: mutEffects.length,
                     wtMean,
                     mutMean,
+                    mutSD,
                     mean: diff,
                     diff,
                     pValue: tTest.pValue
@@ -6237,32 +6273,32 @@ Results:
 
         if (hotspotStats.length === 0) {
             document.getElementById('geneEffectHotspotPlot').innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #6b7280;">No hotspots with sufficient data (need ≥3 mutant and ≥3 WT cells)</div>';
-            document.getElementById('geneEffectTableBody').innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px; color: #6b7280;">Insufficient data</td></tr>';
+            document.getElementById('geneEffectTableBody').innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: #6b7280;">Insufficient data</td></tr>';
             return;
         }
 
-        // Sort by diff value for display (most positive at top, most negative at bottom)
-        hotspotStats.sort((a, b) => b.diff - a.diff);
+        // Sort by absolute diff value for display (largest effects first)
+        hotspotStats.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
 
-        // Take top 30 for display (increased from 25)
-        const topStats = hotspotStats.slice(0, 30);
+        // Take top 40 for display
+        const topStats = hotspotStats.slice(0, 40);
         this.currentGEStats = topStats;
 
-        // For horizontal bar chart, reverse so most negative is at bottom
-        const chartStats = [...topStats].reverse();
+        // For horizontal bar chart, sort by diff value (most negative at bottom)
+        const chartStats = [...topStats].sort((a, b) => a.diff - b.diff);
 
-        // Create horizontal bar chart
+        // Create horizontal bar chart with error bars
         const barColors = chartStats.map(s => {
             if (s.pValue < 0.05) {
                 return s.diff < 0 ? 'rgba(220, 38, 38, 0.7)' : 'rgba(34, 197, 94, 0.7)';
             }
-            return 'rgba(156, 163, 175, 0.5)';
+            return s.diff < 0 ? 'rgba(220, 38, 38, 0.3)' : s.diff > 0 ? 'rgba(34, 197, 94, 0.3)' : 'rgba(156, 163, 175, 0.4)';
         });
 
         // Calculate dynamic font size based on number of entries
         const numEntries = chartStats.length;
-        const tickFontSize = numEntries > 25 ? 7 : numEntries > 15 ? 8 : 9;
-        const barHeight = numEntries > 25 ? 12 : numEntries > 15 ? 14 : 16;
+        const tickFontSize = numEntries > 30 ? 7 : numEntries > 20 ? 8 : 9;
+        const barHeight = numEntries > 30 ? 12 : numEntries > 20 ? 14 : 16;
         const chartHeight = Math.max(300, numEntries * barHeight + 80);
 
         const trace = {
@@ -6270,23 +6306,37 @@ Results:
             orientation: 'h',
             y: chartStats.map(s => s.group),
             x: chartStats.map(s => s.diff),
+            error_x: {
+                type: 'data',
+                array: chartStats.map(s => s.mutSD),
+                visible: true,
+                color: '#374151',
+                thickness: 1.5,
+                width: 3
+            },
             text: chartStats.map(s => `n=${s.nMut}`),
             textposition: 'outside',
             textfont: { size: 8 },
             marker: { color: barColors },
-            hovertemplate: '<b>%{y}</b><br>Δ GE: %{x:.3f}<br>Mutant n=%{text}<extra></extra>'
+            hovertemplate: '<b>%{y}</b><br>Δ GE: %{x:.3f} ± SD<br>Mutant n=%{text}<br>p=%{customdata}<extra></extra>',
+            customdata: chartStats.map(s => s.pValue < 0.001 ? '<0.001' : s.pValue.toFixed(3))
         };
+
+        // Calculate x-axis range to fit error bars and text
+        const minX = Math.min(...chartStats.map(s => s.diff - s.mutSD)) - 0.3;
+        const maxX = Math.max(...chartStats.map(s => s.diff + s.mutSD)) + 0.5;
 
         const layout = {
             title: { text: `${gene} Δ GE (Mut vs WT)`, font: { size: 13 } },
             xaxis: {
-                title: 'Δ Gene Effect',
+                title: 'Δ Gene Effect (± SD of mutant)',
                 zeroline: true,
                 zerolinecolor: '#374151',
-                zerolinewidth: 2
+                zerolinewidth: 2,
+                range: [minX, maxX]
             },
             yaxis: { automargin: true, tickfont: { size: tickFontSize } },
-            margin: { t: 40, b: 40, l: 70, r: 50 },
+            margin: { t: 40, b: 40, l: 70, r: 60 },
             height: chartHeight,
             paper_bgcolor: 'white',
             plot_bgcolor: 'white'
@@ -6294,7 +6344,7 @@ Results:
 
         Plotly.newPlot('geneEffectHotspotPlot', [trace], layout, { responsive: true });
 
-        // Render table (use original topStats sorted high to low)
+        // Render table (sorted by absolute diff - largest effects first)
         this.renderGETable(topStats, 'hotspot');
     }
 
@@ -6316,6 +6366,7 @@ Results:
                 <th style="${headerStyle}" data-sort="n" data-type="number">N${sortIcon}</th>
                 <th style="${headerStyle}" data-sort="mean" data-type="number">Mean GE${sortIcon}</th>
                 <th style="${headerStyle}" data-sort="sd" data-type="number">SD${sortIcon}</th>
+                <th style="${headerStyle}" data-sort="pValue" data-type="number">p-value${sortIcon}</th>
             </tr>`;
             this.renderGETableBody(stats, mode);
         } else {
@@ -6323,6 +6374,7 @@ Results:
                 <th style="${headerStyle}" data-sort="group" data-type="string">Hotspot${sortIcon}</th>
                 <th style="${headerStyle}" data-sort="nMut" data-type="number">n Mut${sortIcon}</th>
                 <th style="${headerStyle}" data-sort="diff" data-type="number">Δ GE${sortIcon}</th>
+                <th style="${headerStyle}" data-sort="mutSD" data-type="number">SD${sortIcon}</th>
                 <th style="${headerStyle}" data-sort="pValue" data-type="number">p-value${sortIcon}</th>
             </tr>`;
             this.renderGETableBody(stats, mode);
@@ -6340,22 +6392,25 @@ Results:
 
         if (mode === 'tissue') {
             stats.forEach(s => {
-                const color = s.mean < -0.5 ? '#dc2626' : s.mean > 0.5 ? '#16a34a' : '#374151';
+                const color = s.pValue < 0.05 ? (s.mean < -0.5 ? '#dc2626' : s.mean > 0.5 ? '#16a34a' : '#374151') : '#6b7280';
+                const pStr = s.pValue < 0.001 ? '<0.001' : s.pValue.toFixed(3);
                 tbody.innerHTML += `<tr>
                     <td>${s.group}</td>
                     <td style="text-align: center;">${s.n}</td>
                     <td style="text-align: center; font-weight: 500; color: ${color};">${s.mean.toFixed(3)}</td>
                     <td style="text-align: center;">${s.sd.toFixed(3)}</td>
+                    <td style="text-align: center; ${s.pValue < 0.05 ? 'font-weight: 600;' : ''}">${pStr}</td>
                 </tr>`;
             });
         } else {
             stats.forEach(s => {
-                const color = s.pValue < 0.05 ? (s.diff < 0 ? '#dc2626' : '#16a34a') : '#374151';
+                const color = s.pValue < 0.05 ? (s.diff < 0 ? '#dc2626' : '#16a34a') : '#6b7280';
                 const pStr = s.pValue < 0.001 ? '<0.001' : s.pValue.toFixed(3);
                 tbody.innerHTML += `<tr>
                     <td>${s.group}</td>
                     <td style="text-align: center;">${s.nMut}</td>
                     <td style="text-align: center; font-weight: 500; color: ${color};">${s.diff.toFixed(3)}</td>
+                    <td style="text-align: center;">${s.mutSD.toFixed(3)}</td>
                     <td style="text-align: center; ${s.pValue < 0.05 ? 'font-weight: 600;' : ''}">${pStr}</td>
                 </tr>`;
             });
@@ -6429,14 +6484,14 @@ Results:
         let csv = '';
 
         if (this.currentGEView === 'tissue') {
-            csv = 'Cancer_Type,N,Mean_GE,SD\n';
+            csv = 'Cancer_Type,N,Mean_GE,SD,p_value\n';
             this.currentGEStats.forEach(s => {
-                csv += `"${s.group}",${s.n},${s.mean.toFixed(4)},${s.sd.toFixed(4)}\n`;
+                csv += `"${s.group}",${s.n},${s.mean.toFixed(4)},${s.sd.toFixed(4)},${s.pValue.toFixed(6)}\n`;
             });
         } else {
-            csv = 'Hotspot,N_Mutant,N_WT,Mean_WT,Mean_Mutant,Delta_GE,p_value\n';
+            csv = 'Hotspot,N_Mutant,N_WT,Mean_WT,Mean_Mutant,Delta_GE,SD_Mutant,p_value\n';
             this.currentGEStats.forEach(s => {
-                csv += `"${s.group}",${s.nMut},${s.nWT},${s.wtMean.toFixed(4)},${s.mutMean.toFixed(4)},${s.diff.toFixed(4)},${s.pValue.toFixed(6)}\n`;
+                csv += `"${s.group}",${s.nMut},${s.nWT},${s.wtMean.toFixed(4)},${s.mutMean.toFixed(4)},${s.diff.toFixed(4)},${s.mutSD.toFixed(4)},${s.pValue.toFixed(6)}\n`;
             });
         }
 
