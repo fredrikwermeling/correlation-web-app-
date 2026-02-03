@@ -2604,19 +2604,32 @@ Results:
         const rows = Array.from(tbody.querySelectorAll('tr'));
         const colIndex = Array.from(th.parentNode.children).indexOf(th);
         const sortKey = th.dataset.sort;
-        const isNumeric = ['correlation', 'slope', 'n', 'cluster', 'meanEffect', 'sdEffect'].includes(sortKey);
+        const numericColumns = [
+            'correlation', 'slope', 'n', 'cluster',
+            'meanEffect', 'sdEffect', 'meanEffectFiltered', 'sdEffectFiltered',
+            'lfc', 'fdr'
+        ];
+        const isNumeric = numericColumns.includes(sortKey);
 
         const currentDir = th.dataset.dir || 'asc';
         const newDir = currentDir === 'asc' ? 'desc' : 'asc';
         th.dataset.dir = newDir;
 
         rows.sort((a, b) => {
-            const aVal = a.children[colIndex]?.textContent || '';
-            const bVal = b.children[colIndex]?.textContent || '';
+            let aVal = a.children[colIndex]?.textContent?.trim() || '';
+            let bVal = b.children[colIndex]?.textContent?.trim() || '';
+
+            // Remove any asterisks or other markers from gene names
+            aVal = aVal.replace(/\*$/, '');
+            bVal = bVal.replace(/\*$/, '');
 
             if (isNumeric) {
-                const aNum = parseFloat(aVal) || 0;
-                const bNum = parseFloat(bVal) || 0;
+                const aNum = parseFloat(aVal);
+                const bNum = parseFloat(bVal);
+                // Handle NaN values - put them at the end
+                if (isNaN(aNum) && isNaN(bNum)) return 0;
+                if (isNaN(aNum)) return 1;
+                if (isNaN(bNum)) return -1;
                 return newDir === 'asc' ? aNum - bNum : bNum - aNum;
             } else {
                 return newDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
@@ -2643,21 +2656,38 @@ Results:
 
             // Add filter info as comments
             csv = `# Clusters Export\n`;
+            csv += `# Analysis mode: ${this.results.mode === 'design' ? 'Design (find correlated genes)' : 'Analysis (within gene list)'}\n`;
             csv += `# Lineage filter: ${lineage}\n`;
             if (subLineage) csv += `# Subtype filter: ${subLineage}\n`;
             csv += `# Filtered cell lines: ${this.results.nCellLines}\n`;
             csv += `# Date: ${new Date().toISOString().slice(0, 10)}\n`;
+            if (this.results.mode === 'design') {
+                csv += `# Gene_Type: Input = user-provided gene, Correlated = found by correlation analysis\n`;
+            }
             csv += '#\n';
 
+            const isDesignMode = this.results.mode === 'design';
+            const geneList = this.results.geneList || [];
+
             if (isFiltered) {
-                csv += 'Gene,Cluster,Mean_Effect_All,SD_Effect_All,Mean_Effect_Filtered,SD_Effect_Filtered\n';
+                csv += isDesignMode
+                    ? 'Gene,Gene_Type,Cluster,Mean_Effect_All,SD_Effect_All,Mean_Effect_Filtered,SD_Effect_Filtered\n'
+                    : 'Gene,Cluster,Mean_Effect_All,SD_Effect_All,Mean_Effect_Filtered,SD_Effect_Filtered\n';
                 this.results.clusters.forEach(c => {
-                    csv += `${c.gene},${c.cluster},${c.meanEffect},${c.sdEffect},${c.meanEffectFiltered},${c.sdEffectFiltered}\n`;
+                    const geneType = geneList.includes(c.gene) ? 'Input' : 'Correlated';
+                    csv += isDesignMode
+                        ? `${c.gene},${geneType},${c.cluster},${c.meanEffect},${c.sdEffect},${c.meanEffectFiltered},${c.sdEffectFiltered}\n`
+                        : `${c.gene},${c.cluster},${c.meanEffect},${c.sdEffect},${c.meanEffectFiltered},${c.sdEffectFiltered}\n`;
                 });
             } else {
-                csv += 'Gene,Cluster,Mean_Effect,SD_Effect\n';
+                csv += isDesignMode
+                    ? 'Gene,Gene_Type,Cluster,Mean_Effect,SD_Effect\n'
+                    : 'Gene,Cluster,Mean_Effect,SD_Effect\n';
                 this.results.clusters.forEach(c => {
-                    csv += `${c.gene},${c.cluster},${c.meanEffect},${c.sdEffect}\n`;
+                    const geneType = geneList.includes(c.gene) ? 'Input' : 'Correlated';
+                    csv += isDesignMode
+                        ? `${c.gene},${geneType},${c.cluster},${c.meanEffect},${c.sdEffect}\n`
+                        : `${c.gene},${c.cluster},${c.meanEffect},${c.sdEffect}\n`;
                 });
             }
             filename = 'clusters.csv';
