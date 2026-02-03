@@ -3998,6 +3998,10 @@ Results:
         document.getElementById('scatterYmin').value = this.currentInspect.defaultYlim[0].toFixed(1);
         document.getElementById('scatterYmax').value = this.currentInspect.defaultYlim[1].toFixed(1);
 
+        // Get filters from parameters section to carry over
+        const paramLineageFilter = document.getElementById('lineageFilter').value;
+        const paramHotspotGene = document.getElementById('paramHotspotGene').value;
+
         // Populate cancer filter with counts
         const cancerFilter = document.getElementById('scatterCancerFilter');
         const cancerBox = document.getElementById('cancerFilterBox');
@@ -4013,6 +4017,10 @@ Results:
             lineages.forEach(l => {
                 cancerFilter.innerHTML += `<option value="${l}">${l} (n=${lineageCounts[l]})</option>`;
             });
+            // Pre-select the lineage filter from parameters if it exists
+            if (paramLineageFilter && lineages.includes(paramLineageFilter)) {
+                cancerFilter.value = paramLineageFilter;
+            }
             cancerBox.style.display = 'block';
         } else {
             cancerBox.style.display = 'none';
@@ -4038,6 +4046,10 @@ Results:
                     hotspotSelect.innerHTML += `<option value="${g}">${g} (${count} mut)</option>`;
                     mutFilterGeneSelect.innerHTML += `<option value="${g}">${g} (${count} mut)</option>`;
                 });
+            // Pre-select the hotspot gene from parameters if it exists
+            if (paramHotspotGene && this.mutations.genes.includes(paramHotspotGene)) {
+                hotspotSelect.value = paramHotspotGene;
+            }
             document.getElementById('mutationBox').style.display = 'block';
             document.getElementById('mutationFilterBox').style.display = 'block';
         } else {
@@ -4045,10 +4057,10 @@ Results:
             document.getElementById('mutationFilterBox').style.display = 'none';
         }
 
-        // Update title with slope
-        const slope = this.pearsonWithSlope(plotData.map(d => d.x), plotData.map(d => d.y)).slope;
+        // Calculate stats for ALL cells (unfiltered) for the title
+        const allCellsStats = this.pearsonWithSlope(plotData.map(d => d.x), plotData.map(d => d.y));
         document.getElementById('inspectTitle').textContent =
-            `Correlation: ${c.gene1} vs ${c.gene2} | r=${c.correlation.toFixed(3)}, slope=${slope.toFixed(3)} (n=${plotData.length})`;
+            `${c.gene1} vs ${c.gene2} | r=${allCellsStats.correlation.toFixed(3)}, slope=${allCellsStats.slope.toFixed(3)}, n=${plotData.length} (all cells)`;
 
         // Show modal and render plot
         document.getElementById('inspectModal').classList.add('active');
