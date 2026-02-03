@@ -150,7 +150,7 @@ class CorrelationExplorer {
             const cellLines = this.metadata.cellLines;
             cellLines.forEach(cellLine => {
                 const lineage = this.cellLineMetadata.lineage[cellLine];
-                const subLineage = this.cellLineMetadata.lineageSubtype?.[cellLine] || '';
+                const subLineage = this.cellLineMetadata.subtype?.[cellLine] || '';
 
                 if (lineage) {
                     lineageCounts[lineage] = (lineageCounts[lineage] || 0) + 1;
@@ -236,6 +236,41 @@ class CorrelationExplorer {
         this.updateHotspotCountsForCurrentFilters();
     }
 
+    updateScatterSubtypeFilter() {
+        const lineage = document.getElementById('scatterCancerFilter').value;
+        const subSelect = document.getElementById('scatterSubtypeFilter');
+
+        if (!lineage || !this.currentInspect?.data) {
+            subSelect.style.display = 'none';
+            subSelect.innerHTML = '<option value="">All subtypes</option>';
+            return;
+        }
+
+        // Find subtypes for this lineage from current inspect data
+        const subtypeCounts = {};
+        this.currentInspect.data.forEach(d => {
+            if (d.lineage === lineage) {
+                const subtype = this.cellLineMetadata?.subtype?.[d.cellLineId] || '';
+                if (subtype) {
+                    subtypeCounts[subtype] = (subtypeCounts[subtype] || 0) + 1;
+                }
+            }
+        });
+
+        const subtypes = Object.keys(subtypeCounts).sort();
+        if (subtypes.length > 1) {
+            const lineageCount = this.currentInspect.data.filter(d => d.lineage === lineage).length;
+            subSelect.innerHTML = `<option value="">All subtypes (n=${lineageCount})</option>`;
+            subtypes.forEach(sub => {
+                subSelect.innerHTML += `<option value="${sub}">${sub} (n=${subtypeCounts[sub]})</option>`;
+            });
+            subSelect.style.display = 'block';
+        } else {
+            subSelect.style.display = 'none';
+            subSelect.innerHTML = '<option value="">All subtypes</option>';
+        }
+    }
+
     updateHotspotCountsForCurrentFilters() {
         if (this.mutations?.geneData) {
             this.updateParamHotspotGeneCounts();
@@ -280,7 +315,7 @@ class CorrelationExplorer {
                     return;
                 }
                 // Apply sub-lineage filter
-                if (subLineageFilter && this.cellLineMetadata?.lineageSubtype?.[cl] !== subLineageFilter) {
+                if (subLineageFilter && this.cellLineMetadata?.subtype?.[cl] !== subLineageFilter) {
                     return;
                 }
                 if (mutations[cl] && mutations[cl] > 0) nMut++;
@@ -329,7 +364,7 @@ class CorrelationExplorer {
                 return;
             }
             // Apply sub-lineage filter
-            if (subLineageFilter && this.cellLineMetadata?.lineageSubtype?.[cellLine] !== subLineageFilter) {
+            if (subLineageFilter && this.cellLineMetadata?.subtype?.[cellLine] !== subLineageFilter) {
                 return;
             }
 
@@ -402,7 +437,7 @@ class CorrelationExplorer {
                     return;
                 }
                 // Apply sub-lineage filter
-                if (subLineageFilter && this.cellLineMetadata?.lineageSubtype?.[cl] !== subLineageFilter) {
+                if (subLineageFilter && this.cellLineMetadata?.subtype?.[cl] !== subLineageFilter) {
                     return;
                 }
                 if (mutations[cl] && mutations[cl] > 0) nMut++;
@@ -727,7 +762,11 @@ class CorrelationExplorer {
         });
 
         document.getElementById('scatterCellSearch').addEventListener('input', () => this.updateInspectPlot());
-        document.getElementById('scatterCancerFilter').addEventListener('change', () => this.updateInspectPlot());
+        document.getElementById('scatterCancerFilter').addEventListener('change', () => {
+            this.updateScatterSubtypeFilter();
+            this.updateInspectPlot();
+        });
+        document.getElementById('scatterSubtypeFilter').addEventListener('change', () => this.updateInspectPlot());
         document.getElementById('mutationFilterGene').addEventListener('change', () => this.updateInspectPlot());
         document.getElementById('mutationFilterLevel').addEventListener('change', () => this.updateInspectPlot());
         document.getElementById('hotspotGene').addEventListener('change', () => this.updateInspectPlot());
@@ -1243,6 +1282,7 @@ class CorrelationExplorer {
 
     getFilteredCellLineIndices() {
         const lineageFilter = document.getElementById('lineageFilter').value;
+        const subLineageFilter = document.getElementById('subLineageFilter')?.value;
         const hotspotGene = document.getElementById('paramHotspotGene').value;
         const hotspotLevel = document.getElementById('paramHotspotLevel').value;
 
@@ -1262,6 +1302,14 @@ class CorrelationExplorer {
                 }
             }
 
+            // Check sublineage filter
+            if (subLineageFilter) {
+                if (!this.cellLineMetadata.subtype ||
+                    this.cellLineMetadata.subtype[cellLine] !== subLineageFilter) {
+                    return;
+                }
+            }
+
             // Check hotspot mutation filter
             if (mutationData && hotspotLevel !== 'all') {
                 const mutLevel = mutationData[cellLine] || 0;
@@ -1275,7 +1323,7 @@ class CorrelationExplorer {
         });
 
         // Return all indices if no filters applied
-        if (indices.length === 0 && !lineageFilter && (!hotspotGene || hotspotLevel === 'all')) {
+        if (indices.length === 0 && !lineageFilter && !subLineageFilter && (!hotspotGene || hotspotLevel === 'all')) {
             return Array.from({ length: this.nCellLines }, (_, i) => i);
         }
 
@@ -1340,6 +1388,7 @@ class CorrelationExplorer {
         const minN = parseInt(document.getElementById('minCellLines').value);
         const pThreshold = parseFloat(document.getElementById('pValueThreshold').value);
         const lineageFilter = document.getElementById('lineageFilter').value;
+        const subLineageFilter = document.getElementById('subLineageFilter')?.value;
 
         // Get additional hotspot filter (from parameter section)
         const additionalHotspot = document.getElementById('paramHotspotGene').value;
@@ -1355,7 +1404,7 @@ class CorrelationExplorer {
         // Use setTimeout to allow UI to update
         setTimeout(() => {
             try {
-                const analysisResult = this.calculateMutationAnalysis(hotspotGene, minN, lineageFilter, additionalHotspot, additionalHotspotLevel);
+                const analysisResult = this.calculateMutationAnalysis(hotspotGene, minN, lineageFilter, subLineageFilter, additionalHotspot, additionalHotspotLevel);
 
                 // Filter by p-value threshold
                 const significantResults = analysisResult.results.filter(r => r.p_mut < pThreshold || r.p_2 < pThreshold);
@@ -1368,6 +1417,7 @@ class CorrelationExplorer {
                     pThreshold,
                     minN,
                     lineageFilter,
+                    subLineageFilter,
                     additionalHotspot,
                     additionalHotspotLevel,
                     nWT: analysisResult.nWT,
@@ -1394,7 +1444,7 @@ class CorrelationExplorer {
         }, 50);
     }
 
-    calculateMutationAnalysis(hotspotGene, minN, lineageFilter, additionalHotspot, additionalHotspotLevel) {
+    calculateMutationAnalysis(hotspotGene, minN, lineageFilter, subLineageFilter, additionalHotspot, additionalHotspotLevel) {
         const mutationData = this.mutations.geneData[hotspotGene];
         if (!mutationData) {
             throw new Error(`No mutation data for ${hotspotGene}`);
@@ -1414,6 +1464,11 @@ class CorrelationExplorer {
         cellLines.forEach((cellLine, idx) => {
             // Check lineage filter
             if (lineageFilter && this.cellLineMetadata?.lineage?.[cellLine] !== lineageFilter) {
+                return;
+            }
+
+            // Check sublineage filter
+            if (subLineageFilter && this.cellLineMetadata?.subtype?.[cellLine] !== subLineageFilter) {
                 return;
             }
 
@@ -1701,7 +1756,11 @@ class CorrelationExplorer {
         settingsText += `WT: ${mr.nWT} cells | Mutated: ${mr.nMut} cells | `;
         settingsText += `Min cells: ${mr.minN} | p < ${mr.pThreshold}`;
         if (mr.lineageFilter) {
-            settingsText += ` | Lineage: ${mr.lineageFilter}`;
+            let lineageText = mr.lineageFilter;
+            if (mr.subLineageFilter) {
+                lineageText += ` (${mr.subLineageFilter})`;
+            }
+            settingsText += ` | Lineage: ${lineageText}`;
         }
         if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
             settingsText += ` | Filter: ${mr.additionalHotspot} ${mr.additionalHotspotLevel}`;
@@ -1776,6 +1835,9 @@ class CorrelationExplorer {
         csv += `# Min cell lines: ${mr.minN}\n`;
         csv += `# P-value threshold: ${mr.pThreshold}\n`;
         csv += `# Lineage filter: ${mr.lineageFilter || 'All lineages'}\n`;
+        if (mr.subLineageFilter) {
+            csv += `# Subtype filter: ${mr.subLineageFilter}\n`;
+        }
         if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
             csv += `# Additional hotspot filter: ${mr.additionalHotspot} = ${mr.additionalHotspotLevel}\n`;
         }
@@ -1827,6 +1889,11 @@ class CorrelationExplorer {
         cellLines.forEach((cellLine, idx) => {
             // Apply same filters as mutation analysis
             if (mr.lineageFilter && this.cellLineMetadata?.lineage?.[cellLine] !== mr.lineageFilter) {
+                return;
+            }
+
+            // Check sublineage filter
+            if (mr.subLineageFilter && this.cellLineMetadata?.subtype?.[cellLine] !== mr.subLineageFilter) {
                 return;
             }
 
@@ -1945,7 +2012,11 @@ class CorrelationExplorer {
         // Build subtitle with filter info
         let filterInfo = [];
         if (mr.lineageFilter) {
-            filterInfo.push(`Lineage: ${mr.lineageFilter}`);
+            let lineageText = mr.lineageFilter;
+            if (mr.subLineageFilter) {
+                lineageText += ` (${mr.subLineageFilter})`;
+            }
+            filterInfo.push(`Lineage: ${lineageText}`);
         }
         if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
             filterInfo.push(`${mr.additionalHotspot}: ${mr.additionalHotspotLevel}`);
@@ -2005,6 +2076,9 @@ class CorrelationExplorer {
         csv += `# Gene: ${this.currentGeneEffectGene}\n`;
         csv += `# Hotspot Mutation: ${mr.hotspotGene}\n`;
         csv += `# Lineage filter: ${mr.lineageFilter || 'All lineages'}\n`;
+        if (mr.subLineageFilter) {
+            csv += `# Subtype filter: ${mr.subLineageFilter}\n`;
+        }
         if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
             csv += `# Additional filter: ${mr.additionalHotspot} = ${mr.additionalHotspotLevel}\n`;
         }
@@ -2653,6 +2727,7 @@ class CorrelationExplorer {
     displaySummary() {
         const text = document.getElementById('summaryText');
         const lineage = document.getElementById('lineageFilter').value || 'All lineages';
+        const subtype = document.getElementById('subLineageFilter')?.value;
 
         // Build synonyms section if any were used
         let synonymsSection = '';
@@ -2677,6 +2752,12 @@ ${this.genesNotFound.join(', ')}
             ? Math.max(...this.results.correlations.map(c => c.cluster))
             : 0;
 
+        // Build lineage filter text
+        let lineageText = lineage;
+        if (subtype) {
+            lineageText += ` (${subtype})`;
+        }
+
         text.textContent = `Gene Correlation Analysis Summary
 ================================
 
@@ -2684,7 +2765,7 @@ Analysis Mode: ${this.results.mode === 'analysis' ? 'Analysis (within gene list)
 Correlation Cutoff: ${this.results.cutoff}
 Minimum Cell Lines: ${document.getElementById('minCellLines').value}
 Minimum Slope: ${document.getElementById('minSlope').value}
-Lineage Filter: ${lineage}
+Lineage Filter: ${lineageText}
 
 Input Genes: ${this.results.geneList.length}
 ${this.results.geneList.join(', ')}
@@ -3868,13 +3949,18 @@ Results:
 
         // Create summary
         const lineage = document.getElementById('lineageFilter').value || 'All lineages';
+        const subtype = document.getElementById('subLineageFilter')?.value;
+        let lineageText = lineage;
+        if (subtype) {
+            lineageText += ` (${subtype})`;
+        }
         const summary = `Gene Correlation Analysis Summary
 ================================
 Analysis Mode: ${this.results.mode === 'analysis' ? 'Analysis (within gene list)' : 'Design (find correlated genes)'}
 Correlation Cutoff: ${this.results.cutoff}
 Minimum Cell Lines: ${document.getElementById('minCellLines').value}
 Minimum Slope: ${document.getElementById('minSlope').value}
-Lineage Filter: ${lineage}
+Lineage Filter: ${lineageText}
 
 Input Genes: ${this.results.geneList.length}
 ${this.results.geneList.join(', ')}
@@ -4608,10 +4694,21 @@ Results:
             // Pre-select the lineage filter from parameters if it exists
             if (paramLineageFilter && lineages.includes(paramLineageFilter)) {
                 cancerFilter.value = paramLineageFilter;
+                this.updateScatterSubtypeFilter();
+                // Also pre-select subtype from parameters
+                const paramSubtype = document.getElementById('subLineageFilter')?.value;
+                if (paramSubtype) {
+                    document.getElementById('scatterSubtypeFilter').value = paramSubtype;
+                }
+            } else {
+                // Reset subtype filter
+                document.getElementById('scatterSubtypeFilter').innerHTML = '<option value="">All subtypes</option>';
+                document.getElementById('scatterSubtypeFilter').style.display = 'none';
             }
             cancerBox.style.display = 'block';
         } else {
             cancerBox.style.display = 'none';
+            document.getElementById('scatterSubtypeFilter').style.display = 'none';
         }
 
         // Populate hotspot genes
@@ -4690,6 +4787,7 @@ Results:
 
         // Get filter settings
         const cancerFilter = document.getElementById('scatterCancerFilter').value;
+        const subtypeFilter = document.getElementById('scatterSubtypeFilter').value;
         const mutFilterGene = document.getElementById('mutationFilterGene').value;
         const mutFilterLevel = document.getElementById('mutationFilterLevel').value;
         const searchTerms = document.getElementById('scatterCellSearch').value
@@ -4701,6 +4799,13 @@ Results:
         // Filter by cancer type
         let filteredData = cancerFilter ?
             data.filter(d => d.lineage === cancerFilter) : data;
+
+        // Filter by subtype
+        if (subtypeFilter && this.cellLineMetadata?.subtype) {
+            filteredData = filteredData.filter(d =>
+                this.cellLineMetadata.subtype[d.cellLineId] === subtypeFilter
+            );
+        }
 
         // Apply mutation filter (separate from overlay)
         if (mutFilterGene && this.mutations?.geneData?.[mutFilterGene] && mutFilterLevel !== 'all') {
@@ -4733,7 +4838,9 @@ Results:
         // Build filter description for title
         let filterParts = [];
         if (cancerFilter) {
-            filterParts.push(`Cancer: ${cancerFilter}`);
+            let cancerText = cancerFilter;
+            if (subtypeFilter) cancerText += ` / ${subtypeFilter}`;
+            filterParts.push(`Cancer: ${cancerText}`);
         }
         if (mutFilterGene && mutFilterLevel !== 'all') {
             const levelText = mutFilterLevel === '0' ? 'WT' :
@@ -5286,11 +5393,19 @@ Results:
 
         // Apply current filters
         const cancerFilter = document.getElementById('scatterCancerFilter').value;
+        const subtypeFilter = document.getElementById('scatterSubtypeFilter').value;
         const mutFilterGene = document.getElementById('mutationFilterGene').value;
         const mutFilterLevel = document.getElementById('mutationFilterLevel').value;
 
         let filteredData = cancerFilter ?
             data.filter(d => d.lineage === cancerFilter) : data;
+
+        // Apply subtype filter
+        if (subtypeFilter && this.cellLineMetadata?.subtype) {
+            filteredData = filteredData.filter(d =>
+                this.cellLineMetadata.subtype[d.cellLineId] === subtypeFilter
+            );
+        }
 
         // Apply mutation filter
         if (mutFilterGene && this.mutations?.geneData?.[mutFilterGene] && mutFilterLevel !== 'all') {
@@ -5308,7 +5423,11 @@ Results:
         // Build filter description
         let filterParts = [];
         if (cancerFilter) {
-            filterParts.push(`Cancer: ${cancerFilter}`);
+            let cancerText = `Cancer: ${cancerFilter}`;
+            if (subtypeFilter) {
+                cancerText += ` (${subtypeFilter})`;
+            }
+            filterParts.push(cancerText);
         }
         if (mutFilterGene && mutFilterLevel !== 'all') {
             const levelText = mutFilterLevel === '0' ? 'WT' :
@@ -5740,8 +5859,11 @@ Results:
             // Set the filter to the selected tissue
             cancerFilter.value = tissue;
             cancerBox.style.display = 'block';
+            // Update subtype filter for the selected tissue
+            this.updateScatterSubtypeFilter();
         } else {
             cancerBox.style.display = 'none';
+            document.getElementById('scatterSubtypeFilter').style.display = 'none';
         }
 
         // Populate hotspot genes (same as openInspect)
@@ -6006,8 +6128,8 @@ Results:
             }
         });
 
-        // Sort by mean gene effect
-        stats.sort((a, b) => a.mean - b.mean);
+        // Sort by mean gene effect (low to high for horizontal bar - most negative at bottom)
+        stats.sort((a, b) => b.mean - a.mean);
         this.currentGEStats = stats;
 
         // Create horizontal bar chart
@@ -6024,13 +6146,19 @@ Results:
             x: stats.map(s => s.mean),
             text: stats.map(s => `n=${s.n}`),
             textposition: 'outside',
-            textfont: { size: 9 },
+            textfont: { size: 8 },
             marker: { color: barColors },
             hovertemplate: '<b>%{y}</b><br>Mean GE: %{x:.3f}<br>n=%{text}<extra></extra>'
         };
 
+        // Calculate dynamic font size based on number of entries
+        const numEntries = stats.length;
+        const tickFontSize = numEntries > 30 ? 7 : numEntries > 20 ? 8 : 9;
+        const barHeight = numEntries > 30 ? 12 : numEntries > 20 ? 14 : 16;
+        const chartHeight = Math.max(300, numEntries * barHeight + 80);
+
         const maxLabelLen = Math.max(...stats.map(s => s.group.length));
-        const leftMargin = Math.max(100, maxLabelLen * 5.5);
+        const leftMargin = Math.max(100, maxLabelLen * 4.5);
 
         const layout = {
             title: { text: `${gene} by Cancer Type`, font: { size: 13 } },
@@ -6040,9 +6168,9 @@ Results:
                 zerolinecolor: '#374151',
                 zerolinewidth: 2
             },
-            yaxis: { automargin: true, tickfont: { size: 10 } },
+            yaxis: { automargin: true, tickfont: { size: tickFontSize } },
             margin: { t: 40, b: 40, l: leftMargin, r: 50 },
-            height: Math.min(350, Math.max(250, stats.length * 18 + 80)),
+            height: chartHeight,
             paper_bgcolor: 'white',
             plot_bgcolor: 'white'
         };
@@ -6113,29 +6241,38 @@ Results:
             return;
         }
 
-        // Sort by absolute difference
-        hotspotStats.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+        // Sort by diff value for display (most positive at top, most negative at bottom)
+        hotspotStats.sort((a, b) => b.diff - a.diff);
 
-        // Take top 25 for display
-        const topStats = hotspotStats.slice(0, 25);
+        // Take top 30 for display (increased from 25)
+        const topStats = hotspotStats.slice(0, 30);
         this.currentGEStats = topStats;
 
+        // For horizontal bar chart, reverse so most negative is at bottom
+        const chartStats = [...topStats].reverse();
+
         // Create horizontal bar chart
-        const barColors = topStats.map(s => {
+        const barColors = chartStats.map(s => {
             if (s.pValue < 0.05) {
                 return s.diff < 0 ? 'rgba(220, 38, 38, 0.7)' : 'rgba(34, 197, 94, 0.7)';
             }
             return 'rgba(156, 163, 175, 0.5)';
         });
 
+        // Calculate dynamic font size based on number of entries
+        const numEntries = chartStats.length;
+        const tickFontSize = numEntries > 25 ? 7 : numEntries > 15 ? 8 : 9;
+        const barHeight = numEntries > 25 ? 12 : numEntries > 15 ? 14 : 16;
+        const chartHeight = Math.max(300, numEntries * barHeight + 80);
+
         const trace = {
             type: 'bar',
             orientation: 'h',
-            y: topStats.map(s => s.group),
-            x: topStats.map(s => s.diff),
-            text: topStats.map(s => `n=${s.nMut}`),
+            y: chartStats.map(s => s.group),
+            x: chartStats.map(s => s.diff),
+            text: chartStats.map(s => `n=${s.nMut}`),
             textposition: 'outside',
-            textfont: { size: 9 },
+            textfont: { size: 8 },
             marker: { color: barColors },
             hovertemplate: '<b>%{y}</b><br>Δ GE: %{x:.3f}<br>Mutant n=%{text}<extra></extra>'
         };
@@ -6148,16 +6285,16 @@ Results:
                 zerolinecolor: '#374151',
                 zerolinewidth: 2
             },
-            yaxis: { automargin: true, tickfont: { size: 10 } },
+            yaxis: { automargin: true, tickfont: { size: tickFontSize } },
             margin: { t: 40, b: 40, l: 70, r: 50 },
-            height: Math.min(350, Math.max(250, topStats.length * 14 + 80)),
+            height: chartHeight,
             paper_bgcolor: 'white',
             plot_bgcolor: 'white'
         };
 
         Plotly.newPlot('geneEffectHotspotPlot', [trace], layout, { responsive: true });
 
-        // Render table
+        // Render table (use original topStats sorted high to low)
         this.renderGETable(topStats, 'hotspot');
     }
 
@@ -6168,10 +6305,40 @@ Results:
     renderGETable(stats, mode) {
         const tbody = document.getElementById('geneEffectTableBody');
         const thead = document.getElementById('geTableHead');
+        this.currentGETableMode = mode;
+
+        const headerStyle = 'cursor: pointer; user-select: none;';
+        const sortIcon = ' ↕';
 
         if (mode === 'tissue') {
-            thead.innerHTML = '<tr><th>Cancer Type</th><th>N</th><th>Mean GE</th><th>SD</th></tr>';
-            tbody.innerHTML = '';
+            thead.innerHTML = `<tr>
+                <th style="${headerStyle}" data-sort="group" data-type="string">Cancer Type${sortIcon}</th>
+                <th style="${headerStyle}" data-sort="n" data-type="number">N${sortIcon}</th>
+                <th style="${headerStyle}" data-sort="mean" data-type="number">Mean GE${sortIcon}</th>
+                <th style="${headerStyle}" data-sort="sd" data-type="number">SD${sortIcon}</th>
+            </tr>`;
+            this.renderGETableBody(stats, mode);
+        } else {
+            thead.innerHTML = `<tr>
+                <th style="${headerStyle}" data-sort="group" data-type="string">Hotspot${sortIcon}</th>
+                <th style="${headerStyle}" data-sort="nMut" data-type="number">n Mut${sortIcon}</th>
+                <th style="${headerStyle}" data-sort="diff" data-type="number">Δ GE${sortIcon}</th>
+                <th style="${headerStyle}" data-sort="pValue" data-type="number">p-value${sortIcon}</th>
+            </tr>`;
+            this.renderGETableBody(stats, mode);
+        }
+
+        // Add click handlers for sorting
+        thead.querySelectorAll('th').forEach(th => {
+            th.addEventListener('click', () => this.sortGETable(th.dataset.sort, th.dataset.type));
+        });
+    }
+
+    renderGETableBody(stats, mode) {
+        const tbody = document.getElementById('geneEffectTableBody');
+        tbody.innerHTML = '';
+
+        if (mode === 'tissue') {
             stats.forEach(s => {
                 const color = s.mean < -0.5 ? '#dc2626' : s.mean > 0.5 ? '#16a34a' : '#374151';
                 tbody.innerHTML += `<tr>
@@ -6182,8 +6349,6 @@ Results:
                 </tr>`;
             });
         } else {
-            thead.innerHTML = '<tr><th>Hotspot</th><th>n Mut</th><th>Δ GE</th><th>p-value</th></tr>';
-            tbody.innerHTML = '';
             stats.forEach(s => {
                 const color = s.pValue < 0.05 ? (s.diff < 0 ? '#dc2626' : '#16a34a') : '#374151';
                 const pStr = s.pValue < 0.001 ? '<0.001' : s.pValue.toFixed(3);
@@ -6195,6 +6360,44 @@ Results:
                 </tr>`;
             });
         }
+    }
+
+    sortGETable(sortKey, sortType) {
+        if (!this.currentGEStats) return;
+
+        // Toggle sort direction
+        if (this.geTableSortKey === sortKey) {
+            this.geTableSortDir = this.geTableSortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+            this.geTableSortKey = sortKey;
+            this.geTableSortDir = 'desc'; // Default to descending for new column
+        }
+
+        const dir = this.geTableSortDir === 'asc' ? 1 : -1;
+
+        this.currentGEStats.sort((a, b) => {
+            let aVal = a[sortKey];
+            let bVal = b[sortKey];
+
+            if (sortType === 'string') {
+                return dir * aVal.localeCompare(bVal);
+            } else {
+                return dir * (aVal - bVal);
+            }
+        });
+
+        this.renderGETableBody(this.currentGEStats, this.currentGETableMode);
+
+        // Update header to show sort direction
+        const thead = document.getElementById('geTableHead');
+        thead.querySelectorAll('th').forEach(th => {
+            const baseText = th.textContent.replace(/ [↑↓↕]$/, '');
+            if (th.dataset.sort === sortKey) {
+                th.textContent = baseText + (this.geTableSortDir === 'asc' ? ' ↑' : ' ↓');
+            } else {
+                th.textContent = baseText + ' ↕';
+            }
+        });
     }
 
     downloadGeneEffectChartPNG() {
