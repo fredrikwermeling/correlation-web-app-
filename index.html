@@ -1188,16 +1188,16 @@
                         <input type="range" id="minSlope" min="0" max="2" step="0.05" value="0.1">
                     </div>
 
-                    <div class="form-group">
-                        <label class="form-label">Min Cell Lines:</label>
-                        <input type="number" id="minCellLines" class="form-control" value="50" min="3" max="500" style="width: 80px;">
-                    </div>
-
                     <div class="form-group" id="mutationHotspotGroup" style="display: none;">
                         <label class="form-label">Hotspot Mutation (required):</label>
                         <select id="mutationHotspotSelect" class="form-control">
                             <option value="">Select hotspot gene...</option>
                         </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">Min Cell Lines:</label>
+                        <input type="number" id="minCellLines" class="form-control" value="50" min="3" max="500" style="width: 80px;">
                     </div>
 
                     <div class="form-group" id="pValueThresholdGroup" style="display: none;">
@@ -1306,7 +1306,6 @@
                     </div>
 
                     <div id="geneCountDisplay" style="margin-top: 8px;"></div>
-                    <div id="geneValidationDisplay"></div>
                     <button class="btn btn-warning btn-sm" id="findSynonyms" style="display: none; margin-top: 8px;">
                         Find Synonyms
                     </button>
@@ -1314,6 +1313,7 @@
                     <button class="btn btn-primary" id="runAnalysis" disabled style="width: 100%; margin-top: 12px;">
                         Run Analysis
                     </button>
+                    <div id="geneValidationDisplay" style="margin-top: 8px;"></div>
                     <div id="analysisStatus"></div>
                     </div> <!-- end card-content -->
                 </div>

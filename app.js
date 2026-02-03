@@ -456,22 +456,37 @@ class CorrelationExplorer {
 
                 // Restore network view state when switching back to network tab
                 if (tab.dataset.tab === 'network' && this.network && this.savedNetworkView) {
+                    const container = document.getElementById('networkPlot');
+                    const savedView = this.savedNetworkView;
+
                     const restoreView = () => {
-                        if (this.savedNetworkView) {
+                        if (savedView && this.network) {
                             this.network.moveTo({
-                                position: this.savedNetworkView.position,
-                                scale: this.savedNetworkView.scale,
+                                position: savedView.position,
+                                scale: savedView.scale,
                                 animation: false
                             });
                         }
                     };
-                    // Use requestAnimationFrame to ensure DOM is rendered, then restore
-                    requestAnimationFrame(() => {
-                        restoreView();
-                        // Additional attempts for robustness
-                        setTimeout(restoreView, 100);
-                        setTimeout(restoreView, 300);
-                    });
+
+                    // Wait for container to have valid dimensions
+                    const waitForDimensions = () => {
+                        const width = container.clientWidth;
+                        const height = container.clientHeight;
+                        if (width > 0 && height > 0) {
+                            // Tell vis.js to use the correct size
+                            this.network.setSize(width + 'px', height + 'px');
+                            // Restore view multiple times to ensure it sticks
+                            restoreView();
+                            setTimeout(restoreView, 100);
+                            setTimeout(restoreView, 300);
+                        } else {
+                            // Container not ready yet, try again
+                            requestAnimationFrame(waitForDimensions);
+                        }
+                    };
+
+                    requestAnimationFrame(waitForDimensions);
                 }
             });
         });
@@ -4440,6 +4455,18 @@ Results:
         }
         this.currentInspect.data = plotData;
 
+        // Calculate axis limits (needed if user clicks tissue to go to Inspect)
+        const xVals = plotData.map(d => d.x);
+        const yVals = plotData.map(d => d.y);
+        const xMin = Math.min(...xVals);
+        const xMax = Math.max(...xVals);
+        const yMin = Math.min(...yVals);
+        const yMax = Math.max(...yVals);
+        const xPadding = (xMax - xMin) * 0.1;
+        const yPadding = (yMax - yMin) * 0.1;
+        this.currentInspect.defaultXlim = [xMin - xPadding, xMax + xPadding];
+        this.currentInspect.defaultYlim = [yMin - yPadding, yMax + yPadding];
+
         // Open the inspect modal and show By tissue view
         document.getElementById('inspectModal').classList.add('active');
         document.getElementById('inspectTitle').textContent =
@@ -5574,8 +5601,8 @@ Results:
                 `rgba(239, 68, 68, ${Math.min(1, Math.abs(t.correlation))})`;
             const escapedTissue = t.tissue.replace(/'/g, "\\'");
             tableHtml += `
-                <tr style="cursor: pointer;" onclick="app.switchToInspectWithTissue('${escapedTissue}')" title="Click to view scatter plot filtered by ${t.tissue}">
-                    <td style="padding: 5px; border: 1px solid #ddd;">${t.tissue}</td>
+                <tr style="cursor: pointer;" onclick="app.switchToInspectWithTissue('${escapedTissue}')" title="Click to view scatter plot filtered by ${t.tissue}" onmouseover="this.style.backgroundColor='#f0f9ff'" onmouseout="this.style.backgroundColor=''">
+                    <td style="padding: 5px; border: 1px solid #ddd; color: #0066cc; text-decoration: underline;">${t.tissue}</td>
                     <td style="padding: 5px; border: 1px solid #ddd; text-align: center;">${t.n}</td>
                     <td style="padding: 5px; border: 1px solid #ddd; text-align: center; background: ${corrColor}; color: ${Math.abs(t.correlation) > 0.5 ? 'white' : 'black'}">${t.correlation.toFixed(2)}</td>
                     <td style="padding: 5px; border: 1px solid #ddd; text-align: center;">${t.slope.toFixed(3)}</td>
@@ -5588,6 +5615,7 @@ Results:
         });
 
         tableHtml += '</tbody></table></div>';
+        tableHtml += '<p style="font-size: 11px; color: #666; margin-top: 8px; font-style: italic;">Click a lineage to view its scatter plot</p>';
 
         // Hide scatterPlot, use compareTable for side-by-side layout
         const scatterPlotEl = document.getElementById('scatterPlot');
@@ -5636,19 +5664,63 @@ Results:
         document.getElementById('downloadTissueSVG').style.display = 'none';
         document.getElementById('downloadTissueCSV').style.display = 'none';
 
-        // Set the cancer type filter to the selected tissue
-        const cancerFilter = document.getElementById('scatterCancerFilter');
-        if (cancerFilter) {
-            cancerFilter.value = tissue;
-        }
-
-        // Restore axis range inputs from defaults if they exist
+        // Set axis range inputs from defaults
         if (this.currentInspect.defaultXlim && this.currentInspect.defaultYlim) {
             document.getElementById('scatterXmin').value = this.currentInspect.defaultXlim[0].toFixed(1);
             document.getElementById('scatterXmax').value = this.currentInspect.defaultXlim[1].toFixed(1);
             document.getElementById('scatterYmin').value = this.currentInspect.defaultYlim[0].toFixed(1);
             document.getElementById('scatterYmax').value = this.currentInspect.defaultYlim[1].toFixed(1);
         }
+
+        // Populate cancer filter with counts (same as openInspect)
+        const cancerFilter = document.getElementById('scatterCancerFilter');
+        const cancerBox = document.getElementById('cancerFilterBox');
+        const lineageCounts = {};
+        data.forEach(d => {
+            if (d.lineage) {
+                lineageCounts[d.lineage] = (lineageCounts[d.lineage] || 0) + 1;
+            }
+        });
+        const lineages = Object.keys(lineageCounts).sort();
+        if (lineages.length > 0) {
+            cancerFilter.innerHTML = `<option value="">All cancer types (n=${data.length})</option>`;
+            lineages.forEach(l => {
+                cancerFilter.innerHTML += `<option value="${l}">${l} (n=${lineageCounts[l]})</option>`;
+            });
+            // Set the filter to the selected tissue
+            cancerFilter.value = tissue;
+            cancerBox.style.display = 'block';
+        } else {
+            cancerBox.style.display = 'none';
+        }
+
+        // Populate hotspot genes (same as openInspect)
+        const hotspotSelect = document.getElementById('hotspotGene');
+        const mutFilterGeneSelect = document.getElementById('mutationFilterGene');
+        const cellLinesInPlot = new Set(data.map(d => d.cellLineId));
+
+        if (this.mutations?.genes?.length > 0) {
+            hotspotSelect.innerHTML = '<option value="">Select gene...</option>';
+            mutFilterGeneSelect.innerHTML = '<option value="">No filter</option>';
+            this.mutations.genes.forEach(g => {
+                const mutData = this.mutations.geneData?.[g]?.mutations || {};
+                let count = 0;
+                cellLinesInPlot.forEach(cl => {
+                    if (mutData[cl] && mutData[cl] > 0) count++;
+                });
+                hotspotSelect.innerHTML += `<option value="${g}">${g} (${count} mut)</option>`;
+                mutFilterGeneSelect.innerHTML += `<option value="${g}">${g} (${count} mut)</option>`;
+            });
+            document.getElementById('mutationBox').style.display = 'block';
+            document.getElementById('mutationFilterBox').style.display = 'block';
+        } else {
+            document.getElementById('mutationBox').style.display = 'none';
+            document.getElementById('mutationFilterBox').style.display = 'none';
+        }
+
+        // Reset hotspot mode to default
+        document.getElementById('hotspotMode').value = 'none';
+        document.getElementById('mutationFilterLevel').value = 'all';
 
         // Calculate stats for ALL cells (unfiltered) for the title
         const allCellsStats = this.pearsonWithSlope(data.map(d => d.x), data.map(d => d.y));
