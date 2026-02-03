@@ -22,6 +22,7 @@ class CorrelationExplorer {
         // Analysis results
         this.results = null;
         this.network = null;
+        this.savedNetworkView = null;
 
         // Current inspect state
         this.currentInspect = null;
@@ -437,13 +438,32 @@ class CorrelationExplorer {
     }
 
     setupUI() {
-        // Tab switching
+        // Tab switching - preserve network view state
         document.querySelectorAll('.nav-link').forEach(tab => {
             tab.addEventListener('click', () => {
+                // Save network view state before switching away
+                if (this.network) {
+                    this.savedNetworkView = {
+                        scale: this.network.getScale(),
+                        position: this.network.getViewPosition()
+                    };
+                }
+
                 document.querySelectorAll('.nav-link').forEach(t => t.classList.remove('active'));
                 document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
                 tab.classList.add('active');
                 document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+
+                // Restore network view state when switching back to network tab
+                if (tab.dataset.tab === 'network' && this.network && this.savedNetworkView) {
+                    setTimeout(() => {
+                        this.network.moveTo({
+                            position: this.savedNetworkView.position,
+                            scale: this.savedNetworkView.scale,
+                            animation: false
+                        });
+                    }, 10);
+                }
             });
         });
 
@@ -3043,8 +3063,14 @@ Results:
         const legendHeight = 160;  // Larger for publication
         const totalHeight = networkHeight + legendHeight;
 
-        // Get positions from vis.js
+        // Get positions from vis.js and convert to DOM coordinates
         const positions = this.network.getPositions();
+        const domPositions = {};
+        for (const nodeId in positions) {
+            const canvasPos = positions[nodeId];
+            const domPos = this.network.canvasToDOM({ x: canvasPos.x, y: canvasPos.y });
+            domPositions[nodeId] = domPos;
+        }
 
         let svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${totalHeight}" viewBox="0 0 ${width} ${totalHeight}">
@@ -3074,38 +3100,34 @@ Results:
 <rect width="100%" height="100%" fill="white"/>
 `;
 
+        // Get current scale for sizing elements
+        const scale = this.network.getScale();
+
         // Draw edges
         this.networkData.edges.forEach(edge => {
-            const from = positions[edge.from];
-            const to = positions[edge.to];
+            const from = domPositions[edge.from];
+            const to = domPositions[edge.to];
             if (from && to) {
-                // Convert from vis.js coordinates to SVG
-                const x1 = from.x + width/2;
-                const y1 = from.y + networkHeight/2;
-                const x2 = to.x + width/2;
-                const y2 = to.y + networkHeight/2;
                 const color = edge.color || '#3182ce';
-                const strokeWidth = edge.width || 2;
-                svg += `  <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${strokeWidth}" opacity="0.8"/>\n`;
+                const strokeWidth = (edge.width || 2) * scale;
+                svg += `  <line x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}" stroke="${color}" stroke-width="${strokeWidth}" opacity="0.8"/>\n`;
             }
         });
 
         // Draw nodes
-        const nodeSize = parseInt(document.getElementById('netNodeSize').value) || 25;
-        const fontSize = parseInt(document.getElementById('netFontSize').value) || 16;
+        const nodeSize = (parseInt(document.getElementById('netNodeSize').value) || 25) * scale;
+        const fontSize = (parseInt(document.getElementById('netFontSize').value) || 16) * scale;
         this.networkData.nodes.forEach(node => {
-            const pos = positions[node.id];
+            const pos = domPositions[node.id];
             if (pos) {
-                const cx = pos.x + width/2;
-                const cy = pos.y + networkHeight/2;
                 const bgColor = node.color?.background || '#5a9f4a';
-                svg += `  <circle cx="${cx}" cy="${cy}" r="${nodeSize/2}" fill="${bgColor}" stroke="white" stroke-width="2"/>\n`;
+                svg += `  <circle cx="${pos.x}" cy="${pos.y}" r="${nodeSize/2}" fill="${bgColor}" stroke="white" stroke-width="${2 * scale}"/>\n`;
 
                 // Handle multi-line labels
                 const labelLines = (node.label || node.id).split('\n');
                 labelLines.forEach((line, i) => {
-                    const yOffset = cy + nodeSize/2 + 14 + (i * (fontSize - 2));
-                    svg += `  <text x="${cx}" y="${yOffset}" text-anchor="middle" style="font-family: Arial; font-size: ${fontSize - 2}px; fill: #333;">${this.escapeXml(line)}</text>\n`;
+                    const yOffset = pos.y + nodeSize/2 + 14 * scale + (i * (fontSize - 2 * scale));
+                    svg += `  <text x="${pos.x}" y="${yOffset}" text-anchor="middle" style="font-family: Arial; font-size: ${fontSize - 2 * scale}px; fill: #333;">${this.escapeXml(line)}</text>\n`;
                 });
             }
         });
@@ -4135,8 +4157,14 @@ Results:
         const legendHeight = 160;  // Larger for publication
         const totalHeight = networkHeight + legendHeight;
 
-        // Get positions from vis.js
+        // Get positions from vis.js and convert to DOM coordinates
         const positions = this.network.getPositions();
+        const domPositions = {};
+        for (const nodeId in positions) {
+            const canvasPos = positions[nodeId];
+            const domPos = this.network.canvasToDOM({ x: canvasPos.x, y: canvasPos.y });
+            domPositions[nodeId] = domPos;
+        }
 
         let svg = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${totalHeight}" viewBox="0 0 ${width} ${totalHeight}">
@@ -4166,37 +4194,34 @@ Results:
 <rect width="100%" height="100%" fill="white"/>
 `;
 
+        // Get current scale for sizing elements
+        const scale = this.network.getScale();
+
         // Draw edges
         this.networkData.edges.forEach(edge => {
-            const from = positions[edge.from];
-            const to = positions[edge.to];
+            const from = domPositions[edge.from];
+            const to = domPositions[edge.to];
             if (from && to) {
-                const x1 = from.x + width/2;
-                const y1 = from.y + networkHeight/2;
-                const x2 = to.x + width/2;
-                const y2 = to.y + networkHeight/2;
                 const color = edge.color || '#3182ce';
-                const strokeWidth = edge.width || 2;
-                svg += `  <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${color}" stroke-width="${strokeWidth}" opacity="0.8"/>\n`;
+                const strokeWidth = (edge.width || 2) * scale;
+                svg += `  <line x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}" stroke="${color}" stroke-width="${strokeWidth}" opacity="0.8"/>\n`;
             }
         });
 
         // Draw nodes
-        const nodeSize = parseInt(document.getElementById('netNodeSize').value) || 25;
-        const fontSize = parseInt(document.getElementById('netFontSize').value) || 16;
+        const nodeSize = (parseInt(document.getElementById('netNodeSize').value) || 25) * scale;
+        const fontSize = (parseInt(document.getElementById('netFontSize').value) || 16) * scale;
         this.networkData.nodes.forEach(node => {
-            const pos = positions[node.id];
+            const pos = domPositions[node.id];
             if (pos) {
-                const cx = pos.x + width/2;
-                const cy = pos.y + networkHeight/2;
                 const bgColor = node.color?.background || '#5a9f4a';
-                svg += `  <circle cx="${cx}" cy="${cy}" r="${nodeSize/2}" fill="${bgColor}" stroke="white" stroke-width="2"/>\n`;
+                svg += `  <circle cx="${pos.x}" cy="${pos.y}" r="${nodeSize/2}" fill="${bgColor}" stroke="white" stroke-width="${2 * scale}"/>\n`;
 
                 // Handle multi-line labels
                 const labelLines = (node.label || node.id).split('\n');
                 labelLines.forEach((line, i) => {
-                    const yOffset = cy + nodeSize/2 + 14 + (i * (fontSize - 2));
-                    svg += `  <text x="${cx}" y="${yOffset}" text-anchor="middle" style="font-family: Arial; font-size: ${fontSize - 2}px; fill: #333;">${this.escapeXml(line)}</text>\n`;
+                    const yOffset = pos.y + nodeSize/2 + 14 * scale + (i * (fontSize - 2 * scale));
+                    svg += `  <text x="${pos.x}" y="${yOffset}" text-anchor="middle" style="font-family: Arial; font-size: ${fontSize - 2 * scale}px; fill: #333;">${this.escapeXml(line)}</text>\n`;
                 });
             }
         });
