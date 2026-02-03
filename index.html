@@ -298,12 +298,12 @@
         }
 
         .btn-info {
-            background: #6ab257;
+            background: #5a9f4a;
             color: white;
         }
 
         .btn-info:hover {
-            background: #5a9f4a;
+            background: #4a8c3f;
         }
 
         .btn-warning {
@@ -1259,14 +1259,24 @@
 
                     <!-- With Stats panel -->
                     <div class="input-panel" id="input-upload">
-                        <!-- Sub-tabs for file upload vs manual entry -->
+                        <!-- Sub-tabs for manual entry vs file upload -->
                         <div style="display: flex; gap: 8px; margin-bottom: 10px; border-bottom: 1px solid #e5e7eb; padding-bottom: 6px;">
-                            <button class="stats-sub-tab active" data-stats-input="file" style="padding: 3px 8px; font-size: 10px; border: none; background: #5a9f4a; color: white; border-radius: 3px; cursor: pointer;">Upload File</button>
-                            <button class="stats-sub-tab" data-stats-input="manual" style="padding: 3px 8px; font-size: 10px; border: none; background: transparent; color: #6b7280; border-radius: 3px; cursor: pointer;">Manual Entry</button>
+                            <button class="stats-sub-tab active" data-stats-input="manual" style="padding: 3px 8px; font-size: 10px; border: none; background: #5a9f4a; color: white; border-radius: 3px; cursor: pointer;">Manual Entry</button>
+                            <button class="stats-sub-tab" data-stats-input="file" style="padding: 3px 8px; font-size: 10px; border: none; background: transparent; color: #6b7280; border-radius: 3px; cursor: pointer;">Upload File</button>
+                        </div>
+
+                        <!-- Manual entry sub-panel -->
+                        <div class="stats-sub-panel active" id="stats-manual">
+                            <div class="form-group">
+                                <label class="form-label">Enter Gene, LFC, FDR (tab or comma separated):</label>
+                                <textarea id="manualStatsTextarea" class="form-control" style="min-height: 140px; font-family: 'Roboto Mono', monospace; font-size: 11px;">Gene	LFC	FDR
+</textarea>
+                            </div>
+                            <button class="btn btn-success btn-sm" id="loadManualStatsBtn">Load Stats</button>
                         </div>
 
                         <!-- File upload sub-panel -->
-                        <div class="stats-sub-panel active" id="stats-file">
+                        <div class="stats-sub-panel" id="stats-file" style="display: none;">
                             <div class="form-group">
                                 <label class="form-label">Upload CSV/TSV:</label>
                                 <input type="file" id="statsFileInput" accept=".csv,.tsv,.txt,.tab" class="form-control" style="font-size: 11px; padding: 4px;">
@@ -1287,16 +1297,6 @@
                                 </div>
                                 <button class="btn btn-success btn-sm" id="loadStatsBtn">Load Stats</button>
                             </div>
-                        </div>
-
-                        <!-- Manual entry sub-panel -->
-                        <div class="stats-sub-panel" id="stats-manual" style="display: none;">
-                            <div class="form-group">
-                                <label class="form-label">Enter Gene, LFC, FDR (tab or comma separated):</label>
-                                <textarea id="manualStatsTextarea" class="form-control" style="min-height: 140px; font-family: 'Roboto Mono', monospace; font-size: 11px;">Gene	LFC	FDR
-</textarea>
-                            </div>
-                            <button class="btn btn-success btn-sm" id="loadManualStatsBtn">Load Stats</button>
                         </div>
 
                         <div style="margin-top: 8px; display: flex; gap: 8px;">
@@ -1440,8 +1440,10 @@
                     </div>
 
                     <div class="network-container" id="networkPlot">
-                        <div style="display: flex; justify-content: center; align-items: center; height: 100%; color: var(--gray-500); text-align: center; padding: 20px; line-height: 1.6;">
-                            New to Correlate? Click <span style="color: #5a9f4a; font-weight: 600;">Test Genes</span> and then <span style="color: #5a9f4a; font-weight: 600;">Run Analysis</span><br>(both in "2. Input Genes")
+                        <div style="display: flex; flex-direction: column; justify-content: flex-start; align-items: center; height: 100%; padding-top: 25%; color: var(--gray-500); text-align: center; line-height: 1.8;">
+                            <div>New to Correlate?</div>
+                            <div style="margin-top: 8px;">Click <span style="color: #5a9f4a; font-weight: 600;">Test Genes</span> and then <span style="color: #5a9f4a; font-weight: 600;">Run Analysis</span></div>
+                            <div style="font-size: 0.9em;">(both in "2. Input Genes")</div>
                         </div>
                     </div>
 

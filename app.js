@@ -456,13 +456,16 @@ class CorrelationExplorer {
 
                 // Restore network view state when switching back to network tab
                 if (tab.dataset.tab === 'network' && this.network && this.savedNetworkView) {
-                    setTimeout(() => {
+                    const restoreView = () => {
                         this.network.moveTo({
                             position: this.savedNetworkView.position,
                             scale: this.savedNetworkView.scale,
                             animation: false
                         });
-                    }, 10);
+                    };
+                    // Multiple attempts to ensure view is restored after any auto-fit
+                    setTimeout(restoreView, 50);
+                    setTimeout(restoreView, 150);
                 }
             });
         });
@@ -5562,8 +5565,9 @@ Results:
             const corrColor = t.correlation > 0 ?
                 `rgba(34, 197, 94, ${Math.min(1, Math.abs(t.correlation))})` :
                 `rgba(239, 68, 68, ${Math.min(1, Math.abs(t.correlation))})`;
+            const escapedTissue = t.tissue.replace(/'/g, "\\'");
             tableHtml += `
-                <tr>
+                <tr style="cursor: pointer;" onclick="app.switchToInspectWithTissue('${escapedTissue}')" title="Click to view scatter plot filtered by ${t.tissue}">
                     <td style="padding: 5px; border: 1px solid #ddd;">${t.tissue}</td>
                     <td style="padding: 5px; border: 1px solid #ddd; text-align: center;">${t.n}</td>
                     <td style="padding: 5px; border: 1px solid #ddd; text-align: center; background: ${corrColor}; color: ${Math.abs(t.correlation) > 0.5 ? 'white' : 'black'}">${t.correlation.toFixed(2)}</td>
@@ -5604,6 +5608,48 @@ Results:
 
         // Add sortable table headers
         this.setupSortableTable('byTissueTable');
+    }
+
+    switchToInspectWithTissue(tissue) {
+        // Switch from By Tissue view back to Inspect scatter plot with the selected tissue preset
+        if (!this.currentInspect) return;
+
+        // Show the scatter plot controls again
+        document.querySelector('.inspect-controls').style.display = '';
+
+        // Show scatter-specific download buttons
+        document.getElementById('downloadScatterPNG').style.display = '';
+        document.getElementById('downloadScatterSVG').style.display = '';
+        document.getElementById('downloadScatterCSV').style.display = '';
+
+        // Hide tissue-specific download buttons
+        document.getElementById('downloadTissuePNG').style.display = 'none';
+        document.getElementById('downloadTissueSVG').style.display = 'none';
+        document.getElementById('downloadTissueCSV').style.display = 'none';
+
+        // Set the cancer type filter to the selected tissue
+        const cancerTypeFilter = document.getElementById('cancerTypeFilter');
+        if (cancerTypeFilter) {
+            // Find the option that matches the tissue
+            for (let option of cancerTypeFilter.options) {
+                if (option.value === tissue) {
+                    cancerTypeFilter.value = tissue;
+                    break;
+                }
+            }
+        }
+
+        // Update the title
+        const { gene1, gene2 } = this.currentInspect;
+        document.getElementById('inspectTitle').textContent =
+            `${gene1} vs ${gene2} (filtered: ${tissue})`;
+
+        // Show the scatter plot and hide compareTable
+        document.getElementById('scatterPlot').style.display = 'block';
+        document.getElementById('compareTable').style.display = 'none';
+
+        // Re-render the scatter plot with the filter
+        this.updateInspectPlot();
     }
 
     setupSortableTable(tableId) {
