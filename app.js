@@ -150,7 +150,7 @@ class CorrelationExplorer {
             const cellLines = this.metadata.cellLines;
             cellLines.forEach(cellLine => {
                 const lineage = this.cellLineMetadata.lineage[cellLine];
-                const subLineage = this.cellLineMetadata.subtype?.[cellLine] || '';
+                const subLineage = this.cellLineMetadata.primaryDisease?.[cellLine] || '';
 
                 if (lineage) {
                     lineageCounts[lineage] = (lineageCounts[lineage] || 0) + 1;
@@ -250,7 +250,7 @@ class CorrelationExplorer {
         const subtypeCounts = {};
         this.currentInspect.data.forEach(d => {
             if (d.lineage === lineage) {
-                const subtype = this.cellLineMetadata?.subtype?.[d.cellLineId] || '';
+                const subtype = this.cellLineMetadata?.primaryDisease?.[d.cellLineId] || '';
                 if (subtype) {
                     subtypeCounts[subtype] = (subtypeCounts[subtype] || 0) + 1;
                 }
@@ -315,7 +315,7 @@ class CorrelationExplorer {
                     return;
                 }
                 // Apply sub-lineage filter
-                if (subLineageFilter && this.cellLineMetadata?.subtype?.[cl] !== subLineageFilter) {
+                if (subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cl] !== subLineageFilter) {
                     return;
                 }
                 if (mutations[cl] && mutations[cl] > 0) nMut++;
@@ -364,7 +364,7 @@ class CorrelationExplorer {
                 return;
             }
             // Apply sub-lineage filter
-            if (subLineageFilter && this.cellLineMetadata?.subtype?.[cellLine] !== subLineageFilter) {
+            if (subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cellLine] !== subLineageFilter) {
                 return;
             }
 
@@ -437,7 +437,7 @@ class CorrelationExplorer {
                     return;
                 }
                 // Apply sub-lineage filter
-                if (subLineageFilter && this.cellLineMetadata?.subtype?.[cl] !== subLineageFilter) {
+                if (subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cl] !== subLineageFilter) {
                     return;
                 }
                 if (mutations[cl] && mutations[cl] > 0) nMut++;
@@ -1304,8 +1304,8 @@ class CorrelationExplorer {
 
             // Check sublineage filter
             if (subLineageFilter) {
-                if (!this.cellLineMetadata.subtype ||
-                    this.cellLineMetadata.subtype[cellLine] !== subLineageFilter) {
+                if (!this.cellLineMetadata.primaryDisease ||
+                    this.cellLineMetadata.primaryDisease[cellLine] !== subLineageFilter) {
                     return;
                 }
             }
@@ -1468,7 +1468,7 @@ class CorrelationExplorer {
             }
 
             // Check sublineage filter
-            if (subLineageFilter && this.cellLineMetadata?.subtype?.[cellLine] !== subLineageFilter) {
+            if (subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cellLine] !== subLineageFilter) {
                 return;
             }
 
@@ -1893,7 +1893,7 @@ class CorrelationExplorer {
             }
 
             // Check sublineage filter
-            if (mr.subLineageFilter && this.cellLineMetadata?.subtype?.[cellLine] !== mr.subLineageFilter) {
+            if (mr.subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cellLine] !== mr.subLineageFilter) {
                 return;
             }
 
@@ -4801,9 +4801,9 @@ Results:
             data.filter(d => d.lineage === cancerFilter) : data;
 
         // Filter by subtype
-        if (subtypeFilter && this.cellLineMetadata?.subtype) {
+        if (subtypeFilter && this.cellLineMetadata?.primaryDisease) {
             filteredData = filteredData.filter(d =>
-                this.cellLineMetadata.subtype[d.cellLineId] === subtypeFilter
+                this.cellLineMetadata.primaryDisease[d.cellLineId] === subtypeFilter
             );
         }
 
@@ -5401,9 +5401,9 @@ Results:
             data.filter(d => d.lineage === cancerFilter) : data;
 
         // Apply subtype filter
-        if (subtypeFilter && this.cellLineMetadata?.subtype) {
+        if (subtypeFilter && this.cellLineMetadata?.primaryDisease) {
             filteredData = filteredData.filter(d =>
-                this.cellLineMetadata.subtype[d.cellLineId] === subtypeFilter
+                this.cellLineMetadata.primaryDisease[d.cellLineId] === subtypeFilter
             );
         }
 
