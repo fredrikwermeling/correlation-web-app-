@@ -1740,20 +1740,46 @@
                     </div>
                 </div>
 
-                <!-- By Tissue view -->
-                <div id="geByTissueView">
-                    <div id="geneEffectPlot" style="width: 100%; height: 450px;"></div>
-                </div>
+                <!-- Side-by-side layout: Chart + Table -->
+                <div style="display: flex; gap: 20px; align-items: flex-start;">
+                    <!-- Chart container -->
+                    <div style="flex: 0 0 55%; min-width: 0;">
+                        <div id="geByTissueView">
+                            <div id="geneEffectPlot" style="width: 100%; height: 350px;"></div>
+                        </div>
+                        <div id="geByHotspotView" style="display: none;">
+                            <div id="geneEffectHotspotPlot" style="width: 100%; height: 350px;"></div>
+                        </div>
+                    </div>
 
-                <!-- By Hotspot view -->
-                <div id="geByHotspotView" style="display: none;">
-                    <div id="geneEffectHotspotPlot" style="width: 100%; height: 450px;"></div>
+                    <!-- Table container -->
+                    <div style="flex: 1; min-width: 300px;">
+                        <div style="font-weight: 600; margin-bottom: 8px; color: #374151; font-size: 13px;">Statistics</div>
+                        <div class="table-container" style="max-height: 320px; overflow-y: auto;">
+                            <table class="data-table" id="geneEffectTable" style="font-size: 11px;">
+                                <thead id="geTableHead">
+                                    <tr>
+                                        <th>Group</th>
+                                        <th>N</th>
+                                        <th>Mean GE</th>
+                                        <th>SD</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="geneEffectTableBody">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Download buttons -->
-                <div style="margin-top: 15px; display: flex; gap: 10px; justify-content: center;">
-                    <button class="btn btn-success btn-sm" id="downloadGeneEffectPNG">Download PNG</button>
-                    <button class="btn btn-success btn-sm" id="downloadGeneEffectSVG">Download SVG</button>
+                <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap; padding-top: 15px; border-top: 1px solid #e5e7eb;">
+                    <span style="font-size: 12px; color: #6b7280; margin-right: 5px;">Export Chart:</span>
+                    <button class="btn btn-success btn-sm" id="downloadGeneEffectPNG">PNG</button>
+                    <button class="btn btn-success btn-sm" id="downloadGeneEffectSVG">SVG</button>
+                    <span style="font-size: 12px; color: #6b7280; margin-left: 15px; margin-right: 5px;">Export CSV:</span>
+                    <button class="btn btn-success btn-sm" id="downloadGETableCSV">By Group</button>
+                    <button class="btn btn-success btn-sm" id="downloadGECellLineCSV">By Cell Line</button>
                     <button class="btn btn-success btn-sm" id="downloadGeneEffectCSV">Download Data (CSV)</button>
                 </div>
             </div>
