@@ -457,15 +457,21 @@ class CorrelationExplorer {
                 // Restore network view state when switching back to network tab
                 if (tab.dataset.tab === 'network' && this.network && this.savedNetworkView) {
                     const restoreView = () => {
-                        this.network.moveTo({
-                            position: this.savedNetworkView.position,
-                            scale: this.savedNetworkView.scale,
-                            animation: false
-                        });
+                        if (this.savedNetworkView) {
+                            this.network.moveTo({
+                                position: this.savedNetworkView.position,
+                                scale: this.savedNetworkView.scale,
+                                animation: false
+                            });
+                        }
                     };
-                    // Multiple attempts to ensure view is restored after any auto-fit
-                    setTimeout(restoreView, 50);
-                    setTimeout(restoreView, 150);
+                    // Use requestAnimationFrame to ensure DOM is rendered, then restore
+                    requestAnimationFrame(() => {
+                        restoreView();
+                        // Additional attempts for robustness
+                        setTimeout(restoreView, 100);
+                        setTimeout(restoreView, 300);
+                    });
                 }
             });
         });
@@ -2265,6 +2271,7 @@ class CorrelationExplorer {
         const stabilizationIterations = nodeCount > 50 ? 300 : 150;
 
         const options = {
+            autoResize: false,  // Prevent auto-fit when container resizes
             nodes: {
                 shape: 'dot',
                 scaling: {
@@ -5612,7 +5619,9 @@ Results:
 
     switchToInspectWithTissue(tissue) {
         // Switch from By Tissue view back to Inspect scatter plot with the selected tissue preset
-        if (!this.currentInspect) return;
+        if (!this.currentInspect || !this.currentInspect.data) return;
+
+        const { gene1, gene2, data } = this.currentInspect;
 
         // Show the scatter plot controls again
         document.querySelector('.inspect-controls').style.display = '';
@@ -5628,21 +5637,23 @@ Results:
         document.getElementById('downloadTissueCSV').style.display = 'none';
 
         // Set the cancer type filter to the selected tissue
-        const cancerTypeFilter = document.getElementById('cancerTypeFilter');
-        if (cancerTypeFilter) {
-            // Find the option that matches the tissue
-            for (let option of cancerTypeFilter.options) {
-                if (option.value === tissue) {
-                    cancerTypeFilter.value = tissue;
-                    break;
-                }
-            }
+        const cancerFilter = document.getElementById('scatterCancerFilter');
+        if (cancerFilter) {
+            cancerFilter.value = tissue;
         }
 
-        // Update the title
-        const { gene1, gene2 } = this.currentInspect;
+        // Restore axis range inputs from defaults if they exist
+        if (this.currentInspect.defaultXlim && this.currentInspect.defaultYlim) {
+            document.getElementById('scatterXmin').value = this.currentInspect.defaultXlim[0].toFixed(1);
+            document.getElementById('scatterXmax').value = this.currentInspect.defaultXlim[1].toFixed(1);
+            document.getElementById('scatterYmin').value = this.currentInspect.defaultYlim[0].toFixed(1);
+            document.getElementById('scatterYmax').value = this.currentInspect.defaultYlim[1].toFixed(1);
+        }
+
+        // Calculate stats for ALL cells (unfiltered) for the title
+        const allCellsStats = this.pearsonWithSlope(data.map(d => d.x), data.map(d => d.y));
         document.getElementById('inspectTitle').textContent =
-            `${gene1} vs ${gene2} (filtered: ${tissue})`;
+            `${gene1} vs ${gene2} | r=${this.formatNum(allCellsStats.correlation)}, slope=${this.formatNum(allCellsStats.slope)}, n=${data.length} (all cells)`;
 
         // Show the scatter plot and hide compareTable
         document.getElementById('scatterPlot').style.display = 'block';
