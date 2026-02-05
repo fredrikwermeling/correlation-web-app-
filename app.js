@@ -6307,18 +6307,14 @@ Results:
                 x: s.wtCellData.map(c => c.geneEffect),
                 orientation: 'h',
                 boxpoints: 'outliers',
-                marker: { color: 'rgba(59, 130, 246, 0.6)', size: 4, outliercolor: 'rgba(59, 130, 246, 0.8)' },
-                line: { color: 'rgba(59, 130, 246, 0.8)' },
-                fillcolor: 'rgba(59, 130, 246, 0.3)',
+                marker: { color: '#2563eb', size: 5, outliercolor: '#1e40af' },
+                line: { color: '#1e40af', width: 2 },
+                fillcolor: 'rgba(37, 99, 235, 0.6)',
                 hoverinfo: 'x',
                 offsetgroup: 'wt'
             });
 
-            // Mutant trace (red/orange)
-            const mutColor = s.diff < 0 ? 'rgba(220, 38, 38, 0.6)' : 'rgba(249, 115, 22, 0.6)';
-            const mutLineColor = s.diff < 0 ? 'rgba(220, 38, 38, 0.8)' : 'rgba(249, 115, 22, 0.8)';
-            const mutFillColor = s.diff < 0 ? 'rgba(220, 38, 38, 0.3)' : 'rgba(249, 115, 22, 0.3)';
-
+            // Mutant trace (red - consistent color for all)
             traces.push({
                 type: 'box',
                 name: `Mut (n=${s.nMut})`,
@@ -6328,9 +6324,9 @@ Results:
                 x: s.mutCellData.map(c => c.geneEffect),
                 orientation: 'h',
                 boxpoints: 'outliers',
-                marker: { color: mutColor, size: 4, outliercolor: mutLineColor },
-                line: { color: mutLineColor },
-                fillcolor: mutFillColor,
+                marker: { color: '#dc2626', size: 5, outliercolor: '#991b1b' },
+                line: { color: '#991b1b', width: 2 },
+                fillcolor: 'rgba(220, 38, 38, 0.6)',
                 hoverinfo: 'x',
                 offsetgroup: 'mut'
             });
