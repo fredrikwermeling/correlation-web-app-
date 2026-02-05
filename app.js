@@ -6160,24 +6160,24 @@ Results:
             return s.mean < -0.5 ? 'rgba(220, 38, 38, 0.4)' : s.mean > 0 ? 'rgba(34, 197, 94, 0.3)' : 'rgba(156, 163, 175, 0.4)';
         });
 
+        // Create y-axis labels with n values included
+        const yLabels = chartStats.map(s => `${s.group} (n=${s.n})`);
+
         const trace = {
             type: 'bar',
             orientation: 'h',
-            y: chartStats.map(s => s.group),
+            y: yLabels,
             x: chartStats.map(s => s.mean),
             error_x: {
                 type: 'data',
                 array: chartStats.map(s => s.sd),
                 visible: true,
-                color: '#374151',
-                thickness: 1.5,
-                width: 3
+                color: '#666',
+                thickness: 1,
+                width: 2
             },
-            text: chartStats.map(s => `n=${s.n}`),
-            textposition: 'outside',
-            textfont: { size: 8 },
             marker: { color: barColors },
-            hovertemplate: '<b>%{y}</b><br>Mean GE: %{x:.3f} ± SD<br>n=%{text}<extra></extra>'
+            hovertemplate: '<b>%{y}</b><br>Mean GE: %{x:.3f} ± SD<extra></extra>'
         };
 
         // Calculate dynamic font size based on number of entries
@@ -6186,12 +6186,13 @@ Results:
         const barHeight = numEntries > 30 ? 12 : numEntries > 20 ? 14 : 16;
         const chartHeight = Math.max(300, numEntries * barHeight + 80);
 
-        const maxLabelLen = Math.max(...chartStats.map(s => s.group.length));
-        const leftMargin = Math.max(100, maxLabelLen * 4.5);
+        // Calculate left margin to fit labels with n values
+        const maxLabelLen = Math.max(...yLabels.map(s => s.length));
+        const leftMargin = Math.max(120, maxLabelLen * 5);
 
-        // Calculate x-axis range to fit error bars and text
-        const minX = Math.min(...chartStats.map(s => s.mean - s.sd)) - 0.3;
-        const maxX = Math.max(...chartStats.map(s => s.mean + s.sd)) + 0.5;
+        // Calculate x-axis range to fit error bars
+        const minX = Math.min(...chartStats.map(s => s.mean - s.sd)) - 0.2;
+        const maxX = Math.max(...chartStats.map(s => s.mean + s.sd)) + 0.2;
 
         const layout = {
             title: { text: `${gene} by Cancer Type`, font: { size: 13 } },
@@ -6203,7 +6204,7 @@ Results:
                 range: [minX, maxX]
             },
             yaxis: { automargin: true, tickfont: { size: tickFontSize } },
-            margin: { t: 40, b: 40, l: leftMargin, r: 60 },
+            margin: { t: 40, b: 40, l: leftMargin, r: 30 },
             height: chartHeight,
             paper_bgcolor: 'white',
             plot_bgcolor: 'white'
@@ -6301,42 +6302,46 @@ Results:
         const barHeight = numEntries > 30 ? 12 : numEntries > 20 ? 14 : 16;
         const chartHeight = Math.max(300, numEntries * barHeight + 80);
 
+        // Create y-axis labels with n values included
+        const yLabels = chartStats.map(s => `${s.group} (n=${s.nMut})`);
+
         const trace = {
             type: 'bar',
             orientation: 'h',
-            y: chartStats.map(s => s.group),
+            y: yLabels,
             x: chartStats.map(s => s.diff),
             error_x: {
                 type: 'data',
                 array: chartStats.map(s => s.mutSD),
                 visible: true,
-                color: '#374151',
-                thickness: 1.5,
-                width: 3
+                color: '#666',
+                thickness: 1,
+                width: 2
             },
-            text: chartStats.map(s => `n=${s.nMut}`),
-            textposition: 'outside',
-            textfont: { size: 8 },
             marker: { color: barColors },
-            hovertemplate: '<b>%{y}</b><br>Δ GE: %{x:.3f} ± SD<br>Mutant n=%{text}<br>p=%{customdata}<extra></extra>',
+            hovertemplate: '<b>%{y}</b><br>Δ GE: %{x:.3f} ± SD<br>p=%{customdata}<extra></extra>',
             customdata: chartStats.map(s => s.pValue < 0.001 ? '<0.001' : s.pValue.toFixed(3))
         };
 
-        // Calculate x-axis range to fit error bars and text
-        const minX = Math.min(...chartStats.map(s => s.diff - s.mutSD)) - 0.3;
-        const maxX = Math.max(...chartStats.map(s => s.diff + s.mutSD)) + 0.5;
+        // Calculate x-axis range to fit error bars
+        const minX = Math.min(...chartStats.map(s => s.diff - s.mutSD)) - 0.2;
+        const maxX = Math.max(...chartStats.map(s => s.diff + s.mutSD)) + 0.2;
+
+        // Calculate left margin to fit labels with n values
+        const maxLabelLen = Math.max(...yLabels.map(s => s.length));
+        const leftMargin = Math.max(100, maxLabelLen * 5);
 
         const layout = {
             title: { text: `${gene} Δ GE (Mut vs WT)`, font: { size: 13 } },
             xaxis: {
-                title: 'Δ Gene Effect (± SD of mutant)',
+                title: 'Δ Gene Effect (± SD)',
                 zeroline: true,
                 zerolinecolor: '#374151',
                 zerolinewidth: 2,
                 range: [minX, maxX]
             },
             yaxis: { automargin: true, tickfont: { size: tickFontSize } },
-            margin: { t: 40, b: 40, l: 70, r: 60 },
+            margin: { t: 40, b: 40, l: leftMargin, r: 30 },
             height: chartHeight,
             paper_bgcolor: 'white',
             plot_bgcolor: 'white'
