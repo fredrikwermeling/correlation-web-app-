@@ -1597,6 +1597,16 @@
             <div class="modal-body">
                 <div class="inspect-layout">
                     <div class="inspect-controls">
+                        <!-- Gene Selection -->
+                        <div class="control-box-compact">
+                            <span class="control-label">Genes (X / Y axis)</span>
+                            <div style="display: flex; gap: 6px;">
+                                <input type="text" id="inspectGeneX" class="form-control" style="flex: 1; font-size: 12px;" placeholder="X gene">
+                                <input type="text" id="inspectGeneY" class="form-control" style="flex: 1; font-size: 12px;" placeholder="Y gene">
+                            </div>
+                            <button class="btn btn-success btn-sm" id="updateInspectGenes" style="width: 100%; margin-top: 6px;">Update Genes</button>
+                        </div>
+
                         <!-- Axis Ranges -->
                         <div class="control-box-compact">
                             <span class="control-label">Axis Ranges</span>
@@ -1656,10 +1666,11 @@
                             </select>
                         </div>
 
-                        <!-- Compare All Mutations Button -->
+                        <!-- Compare All Buttons -->
                         <div class="control-box-compact">
-                            <button class="btn btn-secondary btn-sm" id="compareAllMutationsBtn" style="width: 100%;">Compare All Mutations (table)</button>
-                            <p style="font-size: 10px; color: #666; margin: 4px 0 0 0;">Shows which mutations affect this correlation</p>
+                            <button class="btn btn-secondary btn-sm" id="compareAllCancerTypesBtn" style="width: 100%;">Compare All Cancer Types</button>
+                            <button class="btn btn-secondary btn-sm" id="compareAllMutationsBtn" style="width: 100%; margin-top: 4px;">Compare All Mutations</button>
+                            <p style="font-size: 10px; color: #666; margin: 4px 0 0 0;">Stratify correlation by cancer type or mutation</p>
                         </div>
 
                         <!-- Highlight Cell Lines -->
@@ -1802,6 +1813,6 @@
         </div>
     </div>
 
-    <script src="app.js?v=20260205c"></script>
+    <script src="app.js?v=20260205d"></script>
 </body>
 </html>

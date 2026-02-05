@@ -780,6 +780,8 @@ class CorrelationExplorer {
         document.getElementById('downloadTissueCSV').addEventListener('click', () => this.downloadTissueTableCSV());
         document.getElementById('scatterFontSize')?.addEventListener('change', () => this.updateInspectPlot());
         document.getElementById('compareAllMutationsBtn')?.addEventListener('click', () => this.showCompareAllMutations());
+        document.getElementById('compareAllCancerTypesBtn')?.addEventListener('click', () => this.showCompareAllCancerTypes());
+        document.getElementById('updateInspectGenes')?.addEventListener('click', () => this.updateInspectGenes());
 
         // Aspect ratio control
         document.getElementById('aspectRatio')?.addEventListener('input', (e) => {
@@ -4672,6 +4674,10 @@ Results:
         document.getElementById('scatterYmin').value = this.currentInspect.defaultYlim[0].toFixed(1);
         document.getElementById('scatterYmax').value = this.currentInspect.defaultYlim[1].toFixed(1);
 
+        // Set gene inputs
+        document.getElementById('inspectGeneX').value = c.gene1;
+        document.getElementById('inspectGeneY').value = c.gene2;
+
         // Get filters from parameters section to carry over
         const paramLineageFilter = document.getElementById('lineageFilter').value;
         const paramHotspotGene = document.getElementById('paramHotspotGene').value;
@@ -5575,6 +5581,175 @@ Results:
 
         // Make table sortable
         this.setupSortableTable('compareMutationsTable');
+    }
+
+    updateInspectGenes() {
+        const gene1 = document.getElementById('inspectGeneX').value.trim().toUpperCase();
+        const gene2 = document.getElementById('inspectGeneY').value.trim().toUpperCase();
+
+        if (!gene1 || !gene2) {
+            alert('Please enter both X and Y genes.');
+            return;
+        }
+
+        if (!this.geneIndex.has(gene1)) {
+            alert(`Gene "${gene1}" not found in the dataset.`);
+            return;
+        }
+        if (!this.geneIndex.has(gene2)) {
+            alert(`Gene "${gene2}" not found in the dataset.`);
+            return;
+        }
+
+        // Re-open inspect with the new genes
+        this.openInspect({ gene1, gene2, correlation: null });
+
+        // Update title
+        document.getElementById('inspectTitle').textContent = `Correlation: ${gene1} vs ${gene2}`;
+    }
+
+    showCompareAllCancerTypes() {
+        if (!this.currentInspect) return;
+
+        const { gene1, gene2, data } = this.currentInspect;
+
+        // Apply current filters (mutation filter only, since we're stratifying by cancer)
+        const mutFilterGene = document.getElementById('mutationFilterGene').value;
+        const mutFilterLevel = document.getElementById('mutationFilterLevel').value;
+
+        let filteredData = [...data];
+
+        // Apply mutation filter
+        if (mutFilterGene && this.mutations?.geneData?.[mutFilterGene] && mutFilterLevel !== 'all') {
+            const filterMutations = this.mutations.geneData[mutFilterGene].mutations;
+            filteredData = filteredData.filter(d => {
+                const mutLevel = filterMutations[d.cellLineId] || 0;
+                if (mutFilterLevel === '0') return mutLevel === 0;
+                if (mutFilterLevel === '1') return mutLevel === 1;
+                if (mutFilterLevel === '2') return mutLevel >= 2;
+                if (mutFilterLevel === '1+2') return mutLevel >= 1;
+                return true;
+            });
+        }
+
+        // Build filter description
+        let filterDesc = '';
+        if (mutFilterGene && mutFilterLevel !== 'all') {
+            const levelText = mutFilterLevel === '0' ? 'WT' :
+                              mutFilterLevel === '1' ? '1 mut' :
+                              mutFilterLevel === '2' ? '2 mut' : '1+2 mut';
+            filterDesc = `${mutFilterGene}: ${levelText}`;
+        }
+
+        // Show compare table
+        document.getElementById('scatterPlot').style.display = 'none';
+        document.getElementById('compareTable').style.display = 'block';
+
+        this.renderCancerTypeComparisonTable(filteredData, gene1, gene2, filterDesc);
+    }
+
+    renderCancerTypeComparisonTable(filteredData, gene1, gene2, filterDesc = '') {
+        // Group data by cancer type
+        const cancerGroups = {};
+        filteredData.forEach(d => {
+            const lineage = d.lineage || 'Unknown';
+            if (!cancerGroups[lineage]) cancerGroups[lineage] = [];
+            cancerGroups[lineage].push(d);
+        });
+
+        const tableData = [];
+
+        Object.entries(cancerGroups).forEach(([cancerType, data]) => {
+            if (data.length >= 5) { // Need at least 5 samples for meaningful correlation
+                const xVals = data.map(d => d.x);
+                const yVals = data.map(d => d.y);
+                const stats = this.pearsonWithSlope(xVals, yVals);
+
+                // Calculate mean gene effects
+                const meanX = xVals.reduce((a, b) => a + b, 0) / xVals.length;
+                const meanY = yVals.reduce((a, b) => a + b, 0) / yVals.length;
+
+                tableData.push({
+                    cancerType,
+                    n: data.length,
+                    correlation: stats.correlation,
+                    slope: stats.slope,
+                    meanX,
+                    meanY
+                });
+            }
+        });
+
+        // Sort by absolute correlation by default
+        tableData.sort((a, b) => Math.abs(b.correlation) - Math.abs(a.correlation));
+
+        // Build HTML table
+        let html = `
+            <h4 style="margin: 0 0 10px 0;">${gene1} vs ${gene2} - By Cancer Type</h4>
+            ${filterDesc ? `<p style="font-size: 11px; color: #666; margin-bottom: 10px;">Filter: ${filterDesc}</p>` : ''}
+            <div class="table-container" style="max-height: 420px; overflow-y: auto;">
+            <table class="data-table" id="compareCancerTypesTable" style="font-size: 12px;">
+                <thead>
+                    <tr>
+                        <th data-sort="cancerType" data-type="string" style="cursor: pointer;">Cancer Type ↕</th>
+                        <th data-sort="n" data-type="number" style="cursor: pointer;">N ↕</th>
+                        <th data-sort="correlation" data-type="number" style="cursor: pointer;">Correlation ↕</th>
+                        <th data-sort="slope" data-type="number" style="cursor: pointer;">Slope ↕</th>
+                        <th data-sort="meanX" data-type="number" style="cursor: pointer;">${gene1} Mean ↕</th>
+                        <th data-sort="meanY" data-type="number" style="cursor: pointer;">${gene2} Mean ↕</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        tableData.forEach(row => {
+            const rColor = Math.abs(row.correlation) >= 0.5 ? (row.correlation > 0 ? '#16a34a' : '#dc2626') : '#374151';
+            const xColor = row.meanX < -0.5 ? '#dc2626' : row.meanX > 0 ? '#16a34a' : '#374151';
+            const yColor = row.meanY < -0.5 ? '#dc2626' : row.meanY > 0 ? '#16a34a' : '#374151';
+            html += `
+                <tr>
+                    <td>${row.cancerType}</td>
+                    <td style="text-align: center;">${row.n}</td>
+                    <td style="text-align: center; font-weight: 600; color: ${rColor};">${row.correlation.toFixed(3)}</td>
+                    <td style="text-align: center;">${row.slope.toFixed(3)}</td>
+                    <td style="text-align: center; color: ${xColor};">${row.meanX.toFixed(3)}</td>
+                    <td style="text-align: center; color: ${yColor};">${row.meanY.toFixed(3)}</td>
+                </tr>
+            `;
+        });
+
+        html += `
+                </tbody>
+            </table>
+            </div>
+            <p style="font-size: 11px; color: #666; margin-top: 8px;">
+                Showing cancer types with N ≥ 5. Correlations ≥ |0.5| are highlighted.
+            </p>
+            <div style="margin-top: 12px;">
+                <button class="btn btn-primary btn-sm" id="backToGraphBtn2" style="margin-right: 8px;">← Back to Graph</button>
+                <button class="btn btn-success btn-sm" id="downloadCancerCompareCSV">Download CSV</button>
+            </div>
+        `;
+
+        document.getElementById('compareTable').innerHTML = html;
+
+        // Add back to graph handler
+        document.getElementById('backToGraphBtn2')?.addEventListener('click', () => {
+            document.getElementById('compareTable').style.display = 'none';
+            document.getElementById('scatterPlot').style.display = 'block';
+        });
+
+        // Add download handler
+        document.getElementById('downloadCancerCompareCSV')?.addEventListener('click', () => {
+            let csv = `Cancer_Type,N,Correlation,Slope,${gene1}_Mean,${gene2}_Mean\n`;
+            tableData.forEach(row => {
+                csv += `"${row.cancerType}",${row.n},${row.correlation.toFixed(4)},${row.slope.toFixed(4)},${row.meanX.toFixed(4)},${row.meanY.toFixed(4)}\n`;
+            });
+            this.downloadFile(csv, `${gene1}_vs_${gene2}_by_cancer_type.csv`, 'text/csv');
+        });
+
+        // Make table sortable
+        this.setupSortableTable('compareCancerTypesTable');
     }
 
     normalCDF(x) {
