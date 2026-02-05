@@ -6142,7 +6142,7 @@ Results:
                     n: cellData.length,
                     mean,
                     sd,
-                    pValue: tTest.pValue,
+                    pValue: tTest.p,
                     cellData: cellData
                 });
             }
@@ -6270,7 +6270,7 @@ Results:
                     mutSD,
                     mean: diff,
                     diff,
-                    pValue: tTest.pValue,
+                    pValue: tTest.p,
                     wtCellData,
                     mutCellData
                 });
@@ -6300,44 +6300,38 @@ Results:
             // WT trace (blue)
             traces.push({
                 type: 'box',
-                name: 'WT',
+                name: `WT (n=${s.nWT})`,
                 legendgroup: 'WT',
                 showlegend: idx === 0,
                 y: Array(s.wtCellData.length).fill(yLabel),
                 x: s.wtCellData.map(c => c.geneEffect),
-                text: s.wtCellData.map(c => c.cellLineName),
                 orientation: 'h',
-                boxpoints: 'all',
-                jitter: 0.3,
-                pointpos: -0.5,
-                marker: { color: 'rgba(59, 130, 246, 0.6)', size: 3 },
+                boxpoints: 'outliers',
+                marker: { color: 'rgba(59, 130, 246, 0.6)', size: 4, outliercolor: 'rgba(59, 130, 246, 0.8)' },
                 line: { color: 'rgba(59, 130, 246, 0.8)' },
-                fillcolor: 'rgba(59, 130, 246, 0.15)',
-                hovertemplate: '<b>%{text}</b> (WT)<br>Gene Effect: %{x:.3f}<extra></extra>',
+                fillcolor: 'rgba(59, 130, 246, 0.3)',
+                hoverinfo: 'x',
                 offsetgroup: 'wt'
             });
 
             // Mutant trace (red/orange)
             const mutColor = s.diff < 0 ? 'rgba(220, 38, 38, 0.6)' : 'rgba(249, 115, 22, 0.6)';
             const mutLineColor = s.diff < 0 ? 'rgba(220, 38, 38, 0.8)' : 'rgba(249, 115, 22, 0.8)';
-            const mutFillColor = s.diff < 0 ? 'rgba(220, 38, 38, 0.15)' : 'rgba(249, 115, 22, 0.15)';
+            const mutFillColor = s.diff < 0 ? 'rgba(220, 38, 38, 0.3)' : 'rgba(249, 115, 22, 0.3)';
 
             traces.push({
                 type: 'box',
-                name: 'Mutant',
+                name: `Mut (n=${s.nMut})`,
                 legendgroup: 'Mutant',
                 showlegend: idx === 0,
                 y: Array(s.mutCellData.length).fill(yLabel),
                 x: s.mutCellData.map(c => c.geneEffect),
-                text: s.mutCellData.map(c => c.cellLineName),
                 orientation: 'h',
-                boxpoints: 'all',
-                jitter: 0.3,
-                pointpos: 0.5,
-                marker: { color: mutColor, size: 3 },
+                boxpoints: 'outliers',
+                marker: { color: mutColor, size: 4, outliercolor: mutLineColor },
                 line: { color: mutLineColor },
                 fillcolor: mutFillColor,
-                hovertemplate: '<b>%{text}</b> (Mut)<br>Gene Effect: %{x:.3f}<extra></extra>',
+                hoverinfo: 'x',
                 offsetgroup: 'mut'
             });
         });
