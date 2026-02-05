@@ -6113,107 +6113,101 @@ Results:
         // Get all gene effects for comparison
         const allEffects = data.map(d => d.geneEffect);
 
-        // Group by cancer type
-        const groups = {};
+        // Group data by cancer type (keep full data for box plots)
+        const groupedData = {};
         data.forEach(d => {
             const lineage = d.lineage || 'Unknown';
-            if (!groups[lineage]) groups[lineage] = [];
-            groups[lineage].push(d.geneEffect);
+            if (!groupedData[lineage]) groupedData[lineage] = [];
+            groupedData[lineage].push({
+                geneEffect: d.geneEffect,
+                cellLineName: d.cellLineName || d.cellLineId,
+                cellLineId: d.cellLineId
+            });
         });
 
         // Calculate stats for each group including p-value vs all cells
         const stats = [];
-        Object.entries(groups).forEach(([lineage, effects]) => {
-            if (effects.length >= 3) {
+        Object.entries(groupedData).forEach(([lineage, cellData]) => {
+            if (cellData.length >= 3) {
+                const effects = cellData.map(c => c.geneEffect);
                 const mean = effects.reduce((a, b) => a + b, 0) / effects.length;
                 const sd = Math.sqrt(effects.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / effects.length);
 
                 // Calculate p-value comparing this group to all other cells
-                const otherEffects = allEffects.filter((_, i) => {
-                    const d = data[i];
-                    return (d.lineage || 'Unknown') !== lineage;
-                });
+                const otherEffects = data.filter(d => (d.lineage || 'Unknown') !== lineage).map(d => d.geneEffect);
                 const tTest = this.welchTTest(effects, otherEffects);
 
                 stats.push({
                     group: lineage,
-                    n: effects.length,
+                    n: cellData.length,
                     mean,
                     sd,
-                    pValue: tTest.pValue
+                    pValue: tTest.pValue,
+                    cellData: cellData
                 });
             }
         });
 
-        // Sort by mean gene effect (most positive at top for table, reversed for chart)
-        stats.sort((a, b) => b.mean - a.mean);
+        // Sort by median gene effect for chart display
+        stats.sort((a, b) => a.mean - b.mean);
         this.currentGEStats = stats;
 
-        // For chart display, reverse so most negative is at bottom
-        const chartStats = [...stats].reverse();
-
-        // Create horizontal bar chart with error bars
-        const barColors = chartStats.map(s => {
-            if (s.pValue < 0.05) {
-                return s.mean < -0.5 ? 'rgba(220, 38, 38, 0.7)' : s.mean > 0 ? 'rgba(34, 197, 94, 0.7)' : 'rgba(156, 163, 175, 0.6)';
-            }
-            return s.mean < -0.5 ? 'rgba(220, 38, 38, 0.4)' : s.mean > 0 ? 'rgba(34, 197, 94, 0.3)' : 'rgba(156, 163, 175, 0.4)';
-        });
-
-        // Create y-axis labels with n values included
-        const yLabels = chartStats.map(s => `${s.group} (n=${s.n})`);
-
-        const trace = {
-            type: 'bar',
-            orientation: 'h',
-            y: yLabels,
-            x: chartStats.map(s => s.mean),
-            error_x: {
-                type: 'data',
-                array: chartStats.map(s => s.sd),
-                visible: true,
-                color: '#666',
-                thickness: 1,
-                width: 2
+        // Create box plot traces for each cancer type
+        const traces = stats.map((s, idx) => ({
+            type: 'box',
+            name: `${s.group} (n=${s.n})`,
+            x: s.cellData.map(c => c.geneEffect),
+            text: s.cellData.map(c => c.cellLineName),
+            boxpoints: 'all',
+            jitter: 0.3,
+            pointpos: 0,
+            marker: {
+                color: s.mean < -0.5 ? 'rgba(220, 38, 38, 0.6)' : s.mean > 0 ? 'rgba(34, 197, 94, 0.5)' : 'rgba(107, 114, 128, 0.5)',
+                size: 4
             },
-            marker: { color: barColors },
-            hovertemplate: '<b>%{y}</b><br>Mean GE: %{x:.3f} ± SD<extra></extra>'
-        };
+            line: { color: s.pValue < 0.05 ? '#1f2937' : '#9ca3af' },
+            fillcolor: s.mean < -0.5 ? 'rgba(220, 38, 38, 0.2)' : s.mean > 0 ? 'rgba(34, 197, 94, 0.15)' : 'rgba(156, 163, 175, 0.2)',
+            hovertemplate: '<b>%{text}</b><br>Gene Effect: %{x:.3f}<extra></extra>'
+        }));
 
-        // Calculate dynamic font size based on number of entries
-        const numEntries = chartStats.length;
-        const tickFontSize = numEntries > 30 ? 7 : numEntries > 20 ? 8 : 9;
-        const barHeight = numEntries > 30 ? 12 : numEntries > 20 ? 14 : 16;
-        const chartHeight = Math.max(300, numEntries * barHeight + 80);
-
-        // Calculate left margin to fit labels with n values
-        const maxLabelLen = Math.max(...yLabels.map(s => s.length));
-        const leftMargin = Math.max(120, maxLabelLen * 5);
-
-        // Calculate x-axis range to fit error bars
-        const minX = Math.min(...chartStats.map(s => s.mean - s.sd)) - 0.2;
-        const maxX = Math.max(...chartStats.map(s => s.mean + s.sd)) + 0.2;
+        // Calculate dynamic sizing
+        const numEntries = stats.length;
+        const tickFontSize = numEntries > 25 ? 7 : numEntries > 15 ? 8 : 9;
+        const boxHeight = numEntries > 25 ? 18 : numEntries > 15 ? 22 : 28;
+        const chartHeight = Math.max(350, numEntries * boxHeight + 80);
 
         const layout = {
             title: { text: `${gene} by Cancer Type`, font: { size: 13 } },
             xaxis: {
-                title: 'Mean Gene Effect (± SD)',
+                title: 'Gene Effect',
                 zeroline: true,
                 zerolinecolor: '#374151',
-                zerolinewidth: 2,
-                range: [minX, maxX]
+                zerolinewidth: 2
             },
-            yaxis: { automargin: true, tickfont: { size: tickFontSize } },
-            margin: { t: 40, b: 40, l: leftMargin, r: 30 },
+            yaxis: {
+                automargin: true,
+                tickfont: { size: tickFontSize }
+            },
+            margin: { t: 40, b: 50, l: 10, r: 30 },
             height: chartHeight,
+            showlegend: false,
             paper_bgcolor: 'white',
             plot_bgcolor: 'white'
         };
 
-        Plotly.newPlot('geneEffectPlot', [trace], layout, { responsive: true });
+        Plotly.newPlot('geneEffectPlot', traces, layout, { responsive: true });
 
-        // Render table
-        this.renderGETable(stats, 'tissue');
+        // Render table (remove cellData from stats for table)
+        const tableStats = stats.map(s => ({
+            group: s.group,
+            n: s.n,
+            mean: s.mean,
+            sd: s.sd,
+            pValue: s.pValue
+        }));
+        tableStats.sort((a, b) => b.mean - a.mean); // Sort high to low for table
+        this.currentGEStats = tableStats;
+        this.renderGETable(tableStats, 'tissue');
     }
 
     renderGeneEffectByHotspot() {
@@ -6231,43 +6225,54 @@ Results:
         const data = this.currentGeneEffect.data;
         const gene = this.currentGeneEffect.gene;
 
-        // Calculate stats for each hotspot gene
+        // Calculate stats for each hotspot gene, keeping cell-level data for box plots
         const hotspotStats = [];
 
         this.mutations.genes.forEach(hotspotGene => {
             const mutData = this.mutations.geneData?.[hotspotGene]?.mutations || {};
 
-            const wtEffects = [];
-            const mutEffects = [];
+            const wtCellData = [];
+            const mutCellData = [];
 
             data.forEach(d => {
                 const mutLevel = mutData[d.cellLineId] || 0;
+                const cellInfo = {
+                    geneEffect: d.geneEffect,
+                    cellLineName: d.cellLineName || d.cellLineId,
+                    cellLineId: d.cellLineId
+                };
                 if (mutLevel === 0) {
-                    wtEffects.push(d.geneEffect);
+                    wtCellData.push(cellInfo);
                 } else {
-                    mutEffects.push(d.geneEffect);
+                    mutCellData.push(cellInfo);
                 }
             });
 
             // Require at least 3 in each group
-            if (mutEffects.length >= 3 && wtEffects.length >= 3) {
+            if (mutCellData.length >= 3 && wtCellData.length >= 3) {
+                const wtEffects = wtCellData.map(c => c.geneEffect);
+                const mutEffects = mutCellData.map(c => c.geneEffect);
                 const wtMean = wtEffects.reduce((a, b) => a + b, 0) / wtEffects.length;
                 const mutMean = mutEffects.reduce((a, b) => a + b, 0) / mutEffects.length;
                 const mutSD = Math.sqrt(mutEffects.reduce((a, b) => a + Math.pow(b - mutMean, 2), 0) / mutEffects.length);
+                const wtSD = Math.sqrt(wtEffects.reduce((a, b) => a + Math.pow(b - wtMean, 2), 0) / wtEffects.length);
                 const diff = mutMean - wtMean;
                 const tTest = this.welchTTest(wtEffects, mutEffects);
 
                 hotspotStats.push({
                     group: hotspotGene,
-                    nMut: mutEffects.length,
-                    nWT: wtEffects.length,
-                    n: mutEffects.length,
+                    nMut: mutCellData.length,
+                    nWT: wtCellData.length,
+                    n: mutCellData.length,
                     wtMean,
                     mutMean,
+                    wtSD,
                     mutSD,
                     mean: diff,
                     diff,
-                    pValue: tTest.pValue
+                    pValue: tTest.pValue,
+                    wtCellData,
+                    mutCellData
                 });
             }
         });
@@ -6278,79 +6283,117 @@ Results:
             return;
         }
 
-        // Sort by absolute diff value for display (largest effects first)
-        hotspotStats.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+        // Sort by p-value (most significant first) for better visualization
+        hotspotStats.sort((a, b) => a.pValue - b.pValue);
 
-        // Take top 40 for display
-        const topStats = hotspotStats.slice(0, 40);
-        this.currentGEStats = topStats;
+        // Take top 20 most significant for box plot display
+        const topStats = hotspotStats.slice(0, 20);
 
-        // For horizontal bar chart, sort by diff value (most negative at bottom)
-        const chartStats = [...topStats].sort((a, b) => a.diff - b.diff);
+        // Create paired box plots (WT and Mut for each hotspot)
+        const traces = [];
+        const yCategories = [];
 
-        // Create horizontal bar chart with error bars
-        const barColors = chartStats.map(s => {
-            if (s.pValue < 0.05) {
-                return s.diff < 0 ? 'rgba(220, 38, 38, 0.7)' : 'rgba(34, 197, 94, 0.7)';
-            }
-            return s.diff < 0 ? 'rgba(220, 38, 38, 0.3)' : s.diff > 0 ? 'rgba(34, 197, 94, 0.3)' : 'rgba(156, 163, 175, 0.4)';
+        topStats.forEach((s, idx) => {
+            const yLabel = `${s.group}`;
+            yCategories.push(yLabel);
+
+            // WT trace (blue)
+            traces.push({
+                type: 'box',
+                name: 'WT',
+                legendgroup: 'WT',
+                showlegend: idx === 0,
+                y: Array(s.wtCellData.length).fill(yLabel),
+                x: s.wtCellData.map(c => c.geneEffect),
+                text: s.wtCellData.map(c => c.cellLineName),
+                orientation: 'h',
+                boxpoints: 'all',
+                jitter: 0.3,
+                pointpos: -0.5,
+                marker: { color: 'rgba(59, 130, 246, 0.6)', size: 3 },
+                line: { color: 'rgba(59, 130, 246, 0.8)' },
+                fillcolor: 'rgba(59, 130, 246, 0.15)',
+                hovertemplate: '<b>%{text}</b> (WT)<br>Gene Effect: %{x:.3f}<extra></extra>',
+                offsetgroup: 'wt'
+            });
+
+            // Mutant trace (red/orange)
+            const mutColor = s.diff < 0 ? 'rgba(220, 38, 38, 0.6)' : 'rgba(249, 115, 22, 0.6)';
+            const mutLineColor = s.diff < 0 ? 'rgba(220, 38, 38, 0.8)' : 'rgba(249, 115, 22, 0.8)';
+            const mutFillColor = s.diff < 0 ? 'rgba(220, 38, 38, 0.15)' : 'rgba(249, 115, 22, 0.15)';
+
+            traces.push({
+                type: 'box',
+                name: 'Mutant',
+                legendgroup: 'Mutant',
+                showlegend: idx === 0,
+                y: Array(s.mutCellData.length).fill(yLabel),
+                x: s.mutCellData.map(c => c.geneEffect),
+                text: s.mutCellData.map(c => c.cellLineName),
+                orientation: 'h',
+                boxpoints: 'all',
+                jitter: 0.3,
+                pointpos: 0.5,
+                marker: { color: mutColor, size: 3 },
+                line: { color: mutLineColor },
+                fillcolor: mutFillColor,
+                hovertemplate: '<b>%{text}</b> (Mut)<br>Gene Effect: %{x:.3f}<extra></extra>',
+                offsetgroup: 'mut'
+            });
         });
 
-        // Calculate dynamic font size based on number of entries
-        const numEntries = chartStats.length;
-        const tickFontSize = numEntries > 30 ? 7 : numEntries > 20 ? 8 : 9;
-        const barHeight = numEntries > 30 ? 12 : numEntries > 20 ? 14 : 16;
-        const chartHeight = Math.max(300, numEntries * barHeight + 80);
-
-        // Create y-axis labels with n values included
-        const yLabels = chartStats.map(s => `${s.group} (n=${s.nMut})`);
-
-        const trace = {
-            type: 'bar',
-            orientation: 'h',
-            y: yLabels,
-            x: chartStats.map(s => s.diff),
-            error_x: {
-                type: 'data',
-                array: chartStats.map(s => s.mutSD),
-                visible: true,
-                color: '#666',
-                thickness: 1,
-                width: 2
-            },
-            marker: { color: barColors },
-            hovertemplate: '<b>%{y}</b><br>Δ GE: %{x:.3f} ± SD<br>p=%{customdata}<extra></extra>',
-            customdata: chartStats.map(s => s.pValue < 0.001 ? '<0.001' : s.pValue.toFixed(3))
-        };
-
-        // Calculate x-axis range to fit error bars
-        const minX = Math.min(...chartStats.map(s => s.diff - s.mutSD)) - 0.2;
-        const maxX = Math.max(...chartStats.map(s => s.diff + s.mutSD)) + 0.2;
-
-        // Calculate left margin to fit labels with n values
-        const maxLabelLen = Math.max(...yLabels.map(s => s.length));
-        const leftMargin = Math.max(100, maxLabelLen * 5);
+        // Calculate dynamic sizing
+        const numEntries = topStats.length;
+        const tickFontSize = numEntries > 15 ? 8 : 9;
+        const boxHeight = numEntries > 15 ? 35 : 45;
+        const chartHeight = Math.max(400, numEntries * boxHeight + 100);
 
         const layout = {
-            title: { text: `${gene} Δ GE (Mut vs WT)`, font: { size: 13 } },
+            title: { text: `${gene} Gene Effect by Hotspot Mutation`, font: { size: 13 } },
             xaxis: {
-                title: 'Δ Gene Effect (± SD)',
+                title: 'Gene Effect',
                 zeroline: true,
                 zerolinecolor: '#374151',
-                zerolinewidth: 2,
-                range: [minX, maxX]
+                zerolinewidth: 2
             },
-            yaxis: { automargin: true, tickfont: { size: tickFontSize } },
-            margin: { t: 40, b: 40, l: leftMargin, r: 30 },
+            yaxis: {
+                automargin: true,
+                tickfont: { size: tickFontSize },
+                categoryorder: 'array',
+                categoryarray: yCategories.slice().reverse()
+            },
+            boxmode: 'group',
+            boxgap: 0.1,
+            boxgroupgap: 0.05,
+            margin: { t: 40, b: 50, l: 10, r: 30 },
             height: chartHeight,
+            showlegend: true,
+            legend: { x: 1, y: 1, xanchor: 'right', orientation: 'h' },
             paper_bgcolor: 'white',
             plot_bgcolor: 'white'
         };
 
-        Plotly.newPlot('geneEffectHotspotPlot', [trace], layout, { responsive: true });
+        Plotly.newPlot('geneEffectHotspotPlot', traces, layout, { responsive: true });
 
-        // Render table (sorted by absolute diff - largest effects first)
-        this.renderGETable(topStats, 'hotspot');
+        // Store stats for table (without cell data)
+        const tableStats = hotspotStats.map(s => ({
+            group: s.group,
+            nMut: s.nMut,
+            nWT: s.nWT,
+            wtMean: s.wtMean,
+            mutMean: s.mutMean,
+            wtSD: s.wtSD,
+            mutSD: s.mutSD,
+            diff: s.diff,
+            pValue: s.pValue
+        }));
+
+        // Sort by absolute diff for table (largest effects first)
+        tableStats.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+        this.currentGEStats = tableStats;
+
+        // Render table
+        this.renderGETable(tableStats, 'hotspot');
     }
 
     openGeneEffectFromNetwork(gene) {
