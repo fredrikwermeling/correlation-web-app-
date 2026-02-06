@@ -5503,26 +5503,29 @@ Results:
         // Build HTML table
         const filterInfo = filterDesc ? `<p style="font-size: 11px; color: #333; margin-bottom: 8px; background: #f0f9ff; padding: 4px 8px; border-radius: 4px;"><b>Filter:</b> ${filterDesc}</p>` : '';
         let html = `
-            <h4 style="margin-bottom: 8px;">Effect of Different Hotspot Mutations on ${gene1} vs ${gene2} Correlation</h4>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h4 style="margin: 0;">Mutations affecting ${gene1} vs ${gene2}</h4>
+                <div>
+                    <button class="btn btn-primary btn-sm" id="backToGraphBtn" style="margin-right: 8px;">← Back to Graph</button>
+                    <button class="btn btn-success btn-sm" id="downloadMutCompareCSV">Download CSV</button>
+                </div>
+            </div>
             ${filterInfo}
-            <p style="font-size: 12px; color: #666; margin-bottom: 12px;">
-                Comparing correlation between WT (0 mutations) vs Mutant (2+ mutations) for each hotspot mutation gene.
-                Sorted by p-value (most significant effect first).
+            <p style="font-size: 11px; color: #666; margin-bottom: 6px;">
+                Comparing WT (0 mutations) vs Mutant (2+ mutations). Sorted by p-value.
             </p>
-            <div style="overflow-x: auto;">
-            <table id="compareMutationsTable" class="data-table" style="width: 100%; font-size: 12px;">
+            <p style="font-size: 11px; color: #059669; margin-bottom: 8px;">Click any row to color scatter plot by that mutation</p>
+            <div class="table-container" style="max-height: 380px; overflow-y: auto;">
+            <table id="compareMutationsTable" class="data-table" style="width: 100%; font-size: 11px;">
                 <thead>
                     <tr>
-                        <th data-col="0" style="cursor: pointer;">Mutation Gene ▼</th>
-                        <th data-col="1" style="cursor: pointer;">N (WT)</th>
-                        <th data-col="2" style="cursor: pointer;">r (WT)</th>
-                        <th data-col="3" style="cursor: pointer;">slope (WT)</th>
-                        <th data-col="4" style="cursor: pointer;">N (Mut)</th>
-                        <th data-col="5" style="cursor: pointer;">r (Mut)</th>
-                        <th data-col="6" style="cursor: pointer;">slope (Mut)</th>
-                        <th data-col="7" style="cursor: pointer;">Δr</th>
-                        <th data-col="8" style="cursor: pointer;">p(Δr)</th>
-                        <th data-col="9" style="cursor: pointer;">Δslope</th>
+                        <th data-sort="mutGene" data-type="string" style="cursor: pointer;">Mutation ↕</th>
+                        <th data-sort="nWT" data-type="number" style="cursor: pointer;">N(WT) ↕</th>
+                        <th data-sort="rWT" data-type="number" style="cursor: pointer;">r(WT) ↕</th>
+                        <th data-sort="nMut" data-type="number" style="cursor: pointer;">N(Mut) ↕</th>
+                        <th data-sort="rMut" data-type="number" style="cursor: pointer;">r(Mut) ↕</th>
+                        <th data-sort="deltaR" data-type="number" style="cursor: pointer;">Δr ↕</th>
+                        <th data-sort="pR" data-type="number" style="cursor: pointer;">p(Δr) ↕</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -5530,21 +5533,17 @@ Results:
 
         tableData.forEach(row => {
             const deltaRColor = row.deltaR < 0 ? '#dc2626' : '#5a9f4a';
-            const deltaSlopeColor = row.deltaSlope < 0 ? '#dc2626' : '#5a9f4a';
             const pHighlight = row.pR < 0.05 ? 'background: #fef3c7;' : '';
 
             html += `
-                <tr style="${pHighlight}">
+                <tr class="clickable-mut-row" data-mut-gene="${row.mutGene}" style="${pHighlight} cursor: pointer;">
                     <td><b>${row.mutGene}</b></td>
-                    <td>${row.nWT}</td>
-                    <td>${row.rWT.toFixed(3)}</td>
-                    <td>${row.slopeWT.toFixed(3)}</td>
-                    <td>${row.nMut}</td>
-                    <td>${row.rMut.toFixed(3)}</td>
-                    <td>${row.slopeMut.toFixed(3)}</td>
-                    <td style="color: ${deltaRColor}; font-weight: 600;">${row.deltaR.toFixed(3)}</td>
-                    <td>${row.pR.toExponential(1)}</td>
-                    <td style="color: ${deltaSlopeColor}; font-weight: 600;">${row.deltaSlope.toFixed(3)}</td>
+                    <td style="text-align: center;">${row.nWT}</td>
+                    <td style="text-align: center;">${row.rWT.toFixed(3)}</td>
+                    <td style="text-align: center;">${row.nMut}</td>
+                    <td style="text-align: center;">${row.rMut.toFixed(3)}</td>
+                    <td style="text-align: center; color: ${deltaRColor}; font-weight: 600;">${row.deltaR.toFixed(3)}</td>
+                    <td style="text-align: center;">${row.pR.toExponential(1)}</td>
                 </tr>
             `;
         });
@@ -5554,12 +5553,8 @@ Results:
             </table>
             </div>
             <p style="font-size: 11px; color: #666; margin-top: 8px;">
-                Note: Rows highlighted in yellow have p < 0.05. This analysis may be biased as specific mutations select for cancer types.
+                Yellow = p < 0.05. This analysis may be biased as mutations select for cancer types.
             </p>
-            <div style="margin-top: 12px;">
-                <button class="btn btn-primary btn-sm" id="backToGraphBtn" style="margin-right: 8px;">← Back to Graph</button>
-                <button class="btn btn-success btn-sm" id="downloadMutCompareCSV">Download CSV</button>
-            </div>
         `;
 
         document.getElementById('compareTable').innerHTML = html;
@@ -5572,11 +5567,24 @@ Results:
 
         // Add download handler
         document.getElementById('downloadMutCompareCSV')?.addEventListener('click', () => {
-            let csv = 'Mutation Gene,N (WT),r (WT),slope (WT),N (Mut),r (Mut),slope (Mut),Δr,p(Δr),Δslope\n';
+            let csv = 'Mutation_Gene,N_WT,r_WT,slope_WT,N_Mut,r_Mut,slope_Mut,Delta_r,p_Delta_r,Delta_slope\n';
             tableData.forEach(row => {
                 csv += `${row.mutGene},${row.nWT},${row.rWT.toFixed(4)},${row.slopeWT.toFixed(4)},${row.nMut},${row.rMut.toFixed(4)},${row.slopeMut.toFixed(4)},${row.deltaR.toFixed(4)},${row.pR.toExponential(2)},${row.deltaSlope.toFixed(4)}\n`;
             });
             this.downloadFile(csv, `${gene1}_vs_${gene2}_all_mutations_comparison.csv`, 'text/csv');
+        });
+
+        // Add row click handlers to filter by mutation
+        document.querySelectorAll('#compareMutationsTable .clickable-mut-row').forEach(row => {
+            row.addEventListener('click', () => {
+                const mutGene = row.dataset.mutGene;
+                // Set the hotspot overlay and go back to scatter plot
+                document.getElementById('hotspotGene').value = mutGene;
+                document.getElementById('hotspotMode').value = 'color';
+                document.getElementById('compareTable').style.display = 'none';
+                document.getElementById('scatterPlot').style.display = 'block';
+                this.updateInspectPlot();
+            });
         });
 
         // Make table sortable
@@ -5685,9 +5693,16 @@ Results:
 
         // Build HTML table
         let html = `
-            <h4 style="margin: 0 0 10px 0;">${gene1} vs ${gene2} - By Cancer Type</h4>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h4 style="margin: 0;">${gene1} vs ${gene2} - By Cancer Type</h4>
+                <div>
+                    <button class="btn btn-primary btn-sm" id="backToGraphBtn2" style="margin-right: 8px;">← Back to Graph</button>
+                    <button class="btn btn-success btn-sm" id="downloadCancerCompareCSV">Download CSV</button>
+                </div>
+            </div>
             ${filterDesc ? `<p style="font-size: 11px; color: #666; margin-bottom: 10px;">Filter: ${filterDesc}</p>` : ''}
-            <div class="table-container" style="max-height: 420px; overflow-y: auto;">
+            <p style="font-size: 11px; color: #059669; margin-bottom: 8px;">Click any row to view that cancer type in the scatter plot</p>
+            <div class="table-container" style="max-height: 400px; overflow-y: auto;">
             <table class="data-table" id="compareCancerTypesTable" style="font-size: 12px;">
                 <thead>
                     <tr>
@@ -5707,7 +5722,7 @@ Results:
             const xColor = row.meanX < -0.5 ? '#dc2626' : row.meanX > 0 ? '#16a34a' : '#374151';
             const yColor = row.meanY < -0.5 ? '#dc2626' : row.meanY > 0 ? '#16a34a' : '#374151';
             html += `
-                <tr>
+                <tr class="clickable-row" data-cancer-type="${row.cancerType}" style="cursor: pointer;">
                     <td>${row.cancerType}</td>
                     <td style="text-align: center;">${row.n}</td>
                     <td style="text-align: center; font-weight: 600; color: ${rColor};">${row.correlation.toFixed(3)}</td>
@@ -5725,10 +5740,6 @@ Results:
             <p style="font-size: 11px; color: #666; margin-top: 8px;">
                 Showing cancer types with N ≥ 5. Correlations ≥ |0.5| are highlighted.
             </p>
-            <div style="margin-top: 12px;">
-                <button class="btn btn-primary btn-sm" id="backToGraphBtn2" style="margin-right: 8px;">← Back to Graph</button>
-                <button class="btn btn-success btn-sm" id="downloadCancerCompareCSV">Download CSV</button>
-            </div>
         `;
 
         document.getElementById('compareTable').innerHTML = html;
@@ -5746,6 +5757,19 @@ Results:
                 csv += `"${row.cancerType}",${row.n},${row.correlation.toFixed(4)},${row.slope.toFixed(4)},${row.meanX.toFixed(4)},${row.meanY.toFixed(4)}\n`;
             });
             this.downloadFile(csv, `${gene1}_vs_${gene2}_by_cancer_type.csv`, 'text/csv');
+        });
+
+        // Add row click handlers to filter by cancer type
+        document.querySelectorAll('#compareCancerTypesTable .clickable-row').forEach(row => {
+            row.addEventListener('click', () => {
+                const cancerType = row.dataset.cancerType;
+                // Set the cancer filter and go back to scatter plot
+                document.getElementById('scatterCancerFilter').value = cancerType;
+                document.getElementById('compareTable').style.display = 'none';
+                document.getElementById('scatterPlot').style.display = 'block';
+                this.updateScatterSubtypeFilter();
+                this.updateInspectPlot();
+            });
         });
 
         // Make table sortable
@@ -6086,18 +6110,31 @@ Results:
         const table = document.getElementById(tableId);
         if (!table) return;
 
-        const headers = table.querySelectorAll('th[data-col]');
+        // Support both data-col and data-sort formats
+        const headers = table.querySelectorAll('th[data-col], th[data-sort]');
+        const allHeaders = table.querySelectorAll('th');
+
         headers.forEach(th => {
             th.addEventListener('click', () => {
-                const col = parseInt(th.dataset.col);
+                // Get column index - either from data-col or from position
+                let col;
+                if (th.dataset.col !== undefined) {
+                    col = parseInt(th.dataset.col);
+                } else {
+                    col = Array.from(allHeaders).indexOf(th);
+                }
+
                 const tbody = table.querySelector('tbody');
                 const rows = Array.from(tbody.querySelectorAll('tr'));
                 const isAsc = th.dataset.dir !== 'asc';
                 th.dataset.dir = isAsc ? 'asc' : 'desc';
 
                 // Update header arrows
-                headers.forEach(h => {
-                    h.textContent = h.textContent.replace(/ [▲▼]$/, '');
+                allHeaders.forEach(h => {
+                    h.textContent = h.textContent.replace(/ [▲▼↕]$/, '');
+                    if (h !== th && (h.dataset.col !== undefined || h.dataset.sort !== undefined)) {
+                        h.textContent += ' ↕';
+                    }
                 });
                 th.textContent += isAsc ? ' ▲' : ' ▼';
 
