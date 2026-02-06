@@ -2153,7 +2153,7 @@ class CorrelationExplorer {
         Plotly.downloadImage('geneEffectPlot', {
             format: 'png',
             width: 900,
-            height: 550,
+            height: 650,
             filename: `gene_effect_${this.currentGeneEffectGene}_${this.mutationResults.hotspotGene}`
         });
     }
@@ -2162,7 +2162,7 @@ class CorrelationExplorer {
         Plotly.downloadImage('geneEffectPlot', {
             format: 'svg',
             width: 900,
-            height: 550,
+            height: 650,
             filename: `gene_effect_${this.currentGeneEffectGene}_${this.mutationResults.hotspotGene}`
         });
     }
@@ -7110,10 +7110,12 @@ Results:
     downloadGeneEffectChartPNG() {
         if (!this.currentGeneEffect) return;
         const plotId = this.currentGEView === 'tissue' ? 'geneEffectPlot' : 'geneEffectHotspotPlot';
+        // Use larger height to capture any stats annotations below the chart
+        const height = this.geDetailedView ? 600 : 550;
         Plotly.downloadImage(plotId, {
             format: 'png',
             width: 800,
-            height: 500,
+            height: height,
             filename: `gene_effect_${this.currentGeneEffect.gene}_by_${this.currentGEView}`
         });
     }
@@ -7121,10 +7123,12 @@ Results:
     downloadGeneEffectChartSVG() {
         if (!this.currentGeneEffect) return;
         const plotId = this.currentGEView === 'tissue' ? 'geneEffectPlot' : 'geneEffectHotspotPlot';
+        // Use larger height to capture any stats annotations below the chart
+        const height = this.geDetailedView ? 600 : 550;
         Plotly.downloadImage(plotId, {
             format: 'svg',
             width: 800,
-            height: 500,
+            height: height,
             filename: `gene_effect_${this.currentGeneEffect.gene}_by_${this.currentGEView}`
         });
     }
