@@ -323,12 +323,13 @@
         }
 
         .btn-info {
-            background: #5a9f4a;
-            color: white;
+            background: var(--green-50);
+            border: 1px solid var(--green-500);
+            color: var(--green-700);
         }
 
         .btn-info:hover {
-            background: #4a8c3f;
+            background: var(--green-100);
         }
 
         .btn-warning {
@@ -1462,7 +1463,7 @@
                             <div class="button-group-horizontal">
                                 <button class="btn btn-secondary" id="downloadNetworkPNG">PNG</button>
                                 <button class="btn btn-secondary" id="downloadNetworkSVG">SVG</button>
-                                <button class="btn btn-primary" id="downloadAllData">All Data (ZIP)</button>
+                                <button class="btn btn-outline" id="downloadAllData">All Data (ZIP)</button>
                             </div>
                         </div>
                     </div>
@@ -1470,7 +1471,7 @@
                     <div class="network-container" id="networkPlot">
                         <div style="display: flex; flex-direction: column; justify-content: flex-start; align-items: center; height: 100%; padding-top: 12%; color: var(--gray-500); text-align: center; line-height: 1.8;">
                             <div>New to Correlate?</div>
-                            <div style="margin-top: 8px;">Click <span style="color: #5a9f4a; font-weight: 600;">Test Genes</span> and then <span style="color: #5a9f4a; font-weight: 600;">Run Analysis</span></div>
+                            <div style="margin-top: 8px;">Click <span style="color: #5a9f4a; font-weight: 600;">Test Genes</span> and then <span style="color: #5a9f4a; font-weight: 600;">Run ▶</span></div>
                             <div style="font-size: 0.9em;">(both in "2. Input Genes")</div>
                         </div>
                     </div>

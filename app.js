@@ -6748,25 +6748,46 @@ Results:
 
         const data = this.currentGeneEffect.data;
         const gene = this.currentGeneEffect.gene;
-        let filteredData = [];
-        let title = '';
 
-        if (mode === 'tissue') {
-            // Filter by cancer type
-            filteredData = data.filter(d => (d.lineage || 'Unknown') === group);
-            title = `${gene} in ${group} (n=${filteredData.length})`;
-        } else {
+        // Helper to calculate stats
+        const calcStats = (values) => {
+            const n = values.length;
+            if (n === 0) return { n: 0, mean: NaN, sd: NaN };
+            const mean = values.reduce((a, b) => a + b, 0) / n;
+            const sd = n > 1 ? Math.sqrt(values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / (n - 1)) : 0;
+            return { n, mean, sd };
+        };
+
+        // Helper to format stats annotation
+        const formatStats = (stats, label) => {
+            if (stats.n === 0) return `${label}: n=0`;
+            return `${label}: n=${stats.n}, GE=${stats.mean.toFixed(3)}, SD=${stats.sd.toFixed(3)}`;
+        };
+
+        if (mode === 'hotspot') {
             // Filter by hotspot mutation
             const mutData = this.mutations?.geneData?.[group]?.mutations || {};
             const wtData = data.filter(d => (mutData[d.cellLineId] || 0) === 0);
             const mutantData = data.filter(d => (mutData[d.cellLineId] || 0) >= 1);
 
+            const wtEffects = wtData.map(d => d.geneEffect);
+            const mutEffects = mutantData.map(d => d.geneEffect);
+            const wtStats = calcStats(wtEffects);
+            const mutStats = calcStats(mutEffects);
+
+            // Calculate p-value
+            let pValue = NaN;
+            if (wtStats.n >= 3 && mutStats.n >= 3) {
+                const tTest = this.welchTTest(wtEffects, mutEffects);
+                pValue = tTest.p;
+            }
+
             // Create two traces for WT and Mutant
             const traces = [
                 {
                     type: 'box',
-                    name: `WT (n=${wtData.length})`,
-                    y: wtData.map(d => d.geneEffect),
+                    name: `WT (n=${wtStats.n})`,
+                    y: wtEffects,
                     text: wtData.map(d => d.cellLineName),
                     boxpoints: 'all',
                     jitter: 0.3,
@@ -6778,8 +6799,8 @@ Results:
                 },
                 {
                     type: 'box',
-                    name: `Mut (n=${mutantData.length})`,
-                    y: mutantData.map(d => d.geneEffect),
+                    name: `Mut (n=${mutStats.n})`,
+                    y: mutEffects,
                     text: mutantData.map(d => d.cellLineName),
                     boxpoints: 'all',
                     jitter: 0.3,
@@ -6791,15 +6812,32 @@ Results:
                 }
             ];
 
+            // Build stats annotation text
+            let statsText = `WT: n=${wtStats.n}, GE=${wtStats.mean.toFixed(3)}, SD=${wtStats.sd.toFixed(3)}\n`;
+            statsText += `Mut: n=${mutStats.n}, GE=${mutStats.mean.toFixed(3)}, SD=${mutStats.sd.toFixed(3)}`;
+            if (!isNaN(pValue)) {
+                statsText += `\np-value: ${pValue < 0.001 ? pValue.toExponential(2) : pValue.toFixed(4)}`;
+            }
+
             const layout = {
-                title: { text: `${gene} by ${group} mutation status`, font: { size: 14 } },
+                title: { text: `${gene} gene effect by ${group} mutation status`, font: { size: 14 } },
                 yaxis: { title: 'Gene Effect', zeroline: true, zerolinecolor: '#374151' },
                 showlegend: true,
                 legend: { x: 1, y: 1, xanchor: 'right' },
                 height: 450,
-                margin: { t: 50, b: 50, l: 60, r: 30 },
+                margin: { t: 50, b: 80, l: 60, r: 30 },
                 paper_bgcolor: 'white',
-                plot_bgcolor: 'white'
+                plot_bgcolor: 'white',
+                annotations: [{
+                    x: 0.5,
+                    y: -0.18,
+                    xref: 'paper',
+                    yref: 'paper',
+                    text: statsText,
+                    showarrow: false,
+                    font: { size: 11, family: 'monospace' },
+                    align: 'center'
+                }]
             };
 
             const plotId = this.currentGEView === 'tissue' ? 'geneEffectPlot' : 'geneEffectHotspotPlot';
@@ -6807,36 +6845,83 @@ Results:
             return;
         }
 
-        // For tissue mode, show detailed box plot with all cell lines
-        const trace = {
-            type: 'box',
-            name: group,
-            y: filteredData.map(d => d.geneEffect),
-            text: filteredData.map(d => d.cellLineName),
-            boxpoints: 'all',
-            jitter: 0.3,
-            pointpos: 0,
-            marker: {
-                color: filteredData.map(d => d.geneEffect < -0.5 ? '#dc2626' : d.geneEffect > 0 ? '#16a34a' : '#6b7280'),
-                size: 6
+        // For tissue mode, show comparison with all cells
+        const filteredData = data.filter(d => (d.lineage || 'Unknown') === group);
+        const allEffects = data.map(d => d.geneEffect);
+        const groupEffects = filteredData.map(d => d.geneEffect);
+        const allStats = calcStats(allEffects);
+        const groupStats = calcStats(groupEffects);
+
+        // Calculate p-value comparing group to all cells
+        let pValue = NaN;
+        if (groupStats.n >= 3 && allStats.n >= 3) {
+            const tTest = this.welchTTest(groupEffects, allEffects);
+            pValue = tTest.p;
+        }
+
+        // Create traces for All Cells and the selected tissue
+        const traces = [
+            {
+                type: 'box',
+                name: `All cells (n=${allStats.n})`,
+                y: allEffects,
+                text: data.map(d => d.cellLineName),
+                boxpoints: 'all',
+                jitter: 0.3,
+                pointpos: 0,
+                marker: { color: '#6b7280', size: 4 },
+                line: { color: '#374151', width: 2 },
+                fillcolor: 'rgba(107, 114, 128, 0.3)',
+                hovertemplate: '<b>%{text}</b><br>Gene Effect: %{y:.3f}<extra>All cells</extra>'
             },
-            line: { color: '#374151', width: 2 },
-            fillcolor: 'rgba(90, 159, 74, 0.3)',
-            hovertemplate: '<b>%{text}</b><br>Gene Effect: %{y:.3f}<extra></extra>'
-        };
+            {
+                type: 'box',
+                name: `${group} (n=${groupStats.n})`,
+                y: groupEffects,
+                text: filteredData.map(d => d.cellLineName),
+                boxpoints: 'all',
+                jitter: 0.3,
+                pointpos: 0,
+                marker: {
+                    color: groupEffects.map(v => v < -0.5 ? '#dc2626' : v > 0 ? '#16a34a' : '#6b7280'),
+                    size: 6
+                },
+                line: { color: '#5a9f4a', width: 2 },
+                fillcolor: 'rgba(90, 159, 74, 0.4)',
+                hovertemplate: '<b>%{text}</b><br>Gene Effect: %{y:.3f}<extra>' + group + '</extra>'
+            }
+        ];
+
+        // Build stats annotation text
+        let statsText = `All: n=${allStats.n}, GE=${allStats.mean.toFixed(3)}, SD=${allStats.sd.toFixed(3)}\n`;
+        statsText += `${group}: n=${groupStats.n}, GE=${groupStats.mean.toFixed(3)}, SD=${groupStats.sd.toFixed(3)}`;
+        if (!isNaN(pValue)) {
+            statsText += `\np-value: ${pValue < 0.001 ? pValue.toExponential(2) : pValue.toFixed(4)}`;
+        }
 
         const layout = {
-            title: { text: title, font: { size: 14 } },
+            title: { text: `${gene} gene effect in ${group}`, font: { size: 14 } },
             yaxis: { title: 'Gene Effect', zeroline: true, zerolinecolor: '#374151', zerolinewidth: 2 },
-            showlegend: false,
+            showlegend: true,
+            legend: { x: 1, y: 1, xanchor: 'right' },
             height: 450,
-            margin: { t: 50, b: 50, l: 60, r: 30 },
+            margin: { t: 50, b: 80, l: 60, r: 30 },
             paper_bgcolor: 'white',
-            plot_bgcolor: 'white'
+            plot_bgcolor: 'white',
+            annotations: [{
+                x: 0.5,
+                y: -0.18,
+                xref: 'paper',
+                yref: 'paper',
+                text: statsText,
+                showarrow: false,
+                font: { size: 11, family: 'monospace' },
+                align: 'center'
+            }]
         };
 
         const plotId = this.currentGEView === 'tissue' ? 'geneEffectPlot' : 'geneEffectHotspotPlot';
-        Plotly.newPlot(plotId, [trace], layout, { responsive: true });
+        Plotly.newPlot(plotId, traces, layout, { responsive: true });
     }
 
     sortGETable(sortKey, sortType) {
