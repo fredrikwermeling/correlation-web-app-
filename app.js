@@ -2105,7 +2105,7 @@ class CorrelationExplorer {
                 font: { size: 16 }
             },
             xaxis: {
-                title: 'Gene Effect',
+                title: `${gene} Gene Effect`,
                 range: [xMin, xMax]
             },
             yaxis: {
@@ -2116,10 +2116,10 @@ class CorrelationExplorer {
                 range: [-0.5, 2.5]
             },
             showlegend: false,
-            margin: { t: 70, r: 30, b: 130, l: 120 },
+            margin: { t: 70, r: 30, b: 160, l: 120 },
             annotations: [{
                 x: 0.5,
-                y: -0.38,
+                y: -0.55,
                 xref: 'paper',
                 yref: 'paper',
                 text: statsText,
