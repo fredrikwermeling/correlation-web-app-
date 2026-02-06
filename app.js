@@ -6934,8 +6934,7 @@ Results:
             const layout = {
                 title: { text: `${gene} gene effect by ${group} mutation status`, font: { size: 14 } },
                 yaxis: { title: 'Gene Effect', zeroline: true, zerolinecolor: '#374151' },
-                showlegend: true,
-                legend: { x: 0.98, y: 0.02, xanchor: 'right', yanchor: 'bottom', bgcolor: 'rgba(255,255,255,0.9)', bordercolor: '#ccc', borderwidth: 1 },
+                showlegend: false,
                 height: 450,
                 margin: { t: 50, b: 80, l: 60, r: 30 },
                 paper_bgcolor: 'white',
@@ -7019,8 +7018,7 @@ Results:
         const layout = {
             title: { text: `${gene} gene effect in ${group}`, font: { size: 14 } },
             yaxis: { title: 'Gene Effect', zeroline: true, zerolinecolor: '#374151', zerolinewidth: 2 },
-            showlegend: true,
-            legend: { x: 0.98, y: 0.02, xanchor: 'right', yanchor: 'bottom', bgcolor: 'rgba(255,255,255,0.9)', bordercolor: '#ccc', borderwidth: 1 },
+            showlegend: false,
             height: 450,
             margin: { t: 50, b: 80, l: 60, r: 30 },
             paper_bgcolor: 'white',
