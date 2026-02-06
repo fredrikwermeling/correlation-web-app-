@@ -1821,7 +1821,8 @@ class CorrelationExplorer {
         const lowerQuery = query.toLowerCase();
 
         rows.forEach(row => {
-            const gene = row.cells[0].textContent.toLowerCase();
+            // Gene name is in cells[1] (cells[0] is the Inspect link)
+            const gene = row.cells[1]?.textContent.toLowerCase() || '';
             row.style.display = gene.includes(lowerQuery) ? '' : 'none';
         });
     }
@@ -2009,10 +2010,35 @@ class CorrelationExplorer {
             }
         ];
 
-        // Calculate means for each group
-        const meanWT = data.wt.length > 0 ? this.mean(data.wt.map(d => d.ge)) : NaN;
-        const meanMut1 = data.mut1.length > 0 ? this.mean(data.mut1.map(d => d.ge)) : NaN;
-        const meanMut2 = data.mut2.length > 0 ? this.mean(data.mut2.map(d => d.ge)) : NaN;
+        // Calculate stats for each group
+        const calcStats = (arr) => {
+            if (arr.length === 0) return { n: 0, mean: NaN, median: NaN };
+            const values = arr.map(d => d.ge).sort((a, b) => a - b);
+            const n = values.length;
+            const mean = values.reduce((a, b) => a + b, 0) / n;
+            const median = n % 2 === 0 ? (values[n/2 - 1] + values[n/2]) / 2 : values[Math.floor(n/2)];
+            return { n, mean, median };
+        };
+
+        const wtStats = calcStats(data.wt);
+        const mut1Stats = calcStats(data.mut1);
+        const mut2Stats = calcStats(data.mut2);
+        const mutAllStats = calcStats([...data.mut1, ...data.mut2]);
+
+        const meanWT = wtStats.mean;
+        const meanMut1 = mut1Stats.mean;
+        const meanMut2 = mut2Stats.mean;
+
+        // Calculate p-values
+        let pWTvsMut = NaN, pWTvs2 = NaN;
+        if (wtStats.n >= 3 && mutAllStats.n >= 3) {
+            const tTest = this.welchTTest(data.wt.map(d => d.ge), [...data.mut1, ...data.mut2].map(d => d.ge));
+            pWTvsMut = tTest.p;
+        }
+        if (wtStats.n >= 3 && mut2Stats.n >= 3) {
+            const tTest = this.welchTTest(data.wt.map(d => d.ge), data.mut2.map(d => d.ge));
+            pWTvs2 = tTest.p;
+        }
 
         // Add mean lines
         const allGE = [...data.wt, ...data.mut1, ...data.mut2].map(d => d.ge);
@@ -2064,6 +2090,15 @@ class CorrelationExplorer {
         }
         const subtitle = filterInfo.length > 0 ? filterInfo.join(' | ') : 'All lineages';
 
+        // Build stats text for annotation
+        const formatP = (p) => isNaN(p) ? '-' : (p < 0.001 ? p.toExponential(2) : p.toFixed(4));
+        let statsText = `WT: n=${wtStats.n}, mean=${wtStats.mean.toFixed(3)}, median=${wtStats.median.toFixed(3)}\n`;
+        statsText += `1+2 Mut: n=${mutAllStats.n}, mean=${mutAllStats.mean.toFixed(3)}, median=${mutAllStats.median.toFixed(3)}\n`;
+        statsText += `p-value (WT vs 1+2): ${formatP(pWTvsMut)}`;
+        if (mut2Stats.n >= 3) {
+            statsText += `  |  p-value (WT vs 2): ${formatP(pWTvs2)}`;
+        }
+
         const layout = {
             title: {
                 text: `${gene} Gene Effect by ${hotspotGene} Mutation Status<br><sub style="font-size:12px;color:#666">${subtitle}</sub>`,
@@ -2081,7 +2116,17 @@ class CorrelationExplorer {
                 range: [-0.5, 2.5]
             },
             showlegend: false,
-            margin: { t: 70, r: 30, b: 50, l: 120 }
+            margin: { t: 70, r: 30, b: 90, l: 120 },
+            annotations: [{
+                x: 0.5,
+                y: -0.22,
+                xref: 'paper',
+                yref: 'paper',
+                text: statsText,
+                showarrow: false,
+                font: { size: 11, family: 'monospace' },
+                align: 'center'
+            }]
         };
 
         // Show modal - hide tissue/hotspot UI for mutation analysis view
