@@ -6669,10 +6669,10 @@ Results:
             boxmode: 'group',
             boxgap: 0.1,
             boxgroupgap: 0.05,
-            margin: { t: 40, b: 50, l: 10, r: 30 },
+            margin: { t: 60, b: 50, l: 10, r: 30 },
             height: chartHeight,
             showlegend: true,
-            legend: { x: 1, y: 1, xanchor: 'right', orientation: 'h' },
+            legend: { x: 0.5, y: 1.02, xanchor: 'center', yanchor: 'bottom', orientation: 'h' },
             paper_bgcolor: 'white',
             plot_bgcolor: 'white'
         };
@@ -6859,9 +6859,9 @@ Results:
                 title: { text: `${gene} gene effect by ${group} mutation status`, font: { size: 14 } },
                 yaxis: { title: 'Gene Effect', zeroline: true, zerolinecolor: '#374151' },
                 showlegend: true,
-                legend: { x: 0.5, y: 1.08, xanchor: 'center', yanchor: 'bottom', orientation: 'h', bgcolor: 'rgba(255,255,255,0.8)' },
+                legend: { x: 0.98, y: 0.02, xanchor: 'right', yanchor: 'bottom', bgcolor: 'rgba(255,255,255,0.9)', bordercolor: '#ccc', borderwidth: 1 },
                 height: 450,
-                margin: { t: 70, b: 80, l: 60, r: 30 },
+                margin: { t: 50, b: 80, l: 60, r: 30 },
                 paper_bgcolor: 'white',
                 plot_bgcolor: 'white',
                 annotations: [{
@@ -6944,9 +6944,9 @@ Results:
             title: { text: `${gene} gene effect in ${group}`, font: { size: 14 } },
             yaxis: { title: 'Gene Effect', zeroline: true, zerolinecolor: '#374151', zerolinewidth: 2 },
             showlegend: true,
-            legend: { x: 0.5, y: 1.08, xanchor: 'center', yanchor: 'bottom', orientation: 'h', bgcolor: 'rgba(255,255,255,0.8)' },
+            legend: { x: 0.98, y: 0.02, xanchor: 'right', yanchor: 'bottom', bgcolor: 'rgba(255,255,255,0.9)', bordercolor: '#ccc', borderwidth: 1 },
             height: 450,
-            margin: { t: 70, b: 80, l: 60, r: 30 },
+            margin: { t: 50, b: 80, l: 60, r: 30 },
             paper_bgcolor: 'white',
             plot_bgcolor: 'white',
             annotations: [{
