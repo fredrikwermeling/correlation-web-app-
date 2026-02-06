@@ -6690,7 +6690,7 @@ Results:
             // WT trace (blue)
             traces.push({
                 type: 'box',
-                name: `WT (n=${s.nWT})`,
+                name: 'WT (no mutation)',
                 legendgroup: 'WT',
                 showlegend: idx === 0,
                 y: Array(s.wtCellData.length).fill(yLabel),
@@ -6707,7 +6707,7 @@ Results:
             // Mutant trace (red - consistent color for all)
             traces.push({
                 type: 'box',
-                name: `Mut (n=${s.nMut})`,
+                name: 'Mutated',
                 legendgroup: 'Mutant',
                 showlegend: idx === 0,
                 y: Array(s.mutCellData.length).fill(yLabel),
@@ -6745,10 +6745,10 @@ Results:
             boxmode: 'group',
             boxgap: 0.1,
             boxgroupgap: 0.05,
-            margin: { t: 40, b: 50, l: 10, r: 30 },
+            margin: { t: 55, b: 50, l: 10, r: 30 },
             height: chartHeight,
             showlegend: true,
-            legend: { x: 0.99, y: 0.99, xanchor: 'right', yanchor: 'top', bgcolor: 'rgba(255,255,255,0.9)', bordercolor: '#ccc', borderwidth: 1 },
+            legend: { x: 0.5, y: 1.02, xanchor: 'center', yanchor: 'bottom', orientation: 'h', font: { size: 10 } },
             paper_bgcolor: 'white',
             plot_bgcolor: 'white'
         };
