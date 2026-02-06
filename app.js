@@ -404,6 +404,17 @@ class CorrelationExplorer {
         // Show/hide mutation tab
         document.getElementById('mutationTab').style.display = isMutationMode ? 'inline-block' : 'none';
 
+        // Disable/enable gene input section for mutation mode (not needed)
+        const geneInputCard = document.getElementById('geneInputCard');
+        if (geneInputCard) {
+            geneInputCard.style.opacity = isMutationMode ? '0.5' : '1';
+            geneInputCard.style.pointerEvents = isMutationMode ? 'none' : 'auto';
+        }
+        const geneTextarea = document.getElementById('geneTextarea');
+        if (geneTextarea) {
+            geneTextarea.disabled = isMutationMode;
+        }
+
         // Set default min cell lines based on mode
         const minCellLinesInput = document.getElementById('minCellLines');
         if (isMutationMode) {
@@ -6669,10 +6680,10 @@ Results:
             boxmode: 'group',
             boxgap: 0.1,
             boxgroupgap: 0.05,
-            margin: { t: 60, b: 50, l: 10, r: 30 },
+            margin: { t: 40, b: 50, l: 10, r: 30 },
             height: chartHeight,
             showlegend: true,
-            legend: { x: 0.5, y: 1.02, xanchor: 'center', yanchor: 'bottom', orientation: 'h' },
+            legend: { x: 0.99, y: 0.99, xanchor: 'right', yanchor: 'top', bgcolor: 'rgba(255,255,255,0.9)', bordercolor: '#ccc', borderwidth: 1 },
             paper_bgcolor: 'white',
             plot_bgcolor: 'white'
         };
