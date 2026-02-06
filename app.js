@@ -2116,16 +2116,18 @@ class CorrelationExplorer {
                 range: [-0.5, 2.5]
             },
             showlegend: false,
-            margin: { t: 70, r: 30, b: 160, l: 120 },
+            margin: { t: 70, r: 30, b: 60, l: 120 },
             annotations: [{
                 x: 0.5,
-                y: -0.55,
+                y: -0.02,
                 xref: 'paper',
                 yref: 'paper',
                 text: statsText,
                 showarrow: false,
-                font: { size: 10, family: 'monospace' },
-                align: 'center'
+                font: { size: 10, family: 'monospace', color: '#555' },
+                align: 'center',
+                bgcolor: 'rgba(255,255,255,0.85)',
+                borderpad: 4
             }]
         };
 
@@ -2153,7 +2155,7 @@ class CorrelationExplorer {
         Plotly.downloadImage('geneEffectPlot', {
             format: 'png',
             width: 900,
-            height: 650,
+            height: 500,
             filename: `gene_effect_${this.currentGeneEffectGene}_${this.mutationResults.hotspotGene}`
         });
     }
@@ -2162,7 +2164,7 @@ class CorrelationExplorer {
         Plotly.downloadImage('geneEffectPlot', {
             format: 'svg',
             width: 900,
-            height: 650,
+            height: 500,
             filename: `gene_effect_${this.currentGeneEffectGene}_${this.mutationResults.hotspotGene}`
         });
     }
