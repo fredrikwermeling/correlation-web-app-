@@ -75,20 +75,19 @@ class CorrelationExplorer {
     async loadData() {
         this.updateLoadingText('Loading metadata...');
 
-        // Load all JSON files in parallel
-        const [metadataRes, cellLineRes, mutationsRes, orthologsRes, synonymsRes] = await Promise.all([
+        // Load essential JSON files in parallel (synonyms loaded lazily on demand)
+        const [metadataRes, cellLineRes, mutationsRes, orthologsRes] = await Promise.all([
             fetch('web_data/metadata.json'),
             fetch('web_data/cellLineMetadata.json'),
             fetch('web_data/mutations.json'),
-            fetch('web_data/orthologs.json'),
-            fetch('web_data/synonyms.json')
+            fetch('web_data/orthologs.json')
         ]);
 
         this.metadata = await metadataRes.json();
         this.cellLineMetadata = await cellLineRes.json();
         this.mutations = await mutationsRes.json();
         this.orthologs = await orthologsRes.json();
-        this.synonymLookup = await synonymsRes.json();
+        // synonymLookup loaded lazily when "Find Synonyms" is clicked
 
         this.nGenes = this.metadata.nGenes;
         this.nCellLines = this.metadata.nCellLines;
@@ -867,6 +866,23 @@ class CorrelationExplorer {
 
     async findSynonymsForMissingGenes() {
         if (!this.genesNotFound || this.genesNotFound.length === 0) return;
+
+        // Lazy load synonyms if not already loaded
+        if (!this.synonymLookup) {
+            const btn = document.getElementById('findSynonyms');
+            const originalText = btn.textContent;
+            btn.textContent = 'Loading synonyms...';
+            btn.disabled = true;
+            try {
+                const synonymsRes = await fetch('web_data/synonyms.json');
+                this.synonymLookup = await synonymsRes.json();
+            } catch (e) {
+                console.error('Failed to load synonyms:', e);
+                this.synonymLookup = {};
+            }
+            btn.textContent = originalText;
+            btn.disabled = false;
+        }
 
         const replacements = [];
         const stillNotFound = [];
@@ -6696,7 +6712,7 @@ Results:
             stats.forEach(s => {
                 const color = s.pValue < 0.05 ? (s.mean < -0.5 ? '#dc2626' : s.mean > 0.5 ? '#16a34a' : '#374151') : '#6b7280';
                 const pStr = s.pValue < 0.001 ? '<0.001' : s.pValue.toFixed(3);
-                tbody.innerHTML += `<tr>
+                tbody.innerHTML += `<tr class="clickable-row" data-group="${s.group}" style="cursor: pointer;">
                     <td>${s.group}</td>
                     <td style="text-align: center;">${s.n}</td>
                     <td style="text-align: center; font-weight: 500; color: ${color};">${s.mean.toFixed(3)}</td>
@@ -6708,7 +6724,7 @@ Results:
             stats.forEach(s => {
                 const color = s.pValue < 0.05 ? (s.diff < 0 ? '#dc2626' : '#16a34a') : '#6b7280';
                 const pStr = s.pValue < 0.001 ? '<0.001' : s.pValue.toFixed(3);
-                tbody.innerHTML += `<tr>
+                tbody.innerHTML += `<tr class="clickable-row" data-group="${s.group}" style="cursor: pointer;">
                     <td>${s.group}</td>
                     <td style="text-align: center;">${s.nMut}</td>
                     <td style="text-align: center; font-weight: 500; color: ${color};">${s.diff.toFixed(3)}</td>
@@ -6717,6 +6733,110 @@ Results:
                 </tr>`;
             });
         }
+
+        // Add click handlers for detailed view
+        tbody.querySelectorAll('.clickable-row').forEach(row => {
+            row.addEventListener('click', () => {
+                const group = row.dataset.group;
+                this.showGEDetailedView(group, mode);
+            });
+        });
+    }
+
+    showGEDetailedView(group, mode) {
+        if (!this.currentGeneEffect) return;
+
+        const data = this.currentGeneEffect.data;
+        const gene = this.currentGeneEffect.gene;
+        let filteredData = [];
+        let title = '';
+
+        if (mode === 'tissue') {
+            // Filter by cancer type
+            filteredData = data.filter(d => (d.lineage || 'Unknown') === group);
+            title = `${gene} in ${group} (n=${filteredData.length})`;
+        } else {
+            // Filter by hotspot mutation
+            const mutData = this.mutations?.geneData?.[group]?.mutations || {};
+            const wtData = data.filter(d => (mutData[d.cellLineId] || 0) === 0);
+            const mutantData = data.filter(d => (mutData[d.cellLineId] || 0) >= 1);
+
+            // Create two traces for WT and Mutant
+            const traces = [
+                {
+                    type: 'box',
+                    name: `WT (n=${wtData.length})`,
+                    y: wtData.map(d => d.geneEffect),
+                    text: wtData.map(d => d.cellLineName),
+                    boxpoints: 'all',
+                    jitter: 0.3,
+                    pointpos: 0,
+                    marker: { color: '#2563eb', size: 5 },
+                    line: { color: '#1e40af', width: 2 },
+                    fillcolor: 'rgba(37, 99, 235, 0.4)',
+                    hovertemplate: '<b>%{text}</b><br>Gene Effect: %{y:.3f}<extra>WT</extra>'
+                },
+                {
+                    type: 'box',
+                    name: `Mut (n=${mutantData.length})`,
+                    y: mutantData.map(d => d.geneEffect),
+                    text: mutantData.map(d => d.cellLineName),
+                    boxpoints: 'all',
+                    jitter: 0.3,
+                    pointpos: 0,
+                    marker: { color: '#dc2626', size: 5 },
+                    line: { color: '#991b1b', width: 2 },
+                    fillcolor: 'rgba(220, 38, 38, 0.4)',
+                    hovertemplate: '<b>%{text}</b><br>Gene Effect: %{y:.3f}<extra>Mutant</extra>'
+                }
+            ];
+
+            const layout = {
+                title: { text: `${gene} by ${group} mutation status`, font: { size: 14 } },
+                yaxis: { title: 'Gene Effect', zeroline: true, zerolinecolor: '#374151' },
+                showlegend: true,
+                legend: { x: 1, y: 1, xanchor: 'right' },
+                height: 450,
+                margin: { t: 50, b: 50, l: 60, r: 30 },
+                paper_bgcolor: 'white',
+                plot_bgcolor: 'white'
+            };
+
+            const plotId = this.currentGEView === 'tissue' ? 'geneEffectPlot' : 'geneEffectHotspotPlot';
+            Plotly.newPlot(plotId, traces, layout, { responsive: true });
+            return;
+        }
+
+        // For tissue mode, show detailed box plot with all cell lines
+        const trace = {
+            type: 'box',
+            name: group,
+            y: filteredData.map(d => d.geneEffect),
+            text: filteredData.map(d => d.cellLineName),
+            boxpoints: 'all',
+            jitter: 0.3,
+            pointpos: 0,
+            marker: {
+                color: filteredData.map(d => d.geneEffect < -0.5 ? '#dc2626' : d.geneEffect > 0 ? '#16a34a' : '#6b7280'),
+                size: 6
+            },
+            line: { color: '#374151', width: 2 },
+            fillcolor: 'rgba(90, 159, 74, 0.3)',
+            hovertemplate: '<b>%{text}</b><br>Gene Effect: %{y:.3f}<extra></extra>'
+        };
+
+        const layout = {
+            title: { text: title, font: { size: 14 } },
+            yaxis: { title: 'Gene Effect', zeroline: true, zerolinecolor: '#374151', zerolinewidth: 2 },
+            showlegend: false,
+            height: 450,
+            margin: { t: 50, b: 50, l: 60, r: 30 },
+            paper_bgcolor: 'white',
+            plot_bgcolor: 'white'
+        };
+
+        const plotId = this.currentGEView === 'tissue' ? 'geneEffectPlot' : 'geneEffectHotspotPlot';
+        Plotly.newPlot(plotId, [trace], layout, { responsive: true });
     }
 
     sortGETable(sortKey, sortType) {

@@ -273,12 +273,24 @@
         }
 
         .btn-success {
-            background: var(--green-500);
+            background: var(--green-600);
             color: white;
         }
 
         .btn-success:hover {
-            background: var(--green-600);
+            background: var(--green-700);
+        }
+
+        /* Outline button style for downloads and secondary actions */
+        .btn-outline {
+            background: white;
+            border: 1px solid var(--green-600);
+            color: var(--green-700);
+        }
+
+        .btn-outline:hover {
+            background: var(--green-50);
+            border-color: var(--green-700);
         }
 
         .btn-secondary, .btn-default {
@@ -295,6 +307,19 @@
             background: var(--green-100);
             border-color: var(--green-500);
             color: var(--green-700);
+        }
+
+        /* Clickable table rows */
+        .clickable-row:hover, .clickable-mut-row:hover {
+            background-color: var(--green-50) !important;
+        }
+
+        .clickable-row td:first-child, .clickable-mut-row td:first-child {
+            color: var(--green-700);
+        }
+
+        .clickable-row:hover td:first-child, .clickable-mut-row:hover td:first-child {
+            text-decoration: underline;
         }
 
         .btn-info {
@@ -1275,7 +1300,7 @@
                                 <textarea id="manualStatsTextarea" class="form-control" style="min-height: 140px; font-family: 'Roboto Mono', monospace; font-size: 11px;">Gene	LFC	FDR
 </textarea>
                             </div>
-                            <button class="btn btn-success btn-sm" id="loadManualStatsBtn">Load Stats</button>
+                            <button class="btn btn-outline btn-sm" id="loadManualStatsBtn">Load Stats</button>
                         </div>
 
                         <!-- File upload sub-panel -->
@@ -1298,7 +1323,7 @@
                                     <label class="form-label">FDR column (optional):</label>
                                     <select id="statsFdrCol" class="form-control"><option value="">None</option></select>
                                 </div>
-                                <button class="btn btn-success btn-sm" id="loadStatsBtn">Load Stats</button>
+                                <button class="btn btn-outline btn-sm" id="loadStatsBtn">Load Stats</button>
                             </div>
                         </div>
 
@@ -1313,8 +1338,8 @@
                         Find Synonyms
                     </button>
 
-                    <button class="btn btn-primary" id="runAnalysis" disabled style="width: 100%; margin-top: 12px;">
-                        Run Analysis
+                    <button class="btn btn-success" id="runAnalysis" disabled style="width: 100%; margin-top: 12px; font-size: 15px;">
+                        Run ▶
                     </button>
                     <div id="geneValidationDisplay" style="margin-top: 8px;"></div>
                     <div id="analysisStatus"></div>
@@ -1484,7 +1509,7 @@
                     </div>
                     <div class="table-controls">
                         <input type="text" class="table-search" id="correlationsSearch" placeholder="Search...">
-                        <button class="btn btn-success btn-sm" id="downloadCorrelations">Download CSV</button>
+                        <button class="btn btn-outline btn-sm" id="downloadCorrelations">Download CSV</button>
                     </div>
                     <div class="table-container">
                         <table class="data-table" id="correlationsTable">
@@ -1514,7 +1539,7 @@
                     <p class="help-text" style="margin-bottom: 15px;">Mean (All) = all cells, Mean (Filt) = filtered cells. * indicates genes from your input list (Design mode).</p>
                     <div class="table-controls">
                         <input type="text" class="table-search" id="clustersSearch" placeholder="Search...">
-                        <button class="btn btn-success btn-sm" id="downloadClusters">Download CSV</button>
+                        <button class="btn btn-outline btn-sm" id="downloadClusters">Download CSV</button>
                     </div>
                     <div class="table-container">
                         <table class="data-table" id="clustersTable">
@@ -1544,7 +1569,7 @@
                         </div>
                         <div>
                             <input type="text" id="mutationSearch" class="form-control" placeholder="Search genes..." style="width: 200px; display: inline-block; margin-right: 10px;">
-                            <button class="btn btn-success btn-sm" id="downloadMutationResults">Export CSV</button>
+                            <button class="btn btn-outline btn-sm" id="downloadMutationResults">Export CSV</button>
                         </div>
                     </div>
                     <div class="table-container" style="max-height: 600px; overflow-y: auto;">
@@ -1573,7 +1598,7 @@
 
                 <!-- Summary Tab -->
                 <div class="tab-content" id="tab-summary">
-                    <button class="btn btn-success btn-sm" id="downloadSummary" style="margin-bottom: 15px;">Download Summary</button>
+                    <button class="btn btn-outline btn-sm" id="downloadSummary" style="margin-bottom: 15px;">Download Summary</button>
                     <div class="summary-text" id="summaryText">Run analysis to view summary</div>
                 </div>
                 </div> <!-- end card-content -->
@@ -1604,7 +1629,7 @@
                                 <input type="text" id="inspectGeneX" class="form-control" style="flex: 1; font-size: 12px;" placeholder="X gene">
                                 <input type="text" id="inspectGeneY" class="form-control" style="flex: 1; font-size: 12px;" placeholder="Y gene">
                             </div>
-                            <button class="btn btn-success btn-sm" id="updateInspectGenes" style="width: 100%; margin-top: 6px;">Update Genes</button>
+                            <button class="btn btn-outline btn-sm" id="updateInspectGenes" style="width: 100%; margin-top: 6px;">Update Genes</button>
                         </div>
 
                         <!-- Axis Ranges -->
@@ -1707,12 +1732,12 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-success" id="downloadScatterPNG">Download PNG</button>
-                <button class="btn btn-success" id="downloadScatterSVG">Download SVG</button>
-                <button class="btn btn-success" id="downloadScatterCSV">Download CSV</button>
-                <button class="btn btn-success" id="downloadTissuePNG" style="display: none;">Download Chart PNG</button>
-                <button class="btn btn-success" id="downloadTissueSVG" style="display: none;">Download Chart SVG</button>
-                <button class="btn btn-success" id="downloadTissueCSV" style="display: none;">Download Table CSV</button>
+                <button class="btn btn-outline" id="downloadScatterPNG">Download PNG</button>
+                <button class="btn btn-outline" id="downloadScatterSVG">Download SVG</button>
+                <button class="btn btn-outline" id="downloadScatterCSV">Download CSV</button>
+                <button class="btn btn-outline" id="downloadTissuePNG" style="display: none;">Download Chart PNG</button>
+                <button class="btn btn-outline" id="downloadTissueSVG" style="display: none;">Download Chart SVG</button>
+                <button class="btn btn-outline" id="downloadTissueCSV" style="display: none;">Download Table CSV</button>
                 <button class="btn btn-secondary" id="closeInspectBtn">Close</button>
             </div>
         </div>
@@ -1720,7 +1745,7 @@
 
     <!-- Footer -->
     <footer class="footer">
-        <p>Correlate | Data from <a href="https://depmap.org/portal/" target="_blank">DepMap</a> | <a href="https://wermelinglab.com" target="_blank">Wermeling Lab</a></p>
+        <p>Correlate | Part of the <a href="https://greenlisted.cmm.se" target="_blank">Green Listed</a> tool family | Data from <a href="https://depmap.org/portal/" target="_blank">DepMap</a> | <a href="https://wermelinglab.com" target="_blank">Wermeling Lab</a></p>
     </footer>
 
     <!-- Gene Effect Analysis Modal -->
@@ -1789,12 +1814,12 @@
                 <!-- Download buttons -->
                 <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap; padding-top: 15px; border-top: 1px solid #e5e7eb;">
                     <span style="font-size: 12px; color: #6b7280; margin-right: 5px;">Export Chart:</span>
-                    <button class="btn btn-success btn-sm" id="downloadGeneEffectPNG">PNG</button>
-                    <button class="btn btn-success btn-sm" id="downloadGeneEffectSVG">SVG</button>
+                    <button class="btn btn-outline btn-sm" id="downloadGeneEffectPNG">PNG</button>
+                    <button class="btn btn-outline btn-sm" id="downloadGeneEffectSVG">SVG</button>
                     <span style="font-size: 12px; color: #6b7280; margin-left: 15px; margin-right: 5px;">Export CSV:</span>
-                    <button class="btn btn-success btn-sm" id="downloadGETableCSV">By Group</button>
-                    <button class="btn btn-success btn-sm" id="downloadGECellLineCSV">By Cell Line</button>
-                    <button class="btn btn-success btn-sm" id="downloadGeneEffectCSV">Download Data (CSV)</button>
+                    <button class="btn btn-outline btn-sm" id="downloadGETableCSV">By Group</button>
+                    <button class="btn btn-outline btn-sm" id="downloadGECellLineCSV">By Cell Line</button>
+                    <button class="btn btn-outline btn-sm" id="downloadGeneEffectCSV">Download Data (CSV)</button>
                 </div>
             </div>
         </div>
@@ -1813,6 +1838,6 @@
         </div>
     </div>
 
-    <script src="app.js?v=20260205f"></script>
+    <script src="app.js?v=20260205g"></script>
 </body>
 </html>
