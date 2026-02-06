@@ -6745,10 +6745,10 @@ Results:
             boxmode: 'group',
             boxgap: 0.1,
             boxgroupgap: 0.05,
-            margin: { t: 70, b: 50, l: 10, r: 30 },
+            margin: { t: 50, b: 50, l: 10, r: 30 },
             height: chartHeight,
             showlegend: true,
-            legend: { x: 0.5, y: 1.12, xanchor: 'center', yanchor: 'top', orientation: 'h', font: { size: 10 } },
+            legend: { x: 0.5, y: 1.0, xanchor: 'center', yanchor: 'bottom', orientation: 'h', font: { size: 10 }, bgcolor: 'rgba(255,255,255,0.8)' },
             paper_bgcolor: 'white',
             plot_bgcolor: 'white'
         };
