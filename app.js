@@ -823,6 +823,12 @@ class CorrelationExplorer {
         document.getElementById('geViewHotspot')?.addEventListener('click', () => {
             this.switchGeneEffectView('hotspot');
         });
+        document.getElementById('geShowAllBtn')?.addEventListener('click', () => {
+            this.showAllGeneEffect();
+        });
+        document.getElementById('geTableSearch')?.addEventListener('input', (e) => {
+            this.filterGETable(e.target.value);
+        });
         document.getElementById('downloadGeneEffectPNG')?.addEventListener('click', () => this.downloadGeneEffectChartPNG());
         document.getElementById('downloadGeneEffectSVG')?.addEventListener('click', () => this.downloadGeneEffectChartSVG());
         document.getElementById('downloadGETableCSV')?.addEventListener('click', () => this.downloadGETableCSV());
@@ -6353,6 +6359,12 @@ Results:
     switchGeneEffectView(view) {
         this.currentGEView = view;
 
+        // Reset detailed view state and search
+        this.geDetailedView = null;
+        this.updateShowAllButton();
+        const searchInput = document.getElementById('geTableSearch');
+        if (searchInput) searchInput.value = '';
+
         // Update button styles
         const tissueBtn = document.getElementById('geViewTissue');
         const hotspotBtn = document.getElementById('geViewHotspot');
@@ -6378,6 +6390,22 @@ Results:
             document.getElementById('geByHotspotView').style.display = 'block';
             this.renderGeneEffectByHotspot();
         }
+    }
+
+    filterGETable(searchTerm) {
+        const tbody = document.getElementById('geneEffectTableBody');
+        if (!tbody) return;
+
+        const term = searchTerm.toLowerCase().trim();
+        const rows = tbody.querySelectorAll('tr');
+
+        rows.forEach(row => {
+            const groupCell = row.querySelector('td:first-child');
+            if (groupCell) {
+                const text = groupCell.textContent.toLowerCase();
+                row.style.display = term === '' || text.includes(term) ? '' : 'none';
+            }
+        });
     }
 
     showGeneEffectAnalysis(gene, view = 'tissue') {
@@ -6782,33 +6810,35 @@ Results:
                 pValue = tTest.p;
             }
 
-            // Create two traces for WT and Mutant
+            // Create two traces for WT and Mutant (include cancer type in hover)
             const traces = [
                 {
                     type: 'box',
                     name: `WT (n=${wtStats.n})`,
                     y: wtEffects,
                     text: wtData.map(d => d.cellLineName),
+                    customdata: wtData.map(d => d.lineage || 'Unknown'),
                     boxpoints: 'all',
                     jitter: 0.3,
                     pointpos: 0,
                     marker: { color: '#2563eb', size: 5 },
                     line: { color: '#1e40af', width: 2 },
                     fillcolor: 'rgba(37, 99, 235, 0.4)',
-                    hovertemplate: '<b>%{text}</b><br>Gene Effect: %{y:.3f}<extra>WT</extra>'
+                    hovertemplate: '<b>%{text}</b><br>%{customdata}<br>Gene Effect: %{y:.3f}<extra>WT</extra>'
                 },
                 {
                     type: 'box',
                     name: `Mut (n=${mutStats.n})`,
                     y: mutEffects,
                     text: mutantData.map(d => d.cellLineName),
+                    customdata: mutantData.map(d => d.lineage || 'Unknown'),
                     boxpoints: 'all',
                     jitter: 0.3,
                     pointpos: 0,
                     marker: { color: '#dc2626', size: 5 },
                     line: { color: '#991b1b', width: 2 },
                     fillcolor: 'rgba(220, 38, 38, 0.4)',
-                    hovertemplate: '<b>%{text}</b><br>Gene Effect: %{y:.3f}<extra>Mutant</extra>'
+                    hovertemplate: '<b>%{text}</b><br>%{customdata}<br>Gene Effect: %{y:.3f}<extra>Mutant</extra>'
                 }
             ];
 
@@ -6823,7 +6853,7 @@ Results:
                 title: { text: `${gene} gene effect by ${group} mutation status`, font: { size: 14 } },
                 yaxis: { title: 'Gene Effect', zeroline: true, zerolinecolor: '#374151' },
                 showlegend: true,
-                legend: { x: 1, y: 1, xanchor: 'right' },
+                legend: { x: 0.02, y: 0.98, xanchor: 'left', yanchor: 'top', bgcolor: 'rgba(255,255,255,0.8)' },
                 height: 450,
                 margin: { t: 50, b: 80, l: 60, r: 30 },
                 paper_bgcolor: 'white',
@@ -6840,8 +6870,12 @@ Results:
                 }]
             };
 
+            // Mark that we're in detailed view
+            this.geDetailedView = { mode: 'hotspot', group };
+
             const plotId = this.currentGEView === 'tissue' ? 'geneEffectPlot' : 'geneEffectHotspotPlot';
             Plotly.newPlot(plotId, traces, layout, { responsive: true });
+            this.updateShowAllButton();
             return;
         }
 
@@ -6859,20 +6893,21 @@ Results:
             pValue = tTest.p;
         }
 
-        // Create traces for All Cells and the selected tissue
+        // Create traces for All Cells and the selected tissue (include cancer type in hover)
         const traces = [
             {
                 type: 'box',
                 name: `All cells (n=${allStats.n})`,
                 y: allEffects,
                 text: data.map(d => d.cellLineName),
+                customdata: data.map(d => d.lineage || 'Unknown'),
                 boxpoints: 'all',
                 jitter: 0.3,
                 pointpos: 0,
                 marker: { color: '#6b7280', size: 4 },
                 line: { color: '#374151', width: 2 },
                 fillcolor: 'rgba(107, 114, 128, 0.3)',
-                hovertemplate: '<b>%{text}</b><br>Gene Effect: %{y:.3f}<extra>All cells</extra>'
+                hovertemplate: '<b>%{text}</b><br>%{customdata}<br>Gene Effect: %{y:.3f}<extra>All cells</extra>'
             },
             {
                 type: 'box',
@@ -6903,7 +6938,7 @@ Results:
             title: { text: `${gene} gene effect in ${group}`, font: { size: 14 } },
             yaxis: { title: 'Gene Effect', zeroline: true, zerolinecolor: '#374151', zerolinewidth: 2 },
             showlegend: true,
-            legend: { x: 1, y: 1, xanchor: 'right' },
+            legend: { x: 0.02, y: 0.98, xanchor: 'left', yanchor: 'top', bgcolor: 'rgba(255,255,255,0.8)' },
             height: 450,
             margin: { t: 50, b: 80, l: 60, r: 30 },
             paper_bgcolor: 'white',
@@ -6920,8 +6955,29 @@ Results:
             }]
         };
 
+        // Mark that we're in detailed view
+        this.geDetailedView = { mode: 'tissue', group };
+
         const plotId = this.currentGEView === 'tissue' ? 'geneEffectPlot' : 'geneEffectHotspotPlot';
         Plotly.newPlot(plotId, traces, layout, { responsive: true });
+        this.updateShowAllButton();
+    }
+
+    updateShowAllButton() {
+        const btn = document.getElementById('geShowAllBtn');
+        if (btn) {
+            btn.style.display = this.geDetailedView ? 'inline-block' : 'none';
+        }
+    }
+
+    showAllGeneEffect() {
+        this.geDetailedView = null;
+        this.updateShowAllButton();
+        if (this.currentGEView === 'tissue') {
+            this.renderGeneEffectByTissue();
+        } else {
+            this.renderGeneEffectByHotspot();
+        }
     }
 
     sortGETable(sortKey, sortType) {

@@ -1764,6 +1764,7 @@
                     <button class="btn btn-success btn-sm" id="geneEffectSearchBtn">Analyze</button>
                     <span id="geneEffectCurrentGene" style="font-weight: 600; color: #5a9f4a; margin-left: 10px;"></span>
                     <div style="margin-left: auto; display: flex; gap: 10px; align-items: center;">
+                        <button class="btn btn-sm btn-outline" id="geShowAllBtn" style="display: none;">← Show All</button>
                         <span style="font-size: 12px; color: #6b7280;">View:</span>
                         <button class="btn btn-sm" id="geViewTissue" style="background: #5a9f4a; color: white;">By Tissue</button>
                         <button class="btn btn-sm btn-secondary" id="geViewHotspot">By Hotspot</button>
@@ -1794,7 +1795,10 @@
 
                     <!-- Table container -->
                     <div style="flex: 1; min-width: 300px;">
-                        <div style="font-weight: 600; margin-bottom: 8px; color: #374151; font-size: 13px;">Statistics (click header to sort)</div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                            <div style="font-weight: 600; color: #374151; font-size: 13px;">Statistics (click row to focus)</div>
+                            <input type="text" id="geTableSearch" class="form-control" placeholder="Search..." style="width: 120px; font-size: 11px; padding: 4px 8px;">
+                        </div>
                         <div class="table-container" style="max-height: 450px; overflow-y: auto;">
                             <table class="data-table" id="geneEffectTable" style="font-size: 11px;">
                                 <thead id="geTableHead">
