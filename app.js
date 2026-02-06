@@ -2454,8 +2454,45 @@ class CorrelationExplorer {
             });
         }
 
+        // Track state for click vs double-click vs drag
+        let clickTimeout = null;
+        let isDragging = false;
+        let dragStartPos = null;
+
+        // Track drag start
+        this.network.on('dragStart', (params) => {
+            isDragging = true;
+            dragStartPos = params.pointer.canvas;
+        });
+
+        // Track drag end
+        this.network.on('dragEnd', (params) => {
+            // Check if actually moved (more than 5 pixels)
+            if (dragStartPos) {
+                const dx = params.pointer.canvas.x - dragStartPos.x;
+                const dy = params.pointer.canvas.y - dragStartPos.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                // Only count as drag if moved more than 5 pixels
+                if (distance > 5) {
+                    isDragging = true;
+                } else {
+                    isDragging = false;
+                }
+            }
+            // Reset drag state after a short delay to allow click to check it
+            setTimeout(() => {
+                isDragging = false;
+                dragStartPos = null;
+            }, 100);
+        });
+
         // Double-click to hide node
         this.network.on('doubleClick', (params) => {
+            // Cancel any pending single-click action
+            if (clickTimeout) {
+                clearTimeout(clickTimeout);
+                clickTimeout = null;
+            }
             if (params.nodes.length > 0) {
                 const nodeId = params.nodes[0];
                 const node = this.networkData.nodes.get(nodeId);
@@ -2467,19 +2504,34 @@ class CorrelationExplorer {
         });
 
         // Click on edge to open inspect modal, click on node to open Gene Effect tab
+        // Use delayed execution to distinguish from double-click
         this.network.on('click', (params) => {
-            if (params.nodes.length > 0) {
-                // Node clicked - open Gene Effect analysis
-                const nodeId = params.nodes[0];
-                this.openGeneEffectFromNetwork(nodeId);
-            } else if (params.edges.length > 0) {
-                // Edge clicked - open correlation inspect
-                const edgeId = params.edges[0];
-                const edge = this.networkData.edges.get(edgeId);
-                if (edge) {
-                    this.openInspectByGenes(edge.from, edge.to);
-                }
+            // Skip if we just finished dragging
+            if (isDragging) {
+                return;
             }
+
+            // Cancel any existing timeout
+            if (clickTimeout) {
+                clearTimeout(clickTimeout);
+            }
+
+            // Delay single-click action to allow double-click to cancel it
+            clickTimeout = setTimeout(() => {
+                clickTimeout = null;
+                if (params.nodes.length > 0) {
+                    // Node clicked - open Gene Effect analysis
+                    const nodeId = params.nodes[0];
+                    this.openGeneEffectFromNetwork(nodeId);
+                } else if (params.edges.length > 0) {
+                    // Edge clicked - open correlation inspect
+                    const edgeId = params.edges[0];
+                    const edge = this.networkData.edges.get(edgeId);
+                    if (edge) {
+                        this.openInspectByGenes(edge.from, edge.to);
+                    }
+                }
+            }, 250); // 250ms delay - enough to detect double-click
         });
 
         // Show legend
