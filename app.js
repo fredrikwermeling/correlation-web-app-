@@ -2090,13 +2090,13 @@ class CorrelationExplorer {
         }
         const subtitle = filterInfo.length > 0 ? filterInfo.join(' | ') : 'All lineages';
 
-        // Build stats text for annotation
-        const formatP = (p) => isNaN(p) ? '-' : (p < 0.001 ? p.toExponential(2) : p.toFixed(4));
-        let statsText = `WT: n=${wtStats.n}, mean=${wtStats.mean.toFixed(3)}, median=${wtStats.median.toFixed(3)}\n`;
-        statsText += `1+2 Mut: n=${mutAllStats.n}, mean=${mutAllStats.mean.toFixed(3)}, median=${mutAllStats.median.toFixed(3)}\n`;
-        statsText += `p-value (WT vs 1+2): ${formatP(pWTvsMut)}`;
+        // Build stats text for annotation (use <br> for line breaks in Plotly)
+        const formatP = (p) => isNaN(p) ? '-' : (p < 0.001 ? p.toExponential(1) : p.toFixed(3));
+        let statsText = `WT: n=${wtStats.n}, mean=${wtStats.mean.toFixed(2)}, median=${wtStats.median.toFixed(2)}`;
+        statsText += `  ·  Mut: n=${mutAllStats.n}, mean=${mutAllStats.mean.toFixed(2)}, median=${mutAllStats.median.toFixed(2)}`;
+        statsText += `<br>p(WT vs Mut): ${formatP(pWTvsMut)}`;
         if (mut2Stats.n >= 3) {
-            statsText += `  |  p-value (WT vs 2): ${formatP(pWTvs2)}`;
+            statsText += `  ·  p(WT vs 2 only): ${formatP(pWTvs2)}`;
         }
 
         const layout = {
@@ -2116,15 +2116,15 @@ class CorrelationExplorer {
                 range: [-0.5, 2.5]
             },
             showlegend: false,
-            margin: { t: 70, r: 30, b: 90, l: 120 },
+            margin: { t: 70, r: 30, b: 110, l: 120 },
             annotations: [{
                 x: 0.5,
-                y: -0.22,
+                y: -0.28,
                 xref: 'paper',
                 yref: 'paper',
                 text: statsText,
                 showarrow: false,
-                font: { size: 11, family: 'monospace' },
+                font: { size: 10, family: 'monospace' },
                 align: 'center'
             }]
         };
