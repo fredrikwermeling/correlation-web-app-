@@ -2088,20 +2088,23 @@ class CorrelationExplorer {
         if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
             filterInfo.push(`${mr.additionalHotspot}: ${mr.additionalHotspotLevel}`);
         }
-        const subtitle = filterInfo.length > 0 ? filterInfo.join(' | ') : 'All lineages';
+        const lineageText = filterInfo.length > 0 ? filterInfo.join(' | ') : 'All lineages';
 
-        // Build stats text for annotation (use <br> for line breaks in Plotly)
+        // Build stats text for subtitle
         const formatP = (p) => isNaN(p) ? '-' : (p < 0.001 ? p.toExponential(1) : p.toFixed(3));
-        let statsText = `WT: n=${wtStats.n}, mean=${wtStats.mean.toFixed(2)}, median=${wtStats.median.toFixed(2)}`;
-        statsText += `  ·  Mut: n=${mutAllStats.n}, mean=${mutAllStats.mean.toFixed(2)}, median=${mutAllStats.median.toFixed(2)}`;
-        statsText += `<br>p(WT vs Mut): ${formatP(pWTvsMut)}`;
+        let statsLine1 = `WT: n=${wtStats.n}, mean=${wtStats.mean.toFixed(2)}, med=${wtStats.median.toFixed(2)}`;
+        statsLine1 += `  ·  Mut: n=${mutAllStats.n}, mean=${mutAllStats.mean.toFixed(2)}, med=${mutAllStats.median.toFixed(2)}`;
+        let statsLine2 = `p(WT vs Mut): ${formatP(pWTvsMut)}`;
         if (mut2Stats.n >= 3) {
-            statsText += `  ·  p(WT vs 2 only): ${formatP(pWTvs2)}`;
+            statsLine2 += `  ·  p(WT vs 2): ${formatP(pWTvs2)}`;
         }
+
+        // Combine lineage info and stats in subtitle
+        const subtitle = `${lineageText}<br>${statsLine1}<br>${statsLine2}`;
 
         const layout = {
             title: {
-                text: `${gene} Gene Effect by ${hotspotGene} Mutation Status<br><sub style="font-size:12px;color:#666">${subtitle}</sub>`,
+                text: `${gene} Gene Effect by ${hotspotGene} Mutation Status<br><sub style="font-size:11px;color:#666">${subtitle}</sub>`,
                 font: { size: 16 }
             },
             xaxis: {
@@ -2116,19 +2119,7 @@ class CorrelationExplorer {
                 range: [-0.5, 2.5]
             },
             showlegend: false,
-            margin: { t: 70, r: 30, b: 60, l: 120 },
-            annotations: [{
-                x: 0.5,
-                y: -0.02,
-                xref: 'paper',
-                yref: 'paper',
-                text: statsText,
-                showarrow: false,
-                font: { size: 10, family: 'monospace', color: '#555' },
-                align: 'center',
-                bgcolor: 'rgba(255,255,255,0.85)',
-                borderpad: 4
-            }]
+            margin: { t: 100, r: 30, b: 50, l: 120 }
         };
 
         // Show modal - hide tissue/hotspot UI for mutation analysis view
