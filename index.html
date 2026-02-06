@@ -1724,6 +1724,9 @@
                                 <option value="three_panel">3-panel (0 / 1 / 2 mutations)</option>
                                 <option value="compare_table">Compare 0 vs 2 by cancer (table)</option>
                             </select>
+                            <div id="mutationCautionScatter" style="display: none; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 4px; padding: 6px 8px; margin-top: 8px; font-size: 10px; color: #92400e;">
+                                <strong>⚠️</strong> Mutations may be enriched in specific cancer types - correlations could reflect tissue rather than mutation effects.
+                            </div>
                         </div>
                     </div>
                     <div class="inspect-plot">
@@ -1789,6 +1792,9 @@
                             <div id="geneEffectPlot" style="width: 100%; min-height: 400px;"></div>
                         </div>
                         <div id="geByHotspotView" style="display: none;">
+                            <div id="mutationCautionGE" style="background: #fef3c7; border: 1px solid #f59e0b; border-radius: 6px; padding: 8px 12px; margin-bottom: 10px; font-size: 11px; color: #92400e;">
+                                <strong>⚠️ Caution:</strong> Hotspot mutations are often enriched in specific cancer types. Observed differences in gene effect may reflect cancer type rather than the mutation itself.
+                            </div>
                             <div id="geneEffectHotspotPlot" style="width: 100%; min-height: 400px;"></div>
                         </div>
                     </div>

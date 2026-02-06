@@ -4876,6 +4876,12 @@ Results:
         const hotspotGene = document.getElementById('hotspotGene').value;
         const hotspotMode = document.getElementById('hotspotMode').value;
 
+        // Show/hide mutation caution message
+        const cautionEl = document.getElementById('mutationCautionScatter');
+        if (cautionEl) {
+            cautionEl.style.display = (hotspotGene && hotspotMode !== 'none') ? 'block' : 'none';
+        }
+
         // Filter by cancer type
         let filteredData = cancerFilter ?
             data.filter(d => d.lineage === cancerFilter) : data;
@@ -6853,9 +6859,9 @@ Results:
                 title: { text: `${gene} gene effect by ${group} mutation status`, font: { size: 14 } },
                 yaxis: { title: 'Gene Effect', zeroline: true, zerolinecolor: '#374151' },
                 showlegend: true,
-                legend: { x: 0.02, y: 0.98, xanchor: 'left', yanchor: 'top', bgcolor: 'rgba(255,255,255,0.8)' },
+                legend: { x: 0.5, y: 1.08, xanchor: 'center', yanchor: 'bottom', orientation: 'h', bgcolor: 'rgba(255,255,255,0.8)' },
                 height: 450,
-                margin: { t: 50, b: 80, l: 60, r: 30 },
+                margin: { t: 70, b: 80, l: 60, r: 30 },
                 paper_bgcolor: 'white',
                 plot_bgcolor: 'white',
                 annotations: [{
@@ -6938,9 +6944,9 @@ Results:
             title: { text: `${gene} gene effect in ${group}`, font: { size: 14 } },
             yaxis: { title: 'Gene Effect', zeroline: true, zerolinecolor: '#374151', zerolinewidth: 2 },
             showlegend: true,
-            legend: { x: 0.02, y: 0.98, xanchor: 'left', yanchor: 'top', bgcolor: 'rgba(255,255,255,0.8)' },
+            legend: { x: 0.5, y: 1.08, xanchor: 'center', yanchor: 'bottom', orientation: 'h', bgcolor: 'rgba(255,255,255,0.8)' },
             height: 450,
-            margin: { t: 50, b: 80, l: 60, r: 30 },
+            margin: { t: 70, b: 80, l: 60, r: 30 },
             paper_bgcolor: 'white',
             plot_bgcolor: 'white',
             annotations: [{
