@@ -404,16 +404,22 @@ class CorrelationExplorer {
         // Show/hide mutation tab
         document.getElementById('mutationTab').style.display = isMutationMode ? 'inline-block' : 'none';
 
-        // Disable/enable gene input section for mutation mode (not needed)
-        const geneInputCard = document.getElementById('geneInputCard');
-        if (geneInputCard) {
-            geneInputCard.style.opacity = isMutationMode ? '0.5' : '1';
-            geneInputCard.style.pointerEvents = isMutationMode ? 'none' : 'auto';
-        }
-        const geneTextarea = document.getElementById('geneTextarea');
-        if (geneTextarea) {
-            geneTextarea.disabled = isMutationMode;
-        }
+        // Disable/enable gene input elements for mutation mode (not needed, but keep Run button active)
+        const geneInputElements = document.querySelectorAll('#geneTextarea, #manualStatsTextarea, #statsFileInput, .input-tab, .stats-sub-tab, #loadTestGenes, #clearGenes, #loadManualStatsBtn, #loadTestStats, #downloadSampleStats');
+        geneInputElements.forEach(el => {
+            if (el) {
+                el.disabled = isMutationMode;
+                el.style.opacity = isMutationMode ? '0.5' : '1';
+                el.style.pointerEvents = isMutationMode ? 'none' : 'auto';
+            }
+        });
+        // Grey out the input panels but not the Run button
+        const inputPanels = document.querySelectorAll('.input-panel, .input-tabs');
+        inputPanels.forEach(el => {
+            if (el) {
+                el.style.opacity = isMutationMode ? '0.5' : '1';
+            }
+        });
 
         // Set default min cell lines based on mode
         const minCellLinesInput = document.getElementById('minCellLines');
@@ -2078,9 +2084,27 @@ class CorrelationExplorer {
             margin: { t: 70, r: 30, b: 50, l: 120 }
         };
 
-        // Show modal
+        // Show modal - hide tissue/hotspot UI for mutation analysis view
         document.getElementById('geneEffectModal').style.display = 'flex';
         document.getElementById('geneEffectTitle').textContent = `${gene} Gene Effect by ${hotspotGene} Mutation`;
+
+        // Hide tissue/hotspot specific elements for mutation analysis inspect
+        document.getElementById('geViewTissue').style.display = 'none';
+        document.getElementById('geViewHotspot').style.display = 'none';
+        document.getElementById('geShowAllBtn').style.display = 'none';
+        document.querySelector('#geneEffectModal .card-content > div:nth-child(1)').style.display = 'none'; // Hide gene search row
+        document.getElementById('geneEffectSummary').style.display = 'none';
+        document.getElementById('geByTissueView').style.display = 'block';
+        document.getElementById('geByHotspotView').style.display = 'none';
+
+        // Hide table container for mutation analysis view
+        const tableContainer = document.querySelector('#geneEffectModal .card-content > div:last-of-type > div:last-child');
+        if (tableContainer && tableContainer.querySelector('#geneEffectTable')) {
+            tableContainer.parentElement.style.display = 'none';
+        }
+
+        // Mark this as mutation analysis view
+        this.geneEffectViewMode = 'mutation';
 
         Plotly.newPlot('geneEffectPlot', traces, layout, { responsive: true });
     }
@@ -6365,6 +6389,19 @@ Results:
         document.getElementById('geSummarySD').textContent = sd.toFixed(3);
         document.getElementById('geSummaryN').textContent = allEffects.length;
         document.getElementById('geneEffectSummary').style.display = 'block';
+
+        // Restore visibility of UI elements (in case hidden by mutation analysis inspect)
+        document.getElementById('geViewTissue').style.display = '';
+        document.getElementById('geViewHotspot').style.display = '';
+        document.querySelector('#geneEffectModal .card-content > div:nth-child(1)').style.display = '';
+        // Restore table/chart layout
+        const chartTableLayout = document.querySelector('#geneEffectModal .card-content > div[style*="display: flex"]');
+        if (chartTableLayout) {
+            chartTableLayout.querySelectorAll(':scope > div').forEach(d => d.style.display = '');
+        }
+
+        // Mark this as regular gene effect view
+        this.geneEffectViewMode = 'geneEffect';
 
         // Show modal
         document.getElementById('geneEffectModal').style.display = 'flex';
