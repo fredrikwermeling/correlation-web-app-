@@ -2089,19 +2089,14 @@ class CorrelationExplorer {
         document.getElementById('geneEffectTitle').textContent = `${gene} Gene Effect by ${hotspotGene} Mutation`;
 
         // Hide tissue/hotspot specific elements for mutation analysis inspect
-        document.getElementById('geViewTissue').style.display = 'none';
-        document.getElementById('geViewHotspot').style.display = 'none';
-        document.getElementById('geShowAllBtn').style.display = 'none';
-        document.querySelector('#geneEffectModal .card-content > div:nth-child(1)').style.display = 'none'; // Hide gene search row
+        document.getElementById('geSearchBar').style.display = 'none';
         document.getElementById('geneEffectSummary').style.display = 'none';
+        document.getElementById('geTableContainer').style.display = 'none';
         document.getElementById('geByTissueView').style.display = 'block';
         document.getElementById('geByHotspotView').style.display = 'none';
 
-        // Hide table container for mutation analysis view
-        const tableContainer = document.querySelector('#geneEffectModal .card-content > div:last-of-type > div:last-child');
-        if (tableContainer && tableContainer.querySelector('#geneEffectTable')) {
-            tableContainer.parentElement.style.display = 'none';
-        }
+        // Make chart container full width
+        document.getElementById('geChartContainer').style.flex = '1';
 
         // Mark this as mutation analysis view
         this.geneEffectViewMode = 'mutation';
@@ -6391,14 +6386,9 @@ Results:
         document.getElementById('geneEffectSummary').style.display = 'block';
 
         // Restore visibility of UI elements (in case hidden by mutation analysis inspect)
-        document.getElementById('geViewTissue').style.display = '';
-        document.getElementById('geViewHotspot').style.display = '';
-        document.querySelector('#geneEffectModal .card-content > div:nth-child(1)').style.display = '';
-        // Restore table/chart layout
-        const chartTableLayout = document.querySelector('#geneEffectModal .card-content > div[style*="display: flex"]');
-        if (chartTableLayout) {
-            chartTableLayout.querySelectorAll(':scope > div').forEach(d => d.style.display = '');
-        }
+        document.getElementById('geSearchBar').style.display = '';
+        document.getElementById('geTableContainer').style.display = '';
+        document.getElementById('geChartContainer').style.flex = '0 0 55%';
 
         // Mark this as regular gene effect view
         this.geneEffectViewMode = 'geneEffect';

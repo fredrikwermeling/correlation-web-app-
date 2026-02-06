@@ -1761,7 +1761,7 @@
             </div>
             <div class="modal-body" style="padding: 15px;">
                 <!-- Gene search bar -->
-                <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 15px; flex-wrap: wrap; padding-bottom: 15px; border-bottom: 1px solid #e5e7eb;">
+                <div id="geSearchBar" style="display: flex; gap: 10px; align-items: center; margin-bottom: 15px; flex-wrap: wrap; padding-bottom: 15px; border-bottom: 1px solid #e5e7eb;">
                     <label style="font-weight: 500;">Gene:</label>
                     <input type="text" id="geneEffectSearch" class="form-control" placeholder="Enter gene symbol" style="width: 150px; font-size: 13px;">
                     <button class="btn btn-success btn-sm" id="geneEffectSearchBtn">Analyze</button>
@@ -1785,9 +1785,9 @@
                 </div>
 
                 <!-- Side-by-side layout: Chart + Table -->
-                <div style="display: flex; gap: 20px; align-items: flex-start;">
+                <div id="geChartTableLayout" style="display: flex; gap: 20px; align-items: flex-start;">
                     <!-- Chart container -->
-                    <div style="flex: 0 0 55%; min-width: 0;">
+                    <div id="geChartContainer" style="flex: 0 0 55%; min-width: 0;">
                         <div id="geByTissueView">
                             <div id="geneEffectPlot" style="width: 100%; min-height: 400px;"></div>
                         </div>
@@ -1800,7 +1800,7 @@
                     </div>
 
                     <!-- Table container -->
-                    <div style="flex: 1; min-width: 300px;">
+                    <div id="geTableContainer" style="flex: 1; min-width: 300px;">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
                             <div style="font-weight: 600; color: #374151; font-size: 13px;">Statistics (click row to focus)</div>
                             <input type="text" id="geTableSearch" class="form-control" placeholder="Search..." style="width: 120px; font-size: 11px; padding: 4px 8px;">
