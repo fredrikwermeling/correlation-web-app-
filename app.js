@@ -401,6 +401,9 @@ class CorrelationExplorer {
         // Show/hide design mode hint
         document.getElementById('designModeHint').style.display = isDesignMode ? 'block' : 'none';
 
+        // Show/hide design expand option
+        document.getElementById('designExpandOption').style.display = isDesignMode ? 'block' : 'none';
+
         // Show/hide mutation tab
         document.getElementById('mutationTab').style.display = isMutationMode ? 'inline-block' : 'none';
 
@@ -1528,12 +1531,13 @@ class CorrelationExplorer {
             return;
         }
 
-        this.showStatus('info', 'Running correlation analysis...');
+        const expandNetwork = mode === 'design' && document.getElementById('designExpandNetwork')?.checked;
+        this.showStatus('info', expandNetwork ? 'Running correlation analysis (expanded network)...' : 'Running correlation analysis...');
 
         // Use setTimeout to allow UI to update
         setTimeout(() => {
             try {
-                this.results = this.calculateCorrelations(geneList, mode, cutoff, minN, minSlope, cellLineIndices);
+                this.results = this.calculateCorrelations(geneList, mode, cutoff, minN, minSlope, cellLineIndices, expandNetwork);
                 if (this.results.success) {
                     this.displayResults();
                     this.showStatus('success',
@@ -2310,7 +2314,7 @@ class CorrelationExplorer {
         this.downloadFile(csv, filename, 'text/csv');
     }
 
-    calculateCorrelations(geneList, mode, cutoff, minN, minSlope, cellLineIndices) {
+    calculateCorrelations(geneList, mode, cutoff, minN, minSlope, cellLineIndices, expandNetwork = false) {
         const correlations = [];
         let targetGenes;
 
@@ -2331,7 +2335,7 @@ class CorrelationExplorer {
             inputData.set(gene, filteredData);
         });
 
-        // Calculate correlations
+        // Calculate correlations (first pass: input genes vs target genes)
         for (let i = 0; i < geneList.length; i++) {
             const gene1 = geneList[i];
             const data1 = inputData.get(gene1);
@@ -2361,6 +2365,49 @@ class CorrelationExplorer {
                         n: result.n,
                         cluster: 0
                     });
+                }
+            }
+        }
+
+        // Second pass for expanded network: find correlations between discovered genes
+        if (mode === 'design' && expandNetwork && correlations.length > 0) {
+            // Collect all discovered genes (not in original input)
+            const discoveredGenes = new Set();
+            correlations.forEach(c => {
+                if (!geneList.includes(c.gene2)) discoveredGenes.add(c.gene2);
+            });
+
+            const discoveredArray = Array.from(discoveredGenes);
+            if (discoveredArray.length > 1) {
+                // Cache gene data for discovered genes
+                const discoveredData = new Map();
+                discoveredArray.forEach(gene => {
+                    const idx = this.geneIndex.get(gene);
+                    const fullData = this.getGeneData(idx);
+                    discoveredData.set(gene, cellLineIndices.map(i => fullData[i]));
+                });
+
+                // Find correlations between discovered genes (pairwise)
+                for (let i = 0; i < discoveredArray.length; i++) {
+                    const gene1 = discoveredArray[i];
+                    const data1 = discoveredData.get(gene1);
+
+                    for (let j = i + 1; j < discoveredArray.length; j++) {
+                        const gene2 = discoveredArray[j];
+                        const data2 = discoveredData.get(gene2);
+
+                        const result = this.pearsonWithSlope(data1, data2);
+                        if (result.n >= minN && Math.abs(result.correlation) >= cutoff && Math.abs(result.slope) >= minSlope) {
+                            correlations.push({
+                                gene1: gene1,
+                                gene2: gene2,
+                                correlation: Math.round(result.correlation * 1000) / 1000,
+                                slope: Math.round(result.slope * 1000) / 1000,
+                                n: result.n,
+                                cluster: 0
+                            });
+                        }
+                    }
                 }
             }
         }
