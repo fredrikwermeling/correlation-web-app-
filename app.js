@@ -3225,7 +3225,7 @@ Results:
                 ctx.fillStyle = '#333';
                 ctx.font = smallFont;
                 ctx.fillText(minEffect.toFixed(2), legendX, gradY + gradientHeight + 16);
-                ctx.fillText('Gene Effect (+/−)', legendX, gradY - 4);
+                ctx.fillText('Gene Effect', legendX, gradY - 4);
                 ctx.fillText(maxEffect.toFixed(2), legendX + gradientWidth - 25, gradY + gradientHeight + 16);
             } else {
                 const maxAbsEffect = Math.max(...effectValues.map(v => Math.abs(v)));
@@ -3851,9 +3851,8 @@ Results:
                     });
                 });
 
-                const scaleLabel = colorScale === 'network' ? ' (network)' : ' (all genes)';
                 if (colorLegend) colorLegend.innerHTML = `
-                    <div class="legend-item">LFC${scaleLabel}</div>
+                    <div class="legend-item">LFC</div>
                     <div style="display: flex; align-items: center; gap: 4px;">
                         <span style="font-size: 10px;">${minLfc.toFixed(1)}</span>
                         <div style="width: 80px; height: 12px; background: linear-gradient(to right, #b2182b, #f7f7f7, #2166ac); border-radius: 2px;"></div>
@@ -3879,9 +3878,8 @@ Results:
                     });
                 });
 
-                const scaleLabel = colorScale === 'network' ? ' (network)' : ' (all genes)';
                 if (colorLegend) colorLegend.innerHTML = `
-                    <div class="legend-item">Absolute LFC${scaleLabel}</div>
+                    <div class="legend-item">Absolute LFC</div>
                     <div style="display: flex; align-items: center; gap: 4px;">
                         <span style="font-size: 10px;">0</span>
                         <div style="width: 80px; height: 12px; background: linear-gradient(to right, #f5f5f5, #fdae61, #d7191c); border-radius: 2px;"></div>
@@ -3910,9 +3908,8 @@ Results:
                     });
                 });
 
-                const scaleLabel = colorScale === 'network' ? ' (network)' : ' (all genes)';
                 if (colorLegend) colorLegend.innerHTML = `
-                    <div class="legend-item">FDR${scaleLabel}</div>
+                    <div class="legend-item">FDR</div>
                     <div style="display: flex; align-items: center; gap: 4px;">
                         <span style="font-size: 10px;">${minFdr.toExponential(1)}</span>
                         <div style="width: 80px; height: 12px; background: linear-gradient(to right, #d7191c, #fdae61, #f5f5f5); border-radius: 2px;"></div>
@@ -4332,7 +4329,7 @@ Results:
                 ctx.fillStyle = '#333';
                 ctx.font = smallFont;
                 ctx.fillText(minEffect.toFixed(2), legendX, gradY + gradientHeight + 16);
-                ctx.fillText('Gene Effect (+/−)', legendX, gradY - 4);
+                ctx.fillText('Gene Effect', legendX, gradY - 4);
                 ctx.fillText(maxEffect.toFixed(2), legendX + gradientWidth - 25, gradY + gradientHeight + 16);
             } else {
                 const maxAbsEffect = Math.max(...effectValues.map(v => Math.abs(v)));
@@ -4946,17 +4943,6 @@ Results:
         document.getElementById('hotspotGene').value = '';
         document.getElementById('hotspotMode').value = 'color';
         document.getElementById('mutationCautionScatter').style.display = 'none';
-
-        // Clear highlighted cells
-        document.getElementById('scatterCellSearch').value = '';
-        this.clickedCells.clear();
-
-        // Reset axes
-        this.resetInspectAxes();
-
-        // Reset aspect ratio
-        document.getElementById('aspectRatio').value = '1';
-        document.getElementById('aspectRatioValue').textContent = '1.0';
 
         // Update the plot
         this.updateInspectPlot();
