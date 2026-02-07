@@ -2904,9 +2904,9 @@ class CorrelationExplorer {
                     <td>${c.slope.toFixed(3)}</td>
                     <td>${c.n}</td>
                     <td>${c.cluster}</td>
-                    <td>
-                        <button class="btn btn-outline-primary btn-sm inspect-btn" data-gene1="${c.gene1}" data-gene2="${c.gene2}">Inspect</button>
-                        <button class="btn btn-outline-info btn-sm tissue-btn" data-gene1="${c.gene1}" data-gene2="${c.gene2}" style="margin-left: 4px;">By tissue</button>
+                    <td style="white-space: nowrap;">
+                        <button class="btn btn-sm inspect-btn" style="padding: 2px 6px; font-size: 10px; background: #5a9f4a; color: white;" data-gene1="${c.gene1}" data-gene2="${c.gene2}">Correlate</button>
+                        <button class="btn btn-sm tissue-btn" style="padding: 2px 6px; font-size: 10px; margin-left: 4px; background: #6b7280; color: white;" data-gene1="${c.gene1}" data-gene2="${c.gene2}">By Tissue</button>
                     </td>
                 `;
                 // Add click handlers
@@ -3013,8 +3013,8 @@ class CorrelationExplorer {
                 // Add analyze buttons
                 rowHtml += `
                     <td style="text-align: center; white-space: nowrap;">
-                        <button class="btn btn-sm tissue-btn" style="padding: 2px 6px; font-size: 10px; margin-right: 4px;" data-gene="${c.gene}">By Tissue</button>
-                        <button class="btn btn-sm hotspot-btn" style="padding: 2px 6px; font-size: 10px; background: #6b7280; color: white;" data-gene="${c.gene}">By Hotspot</button>
+                        <button class="btn btn-sm tissue-btn" style="padding: 2px 6px; font-size: 10px; background: #5a9f4a; color: white;" data-gene="${c.gene}">By Tissue</button>
+                        <button class="btn btn-sm hotspot-btn" style="padding: 2px 6px; font-size: 10px; margin-left: 4px; background: #6b7280; color: white;" data-gene="${c.gene}">By Hotspot</button>
                     </td>
                 `;
 
