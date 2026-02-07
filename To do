@@ -1,3 +1,0 @@
-
-- Could the correlation analysis include the chance of adding n genes (selected by the user) to try to find correlations between the user input gene set? eg maybe gene a and b are interacting via gene c (which is not included in the uploaded gene set). a feature could be that the user could say expand the network, correlations (still within the specified cut off) could be identified.
-

@@ -1,4 +1,4 @@
-# Correlate - a CRISPR Screen Analysis Tool
+# Correlate - CRISPR Screen Correlation Analysis Tool
 
 A web-based application for analyzing gene correlations from DepMap CRISPR screen data. Part of the [Green Listed](https://greenlisted.cmm.se) tool family.
 
@@ -10,54 +10,68 @@ A web-based application for analyzing gene correlations from DepMap CRISPR scree
 
 1. **Analysis Mode** - Calculate pairwise correlations within your gene list
 2. **Design Mode** - Find genes correlated with your input genes (expands the network)
-3. **Mutation Analysis Mode** - Compare gene effects between wild-type and mutant cells for a selected hotspot mutation
+   - Optional expanded network: discover correlations between newly found genes
+3. **Mutation Analysis Mode** - Compare gene effects between wild-type and mutant cells for a selected hotspot mutation (Welch's t-test)
+4. **Synonym/Ortholog Lookup Mode** - Map gene symbols to DepMap identifiers using risk-tiered synonym and mouse-to-human ortholog matching
 
-### Core Functionality
+### Network Visualization
 
-- **Network Visualization**: Interactive network graph showing gene relationships
-  - Customizable node size, font size, and edge width
-  - Color nodes by gene effect (signed or absolute)
-  - Color nodes by uploaded statistics (LFC, FDR)
-  - Show/hide gene effect values in labels
-  - Export as PNG or SVG with legend
+- Interactive network graph (vis-network) with draggable nodes
+- Customizable node size, font size, and edge width
+- Color nodes by gene effect (signed or absolute)
+- Color nodes by uploaded statistics (LFC, FDR)
+- Show gene effect values and SD in node labels
+- Click nodes to hide them, with restore option
+- Export as PNG or SVG with legend
+- Physics-based or manual layout with auto-arrange
 
-- **Correlation Analysis**:
-  - Pearson correlation with adjustable cutoff
-  - Minimum slope filter
-  - Minimum cell line threshold
-  - Lineage/subtype filtering
+### Scatter Plot Inspection
 
-- **Scatter Plot Inspection**: Detailed plots for each gene pair
-  - Hotspot mutation overlay (color-coded by mutation status: 0/1/2)
-  - 3-panel stratification by mutation level
-  - Cancer type filtering
-  - Cell line highlighting and search
-  - Customizable axis ranges and aspect ratio
+- Detailed scatter plots for each gene pair via Inspect button
+- Hotspot mutation overlay (color-coded by mutation level: 0/1/2)
+- Three-panel stratification by mutation level
+- By-tissue analysis with correlation comparison table (Fisher z-transformation)
+- Cancer type filtering
+- Cell line highlighting and search
+- Customizable axis ranges and aspect ratio (including square mode)
+- Export as PNG, SVG, or CSV
 
-- **Mutation Analysis**:
-  - Welch's t-test comparing gene effects between WT and mutant cells
-  - Filter by p-value threshold
-  - Gene effect distribution charts
+### Gene Effect Distribution
 
-- **Gene Synonym/Ortholog Support**:
-  - Automatic lookup of human gene synonyms
-  - Mouse-to-human ortholog mapping
-  - Risk-tiered matching (low/mid confidence)
+- Box plots of gene effect by cancer type (tissue)
+- Box plots of gene effect by hotspot mutation status
+- Sortable statistics tables
+- Export as PNG, SVG, or CSV
+
+### Mutation Analysis
+
+- Welch's t-test comparing gene effects between WT and mutant cells
+- Three mutation levels (0 = WT, 1 = one hotspot mutation, 2 = two or more)
+- Filter by p-value threshold
+- Gene effect distribution charts per mutation group
+
+### Gene Input
+
+- Paste gene symbols directly (one per line, comma or space separated)
+- Upload gene list from CSV/TSV file with optional LFC and FDR columns
+- Test gene set for quick exploration
+- Automatic gene synonym and ortholog resolution (low/mid risk tiers)
 
 ### Data Export
 
 - Download network as PNG/SVG with legend
-- Download correlation tables as CSV
-- Download cluster assignments as CSV
-- Download all data as ZIP archive
+- Download scatter plots as PNG/SVG/CSV
+- Download gene effect charts as PNG/SVG/CSV
+- Download correlation and cluster tables as CSV
+- Download all results as ZIP archive
 
 ## Data Sources
 
 The app uses data from the [DepMap (Cancer Dependency Map)](https://depmap.org/portal/) project, release 25Q3:
 
-- **CRISPRGeneEffect.csv** - CRISPR knockout dependency scores
-- **Model.csv** - Cell line metadata (cancer type, lineage)
-- **OmicsSomaticMutationsMatrixHotspot.csv** - Somatic hotspot mutations
+- **CRISPRGeneEffect** - CRISPR knockout dependency scores
+- **Model** - Cell line metadata (cancer type, lineage, subtype)
+- **OmicsSomaticMutationsMatrixHotspot** - Somatic hotspot mutation levels (0/1/2)
 
 If you use this tool, please [acknowledge DepMap](https://depmap.org/portal/data_page/?tab=overview#how-to-cite) in your publications.
 
@@ -67,7 +81,7 @@ If you use this tool, please [acknowledge DepMap](https://depmap.org/portal/data
 
 2. **Input Genes**:
    - Paste gene symbols (one per line) in the text area, OR
-   - Upload a CSV/TSV file with optional LFC/FDR statistics
+   - Upload a CSV/TSV file with optional LFC/FDR statistics columns
 
 3. **Set Parameters**:
    - Choose analysis mode
@@ -79,34 +93,35 @@ If you use this tool, please [acknowledge DepMap](https://depmap.org/portal/data
 4. **Run Analysis**: Click "Run Analysis"
 
 5. **Explore Results**:
-   - **Network tab**: Interactive visualization
-   - **Correlations tab**: Table with Inspect button for each pair
-   - **Clusters tab**: Gene assignments with mean effect statistics
-   - **Mutation Analysis tab**: Differential gene effect results (when using Mutation Analysis mode)
-   - **Summary tab**: Text summary
+   - **Network tab**: Interactive visualization with export options
+   - **Correlations tab**: Sortable table with Inspect button for each pair
+   - **Clusters tab**: Gene cluster assignments with mean effect and SD
+   - **Mutation Analysis tab**: Differential gene effect results (mutation mode)
+   - **Synonyms/Orthologs tab**: Mapped gene symbols (synonym/ortholog mode)
+   - **Summary tab**: Text summary of analysis parameters and results
 
 ## File Structure
 
 ```
 correlation-web-app/
-├── index.html              # Main HTML file
-├── app.js                  # Application logic (~4000 lines)
-├── README.md               # This file
+├── index.html                      # Main HTML file with UI and styling
+├── app.js                          # Application logic
+├── README.md                       # This file
 └── web_data/
-    ├── geneEffects.bin.gz      # Gene effect matrix (binary, compressed)
-    ├── metadata.json           # Gene names and cell line IDs
-    ├── cellLineMetadata.json   # Lineage and subtype info
-    ├── mutations.json          # Hotspot mutation data
-    ├── synonyms.json           # Gene synonyms (low/mid risk)
-    ├── orthologs.json          # Mouse-human orthologs
-    └── correlate_logo.png      # App logo
+    ├── geneEffects.bin.gz          # Gene effect matrix (binary, gzip compressed)
+    ├── metadata.json               # Gene names and cell line IDs
+    ├── cellLineMetadata.json       # Lineage and subtype info
+    ├── mutations.json              # Hotspot mutation data (levels 0/1/2)
+    ├── synonyms.json               # Gene synonyms (low/mid risk tiers)
+    ├── orthologs.json              # Mouse-to-human ortholog mapping
+    └── correlate_logo.png          # App logo
 ```
 
 ## Technical Details
 
-- **Frontend**: Vanilla JavaScript, HTML5, CSS3
-- **Visualization**: Plotly.js (scatter plots), vis-network (network graphs)
-- **Data Processing**: Client-side with pako for gzip decompression
+- **Frontend**: Vanilla JavaScript, HTML5, CSS3 (no build system, no backend)
+- **Visualization**: [Plotly.js](https://plotly.com/javascript/) (scatter plots, box plots), [vis-network](https://visjs.github.io/vis-network/docs/network/) (network graphs)
+- **Data Processing**: Client-side with [pako](https://github.com/nodeca/pako) for gzip decompression
 - **Statistics**: Pearson correlation, linear regression, Welch's t-test, Fisher z-transformation
 
 ## Credits

@@ -17,14 +17,15 @@ Thumbs.db
 
 # Large source data files (not needed for web app)
 *.csv
+*.tsv
 
 # Screenshots and reference images
 *.png
 Screenshot*.png
-inspect.png
 
-# R Shiny app (separate project)
-app.R
+# R Shiny apps (separate projects)
+*.R
 
-# Claude settings
+# Claude/AI settings
 .claude/
+CLAUDE.md
