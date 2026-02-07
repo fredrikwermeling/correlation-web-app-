@@ -389,10 +389,12 @@ class CorrelationExplorer {
         const mode = document.querySelector('input[name="analysisMode"]:checked').value;
         const isMutationMode = mode === 'mutation';
         const isDesignMode = mode === 'design';
+        const isSynonymMode = mode === 'synonym';
 
-        // Toggle visibility of correlation/slope params
-        document.getElementById('correlationParams').style.display = isMutationMode ? 'none' : 'block';
-        document.getElementById('slopeParams').style.display = isMutationMode ? 'none' : 'block';
+        // Toggle visibility of correlation/slope params (hide for mutation and synonym modes)
+        const hideParams = isMutationMode || isSynonymMode;
+        document.getElementById('correlationParams').style.display = hideParams ? 'none' : 'block';
+        document.getElementById('slopeParams').style.display = hideParams ? 'none' : 'block';
 
         // Toggle visibility of mutation-specific params
         document.getElementById('mutationHotspotGroup').style.display = isMutationMode ? 'block' : 'none';
@@ -406,6 +408,9 @@ class CorrelationExplorer {
 
         // Show/hide mutation tab
         document.getElementById('mutationTab').style.display = isMutationMode ? 'inline-block' : 'none';
+
+        // Show/hide synonyms tab
+        document.getElementById('synonymsTab').style.display = isSynonymMode ? 'inline-block' : 'none';
 
         // Disable/enable gene input elements for mutation mode (not needed, but keep Run button active)
         const geneInputElements = document.querySelectorAll('#geneTextarea, #manualStatsTextarea, #statsFileInput, .input-tab, .stats-sub-tab, #loadTestGenes, #clearGenes, #loadManualStatsBtn, #loadTestStats, #downloadSampleStats');
@@ -626,8 +631,11 @@ class CorrelationExplorer {
         // Manual stats entry - now auto-loaded on Run, no button needed
 
         // Prevent keyboard events from propagating to network when typing in textareas/inputs
-        document.querySelectorAll('textarea, input[type="text"], input[type="number"]').forEach(el => {
-            el.addEventListener('keydown', (e) => {
+        // Use event delegation to handle all inputs including dynamically added ones
+        document.addEventListener('keydown', (e) => {
+            const el = e.target;
+            if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
+                // Stop propagation to prevent vis-network from capturing arrow keys etc.
                 e.stopPropagation();
 
                 // Handle Tab key in textareas - insert tab character instead of changing focus
@@ -638,8 +646,8 @@ class CorrelationExplorer {
                     el.value = el.value.substring(0, start) + '\t' + el.value.substring(end);
                     el.selectionStart = el.selectionEnd = start + 1;
                 }
-            });
-        });
+            }
+        }, true); // Use capture phase to intercept before vis-network
 
         // Run analysis
         document.getElementById('runAnalysis').addEventListener('click', () => this.runAnalysis());
@@ -657,6 +665,16 @@ class CorrelationExplorer {
         // Download mutation results
         document.getElementById('downloadMutationResults').addEventListener('click', () => {
             this.downloadMutationResults();
+        });
+
+        // Synonyms search
+        document.getElementById('synonymsSearch').addEventListener('input', (e) => {
+            this.filterSynonymsTable(e.target.value);
+        });
+
+        // Download synonyms results
+        document.getElementById('downloadSynonyms').addEventListener('click', () => {
+            this.downloadSynonymsCSV();
         });
 
         // Gene effect distribution modal
@@ -1506,6 +1524,12 @@ class CorrelationExplorer {
             return;
         }
 
+        // Handle synonym/ortholog lookup mode
+        if (mode === 'synonym') {
+            this.runSynonymLookup();
+            return;
+        }
+
         const geneList = this.getGeneList();
         const cutoff = parseFloat(document.getElementById('correlationCutoff').value);
         const minN = parseInt(document.getElementById('minCellLines').value);
@@ -1611,6 +1635,191 @@ class CorrelationExplorer {
                 this.showStatus('error', 'Mutation analysis failed: ' + error.message);
             }
         }, 50);
+    }
+
+    async runSynonymLookup() {
+        const textarea = document.getElementById('geneTextarea');
+        const text = textarea.value.trim();
+
+        if (!text) {
+            this.showStatus('error', 'Please enter at least one gene');
+            return;
+        }
+
+        const inputGenes = text.split(/[\n,\s]+/).map(g => g.trim()).filter(g => g.length > 0);
+
+        if (inputGenes.length === 0) {
+            this.showStatus('error', 'Please enter at least one gene');
+            return;
+        }
+
+        this.showStatus('info', 'Looking up synonyms and orthologs...');
+
+        // Load synonyms if not loaded
+        if (!this.synonymLookup) {
+            try {
+                const synonymsRes = await fetch('web_data/synonyms.json');
+                this.synonymLookup = await synonymsRes.json();
+            } catch (e) {
+                console.error('Failed to load synonyms:', e);
+                this.synonymLookup = {};
+            }
+        }
+
+        // Process each input gene
+        const results = [];
+        const genesForAPI = [];
+
+        for (const gene of inputGenes) {
+            const upperGene = gene.toUpperCase();
+            const result = {
+                input: gene,
+                status: 'Not Found',
+                official: '-',
+                lowRisk: [],
+                midRisk: [],
+                orthologs: []
+            };
+
+            // Check if it's already a valid gene in the dataset
+            if (this.geneIndex.has(upperGene)) {
+                result.status = 'Valid';
+                result.official = upperGene;
+            }
+
+            // Check synonym lookup (this maps aliases to official symbols)
+            if (this.synonymLookup) {
+                const match = this.synonymLookup[upperGene];
+                if (match) {
+                    const risk = match.r === 'l' ? 'lowRisk' : 'midRisk';
+                    result[risk].push(match.d);
+                    if (result.status === 'Not Found' && this.geneIndex.has(match.d.toUpperCase())) {
+                        result.status = 'Synonym Found';
+                        result.official = match.d;
+                    }
+                }
+
+                // Also find all synonyms that point TO this gene (reverse lookup)
+                Object.entries(this.synonymLookup).forEach(([alias, data]) => {
+                    if (data.d.toUpperCase() === upperGene) {
+                        const risk = data.r === 'l' ? 'lowRisk' : 'midRisk';
+                        if (!result[risk].includes(alias)) {
+                            result[risk].push(alias);
+                        }
+                    }
+                });
+            }
+
+            // Check ortholog lookup (mouse to human)
+            if (this.orthologs?.mouseToHuman) {
+                const humanGene = this.orthologs.mouseToHuman[gene] || this.orthologs.mouseToHuman[upperGene];
+                if (humanGene) {
+                    result.orthologs.push(`${gene} → ${humanGene}`);
+                    if (result.status === 'Not Found' && this.geneIndex.has(humanGene.toUpperCase())) {
+                        result.status = 'Ortholog Found';
+                        result.official = humanGene;
+                    }
+                }
+
+                // Reverse lookup: find mouse genes that map to this human gene
+                Object.entries(this.orthologs.mouseToHuman).forEach(([mouse, human]) => {
+                    if (human.toUpperCase() === upperGene) {
+                        const orthStr = `${mouse} → ${human}`;
+                        if (!result.orthologs.includes(orthStr)) {
+                            result.orthologs.push(orthStr);
+                        }
+                    }
+                });
+            }
+
+            // If still not found, queue for API lookup
+            if (result.status === 'Not Found') {
+                genesForAPI.push({ gene, result });
+            }
+
+            results.push(result);
+        }
+
+        // Query MyGene.info API for remaining genes
+        if (genesForAPI.length > 0) {
+            try {
+                const apiResults = await this.queryMyGeneAPI(genesForAPI.map(g => g.gene));
+                apiResults.forEach((apiResult, idx) => {
+                    if (apiResult.replacement) {
+                        const result = genesForAPI[idx].result;
+                        result.lowRisk.push(`${apiResult.replacement} (API)`);
+                        if (this.geneIndex.has(apiResult.replacement.toUpperCase())) {
+                            result.status = 'API Match';
+                            result.official = apiResult.replacement;
+                        }
+                    }
+                });
+            } catch (error) {
+                console.warn('MyGene.info API query failed:', error);
+            }
+        }
+
+        // Store results and display
+        this.synonymResults = results;
+        this.displaySynonymResults();
+
+        // Switch to synonyms tab
+        document.querySelectorAll('.nav-link').forEach(link => link.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+        document.querySelector('[data-tab="synonyms"]').classList.add('active');
+        document.getElementById('tab-synonyms').classList.add('active');
+
+        this.showStatus('success', `&#10003; Synonym lookup complete: ${results.length} genes processed`);
+    }
+
+    displaySynonymResults() {
+        const tbody = document.getElementById('synonymsTableBody');
+        tbody.innerHTML = '';
+
+        if (!this.synonymResults || this.synonymResults.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" style="padding: 40px; color: var(--gray-500);">No results</td></tr>';
+            return;
+        }
+
+        this.synonymResults.forEach(r => {
+            const statusColor = r.status === 'Valid' ? '#16a34a' :
+                               r.status === 'Not Found' ? '#dc2626' : '#f59e0b';
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${r.input}</td>
+                <td style="color: ${statusColor}; font-weight: 500;">${r.status}</td>
+                <td>${r.official}</td>
+                <td style="border-left: 2px solid #16a34a;">${r.lowRisk.length > 0 ? r.lowRisk.join(', ') : '-'}</td>
+                <td style="border-left: 2px solid #f59e0b;">${r.midRisk.length > 0 ? r.midRisk.join(', ') : '-'}</td>
+                <td style="border-left: 2px solid #6366f1;">${r.orthologs.length > 0 ? r.orthologs.join(', ') : '-'}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    filterSynonymsTable(searchTerm) {
+        const tbody = document.getElementById('synonymsTableBody');
+        if (!tbody) return;
+
+        const term = searchTerm.toLowerCase().trim();
+        const rows = tbody.querySelectorAll('tr');
+
+        rows.forEach(row => {
+            const text = row.textContent.toLowerCase();
+            row.style.display = term === '' || text.includes(term) ? '' : 'none';
+        });
+    }
+
+    downloadSynonymsCSV() {
+        if (!this.synonymResults || this.synonymResults.length === 0) return;
+
+        let csv = 'Input_Gene,Status,Official_Symbol,Low_Risk_Synonyms,Mid_Risk_Synonyms,Orthologs\n';
+
+        this.synonymResults.forEach(r => {
+            csv += `"${r.input}","${r.status}","${r.official}","${r.lowRisk.join('; ')}","${r.midRisk.join('; ')}","${r.orthologs.join('; ')}"\n`;
+        });
+
+        this.downloadFile(csv, 'synonym_ortholog_lookup.csv', 'text/csv');
     }
 
     calculateMutationAnalysis(hotspotGene, minN, lineageFilter, subLineageFilter, additionalHotspot, additionalHotspotLevel) {
@@ -2545,10 +2754,42 @@ class CorrelationExplorer {
     }
 
     displayResults() {
+        // Reset network settings to defaults
+        this.resetNetworkSettings();
+
+        // Display all results
         this.displayNetwork();
         this.displayCorrelationsTable();
         this.displayClustersTable();
         this.displaySummary();
+
+        // Switch to network tab
+        document.querySelectorAll('.nav-link').forEach(link => link.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+        document.querySelector('[data-tab="network"]').classList.add('active');
+        document.getElementById('tab-network').classList.add('active');
+    }
+
+    resetNetworkSettings() {
+        // Reset sliders to default values
+        document.getElementById('netFontSize').value = 16;
+        document.getElementById('fontSizeBubble').textContent = '16';
+        document.getElementById('netNodeSize').value = 25;
+        document.getElementById('nodeSizeBubble').textContent = '25';
+        document.getElementById('netEdgeWidth').value = 3;
+        document.getElementById('edgeWidthBubble').textContent = '3';
+
+        // Reset checkboxes
+        document.getElementById('showGeneEffect').checked = false;
+        document.getElementById('showGeneEffectSD').checked = false;
+        document.getElementById('colorByGeneEffect').checked = false;
+        document.getElementById('colorAbsoluteGE').checked = false;
+        document.getElementById('colorByLFC').checked = false;
+        document.getElementById('colorByFDR').checked = false;
+
+        // Hide dependent options
+        document.getElementById('showGESDGroup').style.display = 'none';
+        document.getElementById('colorAbsoluteGroup').style.display = 'none';
     }
 
     displayNetwork() {

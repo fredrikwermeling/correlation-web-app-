@@ -591,7 +591,7 @@
             color: var(--green-800);
             font-weight: 600;
             padding: 10px 12px;
-            text-align: left;
+            text-align: center;
             border-bottom: 2px solid var(--green-200);
             position: sticky;
             top: 0;
@@ -606,6 +606,7 @@
         .data-table td {
             padding: 8px 12px;
             border-bottom: 1px solid var(--gray-200);
+            text-align: center;
         }
 
         .data-table tbody tr:hover {
@@ -1199,6 +1200,10 @@
                                 <input type="radio" name="analysisMode" value="mutation">
                                 Mutation Analysis (differential GE)
                             </label>
+                            <label>
+                                <input type="radio" name="analysisMode" value="synonym">
+                                Synonym/Ortholog Lookup
+                            </label>
                         </div>
                         <div id="designExpandOption" style="display: none; margin-top: 6px; margin-left: 20px;">
                             <label style="font-size: 11px; color: #4b5563;">
@@ -1368,6 +1373,7 @@
                     <li><button class="nav-link" data-tab="correlations">Correlations</button></li>
                     <li><button class="nav-link" data-tab="clusters">Clusters</button></li>
                     <li><button class="nav-link" data-tab="mutation" style="display: none;" id="mutationTab">Mutation Analysis</button></li>
+                    <li><button class="nav-link" data-tab="synonyms" style="display: none;" id="synonymsTab">Synonyms/Orthologs</button></li>
                     <li><button class="nav-link" data-tab="summary">Summary</button></li>
                 </ul>
 
@@ -1609,6 +1615,36 @@
                                 </tr>
                             </thead>
                             <tbody id="mutationTableBody">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Synonyms/Orthologs Tab -->
+                <div class="tab-content" id="tab-synonyms">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                        <div>
+                            <input type="text" id="synonymsSearch" class="form-control" placeholder="Search genes..." style="width: 200px; display: inline-block; margin-right: 10px;">
+                        </div>
+                        <button class="btn btn-outline btn-sm" id="downloadSynonyms">Export CSV</button>
+                    </div>
+                    <p class="help-text" style="margin-bottom: 10px; font-size: 11px;">
+                        <strong>Low Risk:</strong> Exact synonyms from HGNC. <strong>Mid Risk:</strong> Less certain synonyms. <strong>Orthologs:</strong> Mouse-to-human gene mappings.
+                    </p>
+                    <div class="table-container" style="max-height: 600px; overflow-y: auto;">
+                        <table class="data-table" id="synonymsTable">
+                            <thead>
+                                <tr>
+                                    <th>Input Gene</th>
+                                    <th>Status</th>
+                                    <th>Official Symbol</th>
+                                    <th style="border-left: 2px solid #16a34a;">Low Risk Synonyms</th>
+                                    <th style="border-left: 2px solid #f59e0b;">Mid Risk Synonyms</th>
+                                    <th style="border-left: 2px solid #6366f1;">Orthologs (Mouse→Human)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="synonymsTableBody">
+                                <tr><td colspan="6" style="padding: 40px; color: var(--gray-500);">Select "Synonym/Ortholog Lookup" mode and click Run</td></tr>
                             </tbody>
                         </table>
                     </div>
