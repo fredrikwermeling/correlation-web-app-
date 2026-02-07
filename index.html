@@ -1282,7 +1282,7 @@
                         </div>
                         <div class="button-row">
                             <button class="btn btn-secondary btn-sm" id="clearGenes">Clear</button>
-                            <button class="btn btn-success btn-sm" id="loadTestGenes">Load Test +/-</button>
+                            <button class="btn btn-success btn-sm" id="loadTestGenes">Test Genes</button>
                         </div>
                     </div>
 
@@ -1309,7 +1309,10 @@
                             <div class="form-group">
                                 <label class="form-label">Upload CSV/TSV:</label>
                                 <input type="file" id="statsFileInput" accept=".csv,.tsv,.txt,.tab" class="form-control" style="font-size: 11px; padding: 4px;">
-                                <small style="color: #666; font-size: 10px;">Accepts CSV, TSV, or TXT (saved from Excel)</small>
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+                                    <small style="color: #666; font-size: 10px;">Accepts CSV, TSV, or TXT</small>
+                                    <button class="btn btn-outline btn-sm" id="downloadSampleStats" title="Download sample file showing stats format" style="font-size: 10px; padding: 2px 6px;">Download Sample</button>
+                                </div>
                             </div>
                             <div id="statsColumnSelect" style="display: none;">
                                 <div class="form-group">
@@ -1325,13 +1328,12 @@
                                     <select id="statsFdrCol" class="form-control"><option value="">None</option></select>
                                 </div>
                                 <button class="btn btn-outline btn-sm" id="loadStatsBtn">Load Stats</button>
-                                <button class="btn btn-secondary btn-sm" id="downloadSampleStats" title="Download sample file showing stats format">Download Sample</button>
                             </div>
                         </div>
 
                         <div class="button-row" style="margin-top: 8px;">
                             <button class="btn btn-secondary btn-sm" id="clearStatsGenes">Clear</button>
-                            <button class="btn btn-success btn-sm" id="loadTestStats">Load Test +/-</button>
+                            <button class="btn btn-success btn-sm" id="loadTestStats">Test Genes w/ Stats</button>
                         </div>
                     </div>
 

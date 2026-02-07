@@ -7232,16 +7232,19 @@ Results:
                 statsText += `\np(0vs1+2): ${pValue < 0.001 ? pValue.toExponential(2) : pValue.toFixed(4)}`;
             }
 
-            // Apply width ratio from slider (default 1.0)
+            // Apply width ratio from slider (default 1.0 = full width)
             const widthRatio = this.geChartWidthRatio || 1.0;
-            const baseWidth = 400;
+            const plotId = this.currentGEView === 'tissue' ? 'geneEffectPlot' : 'geneEffectHotspotPlot';
+            const container = document.getElementById(plotId);
+            const containerWidth = container ? container.offsetWidth || 500 : 500;
+            const chartWidth = Math.round(containerWidth * widthRatio);
 
             const layout = {
                 title: { text: `${gene} gene effect by ${group} mutation status`, font: { size: 14 } },
                 yaxis: { title: 'Gene Effect', zeroline: true, zerolinecolor: '#374151' },
                 showlegend: false,
                 height: 500,
-                width: baseWidth * widthRatio,
+                width: chartWidth,
                 margin: { t: 50, b: 150, l: 60, r: 30 },
                 paper_bgcolor: 'white',
                 plot_bgcolor: 'white',
@@ -7260,7 +7263,6 @@ Results:
             // Mark that we're in detailed view
             this.geDetailedView = { mode: 'hotspot', group };
 
-            const plotId = this.currentGEView === 'tissue' ? 'geneEffectPlot' : 'geneEffectHotspotPlot';
             Plotly.newPlot(plotId, traces, layout, { responsive: true });
             this.updateShowAllButton();
             return;
@@ -7321,16 +7323,19 @@ Results:
             statsText += `\np-value: ${pValue < 0.001 ? pValue.toExponential(2) : pValue.toFixed(4)}`;
         }
 
-        // Apply width ratio from slider (default 1.0)
+        // Apply width ratio from slider (default 1.0 = full width)
         const widthRatio = this.geChartWidthRatio || 1.0;
-        const baseWidth = 350;
+        const plotId = this.currentGEView === 'tissue' ? 'geneEffectPlot' : 'geneEffectHotspotPlot';
+        const container = document.getElementById(plotId);
+        const containerWidth = container ? container.offsetWidth || 500 : 500;
+        const chartWidth = Math.round(containerWidth * widthRatio);
 
         const layout = {
             title: { text: `${gene} gene effect in ${group}`, font: { size: 14 } },
             yaxis: { title: 'Gene Effect', zeroline: true, zerolinecolor: '#374151', zerolinewidth: 2 },
             showlegend: false,
             height: 480,
-            width: baseWidth * widthRatio,
+            width: chartWidth,
             margin: { t: 50, b: 120, l: 60, r: 30 },
             paper_bgcolor: 'white',
             plot_bgcolor: 'white',
@@ -7349,7 +7354,6 @@ Results:
         // Mark that we're in detailed view
         this.geDetailedView = { mode: 'tissue', group };
 
-        const plotId = this.currentGEView === 'tissue' ? 'geneEffectPlot' : 'geneEffectHotspotPlot';
         Plotly.newPlot(plotId, traces, layout, { responsive: true });
         this.updateShowAllButton();
     }
@@ -7416,12 +7420,14 @@ Results:
     downloadGeneEffectChartPNG() {
         if (!this.currentGeneEffect) return;
         const plotId = this.currentGEView === 'tissue' ? 'geneEffectPlot' : 'geneEffectHotspotPlot';
-        // Use larger height to capture any stats annotations below the chart
-        const height = this.geDetailedView ? 650 : 550;
+        const plotEl = document.getElementById(plotId);
+        // Get the actual displayed chart dimensions
+        const chartWidth = plotEl?._fullLayout?.width || 800;
+        const chartHeight = plotEl?._fullLayout?.height || (this.geDetailedView ? 650 : 550);
         Plotly.downloadImage(plotId, {
             format: 'png',
-            width: 800,
-            height: height,
+            width: chartWidth,
+            height: chartHeight,
             filename: `gene_effect_${this.currentGeneEffect.gene}_by_${this.currentGEView}`
         });
     }
@@ -7429,12 +7435,14 @@ Results:
     downloadGeneEffectChartSVG() {
         if (!this.currentGeneEffect) return;
         const plotId = this.currentGEView === 'tissue' ? 'geneEffectPlot' : 'geneEffectHotspotPlot';
-        // Use larger height to capture any stats annotations below the chart
-        const height = this.geDetailedView ? 650 : 550;
+        const plotEl = document.getElementById(plotId);
+        // Get the actual displayed chart dimensions
+        const chartWidth = plotEl?._fullLayout?.width || 800;
+        const chartHeight = plotEl?._fullLayout?.height || (this.geDetailedView ? 650 : 550);
         Plotly.downloadImage(plotId, {
             format: 'svg',
-            width: 800,
-            height: height,
+            width: chartWidth,
+            height: chartHeight,
             filename: `gene_effect_${this.currentGeneEffect.gene}_by_${this.currentGEView}`
         });
     }
