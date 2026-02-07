@@ -1282,7 +1282,7 @@
                         </div>
                         <div class="button-row">
                             <button class="btn btn-secondary btn-sm" id="clearGenes">Clear</button>
-                            <button class="btn btn-info btn-sm" id="loadTestGenes">Test Genes</button>
+                            <button class="btn btn-success btn-sm" id="loadTestGenes">Load Test +/-</button>
                         </div>
                     </div>
 
@@ -1325,12 +1325,13 @@
                                     <select id="statsFdrCol" class="form-control"><option value="">None</option></select>
                                 </div>
                                 <button class="btn btn-outline btn-sm" id="loadStatsBtn">Load Stats</button>
+                                <button class="btn btn-secondary btn-sm" id="downloadSampleStats" title="Download sample file showing stats format">Download Sample</button>
                             </div>
                         </div>
 
-                        <div style="margin-top: 8px; display: flex; gap: 8px;">
-                            <button class="btn btn-info btn-sm" id="loadTestStats">Test w/ Stats</button>
-                            <button class="btn btn-secondary btn-sm" id="downloadSampleStats" title="Download sample file showing stats format">Download Sample</button>
+                        <div class="button-row" style="margin-top: 8px;">
+                            <button class="btn btn-secondary btn-sm" id="clearStatsGenes">Clear</button>
+                            <button class="btn btn-success btn-sm" id="loadTestStats">Load Test +/-</button>
                         </div>
                     </div>
 
@@ -1400,7 +1401,7 @@
                                 </div>
                                 <input type="range" id="netEdgeWidth" min="1" max="10" value="3">
                                 <div class="slider-ticks">
-                                    <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span>9</span>
+                                    <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span>9</span><span>10</span>
                                 </div>
                             </div>
                         </div>
@@ -1803,8 +1804,8 @@
                     <div id="geChartContainer" style="flex: 0 0 55%; min-width: 0;">
                         <!-- Aspect ratio control (shown in detailed view) -->
                         <div id="geAspectRatioControl" style="display: none; margin-bottom: 8px; font-size: 11px;">
-                            <label style="margin-right: 8px;">Chart Height:</label>
-                            <input type="range" id="geAspectRatio" min="0.5" max="2" step="0.1" value="1" style="width: 100px; vertical-align: middle;">
+                            <label style="margin-right: 8px;">Chart Width:</label>
+                            <input type="range" id="geAspectRatio" min="0.3" max="1" step="0.1" value="1" style="width: 100px; vertical-align: middle;">
                             <span id="geAspectRatioValue" style="margin-left: 4px;">1.0</span>
                         </div>
                         <div id="geByTissueView">

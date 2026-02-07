@@ -564,11 +564,18 @@ class CorrelationExplorer {
             this.updateGeneCount();
         });
 
-        // Load test genes
+        // Clear stats genes
+        document.getElementById('clearStatsGenes')?.addEventListener('click', () => {
+            document.getElementById('manualStatsTextarea').value = 'Gene\tLFC\tFDR\n';
+            this.geneStats = null;
+            this.updateGeneCount();
+        });
+
+        // Load test genes (20 genes)
         document.getElementById('loadTestGenes').addEventListener('click', () => {
             const testGenes = ['TP53', 'BRCA1', 'BRCA2', 'MYC', 'KRAS', 'EGFR', 'PTEN',
-                'RB1', 'APC', 'VHL', 'CDKN2A', 'NOTCH1', 'PIK3CA', 'BRAF',
-                'ATM', 'ERBB2', 'CDK4', 'MDM2', 'NRAS', 'ARID1A', 'TSC1', 'TSC2'];
+                'RB1', 'APC', 'CDKN2A', 'NOTCH1', 'PIK3CA', 'BRAF',
+                'ATM', 'ERBB2', 'CDK4', 'MDM2', 'NRAS', 'TSC1', 'TSC2'];
             document.getElementById('geneTextarea').value = testGenes.join('\n');
             this.updateGeneCount();
         });
@@ -866,8 +873,8 @@ class CorrelationExplorer {
         document.getElementById('geAspectRatio')?.addEventListener('input', (e) => {
             const ratio = parseFloat(e.target.value);
             document.getElementById('geAspectRatioValue').textContent = ratio.toFixed(1);
-            this.geChartHeightRatio = ratio;
-            // Re-render the detailed view with new height
+            this.geChartWidthRatio = ratio;
+            // Re-render the detailed view with new width
             if (this.geDetailedView) {
                 this.showGEDetailedView(this.geDetailedView.group, this.geDetailedView.mode);
             }
@@ -1348,7 +1355,7 @@ class CorrelationExplorer {
     }
 
     loadTestGenesWithStats() {
-        // Test data with LFC and FDR values
+        // Test data with LFC and FDR values (20 genes)
         const testData = [
             { gene: 'TP53', lfc: 1.8, fdr: 0.001 },
             { gene: 'MDM2', lfc: -2.3, fdr: 0.0001 },
@@ -1364,8 +1371,6 @@ class CorrelationExplorer {
             { gene: 'CHEK2', lfc: 1.1, fdr: 0.01 },
             { gene: 'RB1', lfc: -0.6, fdr: 0.12 },
             { gene: 'CDKN2A', lfc: 1.4, fdr: 0.007 },
-            { gene: 'SMAD4', lfc: -0.3, fdr: 0.35 },
-            { gene: 'ARID1A', lfc: 0.5, fdr: 0.09 },
             { gene: 'NFE2L2', lfc: -1.2, fdr: 0.015 },
             { gene: 'KEAP1', lfc: 0.8, fdr: 0.05 },
             { gene: 'STK11', lfc: -0.9, fdr: 0.04 },
@@ -6813,7 +6818,7 @@ Results:
 
         if (!this.mutations?.genes || this.mutations.genes.length === 0) {
             document.getElementById('geneEffectHotspotPlot').innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #6b7280;">No hotspot mutation data available</div>';
-            document.getElementById('geneEffectTableBody').innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: #6b7280;">No mutation data</td></tr>';
+            document.getElementById('geneEffectTableBody').innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 20px; color: #6b7280;">No mutation data</td></tr>';
             return;
         }
 
@@ -6891,7 +6896,7 @@ Results:
 
         if (hotspotStats.length === 0) {
             document.getElementById('geneEffectHotspotPlot').innerHTML = '<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #6b7280;">No hotspots with sufficient data (need ≥3 mutant and ≥3 WT cells)</div>';
-            document.getElementById('geneEffectTableBody').innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 20px; color: #6b7280;">Insufficient data</td></tr>';
+            document.getElementById('geneEffectTableBody').innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 20px; color: #6b7280;">Insufficient data</td></tr>';
             return;
         }
 
@@ -7060,7 +7065,8 @@ Results:
                 <th style="${headerStyle}" data-sort="mean1" data-type="number">GE(1)${sortIcon}</th>
                 <th style="${headerStyle}; border-left: 2px solid #dc2626;" data-sort="n2" data-type="number">n(2)${sortIcon}</th>
                 <th style="${headerStyle}" data-sort="mean2" data-type="number">GE(2)${sortIcon}</th>
-                <th style="${headerStyle}; border-left: 2px solid #6b7280;" data-sort="pValue" data-type="number">p-value${sortIcon}</th>
+                <th style="${headerStyle}; border-left: 2px solid #6b7280;" data-sort="diff" data-type="number">Δ GE${sortIcon}</th>
+                <th style="${headerStyle}" data-sort="pValue" data-type="number">p-value${sortIcon}</th>
             </tr>`;
             this.renderGETableBody(stats, mode);
         }
@@ -7092,6 +7098,8 @@ Results:
                 const pStr = s.pValue < 0.001 ? '<0.001' : s.pValue.toFixed(3);
                 const mean1Str = isNaN(s.mean1) ? '-' : s.mean1.toFixed(3);
                 const mean2Str = isNaN(s.mean2) ? '-' : s.mean2.toFixed(3);
+                const diffStr = s.diff !== undefined ? s.diff.toFixed(3) : '-';
+                const diffColor = s.diff > 0 ? '#16a34a' : s.diff < 0 ? '#dc2626' : '#374151';
                 tbody.innerHTML += `<tr class="clickable-row" data-group="${s.group}" style="cursor: pointer;">
                     <td>${s.group}</td>
                     <td style="text-align: center; color: #2563eb; border-left: 2px solid #2563eb;">${s.n0}</td>
@@ -7100,7 +7108,8 @@ Results:
                     <td style="text-align: center; color: #f97316;">${mean1Str}</td>
                     <td style="text-align: center; color: #dc2626; border-left: 2px solid #dc2626;">${s.n2 || '-'}</td>
                     <td style="text-align: center; color: #dc2626;">${mean2Str}</td>
-                    <td style="text-align: center; border-left: 2px solid #6b7280; ${s.pValue < 0.05 ? 'font-weight: 600;' : ''}">${pStr}</td>
+                    <td style="text-align: center; color: ${diffColor}; font-weight: 500; border-left: 2px solid #6b7280;">${diffStr}</td>
+                    <td style="text-align: center; ${s.pValue < 0.05 ? 'font-weight: 600;' : ''}">${pStr}</td>
                 </tr>`;
             });
         }
@@ -7211,39 +7220,39 @@ Results:
                 });
             }
 
-            // Build stats annotation text - formatted as table-like rows
-            const pad = (s, len) => s.padEnd(len);
-            let statsText = `${pad('0 (WT):', 8)} n=${String(stats0.n).padStart(4)}  GE=${stats0.mean.toFixed(3).padStart(7)}  SD=${stats0.sd.toFixed(3)}`;
+            // Build stats annotation text - formatted as compact rows to fit export
+            let statsText = `0(WT): n=${stats0.n}  GE=${stats0.mean.toFixed(3)}  SD=${stats0.sd.toFixed(3)}`;
             if (stats1.n > 0) {
-                statsText += `\n${pad('1 mut:', 8)} n=${String(stats1.n).padStart(4)}  GE=${stats1.mean.toFixed(3).padStart(7)}${stats1.n > 1 ? `  SD=${stats1.sd.toFixed(3)}` : ''}`;
+                statsText += `\n1 mut: n=${stats1.n}  GE=${stats1.mean.toFixed(3)}${stats1.n > 1 ? `  SD=${stats1.sd.toFixed(3)}` : ''}`;
             }
             if (stats2.n > 0) {
-                statsText += `\n${pad('2 mut:', 8)} n=${String(stats2.n).padStart(4)}  GE=${stats2.mean.toFixed(3).padStart(7)}${stats2.n > 1 ? `  SD=${stats2.sd.toFixed(3)}` : ''}`;
+                statsText += `\n2 mut: n=${stats2.n}  GE=${stats2.mean.toFixed(3)}${stats2.n > 1 ? `  SD=${stats2.sd.toFixed(3)}` : ''}`;
             }
             if (!isNaN(pValue)) {
-                statsText += `\np-value (0 vs 1+2): ${pValue < 0.001 ? pValue.toExponential(2) : pValue.toFixed(4)}`;
+                statsText += `\np(0vs1+2): ${pValue < 0.001 ? pValue.toExponential(2) : pValue.toFixed(4)}`;
             }
 
-            // Apply height ratio from slider (default 1.0)
-            const heightRatio = this.geChartHeightRatio || 1.0;
-            const baseHeight = 450;
+            // Apply width ratio from slider (default 1.0)
+            const widthRatio = this.geChartWidthRatio || 1.0;
+            const baseWidth = 400;
 
             const layout = {
                 title: { text: `${gene} gene effect by ${group} mutation status`, font: { size: 14 } },
                 yaxis: { title: 'Gene Effect', zeroline: true, zerolinecolor: '#374151' },
                 showlegend: false,
-                height: baseHeight * heightRatio,
-                margin: { t: 50, b: 120, l: 60, r: 30 },
+                height: 500,
+                width: baseWidth * widthRatio,
+                margin: { t: 50, b: 150, l: 60, r: 30 },
                 paper_bgcolor: 'white',
                 plot_bgcolor: 'white',
                 annotations: [{
                     x: 0.5,
-                    y: -0.26,
+                    y: -0.32,
                     xref: 'paper',
                     yref: 'paper',
                     text: statsText,
                     showarrow: false,
-                    font: { size: 10, family: 'monospace' },
+                    font: { size: 9, family: 'monospace' },
                     align: 'center'
                 }]
             };
@@ -7305,34 +7314,34 @@ Results:
             }
         ];
 
-        // Build stats annotation text - formatted as table-like rows
-        const labelWidth = Math.max(3, group.length);
-        let statsText = `${'All'.padEnd(labelWidth)}: n=${String(allStats.n).padStart(4)}  GE=${allStats.mean.toFixed(3).padStart(7)}  SD=${allStats.sd.toFixed(3)}\n`;
-        statsText += `${group.padEnd(labelWidth)}: n=${String(groupStats.n).padStart(4)}  GE=${groupStats.mean.toFixed(3).padStart(7)}  SD=${groupStats.sd.toFixed(3)}`;
+        // Build stats annotation text - formatted as compact rows to fit export
+        let statsText = `All: n=${allStats.n}  GE=${allStats.mean.toFixed(3)}  SD=${allStats.sd.toFixed(3)}\n`;
+        statsText += `${group}: n=${groupStats.n}  GE=${groupStats.mean.toFixed(3)}  SD=${groupStats.sd.toFixed(3)}`;
         if (!isNaN(pValue)) {
             statsText += `\np-value: ${pValue < 0.001 ? pValue.toExponential(2) : pValue.toFixed(4)}`;
         }
 
-        // Apply height ratio from slider (default 1.0)
-        const heightRatio = this.geChartHeightRatio || 1.0;
-        const baseHeight = 450;
+        // Apply width ratio from slider (default 1.0)
+        const widthRatio = this.geChartWidthRatio || 1.0;
+        const baseWidth = 350;
 
         const layout = {
             title: { text: `${gene} gene effect in ${group}`, font: { size: 14 } },
             yaxis: { title: 'Gene Effect', zeroline: true, zerolinecolor: '#374151', zerolinewidth: 2 },
             showlegend: false,
-            height: baseHeight * heightRatio,
-            margin: { t: 50, b: 100, l: 60, r: 30 },
+            height: 480,
+            width: baseWidth * widthRatio,
+            margin: { t: 50, b: 120, l: 60, r: 30 },
             paper_bgcolor: 'white',
             plot_bgcolor: 'white',
             annotations: [{
                 x: 0.5,
-                y: -0.22,
+                y: -0.26,
                 xref: 'paper',
                 yref: 'paper',
                 text: statsText,
                 showarrow: false,
-                font: { size: 11, family: 'monospace' },
+                font: { size: 9, family: 'monospace' },
                 align: 'center'
             }]
         };
