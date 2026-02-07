@@ -1587,13 +1587,13 @@
                                 <tr>
                                     <th></th>
                                     <th onclick="app.sortMutationTable(this)" data-col="gene">Gene ▼</th>
-                                    <th onclick="app.sortMutationTable(this)" data-col="n_wt">N (WT)</th>
+                                    <th onclick="app.sortMutationTable(this)" data-col="n_wt" style="border-left: 2px solid #2563eb;">N (WT)</th>
                                     <th onclick="app.sortMutationTable(this)" data-col="mean_wt">Mean GE (WT)</th>
-                                    <th onclick="app.sortMutationTable(this)" data-col="n_mut">N (1+2)</th>
+                                    <th onclick="app.sortMutationTable(this)" data-col="n_mut" style="border-left: 2px solid #f97316;">N (1+2)</th>
                                     <th onclick="app.sortMutationTable(this)" data-col="mean_mut">Mean GE (1+2)</th>
                                     <th onclick="app.sortMutationTable(this)" data-col="diff_mut">Δ GE</th>
                                     <th onclick="app.sortMutationTable(this)" data-col="p_mut">p-value</th>
-                                    <th onclick="app.sortMutationTable(this)" data-col="n_2">N (2)</th>
+                                    <th onclick="app.sortMutationTable(this)" data-col="n_2" style="border-left: 2px solid #dc2626;">N (2)</th>
                                     <th onclick="app.sortMutationTable(this)" data-col="mean_2">Mean GE (2)</th>
                                     <th onclick="app.sortMutationTable(this)" data-col="diff_2">Δ GE (2v0)</th>
                                     <th onclick="app.sortMutationTable(this)" data-col="p_2">p-value (2v0)</th>
@@ -1801,6 +1801,12 @@
                 <div id="geChartTableLayout" style="display: flex; gap: 20px; align-items: flex-start;">
                     <!-- Chart container -->
                     <div id="geChartContainer" style="flex: 0 0 55%; min-width: 0;">
+                        <!-- Aspect ratio control (shown in detailed view) -->
+                        <div id="geAspectRatioControl" style="display: none; margin-bottom: 8px; font-size: 11px;">
+                            <label style="margin-right: 8px;">Chart Height:</label>
+                            <input type="range" id="geAspectRatio" min="0.5" max="2" step="0.1" value="1" style="width: 100px; vertical-align: middle;">
+                            <span id="geAspectRatioValue" style="margin-left: 4px;">1.0</span>
+                        </div>
                         <div id="geByTissueView">
                             <div id="geneEffectPlot" style="width: 100%; min-height: 400px;"></div>
                         </div>
@@ -1864,6 +1870,6 @@
         </div>
     </div>
 
-    <script src="app.js?v=20260207c"></script>
+    <script src="app.js?v=20260207d"></script>
 </body>
 </html>

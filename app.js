@@ -835,14 +835,14 @@ class CorrelationExplorer {
         });
 
         // Gene Effect modal controls
-        document.getElementById('geneEffectSearchBtn')?.addEventListener('click', async () => {
+        document.getElementById('geneEffectSearchBtn')?.addEventListener('click', () => {
             const gene = document.getElementById('geneEffectSearch').value.trim().toUpperCase();
-            if (gene) await this.showGeneEffectAnalysis(gene, this.currentGEView || 'tissue');
+            if (gene) this.showGeneEffectAnalysis(gene, this.currentGEView || 'tissue');
         });
-        document.getElementById('geneEffectSearch')?.addEventListener('keypress', async (e) => {
+        document.getElementById('geneEffectSearch')?.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
                 const gene = e.target.value.trim().toUpperCase();
-                if (gene) await this.showGeneEffectAnalysis(gene, this.currentGEView || 'tissue');
+                if (gene) this.showGeneEffectAnalysis(gene, this.currentGEView || 'tissue');
             }
         });
         document.getElementById('geViewTissue')?.addEventListener('click', () => {
@@ -861,6 +861,17 @@ class CorrelationExplorer {
         document.getElementById('downloadGeneEffectSVG')?.addEventListener('click', () => this.downloadGeneEffectChartSVG());
         document.getElementById('downloadGETableCSV')?.addEventListener('click', () => this.downloadGETableCSV());
         document.getElementById('downloadGECellLineCSV')?.addEventListener('click', () => this.downloadGECellLineCSV());
+
+        // Aspect ratio control for detailed views
+        document.getElementById('geAspectRatio')?.addEventListener('input', (e) => {
+            const ratio = parseFloat(e.target.value);
+            document.getElementById('geAspectRatioValue').textContent = ratio.toFixed(1);
+            this.geChartHeightRatio = ratio;
+            // Re-render the detailed view with new height
+            if (this.geDetailedView) {
+                this.showGEDetailedView(this.geDetailedView.group, this.geDetailedView.mode);
+            }
+        });
     }
 
     updateGeneCount() {
@@ -1886,13 +1897,13 @@ class CorrelationExplorer {
             row.innerHTML = `
                 <td><a href="#" class="inspect-link" onclick="app.showGeneEffectDistribution('${r.gene}'); return false;">Inspect</a></td>
                 <td>${r.gene}</td>
-                <td>${r.n_wt}</td>
+                <td style="border-left: 2px solid #2563eb;">${r.n_wt}</td>
                 <td>${r.mean_wt.toFixed(3)}</td>
-                <td>${r.n_mut}</td>
+                <td style="border-left: 2px solid #f97316;">${r.n_mut}</td>
                 <td>${r.mean_mut.toFixed(3)}</td>
                 <td class="${r.diff_mut < 0 ? 'negative' : 'positive'}">${r.diff_mut.toFixed(3)}</td>
                 <td>${this.formatPValue(r.p_mut)}</td>
-                <td>${r.n_2}</td>
+                <td style="border-left: 2px solid #dc2626;">${r.n_2}</td>
                 <td>${isNaN(r.mean_2) ? '-' : r.mean_2.toFixed(3)}</td>
                 <td class="${r.diff_2 < 0 ? 'negative' : 'positive'}">${isNaN(r.diff_2) ? '-' : r.diff_2.toFixed(3)}</td>
                 <td>${this.formatPValue(r.p_2)}</td>
@@ -2690,11 +2701,11 @@ class CorrelationExplorer {
         });
 
         // Double-click to open Gene Effect (node) or Inspect (edge)
-        this.network.on('doubleClick', async (params) => {
+        this.network.on('doubleClick', (params) => {
             if (params.nodes.length > 0) {
                 // Node double-clicked - open Gene Effect analysis
                 const nodeId = params.nodes[0];
-                await this.openGeneEffectFromNetwork(nodeId);
+                this.openGeneEffectFromNetwork(nodeId);
             } else if (params.edges.length > 0) {
                 // Edge double-clicked - open correlation inspect
                 const edgeId = params.edges[0];
@@ -2961,10 +2972,10 @@ class CorrelationExplorer {
 
         // Add event listeners to buttons
         tbody.querySelectorAll('.tissue-btn').forEach(btn => {
-            btn.addEventListener('click', async () => await this.openGeneEffectModal(btn.dataset.gene, 'tissue'));
+            btn.addEventListener('click', () => this.openGeneEffectModal(btn.dataset.gene, 'tissue'));
         });
         tbody.querySelectorAll('.hotspot-btn').forEach(btn => {
-            btn.addEventListener('click', async () => await this.openGeneEffectModal(btn.dataset.gene, 'hotspot'));
+            btn.addEventListener('click', () => this.openGeneEffectModal(btn.dataset.gene, 'hotspot'));
         });
     }
 
@@ -5655,13 +5666,13 @@ Results:
                 <thead>
                     <tr>
                         <th data-col="0" style="cursor: pointer;">Cancer Type ▼</th>
-                        <th data-col="1" style="cursor: pointer;">N (WT)</th>
+                        <th data-col="1" style="cursor: pointer; border-left: 2px solid #2563eb;">N (WT)</th>
                         <th data-col="2" style="cursor: pointer;">r (WT)</th>
                         <th data-col="3" style="cursor: pointer;">slope (WT)</th>
-                        <th data-col="4" style="cursor: pointer;">N (Mut)</th>
+                        <th data-col="4" style="cursor: pointer; border-left: 2px solid #dc2626;">N (Mut)</th>
                         <th data-col="5" style="cursor: pointer;">r (Mut)</th>
                         <th data-col="6" style="cursor: pointer;">slope (Mut)</th>
-                        <th data-col="7" style="cursor: pointer;">Δr</th>
+                        <th data-col="7" style="cursor: pointer; border-left: 2px solid #6b7280;">Δr</th>
                         <th data-col="8" style="cursor: pointer;">p(Δr)</th>
                         <th data-col="9" style="cursor: pointer;">Δslope</th>
                         <th data-col="10" style="cursor: pointer;">p(Δslope)</th>
@@ -5677,13 +5688,13 @@ Results:
             html += `
                 <tr>
                     <td>${row.lineage}</td>
-                    <td>${row.nWT}</td>
+                    <td style="border-left: 2px solid #2563eb;">${row.nWT}</td>
                     <td>${row.rWT.toFixed(3)}</td>
                     <td>${row.slopeWT.toFixed(3)}</td>
-                    <td>${row.nMut}</td>
+                    <td style="border-left: 2px solid #dc2626;">${row.nMut}</td>
                     <td>${row.rMut.toFixed(3)}</td>
                     <td>${row.slopeMut.toFixed(3)}</td>
-                    <td style="color: ${deltaRColor}; font-weight: 600;">${row.deltaR.toFixed(3)}</td>
+                    <td style="border-left: 2px solid #6b7280; color: ${deltaRColor}; font-weight: 600;">${row.deltaR.toFixed(3)}</td>
                     <td>${row.pR.toExponential(1)}</td>
                     <td style="color: ${deltaSlopeColor}; font-weight: 600;">${row.deltaSlope.toFixed(3)}</td>
                     <td>${row.pSlope.toExponential(1)}</td>
@@ -5856,11 +5867,11 @@ Results:
                 <thead>
                     <tr>
                         <th data-sort="mutGene" data-type="string" style="cursor: pointer;">Mutation ↕</th>
-                        <th data-sort="nWT" data-type="number" style="cursor: pointer;">N(WT) ↕</th>
+                        <th data-sort="nWT" data-type="number" style="cursor: pointer; border-left: 2px solid #2563eb;">N(WT) ↕</th>
                         <th data-sort="rWT" data-type="number" style="cursor: pointer;">r(WT) ↕</th>
-                        <th data-sort="nMut" data-type="number" style="cursor: pointer;">N(Mut) ↕</th>
+                        <th data-sort="nMut" data-type="number" style="cursor: pointer; border-left: 2px solid #dc2626;">N(Mut) ↕</th>
                         <th data-sort="rMut" data-type="number" style="cursor: pointer;">r(Mut) ↕</th>
-                        <th data-sort="deltaR" data-type="number" style="cursor: pointer;">Δr ↕</th>
+                        <th data-sort="deltaR" data-type="number" style="cursor: pointer; border-left: 2px solid #6b7280;">Δr ↕</th>
                         <th data-sort="pR" data-type="number" style="cursor: pointer;">p(Δr) ↕</th>
                     </tr>
                 </thead>
@@ -5874,11 +5885,11 @@ Results:
             html += `
                 <tr class="clickable-mut-row" data-mut-gene="${row.mutGene}" style="${pHighlight} cursor: pointer;">
                     <td><b>${row.mutGene}</b></td>
-                    <td style="text-align: center;">${row.nWT}</td>
+                    <td style="text-align: center; border-left: 2px solid #2563eb;">${row.nWT}</td>
                     <td style="text-align: center;">${row.rWT.toFixed(3)}</td>
-                    <td style="text-align: center;">${row.nMut}</td>
+                    <td style="text-align: center; border-left: 2px solid #dc2626;">${row.nMut}</td>
                     <td style="text-align: center;">${row.rMut.toFixed(3)}</td>
-                    <td style="text-align: center; color: ${deltaRColor}; font-weight: 600;">${row.deltaR.toFixed(3)}</td>
+                    <td style="text-align: center; border-left: 2px solid #6b7280; color: ${deltaRColor}; font-weight: 600;">${row.deltaR.toFixed(3)}</td>
                     <td style="text-align: center;">${row.pR.toExponential(1)}</td>
                 </tr>
             `;
@@ -6567,20 +6578,11 @@ Results:
     // Gene Effect Modal Methods
     // ============================================================
 
-    async openGeneEffectModal(gene, view = 'tissue') {
-        let geneUpper = gene.toUpperCase();
-
-        // Try to resolve synonyms/orthologs if gene not found directly
+    openGeneEffectModal(gene, view = 'tissue') {
+        const geneUpper = gene.toUpperCase();
         if (!this.geneIndex.has(geneUpper)) {
-            const resolved = await this.resolveGeneSynonym(geneUpper);
-            if (resolved) {
-                geneUpper = resolved.gene;
-                // Show notification that synonym was used
-                document.getElementById('geneEffectCurrentGene').textContent = `(synonym: ${gene.toUpperCase()} → ${resolved.gene})`;
-            } else {
-                alert(`Gene "${gene}" not found in the dataset.`);
-                return;
-            }
+            alert(`Gene "${gene}" not found in the dataset.`);
+            return;
         }
 
         // Store current gene and view
@@ -6693,8 +6695,8 @@ Results:
         });
     }
 
-    async showGeneEffectAnalysis(gene, view = 'tissue') {
-        await this.openGeneEffectModal(gene, view);
+    showGeneEffectAnalysis(gene, view = 'tissue') {
+        this.openGeneEffectModal(gene, view);
     }
 
     renderGeneEffectByTissue() {
@@ -6903,53 +6905,21 @@ Results:
         const traces = [];
         const yCategories = [];
 
+        // Track which legend items need to be shown
+        let show0Legend = true, show1Legend = true, show2Legend = true;
+
         topStats.forEach((s, idx) => {
             const yLabel = `${s.group}`;
             yCategories.push(yLabel);
 
-            // WT trace (blue) - 0 mutations
-            traces.push({
-                type: 'box',
-                name: '0 (WT)',
-                legendgroup: '0',
-                showlegend: idx === 0,
-                y: Array(s.cellData0.length).fill(yLabel),
-                x: s.cellData0.map(c => c.geneEffect),
-                orientation: 'h',
-                boxpoints: 'outliers',
-                marker: { color: '#2563eb', size: 4, outliercolor: '#1e40af' },
-                line: { color: '#1e40af', width: 1.5 },
-                fillcolor: 'rgba(37, 99, 235, 0.6)',
-                hoverinfo: 'x',
-                offsetgroup: '0'
-            });
-
-            // 1 mutation trace (orange)
-            if (s.cellData1.length > 0) {
-                traces.push({
-                    type: 'box',
-                    name: '1 mutation',
-                    legendgroup: '1',
-                    showlegend: idx === 0 && s.cellData1.length > 0,
-                    y: Array(s.cellData1.length).fill(yLabel),
-                    x: s.cellData1.map(c => c.geneEffect),
-                    orientation: 'h',
-                    boxpoints: 'outliers',
-                    marker: { color: '#f97316', size: 4, outliercolor: '#c2410c' },
-                    line: { color: '#c2410c', width: 1.5 },
-                    fillcolor: 'rgba(249, 115, 22, 0.6)',
-                    hoverinfo: 'x',
-                    offsetgroup: '1'
-                });
-            }
-
-            // 2 mutations trace (red)
+            // Add traces in reverse order so WT appears first (top) in each group
+            // 2 mutations trace (red) - added first, appears at bottom
             if (s.cellData2.length > 0) {
                 traces.push({
                     type: 'box',
                     name: '2 mutations',
                     legendgroup: '2',
-                    showlegend: idx === 0 && s.cellData2.length > 0,
+                    showlegend: show2Legend,
                     y: Array(s.cellData2.length).fill(yLabel),
                     x: s.cellData2.map(c => c.geneEffect),
                     orientation: 'h',
@@ -6960,7 +6930,46 @@ Results:
                     hoverinfo: 'x',
                     offsetgroup: '2'
                 });
+                show2Legend = false;
             }
+
+            // 1 mutation trace (orange)
+            if (s.cellData1.length > 0) {
+                traces.push({
+                    type: 'box',
+                    name: '1 mutation',
+                    legendgroup: '1',
+                    showlegend: show1Legend,
+                    y: Array(s.cellData1.length).fill(yLabel),
+                    x: s.cellData1.map(c => c.geneEffect),
+                    orientation: 'h',
+                    boxpoints: 'outliers',
+                    marker: { color: '#f97316', size: 4, outliercolor: '#c2410c' },
+                    line: { color: '#c2410c', width: 1.5 },
+                    fillcolor: 'rgba(249, 115, 22, 0.6)',
+                    hoverinfo: 'x',
+                    offsetgroup: '1'
+                });
+                show1Legend = false;
+            }
+
+            // WT trace (blue) - 0 mutations - added last, appears at top
+            traces.push({
+                type: 'box',
+                name: '0 (WT)',
+                legendgroup: '0',
+                showlegend: show0Legend,
+                y: Array(s.cellData0.length).fill(yLabel),
+                x: s.cellData0.map(c => c.geneEffect),
+                orientation: 'h',
+                boxpoints: 'outliers',
+                marker: { color: '#2563eb', size: 4, outliercolor: '#1e40af' },
+                line: { color: '#1e40af', width: 1.5 },
+                fillcolor: 'rgba(37, 99, 235, 0.6)',
+                hoverinfo: 'x',
+                offsetgroup: '0'
+            });
+            show0Legend = false;
         });
 
         // Calculate dynamic sizing
@@ -6989,7 +6998,7 @@ Results:
             margin: { t: 50, b: 50, l: 10, r: 30 },
             height: chartHeight,
             showlegend: true,
-            legend: { x: 0.5, y: 1.0, xanchor: 'center', yanchor: 'bottom', orientation: 'h', font: { size: 10 }, bgcolor: 'rgba(255,255,255,0.8)' },
+            legend: { x: 0.5, y: 1.0, xanchor: 'center', yanchor: 'bottom', orientation: 'h', font: { size: 10 }, bgcolor: 'rgba(255,255,255,0.8)', traceorder: 'reversed' },
             paper_bgcolor: 'white',
             plot_bgcolor: 'white'
         };
@@ -7021,8 +7030,8 @@ Results:
         this.renderGETable(tableStats, 'hotspot');
     }
 
-    async openGeneEffectFromNetwork(gene) {
-        await this.openGeneEffectModal(gene, 'tissue');
+    openGeneEffectFromNetwork(gene) {
+        this.openGeneEffectModal(gene, 'tissue');
     }
 
     renderGETable(stats, mode) {
@@ -7045,13 +7054,13 @@ Results:
         } else {
             thead.innerHTML = `<tr>
                 <th style="${headerStyle}" data-sort="group" data-type="string">Hotspot${sortIcon}</th>
-                <th style="${headerStyle}" data-sort="n0" data-type="number">n(0)${sortIcon}</th>
+                <th style="${headerStyle}; border-left: 2px solid #2563eb;" data-sort="n0" data-type="number">n(0)${sortIcon}</th>
                 <th style="${headerStyle}" data-sort="mean0" data-type="number">GE(0)${sortIcon}</th>
-                <th style="${headerStyle}" data-sort="n1" data-type="number">n(1)${sortIcon}</th>
+                <th style="${headerStyle}; border-left: 2px solid #f97316;" data-sort="n1" data-type="number">n(1)${sortIcon}</th>
                 <th style="${headerStyle}" data-sort="mean1" data-type="number">GE(1)${sortIcon}</th>
-                <th style="${headerStyle}" data-sort="n2" data-type="number">n(2)${sortIcon}</th>
+                <th style="${headerStyle}; border-left: 2px solid #dc2626;" data-sort="n2" data-type="number">n(2)${sortIcon}</th>
                 <th style="${headerStyle}" data-sort="mean2" data-type="number">GE(2)${sortIcon}</th>
-                <th style="${headerStyle}" data-sort="pValue" data-type="number">p-value${sortIcon}</th>
+                <th style="${headerStyle}; border-left: 2px solid #6b7280;" data-sort="pValue" data-type="number">p-value${sortIcon}</th>
             </tr>`;
             this.renderGETableBody(stats, mode);
         }
@@ -7085,13 +7094,13 @@ Results:
                 const mean2Str = isNaN(s.mean2) ? '-' : s.mean2.toFixed(3);
                 tbody.innerHTML += `<tr class="clickable-row" data-group="${s.group}" style="cursor: pointer;">
                     <td>${s.group}</td>
-                    <td style="text-align: center; color: #2563eb;">${s.n0}</td>
+                    <td style="text-align: center; color: #2563eb; border-left: 2px solid #2563eb;">${s.n0}</td>
                     <td style="text-align: center; color: #2563eb;">${s.mean0.toFixed(3)}</td>
-                    <td style="text-align: center; color: #f97316;">${s.n1 || '-'}</td>
+                    <td style="text-align: center; color: #f97316; border-left: 2px solid #f97316;">${s.n1 || '-'}</td>
                     <td style="text-align: center; color: #f97316;">${mean1Str}</td>
-                    <td style="text-align: center; color: #dc2626;">${s.n2 || '-'}</td>
+                    <td style="text-align: center; color: #dc2626; border-left: 2px solid #dc2626;">${s.n2 || '-'}</td>
                     <td style="text-align: center; color: #dc2626;">${mean2Str}</td>
-                    <td style="text-align: center; ${s.pValue < 0.05 ? 'font-weight: 600;' : ''}">${pStr}</td>
+                    <td style="text-align: center; border-left: 2px solid #6b7280; ${s.pValue < 0.05 ? 'font-weight: 600;' : ''}">${pStr}</td>
                 </tr>`;
             });
         }
@@ -7202,23 +7211,28 @@ Results:
                 });
             }
 
-            // Build stats annotation text
-            let statsText = `0 (WT): n=${stats0.n}, GE=${stats0.mean.toFixed(3)}, SD=${stats0.sd.toFixed(3)}`;
+            // Build stats annotation text - formatted as table-like rows
+            const pad = (s, len) => s.padEnd(len);
+            let statsText = `${pad('0 (WT):', 8)} n=${String(stats0.n).padStart(4)}  GE=${stats0.mean.toFixed(3).padStart(7)}  SD=${stats0.sd.toFixed(3)}`;
             if (stats1.n > 0) {
-                statsText += `\n1 mut: n=${stats1.n}, GE=${stats1.mean.toFixed(3)}${stats1.n > 1 ? `, SD=${stats1.sd.toFixed(3)}` : ''}`;
+                statsText += `\n${pad('1 mut:', 8)} n=${String(stats1.n).padStart(4)}  GE=${stats1.mean.toFixed(3).padStart(7)}${stats1.n > 1 ? `  SD=${stats1.sd.toFixed(3)}` : ''}`;
             }
             if (stats2.n > 0) {
-                statsText += `\n2 mut: n=${stats2.n}, GE=${stats2.mean.toFixed(3)}${stats2.n > 1 ? `, SD=${stats2.sd.toFixed(3)}` : ''}`;
+                statsText += `\n${pad('2 mut:', 8)} n=${String(stats2.n).padStart(4)}  GE=${stats2.mean.toFixed(3).padStart(7)}${stats2.n > 1 ? `  SD=${stats2.sd.toFixed(3)}` : ''}`;
             }
             if (!isNaN(pValue)) {
                 statsText += `\np-value (0 vs 1+2): ${pValue < 0.001 ? pValue.toExponential(2) : pValue.toFixed(4)}`;
             }
 
+            // Apply height ratio from slider (default 1.0)
+            const heightRatio = this.geChartHeightRatio || 1.0;
+            const baseHeight = 450;
+
             const layout = {
                 title: { text: `${gene} gene effect by ${group} mutation status`, font: { size: 14 } },
                 yaxis: { title: 'Gene Effect', zeroline: true, zerolinecolor: '#374151' },
                 showlegend: false,
-                height: 450,
+                height: baseHeight * heightRatio,
                 margin: { t: 50, b: 120, l: 60, r: 30 },
                 paper_bgcolor: 'white',
                 plot_bgcolor: 'white',
@@ -7291,18 +7305,23 @@ Results:
             }
         ];
 
-        // Build stats annotation text
-        let statsText = `All: n=${allStats.n}, GE=${allStats.mean.toFixed(3)}, SD=${allStats.sd.toFixed(3)}\n`;
-        statsText += `${group}: n=${groupStats.n}, GE=${groupStats.mean.toFixed(3)}, SD=${groupStats.sd.toFixed(3)}`;
+        // Build stats annotation text - formatted as table-like rows
+        const labelWidth = Math.max(3, group.length);
+        let statsText = `${'All'.padEnd(labelWidth)}: n=${String(allStats.n).padStart(4)}  GE=${allStats.mean.toFixed(3).padStart(7)}  SD=${allStats.sd.toFixed(3)}\n`;
+        statsText += `${group.padEnd(labelWidth)}: n=${String(groupStats.n).padStart(4)}  GE=${groupStats.mean.toFixed(3).padStart(7)}  SD=${groupStats.sd.toFixed(3)}`;
         if (!isNaN(pValue)) {
             statsText += `\np-value: ${pValue < 0.001 ? pValue.toExponential(2) : pValue.toFixed(4)}`;
         }
+
+        // Apply height ratio from slider (default 1.0)
+        const heightRatio = this.geChartHeightRatio || 1.0;
+        const baseHeight = 450;
 
         const layout = {
             title: { text: `${gene} gene effect in ${group}`, font: { size: 14 } },
             yaxis: { title: 'Gene Effect', zeroline: true, zerolinecolor: '#374151', zerolinewidth: 2 },
             showlegend: false,
-            height: 450,
+            height: baseHeight * heightRatio,
             margin: { t: 50, b: 100, l: 60, r: 30 },
             paper_bgcolor: 'white',
             plot_bgcolor: 'white',
@@ -7328,8 +7347,12 @@ Results:
 
     updateShowAllButton() {
         const btn = document.getElementById('geShowAllBtn');
+        const ratioControl = document.getElementById('geAspectRatioControl');
         if (btn) {
             btn.style.display = this.geDetailedView ? 'inline-block' : 'none';
+        }
+        if (ratioControl) {
+            ratioControl.style.display = this.geDetailedView ? 'flex' : 'none';
         }
     }
 
