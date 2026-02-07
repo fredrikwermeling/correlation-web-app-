@@ -1459,7 +1459,11 @@
                                 <button class="btn btn-secondary" id="togglePhysics">Lock</button>
                                 <button class="btn btn-secondary" id="changeLayout">Layout</button>
                             </div>
-                            <p class="help-text" id="networkHelpText" style="font-size: 9px; margin-bottom: 6px;">Double-click: node → Gene Effect, edge → Inspect</p>
+                            <p class="help-text" id="networkHelpText" style="font-size: 9px; margin-bottom: 6px;">Double-click node for Gene Effect, edge for Correlation</p>
+                            <div id="removedNodesList" style="display: none; font-size: 9px; margin-bottom: 6px; padding: 4px; background: #fef3c7; border-radius: 3px;">
+                                <span style="font-weight: 600;">Removed:</span> <span id="removedNodesText"></span>
+                                <button class="btn btn-sm" id="restoreAllNodes" style="padding: 1px 4px; font-size: 8px; margin-left: 4px;">Restore All</button>
+                            </div>
                             <label style="font-weight: 600; margin-bottom: 4px; display: block;">Export:</label>
                             <div class="button-group-horizontal">
                                 <button class="btn btn-secondary" id="downloadNetworkPNG">PNG</button>

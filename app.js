@@ -679,6 +679,7 @@ class CorrelationExplorer {
             if (this.network) this.network.fit();
         });
         document.getElementById('showHiddenNodes').addEventListener('click', () => this.showHiddenNodes());
+        document.getElementById('restoreAllNodes').addEventListener('click', () => this.showHiddenNodes());
         document.getElementById('showGeneEffect').addEventListener('change', (e) => {
             document.getElementById('showGESDGroup').style.display = e.target.checked ? 'inline' : 'none';
             this.updateNetworkLabels();
@@ -1186,16 +1187,27 @@ class CorrelationExplorer {
         const lines = text.split('\n').filter(l => l.trim());
         if (lines.length === 0) return;
 
-        // Detect separator (tab, comma, or semicolon)
-        const firstLine = lines[0];
-        let separator = '\t';
-        if (firstLine.includes('\t')) separator = '\t';
-        else if (firstLine.includes(',')) separator = ',';
-        else if (firstLine.includes(';')) separator = ';';
+        // Check if first line is a header
+        const firstLine = lines[0].toLowerCase();
+        const headerKeywords = ['gene', 'symbol', 'lfc', 'logfc', 'log2fc', 'fdr', 'padj', 'pvalue', 'p-value'];
+        let hasHeader = headerKeywords.some(kw => firstLine.includes(kw));
 
-        // Parse header to detect columns
-        const firstParts = firstLine.split(separator).map(p => p.trim().toLowerCase());
-        let hasHeader = firstParts.some(p => ['gene', 'symbol', 'lfc', 'logfc', 'log2fc', 'fdr', 'padj', 'pvalue', 'p-value'].includes(p));
+        // Detect separator from data lines (not header) - check which separator gives consistent column count
+        const dataLines = hasHeader ? lines.slice(1) : lines;
+        const testLine = dataLines.find(l => l.trim()) || lines[0];
+
+        let separator = '\t';
+        if (testLine.includes('\t') && testLine.split('\t').length >= 2) {
+            separator = '\t';
+        } else if (testLine.includes(',') && testLine.split(',').length >= 2) {
+            separator = ',';
+        } else if (testLine.includes(';') && testLine.split(';').length >= 2) {
+            separator = ';';
+        }
+
+        // Parse header to detect columns (use tab for header if it has tabs, otherwise same as data)
+        const headerSep = lines[0].includes('\t') ? '\t' : separator;
+        const firstParts = lines[0].split(headerSep).map(p => p.trim().toLowerCase());
 
         // Determine column indices
         let geneCol = 0, lfcCol = -1, fdrCol = -1;
@@ -1207,8 +1219,9 @@ class CorrelationExplorer {
             });
         } else {
             // Assume: Gene, LFC, FDR order if 3 columns; Gene only if 1 column
-            if (firstParts.length >= 2) lfcCol = 1;
-            if (firstParts.length >= 3) fdrCol = 2;
+            const testParts = testLine.split(separator);
+            if (testParts.length >= 2) lfcCol = 1;
+            if (testParts.length >= 3) fdrCol = 2;
         }
 
         const genes = [];
@@ -2634,6 +2647,7 @@ class CorrelationExplorer {
                 if (node) {
                     this.hiddenNodes.push(node);
                     this.networkData.nodes.remove(nodeId);
+                    this.updateRemovedNodesList();
                 }
             }
         });
@@ -3616,6 +3630,7 @@ Results:
 
     showHiddenNodes() {
         if (!this.network || !this.hiddenNodes || this.hiddenNodes.length === 0) {
+            this.updateRemovedNodesList();
             return;
         }
 
@@ -3631,6 +3646,7 @@ Results:
         });
         this.hiddenNodes = [];
         this.network.fit();
+        this.updateRemovedNodesList();
     }
 
     updateNetworkLabels() {
@@ -3990,8 +4006,42 @@ Results:
             btn.style.backgroundColor = '';
             btn.style.borderColor = '';
             btn.style.color = '';
-            if (helpText) helpText.textContent = 'Double-click: node → Gene Effect, edge → Inspect';
+            if (helpText) helpText.textContent = 'Double-click node for Gene Effect, edge for Correlation';
         }
+    }
+
+    updateRemovedNodesList() {
+        const listEl = document.getElementById('removedNodesList');
+        const textEl = document.getElementById('removedNodesText');
+        if (!listEl || !textEl) return;
+
+        if (this.hiddenNodes && this.hiddenNodes.length > 0) {
+            // Create clickable list of removed nodes
+            const nodeLinks = this.hiddenNodes.map((node, idx) =>
+                `<span class="restore-node" data-idx="${idx}" style="cursor: pointer; text-decoration: underline; color: #2563eb;">${node.id}</span>`
+            ).join(', ');
+            textEl.innerHTML = nodeLinks;
+            listEl.style.display = 'block';
+
+            // Add click handlers to restore individual nodes
+            listEl.querySelectorAll('.restore-node').forEach(el => {
+                el.addEventListener('click', (e) => {
+                    const idx = parseInt(e.target.dataset.idx);
+                    this.restoreNode(idx);
+                });
+            });
+        } else {
+            listEl.style.display = 'none';
+        }
+    }
+
+    restoreNode(idx) {
+        if (!this.hiddenNodes || idx < 0 || idx >= this.hiddenNodes.length) return;
+        const node = this.hiddenNodes.splice(idx, 1)[0];
+        if (node && this.networkData) {
+            this.networkData.nodes.add(node);
+        }
+        this.updateRemovedNodesList();
     }
 
     changeNetworkLayout() {
