@@ -396,6 +396,22 @@ class CorrelationExplorer {
         document.getElementById('correlationParams').style.display = hideParams ? 'none' : 'block';
         document.getElementById('slopeParams').style.display = hideParams ? 'none' : 'block';
 
+        // Hide min cell lines and filters for synonym mode
+        document.getElementById('minCellLinesGroup').style.display = isSynonymMode ? 'none' : 'block';
+        if (isSynonymMode) {
+            document.getElementById('lineageFilterGroup').style.display = 'none';
+            document.getElementById('subLineageFilterGroup').style.display = 'none';
+            document.getElementById('paramHotspotFilterGroup').style.display = 'none';
+        } else {
+            // Restore filters if data is loaded
+            if (this.cellLineMetadata && this.cellLineMetadata.lineage) {
+                document.getElementById('lineageFilterGroup').style.display = 'block';
+            }
+            if (this.mutations && this.mutations.geneData) {
+                document.getElementById('paramHotspotFilterGroup').style.display = 'block';
+            }
+        }
+
         // Toggle visibility of mutation-specific params
         document.getElementById('mutationHotspotGroup').style.display = isMutationMode ? 'block' : 'none';
         document.getElementById('pValueThresholdGroup').style.display = isMutationMode ? 'block' : 'none';
