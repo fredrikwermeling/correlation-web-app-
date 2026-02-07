@@ -5551,11 +5551,14 @@ Results:
 
         // Add download handler
         document.getElementById('downloadCompareCSV')?.addEventListener('click', () => {
-            let csv = 'Cancer Type,N (WT),r (WT),slope (WT),N (Mut),r (Mut),slope (Mut),Δr,p(Δr),Δslope,p(Δslope)\n';
+            let csv = `# Correlation: ${gene1} vs ${gene2}\n`;
+            csv += `# Hotspot filter: ${hotspotGene}\n`;
+            csv += `# Comparing WT (0 mutations) vs Mutant (2 mutations) by cancer type\n`;
+            csv += 'Cancer Type,N (WT),r (WT),slope (WT),N (Mut),r (Mut),slope (Mut),Δr,p(Δr),Δslope,p(Δslope)\n';
             tableData.forEach(row => {
                 csv += `"${row.lineage}",${row.nWT},${row.rWT.toFixed(4)},${row.slopeWT.toFixed(4)},${row.nMut},${row.rMut.toFixed(4)},${row.slopeMut.toFixed(4)},${row.deltaR.toFixed(4)},${row.pR.toExponential(2)},${row.deltaSlope.toFixed(4)},${row.pSlope.toExponential(2)}\n`;
             });
-            this.downloadFile(csv, `${gene1}_vs_${gene2}_${hotspotGene}_mutation_comparison.csv`, 'text/csv');
+            this.downloadFile(csv, `correlation_${gene1}_vs_${gene2}_by_${hotspotGene}_mutation.csv`, 'text/csv');
         });
 
         // Make table sortable
@@ -6959,12 +6962,12 @@ Results:
                 yaxis: { title: 'Gene Effect', zeroline: true, zerolinecolor: '#374151' },
                 showlegend: false,
                 height: 450,
-                margin: { t: 50, b: 80, l: 60, r: 30 },
+                margin: { t: 50, b: 100, l: 60, r: 30 },
                 paper_bgcolor: 'white',
                 plot_bgcolor: 'white',
                 annotations: [{
                     x: 0.5,
-                    y: -0.18,
+                    y: -0.22,
                     xref: 'paper',
                     yref: 'paper',
                     text: statsText,
@@ -7043,12 +7046,12 @@ Results:
             yaxis: { title: 'Gene Effect', zeroline: true, zerolinecolor: '#374151', zerolinewidth: 2 },
             showlegend: false,
             height: 450,
-            margin: { t: 50, b: 80, l: 60, r: 30 },
+            margin: { t: 50, b: 100, l: 60, r: 30 },
             paper_bgcolor: 'white',
             plot_bgcolor: 'white',
             annotations: [{
                 x: 0.5,
-                y: -0.18,
+                y: -0.22,
                 xref: 'paper',
                 yref: 'paper',
                 text: statsText,
@@ -7125,7 +7128,7 @@ Results:
         if (!this.currentGeneEffect) return;
         const plotId = this.currentGEView === 'tissue' ? 'geneEffectPlot' : 'geneEffectHotspotPlot';
         // Use larger height to capture any stats annotations below the chart
-        const height = this.geDetailedView ? 600 : 550;
+        const height = this.geDetailedView ? 650 : 550;
         Plotly.downloadImage(plotId, {
             format: 'png',
             width: 800,
@@ -7138,7 +7141,7 @@ Results:
         if (!this.currentGeneEffect) return;
         const plotId = this.currentGEView === 'tissue' ? 'geneEffectPlot' : 'geneEffectHotspotPlot';
         // Use larger height to capture any stats annotations below the chart
-        const height = this.geDetailedView ? 600 : 550;
+        const height = this.geDetailedView ? 650 : 550;
         Plotly.downloadImage(plotId, {
             format: 'svg',
             width: 800,
