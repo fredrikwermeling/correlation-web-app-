@@ -6805,7 +6805,7 @@ Results:
             sd: s.sd,
             pValue: s.pValue
         }));
-        tableStats.sort((a, b) => b.mean - a.mean); // Sort high to low for table
+        tableStats.sort((a, b) => a.pValue - b.pValue); // Sort by p-value (low to high)
         this.currentGEStats = tableStats;
         this.renderGETable(tableStats, 'tissue');
     }
@@ -7027,8 +7027,8 @@ Results:
             pValue: s.pValue
         }));
 
-        // Sort by absolute diff for table (largest effects first)
-        tableStats.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+        // Sort by p-value (low to high) for table
+        tableStats.sort((a, b) => a.pValue - b.pValue);
         this.currentGEStats = tableStats;
 
         // Render table
