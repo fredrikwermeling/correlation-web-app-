@@ -835,14 +835,14 @@ class CorrelationExplorer {
         });
 
         // Gene Effect modal controls
-        document.getElementById('geneEffectSearchBtn')?.addEventListener('click', () => {
+        document.getElementById('geneEffectSearchBtn')?.addEventListener('click', async () => {
             const gene = document.getElementById('geneEffectSearch').value.trim().toUpperCase();
-            if (gene) this.showGeneEffectAnalysis(gene, this.currentGEView || 'tissue');
+            if (gene) await this.showGeneEffectAnalysis(gene, this.currentGEView || 'tissue');
         });
-        document.getElementById('geneEffectSearch')?.addEventListener('keypress', (e) => {
+        document.getElementById('geneEffectSearch')?.addEventListener('keypress', async (e) => {
             if (e.key === 'Enter') {
                 const gene = e.target.value.trim().toUpperCase();
-                if (gene) this.showGeneEffectAnalysis(gene, this.currentGEView || 'tissue');
+                if (gene) await this.showGeneEffectAnalysis(gene, this.currentGEView || 'tissue');
             }
         });
         document.getElementById('geViewTissue')?.addEventListener('click', () => {
@@ -1035,12 +1035,23 @@ class CorrelationExplorer {
     }
 
     // Resolve a single gene to its canonical name using synonym/ortholog lookup
-    resolveGeneSynonym(gene) {
+    async resolveGeneSynonym(gene) {
         const upperGene = gene.toUpperCase();
 
         // If already in dataset, return as-is
         if (this.geneIndex.has(upperGene)) {
             return { gene: upperGene, source: 'direct' };
+        }
+
+        // Load synonyms if not yet loaded
+        if (!this.synonymLookup) {
+            try {
+                const synonymsRes = await fetch('web_data/synonyms.json');
+                this.synonymLookup = await synonymsRes.json();
+            } catch (e) {
+                console.warn('Failed to load synonyms:', e);
+                this.synonymLookup = {};
+            }
         }
 
         // Check local synonym lookup (loaded from synonyms.json)
@@ -2679,11 +2690,11 @@ class CorrelationExplorer {
         });
 
         // Double-click to open Gene Effect (node) or Inspect (edge)
-        this.network.on('doubleClick', (params) => {
+        this.network.on('doubleClick', async (params) => {
             if (params.nodes.length > 0) {
                 // Node double-clicked - open Gene Effect analysis
                 const nodeId = params.nodes[0];
-                this.openGeneEffectFromNetwork(nodeId);
+                await this.openGeneEffectFromNetwork(nodeId);
             } else if (params.edges.length > 0) {
                 // Edge double-clicked - open correlation inspect
                 const edgeId = params.edges[0];
@@ -2950,10 +2961,10 @@ class CorrelationExplorer {
 
         // Add event listeners to buttons
         tbody.querySelectorAll('.tissue-btn').forEach(btn => {
-            btn.addEventListener('click', () => this.openGeneEffectModal(btn.dataset.gene, 'tissue'));
+            btn.addEventListener('click', async () => await this.openGeneEffectModal(btn.dataset.gene, 'tissue'));
         });
         tbody.querySelectorAll('.hotspot-btn').forEach(btn => {
-            btn.addEventListener('click', () => this.openGeneEffectModal(btn.dataset.gene, 'hotspot'));
+            btn.addEventListener('click', async () => await this.openGeneEffectModal(btn.dataset.gene, 'hotspot'));
         });
     }
 
@@ -5632,9 +5643,12 @@ Results:
         let html = `
             <h4 style="margin-bottom: 8px;">Effect of <span style="color: #0066cc;">${hotspotGene}</span> Mutation on ${gene1} vs ${gene2} Correlation</h4>
             ${filterInfo}
-            <p style="font-size: 12px; color: #666; margin-bottom: 12px;">
+            <p style="font-size: 11px; color: #666; margin-bottom: 8px;">
                 Comparing correlation between WT (0 ${hotspotGene} mutations) vs Mutant (2+ ${hotspotGene} mutations) cells, stratified by cancer type.
                 Note: Cells with exactly 1 mutation are excluded from this comparison.
+            </p>
+            <p style="font-size: 10px; color: #0c4a6e; background: #f0f9ff; padding: 4px 8px; border-radius: 4px; margin-bottom: 12px;">
+                <b>Statistics:</b> p(Δr) uses Fisher z-transformation to compare correlations. p(Δslope) is an approximation based on correlation difference.
             </p>
             <div style="overflow-x: auto;">
             <table id="compareByCancerTable" class="data-table" style="width: 100%; font-size: 12px;">
@@ -5832,6 +5846,9 @@ Results:
             ${filterInfo}
             <p style="font-size: 11px; color: #666; margin-bottom: 6px;">
                 Comparing WT (0 mutations) vs Mutant (2+ mutations). Sorted by p-value.
+            </p>
+            <p style="font-size: 10px; color: #0c4a6e; background: #f0f9ff; padding: 4px 8px; border-radius: 4px; margin-bottom: 8px;">
+                <b>Statistics:</b> p(Δr) uses Fisher z-transformation to test if correlations differ significantly between WT and mutant cells.
             </p>
             <p style="font-size: 11px; color: #059669; margin-bottom: 8px;">Click any row to color scatter plot by that mutation</p>
             <div class="table-container" style="max-height: 380px; overflow-y: auto;">
@@ -6550,12 +6567,12 @@ Results:
     // Gene Effect Modal Methods
     // ============================================================
 
-    openGeneEffectModal(gene, view = 'tissue') {
+    async openGeneEffectModal(gene, view = 'tissue') {
         let geneUpper = gene.toUpperCase();
 
         // Try to resolve synonyms/orthologs if gene not found directly
         if (!this.geneIndex.has(geneUpper)) {
-            const resolved = this.resolveGeneSynonym(geneUpper);
+            const resolved = await this.resolveGeneSynonym(geneUpper);
             if (resolved) {
                 geneUpper = resolved.gene;
                 // Show notification that synonym was used
@@ -6676,8 +6693,8 @@ Results:
         });
     }
 
-    showGeneEffectAnalysis(gene, view = 'tissue') {
-        this.openGeneEffectModal(gene, view);
+    async showGeneEffectAnalysis(gene, view = 'tissue') {
+        await this.openGeneEffectModal(gene, view);
     }
 
     renderGeneEffectByTissue() {
@@ -7004,8 +7021,8 @@ Results:
         this.renderGETable(tableStats, 'hotspot');
     }
 
-    openGeneEffectFromNetwork(gene) {
-        this.openGeneEffectModal(gene, 'tissue');
+    async openGeneEffectFromNetwork(gene) {
+        await this.openGeneEffectModal(gene, 'tissue');
     }
 
     renderGETable(stats, mode) {
@@ -7110,60 +7127,91 @@ Results:
         };
 
         if (mode === 'hotspot') {
-            // Filter by hotspot mutation
+            // Filter by hotspot mutation - show 3 levels (0, 1, 2)
             const mutData = this.mutations?.geneData?.[group]?.mutations || {};
-            const wtData = data.filter(d => (mutData[d.cellLineId] || 0) === 0);
-            const mutantData = data.filter(d => (mutData[d.cellLineId] || 0) >= 1);
+            const data0 = data.filter(d => (mutData[d.cellLineId] || 0) === 0);
+            const data1 = data.filter(d => (mutData[d.cellLineId] || 0) === 1);
+            const data2 = data.filter(d => (mutData[d.cellLineId] || 0) >= 2);
 
-            const wtEffects = wtData.map(d => d.geneEffect);
-            const mutEffects = mutantData.map(d => d.geneEffect);
-            const wtStats = calcStats(wtEffects);
-            const mutStats = calcStats(mutEffects);
+            const effects0 = data0.map(d => d.geneEffect);
+            const effects1 = data1.map(d => d.geneEffect);
+            const effects2 = data2.map(d => d.geneEffect);
+            const stats0 = calcStats(effects0);
+            const stats1 = calcStats(effects1);
+            const stats2 = calcStats(effects2);
 
-            // Calculate p-value
+            // Calculate p-value (WT vs 1+2 combined)
+            const mutAllEffects = [...effects1, ...effects2];
             let pValue = NaN;
-            if (wtStats.n >= 3 && mutStats.n >= 3) {
-                const tTest = this.welchTTest(wtEffects, mutEffects);
+            if (stats0.n >= 3 && mutAllEffects.length >= 3) {
+                const tTest = this.welchTTest(effects0, mutAllEffects);
                 pValue = tTest.p;
             }
 
-            // Create two traces for WT and Mutant (include cancer type in hover)
+            // Create three traces for 0, 1, 2 mutations
             const traces = [
                 {
                     type: 'box',
-                    name: `WT (n=${wtStats.n})`,
-                    y: wtEffects,
-                    text: wtData.map(d => d.cellLineName),
-                    customdata: wtData.map(d => d.lineage || 'Unknown'),
+                    name: `0 (WT) n=${stats0.n}`,
+                    y: effects0,
+                    text: data0.map(d => d.cellLineName),
+                    customdata: data0.map(d => d.lineage || 'Unknown'),
                     boxpoints: 'all',
                     jitter: 0.3,
                     pointpos: 0,
                     marker: { color: '#2563eb', size: 5 },
                     line: { color: '#1e40af', width: 2 },
                     fillcolor: 'rgba(37, 99, 235, 0.4)',
-                    hovertemplate: '<b>%{text}</b><br>%{customdata}<br>Gene Effect: %{y:.3f}<extra>WT</extra>'
-                },
-                {
+                    hovertemplate: '<b>%{text}</b><br>%{customdata}<br>Gene Effect: %{y:.3f}<extra>0 (WT)</extra>'
+                }
+            ];
+
+            // Add 1 mutation trace if data exists
+            if (data1.length > 0) {
+                traces.push({
                     type: 'box',
-                    name: `Mut (n=${mutStats.n})`,
-                    y: mutEffects,
-                    text: mutantData.map(d => d.cellLineName),
-                    customdata: mutantData.map(d => d.lineage || 'Unknown'),
+                    name: `1 mut n=${stats1.n}`,
+                    y: effects1,
+                    text: data1.map(d => d.cellLineName),
+                    customdata: data1.map(d => d.lineage || 'Unknown'),
+                    boxpoints: 'all',
+                    jitter: 0.3,
+                    pointpos: 0,
+                    marker: { color: '#f97316', size: 5 },
+                    line: { color: '#c2410c', width: 2 },
+                    fillcolor: 'rgba(249, 115, 22, 0.4)',
+                    hovertemplate: '<b>%{text}</b><br>%{customdata}<br>Gene Effect: %{y:.3f}<extra>1 mutation</extra>'
+                });
+            }
+
+            // Add 2 mutations trace if data exists
+            if (data2.length > 0) {
+                traces.push({
+                    type: 'box',
+                    name: `2 mut n=${stats2.n}`,
+                    y: effects2,
+                    text: data2.map(d => d.cellLineName),
+                    customdata: data2.map(d => d.lineage || 'Unknown'),
                     boxpoints: 'all',
                     jitter: 0.3,
                     pointpos: 0,
                     marker: { color: '#dc2626', size: 5 },
                     line: { color: '#991b1b', width: 2 },
                     fillcolor: 'rgba(220, 38, 38, 0.4)',
-                    hovertemplate: '<b>%{text}</b><br>%{customdata}<br>Gene Effect: %{y:.3f}<extra>Mutant</extra>'
-                }
-            ];
+                    hovertemplate: '<b>%{text}</b><br>%{customdata}<br>Gene Effect: %{y:.3f}<extra>2 mutations</extra>'
+                });
+            }
 
             // Build stats annotation text
-            let statsText = `WT: n=${wtStats.n}, GE=${wtStats.mean.toFixed(3)}, SD=${wtStats.sd.toFixed(3)}\n`;
-            statsText += `Mut: n=${mutStats.n}, GE=${mutStats.mean.toFixed(3)}, SD=${mutStats.sd.toFixed(3)}`;
+            let statsText = `0 (WT): n=${stats0.n}, GE=${stats0.mean.toFixed(3)}, SD=${stats0.sd.toFixed(3)}`;
+            if (stats1.n > 0) {
+                statsText += `\n1 mut: n=${stats1.n}, GE=${stats1.mean.toFixed(3)}${stats1.n > 1 ? `, SD=${stats1.sd.toFixed(3)}` : ''}`;
+            }
+            if (stats2.n > 0) {
+                statsText += `\n2 mut: n=${stats2.n}, GE=${stats2.mean.toFixed(3)}${stats2.n > 1 ? `, SD=${stats2.sd.toFixed(3)}` : ''}`;
+            }
             if (!isNaN(pValue)) {
-                statsText += `\np-value: ${pValue < 0.001 ? pValue.toExponential(2) : pValue.toFixed(4)}`;
+                statsText += `\np-value (0 vs 1+2): ${pValue < 0.001 ? pValue.toExponential(2) : pValue.toFixed(4)}`;
             }
 
             const layout = {
@@ -7171,17 +7219,17 @@ Results:
                 yaxis: { title: 'Gene Effect', zeroline: true, zerolinecolor: '#374151' },
                 showlegend: false,
                 height: 450,
-                margin: { t: 50, b: 100, l: 60, r: 30 },
+                margin: { t: 50, b: 120, l: 60, r: 30 },
                 paper_bgcolor: 'white',
                 plot_bgcolor: 'white',
                 annotations: [{
                     x: 0.5,
-                    y: -0.22,
+                    y: -0.26,
                     xref: 'paper',
                     yref: 'paper',
                     text: statsText,
                     showarrow: false,
-                    font: { size: 11, family: 'monospace' },
+                    font: { size: 10, family: 'monospace' },
                     align: 'center'
                 }]
             };
