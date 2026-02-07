@@ -1436,8 +1436,8 @@
                                 </div>
                                 <div id="colorStatsOptions" style="display: none; margin-left: 20px;">
                                     <div class="radio-group-inline" style="margin-bottom: 4px;">
-                                        <label><input type="radio" name="colorStatType" value="signed_lfc" checked> Signed LFC</label>
-                                        <label><input type="radio" name="colorStatType" value="abs_lfc"> |LFC|</label>
+                                        <label><input type="radio" name="colorStatType" value="signed_lfc" checked> LFC</label>
+                                        <label><input type="radio" name="colorStatType" value="abs_lfc"> Absolute LFC</label>
                                         <label><input type="radio" name="colorStatType" value="fdr"> FDR</label>
                                     </div>
                                     <label style="font-weight: 600; font-size: 10px;">Scale:</label>
@@ -1661,7 +1661,7 @@
                         <div class="control-box-compact">
                             <span class="control-label">Y/X Ratio</span>
                             <div style="display: flex; align-items: center; gap: 8px;">
-                                <input type="range" id="aspectRatio" min="0.5" max="2" step="0.1" value="1" style="flex: 1;">
+                                <input type="range" id="aspectRatio" min="0.3" max="3" step="0.1" value="1" style="flex: 1;">
                                 <span id="aspectRatioValue" style="font-size: 12px; min-width: 40px;">1.0</span>
                             </div>
                         </div>
@@ -1697,6 +1697,11 @@
                             <button class="btn btn-secondary btn-sm" id="compareAllCancerTypesBtn" style="width: 100%;">Compare All Cancer Types</button>
                             <button class="btn btn-secondary btn-sm" id="compareAllMutationsBtn" style="width: 100%; margin-top: 4px;">Compare All Mutations</button>
                             <p style="font-size: 10px; color: #666; margin: 4px 0 0 0;">Stratify correlation by cancer type or mutation</p>
+                        </div>
+
+                        <!-- Reset All Filters -->
+                        <div class="control-box-compact">
+                            <button class="btn btn-outline btn-sm" id="resetAllFilters" style="width: 100%; border-color: #dc2626; color: #dc2626;">Reset All Filters</button>
                         </div>
 
                         <!-- Highlight Cell Lines -->

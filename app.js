@@ -773,6 +773,8 @@ class CorrelationExplorer {
             this.updateInspectPlot();
         });
 
+        document.getElementById('resetAllFilters').addEventListener('click', () => this.resetAllInspectFilters());
+
         ['scatterXmin', 'scatterXmax', 'scatterYmin', 'scatterYmax'].forEach(id => {
             document.getElementById(id).addEventListener('change', () => this.updateInspectPlot());
         });
@@ -1399,8 +1401,12 @@ class CorrelationExplorer {
         }
 
         const cellLineIndices = this.getFilteredCellLineIndices();
+        if (cellLineIndices.length < minN) {
+            this.showStatus('error', `Too few cell lines for analysis (${cellLineIndices.length} available, ${minN} required). Adjust filters or reduce "Min Cell Lines" setting.`);
+            return;
+        }
         if (cellLineIndices.length < 10) {
-            this.showStatus('error', 'Too few cell lines match the filter');
+            this.showStatus('error', `Too few cell lines match the filter (${cellLineIndices.length} found). Adjust filter settings.`);
             return;
         }
 
@@ -2242,7 +2248,7 @@ class CorrelationExplorer {
         }
 
         if (correlations.length === 0) {
-            return { success: false, error: `No correlations found above cutoff of ${cutoff}` };
+            return { success: false, error: `No correlations found (cutoff: ${cutoff}, min slope: ${minSlope}, min cells: ${minN}). Try lowering thresholds or adjusting filters.` };
         }
 
         // Assign clusters using simple connected components
@@ -3749,7 +3755,7 @@ Results:
                 });
 
                 if (colorLegend) colorLegend.innerHTML = `
-                    <div class="legend-item">Gene Effect (+/−)</div>
+                    <div class="legend-item">Gene Effect</div>
                     <div style="display: flex; align-items: center; gap: 4px;">
                         <span style="font-size: 10px;">${minEffect.toFixed(2)}</span>
                         <div style="width: 80px; height: 12px; background: linear-gradient(to right, #b2182b, #f7f7f7, #2166ac); border-radius: 2px;"></div>
@@ -3776,7 +3782,7 @@ Results:
                 });
 
                 if (colorLegend) colorLegend.innerHTML = `
-                    <div class="legend-item">|Gene Effect|</div>
+                    <div class="legend-item">Absolute Gene Effect</div>
                     <div style="display: flex; align-items: center; gap: 4px;">
                         <span style="font-size: 10px;">0</span>
                         <div style="width: 80px; height: 12px; background: linear-gradient(to right, #f5f5f5, #fdae61, #d7191c); border-radius: 2px;"></div>
@@ -3847,7 +3853,7 @@ Results:
 
                 const scaleLabel = colorScale === 'network' ? ' (network)' : ' (all genes)';
                 if (colorLegend) colorLegend.innerHTML = `
-                    <div class="legend-item">LFC (+/−)${scaleLabel}</div>
+                    <div class="legend-item">LFC${scaleLabel}</div>
                     <div style="display: flex; align-items: center; gap: 4px;">
                         <span style="font-size: 10px;">${minLfc.toFixed(1)}</span>
                         <div style="width: 80px; height: 12px; background: linear-gradient(to right, #b2182b, #f7f7f7, #2166ac); border-radius: 2px;"></div>
@@ -3875,7 +3881,7 @@ Results:
 
                 const scaleLabel = colorScale === 'network' ? ' (network)' : ' (all genes)';
                 if (colorLegend) colorLegend.innerHTML = `
-                    <div class="legend-item">|LFC|${scaleLabel}</div>
+                    <div class="legend-item">Absolute LFC${scaleLabel}</div>
                     <div style="display: flex; align-items: center; gap: 4px;">
                         <span style="font-size: 10px;">0</span>
                         <div style="width: 80px; height: 12px; background: linear-gradient(to right, #f5f5f5, #fdae61, #d7191c); border-radius: 2px;"></div>
@@ -4923,6 +4929,36 @@ Results:
         document.getElementById('scatterXmax').value = this.currentInspect.defaultXlim[1].toFixed(1);
         document.getElementById('scatterYmin').value = this.currentInspect.defaultYlim[0].toFixed(1);
         document.getElementById('scatterYmax').value = this.currentInspect.defaultYlim[1].toFixed(1);
+        this.updateInspectPlot();
+    }
+
+    resetAllInspectFilters() {
+        // Reset cancer type and subtype filters
+        document.getElementById('scatterCancerFilter').value = '';
+        document.getElementById('scatterSubtypeFilter').value = '';
+        document.getElementById('scatterSubtypeFilter').style.display = 'none';
+
+        // Reset mutation filters
+        document.getElementById('mutationFilterGene').value = '';
+        document.getElementById('mutationFilterLevel').value = 'all';
+
+        // Reset hotspot overlay
+        document.getElementById('hotspotGene').value = '';
+        document.getElementById('hotspotMode').value = 'color';
+        document.getElementById('mutationCautionScatter').style.display = 'none';
+
+        // Clear highlighted cells
+        document.getElementById('scatterCellSearch').value = '';
+        this.clickedCells.clear();
+
+        // Reset axes
+        this.resetInspectAxes();
+
+        // Reset aspect ratio
+        document.getElementById('aspectRatio').value = '1';
+        document.getElementById('aspectRatioValue').textContent = '1.0';
+
+        // Update the plot
         this.updateInspectPlot();
     }
 
@@ -6308,7 +6344,7 @@ Results:
         if (!this.currentInspect) return;
 
         const hotspotGene = document.getElementById('hotspotGene').value;
-        let header = 'CellLine,CellLineID,Lineage,Gene1_Effect,Gene2_Effect';
+        let header = 'CellLine,CellLineID,Lineage,Subtype,Gene1_Effect,Gene2_Effect';
         if (hotspotGene && this.mutations?.geneData?.[hotspotGene]) {
             header += `,${hotspotGene}_mutation`;
         }
@@ -6318,7 +6354,8 @@ Results:
         const mutationData = hotspotGene && this.mutations?.geneData?.[hotspotGene]?.mutations;
 
         this.currentInspect.data.forEach(d => {
-            let row = `"${d.cellLineName}","${d.cellLineId}","${d.lineage}",${d.x},${d.y}`;
+            const subtype = this.cellLineMetadata?.primaryDisease?.[d.cellLineId] || '';
+            let row = `"${d.cellLineName}","${d.cellLineId}","${d.lineage}","${subtype}",${d.x},${d.y}`;
             if (mutationData) {
                 const mutLevel = mutationData[d.cellLineId] || 0;
                 row += `,${mutLevel}`;
@@ -7164,8 +7201,7 @@ Results:
 
     getCellLineSublineage(cellLineId) {
         if (!this.cellLineMetadata) return '';
-        const meta = this.cellLineMetadata[cellLineId];
-        return meta?.OncotreeSubtype || meta?.OncotreeLineage || '';
+        return this.cellLineMetadata.primaryDisease?.[cellLineId] || '';
     }
 }
 
