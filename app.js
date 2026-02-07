@@ -620,6 +620,15 @@ class CorrelationExplorer {
         document.querySelectorAll('textarea, input[type="text"], input[type="number"]').forEach(el => {
             el.addEventListener('keydown', (e) => {
                 e.stopPropagation();
+
+                // Handle Tab key in textareas - insert tab character instead of changing focus
+                if (e.key === 'Tab' && el.tagName === 'TEXTAREA') {
+                    e.preventDefault();
+                    const start = el.selectionStart;
+                    const end = el.selectionEnd;
+                    el.value = el.value.substring(0, start) + '\t' + el.value.substring(end);
+                    el.selectionStart = el.selectionEnd = start + 1;
+                }
             });
         });
 
@@ -707,9 +716,10 @@ class CorrelationExplorer {
             this.updateNetworkColors();
         });
 
-        // Physics toggle and layout change buttons
+        // Physics toggle, layout change, and remove mode buttons
         document.getElementById('togglePhysics').addEventListener('click', () => this.togglePhysics());
         document.getElementById('changeLayout').addEventListener('click', () => this.changeNetworkLayout());
+        document.getElementById('toggleRemoveMode').addEventListener('click', () => this.toggleRemoveMode());
         document.querySelectorAll('input[name="colorStatType"]').forEach(radio => {
             radio.addEventListener('change', () => this.updateNetworkColors());
         });
@@ -1376,6 +1386,13 @@ class CorrelationExplorer {
     runAnalysis() {
         // Reset network settings to defaults when running new analysis
         this.resetNetworkSettings();
+
+        // Auto-load manual stats if the manual tab is active and has content
+        const manualTab = document.querySelector('.stats-sub-tab[data-stats-tab="manual"]');
+        const manualTextarea = document.getElementById('manualStatsTextarea');
+        if (manualTab?.classList.contains('active') && manualTextarea?.value.trim()) {
+            this.loadManualStats();
+        }
 
         const mode = document.querySelector('input[name="analysisMode"]:checked').value;
 
@@ -2526,16 +2543,21 @@ class CorrelationExplorer {
         this.network = new vis.Network(container, data, options);
         this.networkData = data;
         this.hiddenNodes = [];
+        this.removeMode = false;
 
         // Reset physics state for new network
         this.physicsEnabled = true;
         this.currentLayout = 0;
         const layoutBtn = document.getElementById('changeLayout');
-        if (layoutBtn) layoutBtn.textContent = 'Change Layout';
+        if (layoutBtn) layoutBtn.textContent = 'Layout';
         const physicsBtn = document.getElementById('togglePhysics');
         if (physicsBtn) {
-            physicsBtn.textContent = 'Lock Nodes';
+            physicsBtn.textContent = 'Lock';
             physicsBtn.classList.remove('btn-active');
+        }
+        const removeModeBtn = document.getElementById('toggleRemoveMode');
+        if (removeModeBtn) {
+            removeModeBtn.classList.remove('btn-active');
         }
 
         // For large networks, disable physics after stabilization
@@ -2582,14 +2604,31 @@ class CorrelationExplorer {
             }, 100);
         });
 
-        // Double-click to hide node
+        // Double-click to open Gene Effect (node) or Inspect (edge)
         this.network.on('doubleClick', (params) => {
-            // Cancel any pending single-click action
-            if (clickTimeout) {
-                clearTimeout(clickTimeout);
-                clickTimeout = null;
-            }
             if (params.nodes.length > 0) {
+                // Node double-clicked - open Gene Effect analysis
+                const nodeId = params.nodes[0];
+                this.openGeneEffectFromNetwork(nodeId);
+            } else if (params.edges.length > 0) {
+                // Edge double-clicked - open correlation inspect
+                const edgeId = params.edges[0];
+                const edge = this.networkData.edges.get(edgeId);
+                if (edge) {
+                    this.openInspectByGenes(edge.from, edge.to);
+                }
+            }
+        });
+
+        // Single click - only used in Remove Mode to remove nodes
+        this.network.on('click', (params) => {
+            // Skip if we just finished dragging
+            if (isDragging) {
+                return;
+            }
+
+            // Only handle clicks in remove mode
+            if (this.removeMode && params.nodes.length > 0) {
                 const nodeId = params.nodes[0];
                 const node = this.networkData.nodes.get(nodeId);
                 if (node) {
@@ -2597,37 +2636,6 @@ class CorrelationExplorer {
                     this.networkData.nodes.remove(nodeId);
                 }
             }
-        });
-
-        // Click on edge to open inspect modal, click on node to open Gene Effect tab
-        // Use delayed execution to distinguish from double-click
-        this.network.on('click', (params) => {
-            // Skip if we just finished dragging
-            if (isDragging) {
-                return;
-            }
-
-            // Cancel any existing timeout
-            if (clickTimeout) {
-                clearTimeout(clickTimeout);
-            }
-
-            // Delay single-click action to allow double-click to cancel it
-            clickTimeout = setTimeout(() => {
-                clickTimeout = null;
-                if (params.nodes.length > 0) {
-                    // Node clicked - open Gene Effect analysis
-                    const nodeId = params.nodes[0];
-                    this.openGeneEffectFromNetwork(nodeId);
-                } else if (params.edges.length > 0) {
-                    // Edge clicked - open correlation inspect
-                    const edgeId = params.edges[0];
-                    const edge = this.networkData.edges.get(edgeId);
-                    if (edge) {
-                        this.openInspectByGenes(edge.from, edge.to);
-                    }
-                }
-            }, 250); // 250ms delay - enough to detect double-click
         });
 
         // Show legend
@@ -3959,19 +3967,35 @@ Results:
 
         const btn = document.getElementById('togglePhysics');
         if (this.physicsEnabled) {
-            btn.textContent = 'Lock Nodes';
+            btn.textContent = 'Lock';
             btn.classList.remove('btn-active');
         } else {
-            btn.textContent = 'Unlock Nodes';
+            btn.textContent = 'Unlock';
             btn.classList.add('btn-active');
+        }
+    }
+
+    toggleRemoveMode() {
+        this.removeMode = !this.removeMode;
+        const btn = document.getElementById('toggleRemoveMode');
+        if (this.removeMode) {
+            btn.classList.add('btn-active');
+            btn.style.backgroundColor = '#dc2626';
+            btn.style.borderColor = '#dc2626';
+            btn.style.color = 'white';
+        } else {
+            btn.classList.remove('btn-active');
+            btn.style.backgroundColor = '';
+            btn.style.borderColor = '';
+            btn.style.color = '';
         }
     }
 
     changeNetworkLayout() {
         if (!this.network) return;
 
-        // Cycle through layout options
-        const layouts = ['forceAtlas2Based', 'barnesHut', 'repulsion', 'hierarchical'];
+        // Toggle between Force and Hierarchical layouts
+        const layouts = ['forceAtlas2Based', 'hierarchical'];
         this.currentLayout = this.currentLayout || 0;
         this.currentLayout = (this.currentLayout + 1) % layouts.length;
 
@@ -4008,21 +4032,16 @@ Results:
         // Update physics button state
         const btn = document.getElementById('togglePhysics');
         if (this.physicsEnabled) {
-            btn.textContent = 'Lock Nodes';
+            btn.textContent = 'Lock';
             btn.classList.remove('btn-active');
         } else {
-            btn.textContent = 'Unlock Nodes';
+            btn.textContent = 'Unlock';
             btn.classList.add('btn-active');
         }
 
         // Show which layout is active
-        const layoutNames = {
-            'forceAtlas2Based': 'Force Atlas',
-            'barnesHut': 'Barnes Hut',
-            'repulsion': 'Repulsion',
-            'hierarchical': 'Hierarchical'
-        };
-        document.getElementById('changeLayout').textContent = layoutNames[layoutName];
+        const layoutBtn = document.getElementById('changeLayout');
+        layoutBtn.textContent = layoutName === 'hierarchical' ? 'Hierarchical' : 'Force';
     }
 
     resetNetworkSettings() {
