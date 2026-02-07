@@ -21,6 +21,7 @@ Thumbs.db
 
 # Screenshots and reference images
 *.png
+!favicon-32x32.png
 Screenshot*.png
 
 # R Shiny apps (separate projects)
