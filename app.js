@@ -660,7 +660,6 @@ class CorrelationExplorer {
         });
         document.getElementById('downloadGeneEffectPNG').addEventListener('click', () => this.downloadGeneEffectPNG());
         document.getElementById('downloadGeneEffectSVG').addEventListener('click', () => this.downloadGeneEffectSVG());
-        document.getElementById('downloadGeneEffectCSV').addEventListener('click', () => this.downloadGeneEffectCSV());
 
         // Network controls with slider bubble updates
         document.getElementById('netFontSize').addEventListener('input', (e) => {
@@ -990,7 +989,7 @@ class CorrelationExplorer {
             const replacedOriginals = new Set(replacements.map(r => r.original.toUpperCase()));
             this.genesNotFound = this.genesNotFound.filter(g => !replacedOriginals.has(g.toUpperCase()));
 
-            // Update textarea
+            // Update geneTextarea
             const textarea = document.getElementById('geneTextarea');
             let text = textarea.value;
 
@@ -1000,6 +999,32 @@ class CorrelationExplorer {
             });
 
             textarea.value = text;
+
+            // Also update manualStatsTextarea if it has content
+            const manualTextarea = document.getElementById('manualStatsTextarea');
+            if (manualTextarea && manualTextarea.value.trim()) {
+                let manualText = manualTextarea.value;
+                replacements.forEach(r => {
+                    const regex = new RegExp(`\\b${r.original}\\b`, 'gi');
+                    manualText = manualText.replace(regex, r.replacement);
+                });
+                manualTextarea.value = manualText;
+            }
+
+            // Also update geneStats if loaded
+            if (this.geneStats && this.geneStats.size > 0) {
+                replacements.forEach(r => {
+                    const oldKey = r.original.toUpperCase();
+                    const newKey = r.replacement.toUpperCase();
+                    if (this.geneStats.has(oldKey)) {
+                        const stats = this.geneStats.get(oldKey);
+                        stats.gene = newKey;
+                        this.geneStats.delete(oldKey);
+                        this.geneStats.set(newKey, stats);
+                    }
+                });
+            }
+
             this.updateGeneCount();
 
             const msg = replacements.map(r => `${r.original} → ${r.replacement} [${r.source}]`).join('\n');
@@ -1007,6 +1032,42 @@ class CorrelationExplorer {
         } else {
             alert('No synonyms or orthologs found for the missing genes');
         }
+    }
+
+    // Resolve a single gene to its canonical name using synonym/ortholog lookup
+    resolveGeneSynonym(gene) {
+        const upperGene = gene.toUpperCase();
+
+        // If already in dataset, return as-is
+        if (this.geneIndex.has(upperGene)) {
+            return { gene: upperGene, source: 'direct' };
+        }
+
+        // Check local synonym lookup (loaded from synonyms.json)
+        if (this.synonymLookup) {
+            const match = this.synonymLookup[upperGene];
+            if (match && this.geneIndex.has(match.toUpperCase())) {
+                return { gene: match.toUpperCase(), source: 'synonym' };
+            }
+        }
+
+        // Check orthologs
+        if (this.orthologs && this.orthologs[upperGene]) {
+            const humanGene = this.orthologs[upperGene];
+            if (this.geneIndex.has(humanGene.toUpperCase())) {
+                return { gene: humanGene.toUpperCase(), source: 'ortholog' };
+            }
+        }
+
+        // Check previously used synonyms from the session
+        if (this.synonymsUsed && this.synonymsUsed.length > 0) {
+            const found = this.synonymsUsed.find(s => s.original.toUpperCase() === upperGene);
+            if (found && this.geneIndex.has(found.replacement.toUpperCase())) {
+                return { gene: found.replacement.toUpperCase(), source: found.source };
+            }
+        }
+
+        return null;
     }
 
     async queryMyGeneAPI(genes) {
@@ -2930,8 +2991,20 @@ ${this.genesNotFound.join(', ')}
             lineageText += ` (${subtype})`;
         }
 
+        // Format date and time
+        const now = new Date();
+        const dateTimeStr = now.toLocaleString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+        });
+
         text.textContent = `Gene Correlation Analysis Summary
 ================================
+Run: ${dateTimeStr}
 
 Analysis Mode: ${this.results.mode === 'analysis' ? 'Analysis (within gene list)' : 'Design (find correlated genes)'}
 Correlation Cutoff: ${this.results.cutoff}
@@ -6478,10 +6551,19 @@ Results:
     // ============================================================
 
     openGeneEffectModal(gene, view = 'tissue') {
-        const geneUpper = gene.toUpperCase();
+        let geneUpper = gene.toUpperCase();
+
+        // Try to resolve synonyms/orthologs if gene not found directly
         if (!this.geneIndex.has(geneUpper)) {
-            alert(`Gene "${gene}" not found in the dataset.`);
-            return;
+            const resolved = this.resolveGeneSynonym(geneUpper);
+            if (resolved) {
+                geneUpper = resolved.gene;
+                // Show notification that synonym was used
+                document.getElementById('geneEffectCurrentGene').textContent = `(synonym: ${gene.toUpperCase()} → ${resolved.gene})`;
+            } else {
+                alert(`Gene "${gene}" not found in the dataset.`);
+                return;
+            }
         }
 
         // Store current gene and view
@@ -6550,6 +6632,9 @@ Results:
         const tissueBtn = document.getElementById('geViewTissue');
         const hotspotBtn = document.getElementById('geViewHotspot');
 
+        // Update statistics explanation text
+        const statsExplanation = document.getElementById('geStatsExplanationText');
+
         if (view === 'tissue') {
             tissueBtn.style.background = '#5a9f4a';
             tissueBtn.style.color = 'white';
@@ -6559,6 +6644,7 @@ Results:
             hotspotBtn.classList.add('btn-secondary');
             document.getElementById('geByTissueView').style.display = 'block';
             document.getElementById('geByHotspotView').style.display = 'none';
+            if (statsExplanation) statsExplanation.textContent = "p-values: Welch's t-test comparing each cancer type vs all other cell lines.";
             this.renderGeneEffectByTissue();
         } else {
             hotspotBtn.style.background = '#5a9f4a';
@@ -6569,6 +6655,7 @@ Results:
             tissueBtn.classList.add('btn-secondary');
             document.getElementById('geByTissueView').style.display = 'none';
             document.getElementById('geByHotspotView').style.display = 'block';
+            if (statsExplanation) statsExplanation.textContent = "Shows 3 mutation levels: 0 (WT, blue), 1 (orange), 2 (red). p-value: Welch's t-test comparing 1+2 combined vs WT.";
             this.renderGeneEffectByHotspot();
         }
     }
@@ -6715,13 +6802,15 @@ Results:
         const gene = this.currentGeneEffect.gene;
 
         // Calculate stats for each hotspot gene, keeping cell-level data for box plots
+        // Now showing 3 levels: 0 (WT), 1, and 2 mutations
         const hotspotStats = [];
 
         this.mutations.genes.forEach(hotspotGene => {
             const mutData = this.mutations.geneData?.[hotspotGene]?.mutations || {};
 
-            const wtCellData = [];
-            const mutCellData = [];
+            const cellData0 = []; // WT (0 mutations)
+            const cellData1 = []; // 1 mutation
+            const cellData2 = []; // 2 mutations
 
             data.forEach(d => {
                 const mutLevel = mutData[d.cellLineId] || 0;
@@ -6731,37 +6820,52 @@ Results:
                     cellLineId: d.cellLineId
                 };
                 if (mutLevel === 0) {
-                    wtCellData.push(cellInfo);
+                    cellData0.push(cellInfo);
+                } else if (mutLevel === 1) {
+                    cellData1.push(cellInfo);
                 } else {
-                    mutCellData.push(cellInfo);
+                    cellData2.push(cellInfo);
                 }
             });
 
-            // Require at least 3 in each group
-            if (mutCellData.length >= 3 && wtCellData.length >= 3) {
-                const wtEffects = wtCellData.map(c => c.geneEffect);
-                const mutEffects = mutCellData.map(c => c.geneEffect);
-                const wtMean = wtEffects.reduce((a, b) => a + b, 0) / wtEffects.length;
-                const mutMean = mutEffects.reduce((a, b) => a + b, 0) / mutEffects.length;
-                const mutSD = Math.sqrt(mutEffects.reduce((a, b) => a + Math.pow(b - mutMean, 2), 0) / mutEffects.length);
-                const wtSD = Math.sqrt(wtEffects.reduce((a, b) => a + Math.pow(b - wtMean, 2), 0) / wtEffects.length);
-                const diff = mutMean - wtMean;
-                const tTest = this.welchTTest(wtEffects, mutEffects);
+            // Require at least 3 in WT and at least 1 mutant cell (combine 1+2 for significance)
+            const mutCellData = [...cellData1, ...cellData2];
+            if (mutCellData.length >= 1 && cellData0.length >= 3) {
+                const effects0 = cellData0.map(c => c.geneEffect);
+                const effects1 = cellData1.map(c => c.geneEffect);
+                const effects2 = cellData2.map(c => c.geneEffect);
+                const effectsMut = mutCellData.map(c => c.geneEffect);
+
+                const mean0 = effects0.reduce((a, b) => a + b, 0) / effects0.length;
+                const sd0 = Math.sqrt(effects0.reduce((a, b) => a + Math.pow(b - mean0, 2), 0) / effects0.length);
+
+                const mean1 = effects1.length > 0 ? effects1.reduce((a, b) => a + b, 0) / effects1.length : NaN;
+                const sd1 = effects1.length > 1 ? Math.sqrt(effects1.reduce((a, b) => a + Math.pow(b - mean1, 2), 0) / effects1.length) : NaN;
+
+                const mean2 = effects2.length > 0 ? effects2.reduce((a, b) => a + b, 0) / effects2.length : NaN;
+                const sd2 = effects2.length > 1 ? Math.sqrt(effects2.reduce((a, b) => a + Math.pow(b - mean2, 2), 0) / effects2.length) : NaN;
+
+                // p-value comparing WT vs 1+2 combined (for ranking)
+                const tTest = effectsMut.length >= 3 ? this.welchTTest(effects0, effectsMut) : { p: 1 };
+                const diff = effectsMut.length > 0 ? effectsMut.reduce((a, b) => a + b, 0) / effectsMut.length - mean0 : 0;
 
                 hotspotStats.push({
                     group: hotspotGene,
+                    n0: cellData0.length,
+                    n1: cellData1.length,
+                    n2: cellData2.length,
                     nMut: mutCellData.length,
-                    nWT: wtCellData.length,
-                    n: mutCellData.length,
-                    wtMean,
-                    mutMean,
-                    wtSD,
-                    mutSD,
-                    mean: diff,
+                    mean0,
+                    mean1,
+                    mean2,
+                    sd0,
+                    sd1,
+                    sd2,
                     diff,
                     pValue: tTest.p,
-                    wtCellData,
-                    mutCellData
+                    cellData0,
+                    cellData1,
+                    cellData2
                 });
             }
         });
@@ -6778,7 +6882,7 @@ Results:
         // Take top 20 most significant for box plot display
         const topStats = hotspotStats.slice(0, 20);
 
-        // Create paired box plots (WT and Mut for each hotspot)
+        // Create box plots for 3 mutation levels (0, 1, 2) for each hotspot
         const traces = [];
         const yCategories = [];
 
@@ -6786,39 +6890,60 @@ Results:
             const yLabel = `${s.group}`;
             yCategories.push(yLabel);
 
-            // WT trace (blue)
+            // WT trace (blue) - 0 mutations
             traces.push({
                 type: 'box',
-                name: 'WT (no mutation)',
-                legendgroup: 'WT',
+                name: '0 (WT)',
+                legendgroup: '0',
                 showlegend: idx === 0,
-                y: Array(s.wtCellData.length).fill(yLabel),
-                x: s.wtCellData.map(c => c.geneEffect),
+                y: Array(s.cellData0.length).fill(yLabel),
+                x: s.cellData0.map(c => c.geneEffect),
                 orientation: 'h',
                 boxpoints: 'outliers',
-                marker: { color: '#2563eb', size: 5, outliercolor: '#1e40af' },
-                line: { color: '#1e40af', width: 2 },
+                marker: { color: '#2563eb', size: 4, outliercolor: '#1e40af' },
+                line: { color: '#1e40af', width: 1.5 },
                 fillcolor: 'rgba(37, 99, 235, 0.6)',
                 hoverinfo: 'x',
-                offsetgroup: 'wt'
+                offsetgroup: '0'
             });
 
-            // Mutant trace (red - consistent color for all)
-            traces.push({
-                type: 'box',
-                name: 'Mutated',
-                legendgroup: 'Mutant',
-                showlegend: idx === 0,
-                y: Array(s.mutCellData.length).fill(yLabel),
-                x: s.mutCellData.map(c => c.geneEffect),
-                orientation: 'h',
-                boxpoints: 'outliers',
-                marker: { color: '#dc2626', size: 5, outliercolor: '#991b1b' },
-                line: { color: '#991b1b', width: 2 },
-                fillcolor: 'rgba(220, 38, 38, 0.6)',
-                hoverinfo: 'x',
-                offsetgroup: 'mut'
-            });
+            // 1 mutation trace (orange)
+            if (s.cellData1.length > 0) {
+                traces.push({
+                    type: 'box',
+                    name: '1 mutation',
+                    legendgroup: '1',
+                    showlegend: idx === 0 && s.cellData1.length > 0,
+                    y: Array(s.cellData1.length).fill(yLabel),
+                    x: s.cellData1.map(c => c.geneEffect),
+                    orientation: 'h',
+                    boxpoints: 'outliers',
+                    marker: { color: '#f97316', size: 4, outliercolor: '#c2410c' },
+                    line: { color: '#c2410c', width: 1.5 },
+                    fillcolor: 'rgba(249, 115, 22, 0.6)',
+                    hoverinfo: 'x',
+                    offsetgroup: '1'
+                });
+            }
+
+            // 2 mutations trace (red)
+            if (s.cellData2.length > 0) {
+                traces.push({
+                    type: 'box',
+                    name: '2 mutations',
+                    legendgroup: '2',
+                    showlegend: idx === 0 && s.cellData2.length > 0,
+                    y: Array(s.cellData2.length).fill(yLabel),
+                    x: s.cellData2.map(c => c.geneEffect),
+                    orientation: 'h',
+                    boxpoints: 'outliers',
+                    marker: { color: '#dc2626', size: 4, outliercolor: '#991b1b' },
+                    line: { color: '#991b1b', width: 1.5 },
+                    fillcolor: 'rgba(220, 38, 38, 0.6)',
+                    hoverinfo: 'x',
+                    offsetgroup: '2'
+                });
+            }
         });
 
         // Calculate dynamic sizing
@@ -6857,12 +6982,16 @@ Results:
         // Store stats for table (without cell data)
         const tableStats = hotspotStats.map(s => ({
             group: s.group,
+            n0: s.n0,
+            n1: s.n1,
+            n2: s.n2,
             nMut: s.nMut,
-            nWT: s.nWT,
-            wtMean: s.wtMean,
-            mutMean: s.mutMean,
-            wtSD: s.wtSD,
-            mutSD: s.mutSD,
+            mean0: s.mean0,
+            mean1: s.mean1,
+            mean2: s.mean2,
+            sd0: s.sd0,
+            sd1: s.sd1,
+            sd2: s.sd2,
             diff: s.diff,
             pValue: s.pValue
         }));
@@ -6899,9 +7028,12 @@ Results:
         } else {
             thead.innerHTML = `<tr>
                 <th style="${headerStyle}" data-sort="group" data-type="string">Hotspot${sortIcon}</th>
-                <th style="${headerStyle}" data-sort="nMut" data-type="number">n Mut${sortIcon}</th>
-                <th style="${headerStyle}" data-sort="diff" data-type="number">Δ GE${sortIcon}</th>
-                <th style="${headerStyle}" data-sort="mutSD" data-type="number">SD${sortIcon}</th>
+                <th style="${headerStyle}" data-sort="n0" data-type="number">n(0)${sortIcon}</th>
+                <th style="${headerStyle}" data-sort="mean0" data-type="number">GE(0)${sortIcon}</th>
+                <th style="${headerStyle}" data-sort="n1" data-type="number">n(1)${sortIcon}</th>
+                <th style="${headerStyle}" data-sort="mean1" data-type="number">GE(1)${sortIcon}</th>
+                <th style="${headerStyle}" data-sort="n2" data-type="number">n(2)${sortIcon}</th>
+                <th style="${headerStyle}" data-sort="mean2" data-type="number">GE(2)${sortIcon}</th>
                 <th style="${headerStyle}" data-sort="pValue" data-type="number">p-value${sortIcon}</th>
             </tr>`;
             this.renderGETableBody(stats, mode);
@@ -6931,13 +7063,17 @@ Results:
             });
         } else {
             stats.forEach(s => {
-                const color = s.pValue < 0.05 ? (s.diff < 0 ? '#dc2626' : '#16a34a') : '#6b7280';
                 const pStr = s.pValue < 0.001 ? '<0.001' : s.pValue.toFixed(3);
+                const mean1Str = isNaN(s.mean1) ? '-' : s.mean1.toFixed(3);
+                const mean2Str = isNaN(s.mean2) ? '-' : s.mean2.toFixed(3);
                 tbody.innerHTML += `<tr class="clickable-row" data-group="${s.group}" style="cursor: pointer;">
                     <td>${s.group}</td>
-                    <td style="text-align: center;">${s.nMut}</td>
-                    <td style="text-align: center; font-weight: 500; color: ${color};">${s.diff.toFixed(3)}</td>
-                    <td style="text-align: center;">${s.mutSD.toFixed(3)}</td>
+                    <td style="text-align: center; color: #2563eb;">${s.n0}</td>
+                    <td style="text-align: center; color: #2563eb;">${s.mean0.toFixed(3)}</td>
+                    <td style="text-align: center; color: #f97316;">${s.n1 || '-'}</td>
+                    <td style="text-align: center; color: #f97316;">${mean1Str}</td>
+                    <td style="text-align: center; color: #dc2626;">${s.n2 || '-'}</td>
+                    <td style="text-align: center; color: #dc2626;">${mean2Str}</td>
                     <td style="text-align: center; ${s.pValue < 0.05 ? 'font-weight: 600;' : ''}">${pStr}</td>
                 </tr>`;
             });
