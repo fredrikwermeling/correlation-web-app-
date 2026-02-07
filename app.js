@@ -1797,6 +1797,20 @@ class CorrelationExplorer {
             return;
         }
 
+        // Check if any result has mid-risk data
+        const hasMidRisk = this.synonymResults.some(r => r.midRisk.length > 0);
+
+        // Show/hide the mid-risk column header and help text
+        const table = document.getElementById('synonymsTable');
+        const midRiskHeader = table.querySelector('thead th:nth-child(5)');
+        if (midRiskHeader) midRiskHeader.style.display = hasMidRisk ? '' : 'none';
+        const helpText = document.getElementById('synonymsHelpText');
+        if (helpText) {
+            helpText.innerHTML = hasMidRisk
+                ? '<strong>Low Risk:</strong> Exact synonyms from HGNC. <strong>Mid Risk:</strong> Less certain synonyms. <strong>Orthologs:</strong> Mouse-to-human gene mappings.'
+                : '<strong>Low Risk:</strong> Exact synonyms from HGNC. <strong>Orthologs:</strong> Mouse-to-human gene mappings.';
+        }
+
         this.synonymResults.forEach(r => {
             const statusColor = r.status === 'Valid' ? '#16a34a' :
                                r.status === 'Not Found' ? '#dc2626' : '#f59e0b';
@@ -1806,7 +1820,7 @@ class CorrelationExplorer {
                 <td style="color: ${statusColor}; font-weight: 500;">${r.status}</td>
                 <td>${r.official}</td>
                 <td style="border-left: 2px solid #16a34a;">${r.lowRisk.length > 0 ? r.lowRisk.join(', ') : '-'}</td>
-                <td style="border-left: 2px solid #f59e0b;">${r.midRisk.length > 0 ? r.midRisk.join(', ') : '-'}</td>
+                <td style="border-left: 2px solid #f59e0b; display: ${hasMidRisk ? '' : 'none'};">${r.midRisk.length > 0 ? r.midRisk.join(', ') : '-'}</td>
                 <td style="border-left: 2px solid #6366f1;">${r.orthologs.length > 0 ? r.orthologs.join(', ') : '-'}</td>
             `;
             tbody.appendChild(tr);
@@ -1829,10 +1843,18 @@ class CorrelationExplorer {
     downloadSynonymsCSV() {
         if (!this.synonymResults || this.synonymResults.length === 0) return;
 
-        let csv = 'Input_Gene,Status,Official_Symbol,Low_Risk_Synonyms,Mid_Risk_Synonyms,Orthologs\n';
+        const hasMidRisk = this.synonymResults.some(r => r.midRisk.length > 0);
+
+        let csv = hasMidRisk
+            ? 'Input_Gene,Status,Official_Symbol,Low_Risk_Synonyms,Mid_Risk_Synonyms,Orthologs\n'
+            : 'Input_Gene,Status,Official_Symbol,Low_Risk_Synonyms,Orthologs\n';
 
         this.synonymResults.forEach(r => {
-            csv += `"${r.input}","${r.status}","${r.official}","${r.lowRisk.join('; ')}","${r.midRisk.join('; ')}","${r.orthologs.join('; ')}"\n`;
+            if (hasMidRisk) {
+                csv += `"${r.input}","${r.status}","${r.official}","${r.lowRisk.join('; ')}","${r.midRisk.join('; ')}","${r.orthologs.join('; ')}"\n`;
+            } else {
+                csv += `"${r.input}","${r.status}","${r.official}","${r.lowRisk.join('; ')}","${r.orthologs.join('; ')}"\n`;
+            }
         });
 
         this.downloadFile(csv, 'synonym_ortholog_lookup.csv', 'text/csv');
