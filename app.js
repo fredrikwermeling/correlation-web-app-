@@ -7170,7 +7170,7 @@ Results:
             const traces = [
                 {
                     type: 'box',
-                    name: `0 (WT) n=${stats0.n}`,
+                    name: `0 (WT), n=${stats0.n}`,
                     y: effects0,
                     text: data0.map(d => d.cellLineName),
                     customdata: data0.map(d => d.lineage || 'Unknown'),
@@ -7188,7 +7188,7 @@ Results:
             if (data1.length > 0) {
                 traces.push({
                     type: 'box',
-                    name: `1 mut n=${stats1.n}`,
+                    name: `1 mut, n=${stats1.n}`,
                     y: effects1,
                     text: data1.map(d => d.cellLineName),
                     customdata: data1.map(d => d.lineage || 'Unknown'),
@@ -7206,7 +7206,7 @@ Results:
             if (data2.length > 0) {
                 traces.push({
                     type: 'box',
-                    name: `2 mut n=${stats2.n}`,
+                    name: `2 mut, n=${stats2.n}`,
                     y: effects2,
                     text: data2.map(d => d.cellLineName),
                     customdata: data2.map(d => d.lineage || 'Unknown'),
@@ -7220,17 +7220,25 @@ Results:
                 });
             }
 
-            // Build stats annotation text - formatted as compact rows to fit export
-            let statsText = `0(WT): n=${stats0.n}  GE=${stats0.mean.toFixed(3)}  SD=${stats0.sd.toFixed(3)}`;
+            // Build stats as separate annotations for each row to ensure they display properly
+            const statsAnnotations = [];
+            const pStr = !isNaN(pValue) ? (pValue < 0.001 ? pValue.toExponential(2) : pValue.toFixed(4)) : null;
+
+            // Row 1: 0 (WT) stats
+            statsAnnotations.push(`0 (WT): n=${stats0.n}, GE=${stats0.mean.toFixed(3)}, SD=${stats0.sd.toFixed(3)}`);
+            // Row 2: 1 mut stats
             if (stats1.n > 0) {
-                statsText += `\n1 mut: n=${stats1.n}  GE=${stats1.mean.toFixed(3)}${stats1.n > 1 ? `  SD=${stats1.sd.toFixed(3)}` : ''}`;
+                statsAnnotations.push(`1 mut: n=${stats1.n}, GE=${stats1.mean.toFixed(3)}${stats1.n > 1 ? `, SD=${stats1.sd.toFixed(3)}` : ''}`);
             }
+            // Row 3: 2 mut stats
             if (stats2.n > 0) {
-                statsText += `\n2 mut: n=${stats2.n}  GE=${stats2.mean.toFixed(3)}${stats2.n > 1 ? `  SD=${stats2.sd.toFixed(3)}` : ''}`;
+                statsAnnotations.push(`2 mut: n=${stats2.n}, GE=${stats2.mean.toFixed(3)}${stats2.n > 1 ? `, SD=${stats2.sd.toFixed(3)}` : ''}`);
             }
-            if (!isNaN(pValue)) {
-                statsText += `\np(0vs1+2): ${pValue < 0.001 ? pValue.toExponential(2) : pValue.toFixed(4)}`;
+            // Row 4: p-value
+            if (pStr) {
+                statsAnnotations.push(`p-value (0 vs 1+2): ${pStr}`);
             }
+            const statsText = statsAnnotations.join('<br>');
 
             // Apply width ratio from slider (default 1.0 = full width)
             const widthRatio = this.geChartWidthRatio || 1.0;
@@ -7243,20 +7251,21 @@ Results:
                 title: { text: `${gene} gene effect by ${group} mutation status`, font: { size: 14 } },
                 yaxis: { title: 'Gene Effect', zeroline: true, zerolinecolor: '#374151' },
                 showlegend: false,
-                height: 500,
+                height: 520,
                 width: chartWidth,
-                margin: { t: 50, b: 150, l: 60, r: 30 },
+                margin: { t: 50, b: 170, l: 60, r: 30 },
                 paper_bgcolor: 'white',
                 plot_bgcolor: 'white',
                 annotations: [{
-                    x: 0.5,
-                    y: -0.32,
+                    x: 0,
+                    y: -0.38,
                     xref: 'paper',
                     yref: 'paper',
+                    xanchor: 'left',
                     text: statsText,
                     showarrow: false,
-                    font: { size: 9, family: 'monospace' },
-                    align: 'center'
+                    font: { size: 10, family: 'monospace' },
+                    align: 'left'
                 }]
             };
 
@@ -7286,7 +7295,7 @@ Results:
         const traces = [
             {
                 type: 'box',
-                name: `All cells (n=${allStats.n})`,
+                name: `All cells, n=${allStats.n}`,
                 y: allEffects,
                 text: data.map(d => d.cellLineName),
                 customdata: data.map(d => d.lineage || 'Unknown'),
@@ -7300,7 +7309,7 @@ Results:
             },
             {
                 type: 'box',
-                name: `${group} (n=${groupStats.n})`,
+                name: `${group}, n=${groupStats.n}`,
                 y: groupEffects,
                 text: filteredData.map(d => d.cellLineName),
                 boxpoints: 'all',
@@ -7316,12 +7325,14 @@ Results:
             }
         ];
 
-        // Build stats annotation text - formatted as compact rows to fit export
-        let statsText = `All: n=${allStats.n}  GE=${allStats.mean.toFixed(3)}  SD=${allStats.sd.toFixed(3)}\n`;
-        statsText += `${group}: n=${groupStats.n}  GE=${groupStats.mean.toFixed(3)}  SD=${groupStats.sd.toFixed(3)}`;
+        // Build stats as separate rows using <br> for proper line breaks
+        const statsAnnotations = [];
+        statsAnnotations.push(`All cells: n=${allStats.n}, GE=${allStats.mean.toFixed(3)}, SD=${allStats.sd.toFixed(3)}`);
+        statsAnnotations.push(`${group}: n=${groupStats.n}, GE=${groupStats.mean.toFixed(3)}, SD=${groupStats.sd.toFixed(3)}`);
         if (!isNaN(pValue)) {
-            statsText += `\np-value: ${pValue < 0.001 ? pValue.toExponential(2) : pValue.toFixed(4)}`;
+            statsAnnotations.push(`p-value: ${pValue < 0.001 ? pValue.toExponential(2) : pValue.toFixed(4)}`);
         }
+        const statsText = statsAnnotations.join('<br>');
 
         // Apply width ratio from slider (default 1.0 = full width)
         const widthRatio = this.geChartWidthRatio || 1.0;
@@ -7334,20 +7345,21 @@ Results:
             title: { text: `${gene} gene effect in ${group}`, font: { size: 14 } },
             yaxis: { title: 'Gene Effect', zeroline: true, zerolinecolor: '#374151', zerolinewidth: 2 },
             showlegend: false,
-            height: 480,
+            height: 500,
             width: chartWidth,
-            margin: { t: 50, b: 120, l: 60, r: 30 },
+            margin: { t: 50, b: 140, l: 60, r: 30 },
             paper_bgcolor: 'white',
             plot_bgcolor: 'white',
             annotations: [{
-                x: 0.5,
-                y: -0.26,
+                x: 0,
+                y: -0.30,
                 xref: 'paper',
                 yref: 'paper',
+                xanchor: 'left',
                 text: statsText,
                 showarrow: false,
-                font: { size: 9, family: 'monospace' },
-                align: 'center'
+                font: { size: 10, family: 'monospace' },
+                align: 'left'
             }]
         };
 
