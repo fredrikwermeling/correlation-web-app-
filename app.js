@@ -613,8 +613,7 @@ class CorrelationExplorer {
             });
         });
 
-        // Manual stats entry
-        document.getElementById('loadManualStatsBtn').addEventListener('click', () => this.loadManualStats());
+        // Manual stats entry - now auto-loaded on Run, no button needed
 
         // Prevent keyboard events from propagating to network when typing in textareas/inputs
         document.querySelectorAll('textarea, input[type="text"], input[type="number"]').forEach(el => {
@@ -1387,10 +1386,11 @@ class CorrelationExplorer {
         // Reset network settings to defaults when running new analysis
         this.resetNetworkSettings();
 
-        // Auto-load manual stats if the manual tab is active and has content
-        const manualTab = document.querySelector('.stats-sub-tab[data-stats-tab="manual"]');
+        // Auto-load manual stats if the manual textarea has content (beyond default header)
         const manualTextarea = document.getElementById('manualStatsTextarea');
-        if (manualTab?.classList.contains('active') && manualTextarea?.value.trim()) {
+        const manualContent = manualTextarea?.value.trim();
+        // Check if there's actual data beyond the header line
+        if (manualContent && manualContent.split('\n').filter(l => l.trim()).length > 1) {
             this.loadManualStats();
         }
 
@@ -3978,24 +3978,27 @@ Results:
     toggleRemoveMode() {
         this.removeMode = !this.removeMode;
         const btn = document.getElementById('toggleRemoveMode');
+        const helpText = document.getElementById('networkHelpText');
         if (this.removeMode) {
             btn.classList.add('btn-active');
             btn.style.backgroundColor = '#dc2626';
             btn.style.borderColor = '#dc2626';
             btn.style.color = 'white';
+            if (helpText) helpText.textContent = 'Click node to remove (Remove Mode active)';
         } else {
             btn.classList.remove('btn-active');
             btn.style.backgroundColor = '';
             btn.style.borderColor = '';
             btn.style.color = '';
+            if (helpText) helpText.textContent = 'Double-click: node → Gene Effect, edge → Inspect';
         }
     }
 
     changeNetworkLayout() {
         if (!this.network) return;
 
-        // Toggle between Force and Hierarchical layouts
-        const layouts = ['forceAtlas2Based', 'hierarchical'];
+        // Cycle through layout options: Barnes Hut (default), Force Atlas, Hierarchical
+        const layouts = ['barnesHut', 'forceAtlas2Based', 'hierarchical'];
         this.currentLayout = this.currentLayout || 0;
         this.currentLayout = (this.currentLayout + 1) % layouts.length;
 
@@ -4041,7 +4044,8 @@ Results:
 
         // Show which layout is active
         const layoutBtn = document.getElementById('changeLayout');
-        layoutBtn.textContent = layoutName === 'hierarchical' ? 'Hierarchical' : 'Force';
+        const layoutNames = { 'barnesHut': 'Barnes Hut', 'forceAtlas2Based': 'Force Atlas', 'hierarchical': 'Hierarchical' };
+        layoutBtn.textContent = layoutNames[layoutName];
     }
 
     resetNetworkSettings() {
