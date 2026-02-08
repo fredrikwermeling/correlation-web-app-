@@ -5988,6 +5988,7 @@ Results:
             <p style="font-size: 11px; color: #666; margin-bottom: 8px;">
                 Comparing correlation between WT (0 ${hotspotGene} mutations) vs Mutant (2+ ${hotspotGene} mutations) cells, stratified by cancer type.
                 Note: Cells with exactly 1 mutation are excluded from this comparison.
+                <strong>Click a cancer type</strong> to view its scatter plot with the ${hotspotGene} mutation overlay.
             </p>
             <p style="font-size: 10px; color: #0c4a6e; background: #f0f9ff; padding: 4px 8px; border-radius: 4px; margin-bottom: 12px;">
                 <b>Statistics:</b> p(Δr) uses Fisher z-transformation to compare correlations. p(Δslope) is an approximation based on correlation difference.
@@ -6017,8 +6018,8 @@ Results:
             const deltaSlopeColor = row.deltaSlope < 0 ? '#dc2626' : '#5a9f4a';
 
             html += `
-                <tr>
-                    <td>${row.lineage}</td>
+                <tr class="clickable-row" data-lineage="${row.lineage}" style="cursor: pointer;" title="Click to view ${row.lineage} scatter plot with ${hotspotGene} overlay">
+                    <td style="color: var(--green-700); font-weight: 500;">${row.lineage}</td>
                     <td style="border-left: 2px solid #2563eb;">${row.nWT}</td>
                     <td>${row.rWT.toFixed(3)}</td>
                     <td>${row.slopeWT.toFixed(3)}</td>
@@ -6065,6 +6066,23 @@ Results:
 
         // Make table sortable
         this.setupSortableTable('compareByCancerTable');
+
+        // Make rows clickable - clicking a cancer type shows scatter with that cancer + hotspot filter
+        document.querySelectorAll('#compareByCancerTable .clickable-row').forEach(row => {
+            row.addEventListener('click', () => {
+                const lineage = row.dataset.lineage;
+                // Set cancer type filter
+                document.getElementById('scatterCancerFilter').value = lineage;
+                this.updateScatterSubtypeFilter();
+                // Keep the hotspot gene as color overlay
+                document.getElementById('hotspotGene').value = hotspotGene;
+                document.getElementById('hotspotMode').value = 'color';
+                // Switch back to scatter plot
+                document.getElementById('compareTable').style.display = 'none';
+                document.getElementById('scatterPlot').style.display = 'block';
+                this.updateInspectPlot();
+            });
+        });
     }
 
     showCompareAllMutations() {
