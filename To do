@@ -3,3 +3,4 @@ change favicon
 In the mutation analysis table, allow for clicking the gene name and opening the gene effect interface.
 mutational analysis, p value "," separated instead of ".". change 
 in gene effect inspect, hotspot mutation. allow for tissue filter
+now the page is live at https://correlate.cmm.se. help me set up a tracker (free GDPR compliant without asking to allow for cookies, UMAMI?). I jsut want to now how many ise the web page.
