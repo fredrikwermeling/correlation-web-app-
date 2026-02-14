@@ -9,6 +9,7 @@ In the mutation analysis table, allow for clicking the gene name and opening the
 mutational analysis, p value "," separated instead of ".". change it. this seems to only be true sometimes, which confuses me. 
 in gene effect inspect, hotspot mutation. allow for tissue fiilter
 make sure that all exports looks the same as on the screen. I noticed that some where different 
+allow for genes to be entered into the network althugh not any correlations found. I suggest that a table could be clicked opening a table (that could be kept open at the same time as looking at the network) where toggle on/of of all genes in the input list is possiuble.
 
 
 Prompt for Claude Code:
