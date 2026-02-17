@@ -2,7 +2,9 @@ cd "/Users/fredrikwermeling/Documents/correlate app feb 2026 (färdig)/correlati
 claude
 
 
-make sure to use settings that saves tookens doing the follwoing (dont use opus 4.6 ifnot needed use lower effort settings if not needed more)
+make sure to use settings that saves tookens doing the following (dont use opus 4.6 if not needed use lower effort settings if not needed more)
+Start trying to understand this list and then work on some of them after discussing with me. Always try to learn from other functions in the app, instead if you inventing the wheel again) 
+
 Mutational analysis doesn't seem to work with the subtype filter.
 change favicon. see the Favicon v2.png in the following map /Users/fredrikwermeling/Documents/correlate app feb 2026 (färdig)/correlation app
 In the mutation analysis table, allow for clicking the gene name and opening the gene effect interface.
@@ -14,8 +16,8 @@ allow to filter all table columns with cut offs
 allow to copy the gene names in a list (to allow to paste into the gene box
 allow for showing brief info about genes (hover over or click). part of go terms and similar. could press go term and open in gene box 
 axis range in correlation/correlate inspect. use "." and not "," for separating decimals.
-inspect in the mutational analyis, allow to select gene effect gene in box. also allow for buttons bringing up tables of how the difference for the selected gene effect and hotspot mutation, dffers for different tissues and hotspot mutations  
-mutational analysis mode. add a button to analyse by tissue or hotspot mutation. ie that shows which are the strongest hits related to the hotspot mutation, ie which gene in which tissue type or hotsptot mutation).
+inspect in the mutational analyis, allow to select gene effect gene in box. also allow for buttons bringing up tables of how the difference for the selected gene effect and hotspot mutation, dffers for different tissues and hotspot mutations. this is similar to the correlation inspcet function.
+mutational analysis mode. add buttons to analyse by tissue or hotspot mutation (similar to in analysis mode_correlate). ie that shows which are the strongest hits related to the hotspot mutation, ie which gene in which tissue type or hotsptot mutation).
 
 
 Prompt for Claude Code:
