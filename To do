@@ -15,6 +15,7 @@ allow to copy the gene names in a list (to allow to paste into the gene box
 allow for showing brief info about genes (hover over or click). part of go terms and similar. could press go term and open in gene box 
 axis range in correlation/correlate inspect. use "." and not "," for separating decimals.
 inspect in the mutational analyis, allow to select gene effect gene in box.
+mutational analysis mode. add a button to analyse by tissue or hotspot mutation. ie that shows which are the strongest hits, ie which gene in which tissue type or hotsptot mutation).
 
 Prompt for Claude Code:
 
