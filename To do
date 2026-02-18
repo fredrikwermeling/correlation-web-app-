@@ -18,7 +18,7 @@ allow for showing brief info about genes (hover over or click). part of go terms
 axis range in correlation/correlate inspect. use "." and not "," for separating decimals.
 inspect in the mutational analyis, allow to select gene effect gene in box. also allow for buttons bringing up tables of how the difference for the selected gene effect and hotspot mutation, dffers for different tissues and hotspot mutations. this is similar to the correlation inspcet function.
 mutational analysis mode. add buttons to analyse by tissue or hotspot mutation (similar to in analysis mode_correlate). ie that shows which are the strongest hits related to the hotspot mutation, ie which gene in which tissue type or hotsptot mutation).
-
+Also, allow to remove one or several tissue types in the anaylsis
 
 Prompt for Claude Code:
 
