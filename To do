@@ -5,7 +5,8 @@ claude
 make sure to use settings that saves tookens doing the following (dont use opus 4.6 if not needed use lower effort settings if not needed more)
 Start trying to understand this list and then work on some of them after discussing with me. Always try to learn from other functions in the app, instead if you inventing the wheel again) 
 
-in the netwoek. add a button to select nodes by clicking them. wehn clicking them, they should show up in the input gene list remvoing other genes from the list (but not the network image). In this way, you could click genes of more interest and then click run and remake the network (analysis or design mode) to focus on these genes. In the same way, if using the remove mode, also remove the genes from the input list, so one could refine the search by pressing "run" again, now focusing on all other genes in the list. I realize this is complicated. always ask if unclear. 
+in the network. Add a button to select nodes by clicking them. When clicking them, they should show up in the input gene list, removing other genes from the list (but not the network image). In this way, you could click genes of more interest and then click run and remake the network (analysis or design mode) to focus on these genes. In the same way, if using the remove mode, also remove the genes from the input list, so one could refine the search by pressing "run" again, now focusing on all other genes in the list. I realize this is complicated. always ask if unclear. 
+Allow for getting a list showingg GE and SD for all genes input, not only the ones where there is a correlation.
 Mutational analysis doesn't seem to work with the subtype filter.
 change favicon. see the Favicon v2.png in the following map /Users/fredrikwermeling/Documents/correlate app feb 2026 (färdig)/correlation app
 In the mutation analysis table, allow for clicking the gene name and opening the gene effect interface.
