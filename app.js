@@ -42,7 +42,17 @@ class CorrelationExplorer {
         this.physicsEnabled = true;
         this.currentLayout = 0;
 
+        // Select mode state
+        this.selectMode = false;
+        this.selectedNodes = new Set();
+
         this.init();
+    }
+
+    // Helper to read numeric value from input, handling locale comma as decimal separator
+    getInputNum(id) {
+        const val = document.getElementById(id).value.replace(',', '.');
+        return parseFloat(val);
     }
 
     // Helper to format numbers with proper minus sign (− instead of -)
@@ -406,6 +416,8 @@ class CorrelationExplorer {
             // Restore filters if data is loaded
             if (this.cellLineMetadata && this.cellLineMetadata.lineage) {
                 document.getElementById('lineageFilterGroup').style.display = 'block';
+                // Ensure subtype filter is shown if a lineage is already selected
+                this.updateSubLineageFilter();
             }
             if (this.mutations && this.mutations.geneData) {
                 document.getElementById('paramHotspotFilterGroup').style.display = 'block';
@@ -763,6 +775,11 @@ class CorrelationExplorer {
         document.getElementById('togglePhysics').addEventListener('click', () => this.togglePhysics());
         document.getElementById('changeLayout').addEventListener('click', () => this.changeNetworkLayout());
         document.getElementById('toggleRemoveMode').addEventListener('click', () => this.toggleRemoveMode());
+        document.getElementById('toggleSelectMode').addEventListener('click', () => this.toggleSelectMode());
+        document.getElementById('clearSelectedNodes').addEventListener('click', () => this.clearSelectedNodes());
+        document.getElementById('showUncorrelatedGenes').addEventListener('change', () => {
+            if (this.results) this.displayNetwork();
+        });
         document.querySelectorAll('input[name="colorStatType"]').forEach(radio => {
             radio.addEventListener('change', () => this.updateNetworkColors());
         });
@@ -829,7 +846,9 @@ class CorrelationExplorer {
         document.getElementById('resetAllFilters').addEventListener('click', () => this.resetAllInspectFilters());
 
         ['scatterXmin', 'scatterXmax', 'scatterYmin', 'scatterYmax'].forEach(id => {
-            document.getElementById(id).addEventListener('change', () => this.updateInspectPlot());
+            const el = document.getElementById(id);
+            el.addEventListener('change', () => this.updateInspectPlot());
+            el.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.updateInspectPlot(); });
         });
 
         document.getElementById('scatterCellSearch').addEventListener('input', () => this.updateInspectPlot());
@@ -1595,7 +1614,7 @@ class CorrelationExplorer {
     runMutationAnalysis() {
         const hotspotGene = document.getElementById('mutationHotspotSelect').value;
         const minN = parseInt(document.getElementById('minCellLines').value);
-        const pThreshold = parseFloat(document.getElementById('pValueThreshold').value);
+        const pThreshold = this.getInputNum('pValueThreshold');
         const lineageFilter = document.getElementById('lineageFilter').value;
         const subLineageFilter = document.getElementById('subLineageFilter')?.value;
 
@@ -2152,7 +2171,7 @@ class CorrelationExplorer {
             const row = document.createElement('tr');
             row.innerHTML = `
                 <td><a href="#" class="inspect-link" onclick="app.showGeneEffectDistribution('${r.gene}'); return false;">Inspect</a></td>
-                <td>${r.gene}</td>
+                <td><a href="#" style="color: var(--green-700); text-decoration: none; cursor: pointer;" onclick="app.showGeneEffectDistribution('${r.gene}'); return false;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">${r.gene}</a></td>
                 <td style="border-left: 2px solid #2563eb;">${r.n_wt}</td>
                 <td>${r.mean_wt.toFixed(3)}</td>
                 <td style="border-left: 2px solid #f97316;">${r.n_mut}</td>
@@ -2696,6 +2715,40 @@ class CorrelationExplorer {
             };
         });
 
+        // Add uncorrelated input genes so they appear in the clusters table
+        const correlatedGenes = new Set(clusterData.map(c => c.gene));
+        geneList.forEach(gene => {
+            if (!correlatedGenes.has(gene) && this.geneIndex.has(gene)) {
+                const idx = this.geneIndex.get(gene);
+                const fullData = this.getGeneData(idx);
+                const allValidData = Array.from(fullData).filter(v => !isNaN(v));
+                const allMean = allValidData.length > 0 ? allValidData.reduce((a, b) => a + b, 0) / allValidData.length : NaN;
+                const allVariance = allValidData.length > 0 ? allValidData.reduce((a, b) => a + (b - allMean) ** 2, 0) / allValidData.length : NaN;
+                const allSd = Math.sqrt(allVariance);
+                const filteredData = cellLineIndices.map(i => fullData[i]).filter(v => !isNaN(v));
+                const filtMean = filteredData.length > 0 ? filteredData.reduce((a, b) => a + b, 0) / filteredData.length : NaN;
+                const filtVariance = filteredData.length > 0 ? filteredData.reduce((a, b) => a + (b - filtMean) ** 2, 0) / filteredData.length : NaN;
+                const filtSd = Math.sqrt(filtVariance);
+
+                clusterData.push({
+                    gene: gene,
+                    cluster: '-',
+                    meanEffect: Math.round(allMean * 100) / 100,
+                    sdEffect: Math.round(allSd * 100) / 100,
+                    meanEffectFiltered: Math.round(filtMean * 100) / 100,
+                    sdEffectFiltered: Math.round(filtSd * 100) / 100,
+                    nAll: allValidData.length,
+                    nFiltered: filteredData.length,
+                    inGeneList: true,
+                    hasCorrelation: false
+                });
+            }
+        });
+        // Mark correlated genes
+        clusterData.forEach(c => {
+            if (c.hasCorrelation === undefined) c.hasCorrelation = true;
+        });
+
         // Check if filtering was applied
         const isFiltered = cellLineIndices.length < this.nCellLines;
 
@@ -2917,6 +2970,44 @@ class CorrelationExplorer {
             });
         });
 
+        // Add uncorrelated input genes as isolated nodes if checkbox is checked
+        const showUncorrelated = document.getElementById('showUncorrelatedGenes')?.checked;
+        if (showUncorrelated && this.results.geneList) {
+            this.results.geneList.forEach(gene => {
+                if (!geneSet.has(gene) && this.geneIndex.has(gene)) {
+                    const idx = this.geneIndex.get(gene);
+                    const fullData = this.getGeneData(idx);
+                    const validData = Array.from(fullData).filter(v => !isNaN(v));
+                    const meanEffect = validData.length > 0 ? (validData.reduce((a, b) => a + b, 0) / validData.length) : NaN;
+                    const sd = validData.length > 0 ? Math.sqrt(validData.reduce((a, b) => a + (b - meanEffect) ** 2, 0) / validData.length) : NaN;
+
+                    const originalName = synonymLookup.get(gene.toUpperCase());
+                    const isSynonym = !!originalName;
+                    const label = isSynonym ? `${gene}*` : gene;
+
+                    let titleLines = [gene];
+                    if (isSynonym) titleLines.push(`(synonym of ${originalName})`);
+                    titleLines.push(`GE mean: ${isNaN(meanEffect) ? 'N/A' : meanEffect.toFixed(2)}`);
+                    titleLines.push(`GE SD: ${isNaN(sd) ? 'N/A' : sd.toFixed(2)}`);
+                    titleLines.push('(no correlations found)');
+
+                    nodes.push({
+                        id: gene,
+                        label: label,
+                        size: nodeSize,
+                        font: { size: fontSize, color: '#999' },
+                        color: { background: '#d1d5db', border: '#9ca3af' },
+                        borderWidth: 2,
+                        borderWidthSelected: 3,
+                        title: titleLines.join('\n'),
+                        isSynonym: isSynonym,
+                        originalName: originalName || null
+                    });
+                    geneSet.add(gene);
+                }
+            });
+        }
+
         // Track if any synonyms are in the network for legend display
         this.hasSynonymsInNetwork = synonymLookup.size > 0 &&
             Array.from(geneSet).some(g => synonymLookup.has(g.toUpperCase()));
@@ -2971,6 +3062,8 @@ class CorrelationExplorer {
         this.networkData = data;
         this.hiddenNodes = [];
         this.removeMode = false;
+        this.selectMode = false;
+        this.selectedNodes.clear();
 
         // Reset physics state for new network
         this.physicsEnabled = true;
@@ -2985,7 +3078,18 @@ class CorrelationExplorer {
         const removeModeBtn = document.getElementById('toggleRemoveMode');
         if (removeModeBtn) {
             removeModeBtn.classList.remove('btn-active');
+            removeModeBtn.style.backgroundColor = '';
+            removeModeBtn.style.borderColor = '';
+            removeModeBtn.style.color = '';
         }
+        const selectModeBtn = document.getElementById('toggleSelectMode');
+        if (selectModeBtn) {
+            selectModeBtn.classList.remove('btn-active');
+            selectModeBtn.style.backgroundColor = '';
+            selectModeBtn.style.borderColor = '';
+            selectModeBtn.style.color = '';
+        }
+        document.getElementById('selectedNodesList').style.display = 'none';
 
         // For large networks, disable physics after stabilization
         if (nodeCount > 30) {
@@ -3047,21 +3151,60 @@ class CorrelationExplorer {
             }
         });
 
-        // Single click - only used in Remove Mode to remove nodes
+        // Single click - used in Remove Mode and Select Mode
         this.network.on('click', (params) => {
             // Skip if we just finished dragging
             if (isDragging) {
                 return;
             }
 
-            // Only handle clicks in remove mode
-            if (this.removeMode && params.nodes.length > 0) {
+            if (params.nodes.length > 0) {
                 const nodeId = params.nodes[0];
-                const node = this.networkData.nodes.get(nodeId);
-                if (node) {
-                    this.hiddenNodes.push(node);
-                    this.networkData.nodes.remove(nodeId);
-                    this.updateRemovedNodesList();
+
+                // Select Mode: toggle gene selection and update input gene box
+                if (this.selectMode) {
+                    if (this.selectedNodes.has(nodeId)) {
+                        this.selectedNodes.delete(nodeId);
+                        // Restore original node color
+                        const isInput = this.results.geneList.includes(nodeId);
+                        this.networkData.nodes.update({
+                            id: nodeId,
+                            color: {
+                                background: this.results.mode === 'design' ?
+                                    (isInput ? '#5a9f4a' : '#a8d89a') : '#5a9f4a',
+                                border: '#ffffff'
+                            }
+                        });
+                    } else {
+                        this.selectedNodes.add(nodeId);
+                        // Highlight selected node
+                        this.networkData.nodes.update({
+                            id: nodeId,
+                            color: { background: '#2563eb', border: '#1d4ed8' }
+                        });
+                    }
+                    this.updateSelectedNodesList();
+                    // Update gene textarea with only selected genes
+                    document.getElementById('geneTextarea').value = Array.from(this.selectedNodes).join('\n');
+                    this.updateGeneCount();
+                    return;
+                }
+
+                // Remove Mode: remove node from network AND from gene input list
+                if (this.removeMode) {
+                    const node = this.networkData.nodes.get(nodeId);
+                    if (node) {
+                        this.hiddenNodes.push(node);
+                        this.networkData.nodes.remove(nodeId);
+                        this.updateRemovedNodesList();
+                        // Also remove gene from input list
+                        const textarea = document.getElementById('geneTextarea');
+                        const genes = textarea.value.split(/[\n\r]+/).map(g => g.trim()).filter(g => g);
+                        const remaining = genes.filter(g => g.toUpperCase() !== nodeId.toUpperCase());
+                        textarea.value = remaining.join('\n');
+                        this.updateGeneCount();
+                    }
+                    return;
                 }
             }
         });
@@ -3226,10 +3369,18 @@ class CorrelationExplorer {
             }
         }
 
+        // Check if there are any uncorrelated genes
+        const hasUncorrelated = this.results.clusters.some(c => c.hasCorrelation === false);
+
         // Build header based on what data we have
         let headerCells = `
             <th data-sort="gene">Gene</th>
             <th data-sort="cluster">Cluster</th>
+        `;
+        if (hasUncorrelated) {
+            headerCells += `<th data-sort="hasCorrelation">Corr</th>`;
+        }
+        headerCells += `
             <th data-sort="meanEffect">Mean (All)</th>
             <th data-sort="sdEffect">SD (All)</th>
         `;
@@ -3259,14 +3410,30 @@ class CorrelationExplorer {
         });
 
         this.results.clusters
-            .sort((a, b) => a.cluster - b.cluster || a.gene.localeCompare(b.gene))
+            .sort((a, b) => {
+                // Sort correlated genes first (by cluster), then uncorrelated
+                const aCorr = a.hasCorrelation === false ? 1 : 0;
+                const bCorr = b.hasCorrelation === false ? 1 : 0;
+                if (aCorr !== bCorr) return aCorr - bCorr;
+                const aCluster = a.cluster === '-' ? Infinity : a.cluster;
+                const bCluster = b.cluster === '-' ? Infinity : b.cluster;
+                return aCluster - bCluster || a.gene.localeCompare(b.gene);
+            })
             .forEach(c => {
                 const tr = document.createElement('tr');
+                if (c.hasCorrelation === false) {
+                    tr.style.opacity = '0.7';
+                }
                 const geneStat = this.geneStats?.get(c.gene);
 
                 let rowHtml = `
                     <td>${c.gene}${c.inGeneList && this.results.mode === 'design' ? '*' : ''}</td>
                     <td>${c.cluster}</td>
+                `;
+                if (hasUncorrelated) {
+                    rowHtml += `<td style="text-align: center; color: ${c.hasCorrelation === false ? '#dc2626' : '#16a34a'}; font-weight: 600;">${c.hasCorrelation === false ? 'No' : 'Yes'}</td>`;
+                }
+                rowHtml += `
                     <td>${c.meanEffect}</td>
                     <td>${c.sdEffect}</td>
                 `;
@@ -3460,23 +3627,25 @@ Results:
 
             if (isFiltered) {
                 csv += isDesignMode
-                    ? 'Gene,Gene_Type,Cluster,Mean_Effect_All,SD_Effect_All,Mean_Effect_Filtered,SD_Effect_Filtered\n'
-                    : 'Gene,Cluster,Mean_Effect_All,SD_Effect_All,Mean_Effect_Filtered,SD_Effect_Filtered\n';
+                    ? 'Gene,Gene_Type,Cluster,Has_Correlation,Mean_Effect_All,SD_Effect_All,Mean_Effect_Filtered,SD_Effect_Filtered\n'
+                    : 'Gene,Cluster,Has_Correlation,Mean_Effect_All,SD_Effect_All,Mean_Effect_Filtered,SD_Effect_Filtered\n';
                 this.results.clusters.forEach(c => {
                     const geneType = geneList.includes(c.gene) ? 'Input' : 'Correlated';
+                    const hasCorr = c.hasCorrelation === false ? 'No' : 'Yes';
                     csv += isDesignMode
-                        ? `${c.gene},${geneType},${c.cluster},${c.meanEffect},${c.sdEffect},${c.meanEffectFiltered},${c.sdEffectFiltered}\n`
-                        : `${c.gene},${c.cluster},${c.meanEffect},${c.sdEffect},${c.meanEffectFiltered},${c.sdEffectFiltered}\n`;
+                        ? `${c.gene},${geneType},${c.cluster},${hasCorr},${c.meanEffect},${c.sdEffect},${c.meanEffectFiltered},${c.sdEffectFiltered}\n`
+                        : `${c.gene},${c.cluster},${hasCorr},${c.meanEffect},${c.sdEffect},${c.meanEffectFiltered},${c.sdEffectFiltered}\n`;
                 });
             } else {
                 csv += isDesignMode
-                    ? 'Gene,Gene_Type,Cluster,Mean_Effect,SD_Effect\n'
-                    : 'Gene,Cluster,Mean_Effect,SD_Effect\n';
+                    ? 'Gene,Gene_Type,Cluster,Has_Correlation,Mean_Effect,SD_Effect\n'
+                    : 'Gene,Cluster,Has_Correlation,Mean_Effect,SD_Effect\n';
                 this.results.clusters.forEach(c => {
                     const geneType = geneList.includes(c.gene) ? 'Input' : 'Correlated';
+                    const hasCorr = c.hasCorrelation === false ? 'No' : 'Yes';
                     csv += isDesignMode
-                        ? `${c.gene},${geneType},${c.cluster},${c.meanEffect},${c.sdEffect}\n`
-                        : `${c.gene},${c.cluster},${c.meanEffect},${c.sdEffect}\n`;
+                        ? `${c.gene},${geneType},${c.cluster},${hasCorr},${c.meanEffect},${c.sdEffect}\n`
+                        : `${c.gene},${c.cluster},${hasCorr},${c.meanEffect},${c.sdEffect}\n`;
                 });
             }
             filename = 'clusters.csv';
@@ -4418,6 +4587,16 @@ Results:
     }
 
     toggleRemoveMode() {
+        // Deactivate select mode if active (without re-entering toggleRemoveMode)
+        if (this.selectMode) {
+            this.selectMode = false;
+            this.restoreSelectedNodeColors();
+            this.selectedNodes.clear();
+            this.updateSelectedNodesList();
+            const selBtn = document.getElementById('toggleSelectMode');
+            if (selBtn) { selBtn.classList.remove('btn-active'); selBtn.style.backgroundColor = ''; selBtn.style.borderColor = ''; selBtn.style.color = ''; }
+        }
+
         this.removeMode = !this.removeMode;
         const btn = document.getElementById('toggleRemoveMode');
         const helpText = document.getElementById('networkHelpText');
@@ -4426,13 +4605,83 @@ Results:
             btn.style.backgroundColor = '#dc2626';
             btn.style.borderColor = '#dc2626';
             btn.style.color = 'white';
-            if (helpText) helpText.textContent = 'Click node to remove (Remove Mode active)';
+            if (helpText) helpText.textContent = 'Click node to remove from network and gene list';
         } else {
             btn.classList.remove('btn-active');
             btn.style.backgroundColor = '';
             btn.style.borderColor = '';
             btn.style.color = '';
             if (helpText) helpText.textContent = 'Double-click node for Gene Effect, edge for Correlation';
+        }
+    }
+
+    toggleSelectMode() {
+        // Deactivate remove mode if active (without re-entering toggleSelectMode)
+        if (this.removeMode) {
+            this.removeMode = false;
+            const rmBtn = document.getElementById('toggleRemoveMode');
+            if (rmBtn) { rmBtn.classList.remove('btn-active'); rmBtn.style.backgroundColor = ''; rmBtn.style.borderColor = ''; rmBtn.style.color = ''; }
+        }
+
+        this.selectMode = !this.selectMode;
+        const btn = document.getElementById('toggleSelectMode');
+        const helpText = document.getElementById('networkHelpText');
+        if (this.selectMode) {
+            this.selectedNodes.clear();
+            btn.classList.add('btn-active');
+            btn.style.backgroundColor = '#2563eb';
+            btn.style.borderColor = '#2563eb';
+            btn.style.color = 'white';
+            if (helpText) helpText.textContent = 'Click nodes to select them for the gene list';
+        } else {
+            // Restore original node colors for any selected nodes
+            this.restoreSelectedNodeColors();
+            this.selectedNodes.clear();
+            this.updateSelectedNodesList();
+            btn.classList.remove('btn-active');
+            btn.style.backgroundColor = '';
+            btn.style.borderColor = '';
+            btn.style.color = '';
+            if (helpText) helpText.textContent = 'Double-click node for Gene Effect, edge for Correlation';
+        }
+    }
+
+    restoreSelectedNodeColors() {
+        if (!this.networkData) return;
+        this.selectedNodes.forEach(nodeId => {
+            const isInput = this.results?.geneList?.includes(nodeId);
+            this.networkData.nodes.update({
+                id: nodeId,
+                color: {
+                    background: this.results?.mode === 'design' ?
+                        (isInput ? '#5a9f4a' : '#a8d89a') : '#5a9f4a',
+                    border: '#ffffff'
+                }
+            });
+        });
+    }
+
+    updateSelectedNodesList() {
+        const listEl = document.getElementById('selectedNodesList');
+        const textEl = document.getElementById('selectedNodesText');
+        if (!listEl || !textEl) return;
+
+        if (this.selectedNodes.size > 0) {
+            textEl.textContent = Array.from(this.selectedNodes).join(', ');
+            listEl.style.display = 'block';
+        } else {
+            listEl.style.display = 'none';
+        }
+    }
+
+    clearSelectedNodes() {
+        this.restoreSelectedNodeColors();
+        this.selectedNodes.clear();
+        this.updateSelectedNodesList();
+        // Restore the original gene list in textarea
+        if (this.results?.geneList) {
+            document.getElementById('geneTextarea').value = this.results.geneList.join('\n');
+            this.updateGeneCount();
         }
     }
 
@@ -4582,14 +4831,16 @@ Results:
         // Create clusters CSV
         let clustersCSV;
         if (this.results.isFiltered) {
-            clustersCSV = 'Gene,Cluster,Mean_Effect_All,SD_Effect_All,Mean_Effect_Filtered,SD_Effect_Filtered\n';
+            clustersCSV = 'Gene,Cluster,Has_Correlation,Mean_Effect_All,SD_Effect_All,Mean_Effect_Filtered,SD_Effect_Filtered\n';
             this.results.clusters.forEach(c => {
-                clustersCSV += `${c.gene},${c.cluster},${c.meanEffect},${c.sdEffect},${c.meanEffectFiltered},${c.sdEffectFiltered}\n`;
+                const hasCorr = c.hasCorrelation === false ? 'No' : 'Yes';
+                clustersCSV += `${c.gene},${c.cluster},${hasCorr},${c.meanEffect},${c.sdEffect},${c.meanEffectFiltered},${c.sdEffectFiltered}\n`;
             });
         } else {
-            clustersCSV = 'Gene,Cluster,Mean_Effect,SD_Effect\n';
+            clustersCSV = 'Gene,Cluster,Has_Correlation,Mean_Effect,SD_Effect\n';
             this.results.clusters.forEach(c => {
-                clustersCSV += `${c.gene},${c.cluster},${c.meanEffect},${c.sdEffect}\n`;
+                const hasCorr = c.hasCorrelation === false ? 'No' : 'Yes';
+                clustersCSV += `${c.gene},${c.cluster},${hasCorr},${c.meanEffect},${c.sdEffect}\n`;
             });
         }
 
@@ -5562,10 +5813,10 @@ Results:
 
         // Build traces
         const traces = [];
-        const xRange = [parseFloat(document.getElementById('scatterXmin').value),
-                       parseFloat(document.getElementById('scatterXmax').value)];
-        const yRange = [parseFloat(document.getElementById('scatterYmin').value),
-                       parseFloat(document.getElementById('scatterYmax').value)];
+        const xRange = [this.getInputNum('scatterXmin'),
+                       this.getInputNum('scatterXmax')];
+        const yRange = [this.getInputNum('scatterYmin'),
+                       this.getInputNum('scatterYmax')];
 
         if (hotspotMode === 'color' && hotspotGene) {
             // Color by mutation (0/1/2) mode with separate traces for legend
@@ -5745,10 +5996,10 @@ Results:
         const mut1 = filteredData.filter(d => d.mutationLevel === 1);
         const mut2 = filteredData.filter(d => d.mutationLevel >= 2);
 
-        const xRange = [parseFloat(document.getElementById('scatterXmin').value),
-                       parseFloat(document.getElementById('scatterXmax').value)];
-        const yRange = [parseFloat(document.getElementById('scatterYmin').value),
-                       parseFloat(document.getElementById('scatterYmax').value)];
+        const xRange = [this.getInputNum('scatterXmin'),
+                       this.getInputNum('scatterXmax')];
+        const yRange = [this.getInputNum('scatterYmin'),
+                       this.getInputNum('scatterYmax')];
 
         const wtStats = this.pearsonWithSlope(wt.map(d => d.x), wt.map(d => d.y));
         const mut1Stats = this.pearsonWithSlope(mut1.map(d => d.x), mut1.map(d => d.y));
