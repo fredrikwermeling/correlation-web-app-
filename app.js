@@ -909,6 +909,10 @@ class CorrelationExplorer {
         // Mutation analysis compare buttons (#16)
         document.getElementById('mutCompareByTissueBtn')?.addEventListener('click', () => this.showMutationCompareByTissue());
         document.getElementById('mutCompareByHotspotBtn')?.addEventListener('click', () => this.showMutationCompareByHotspot());
+        document.getElementById('mutCompareCloseBtn')?.addEventListener('click', () => {
+            document.getElementById('mutationCompareTable').style.display = 'none';
+            document.getElementById('mutCompareCloseBtn').style.display = 'none';
+        });
 
         // Infographic modal
         document.getElementById('showInfoGraphic')?.addEventListener('click', () => {
@@ -962,7 +966,11 @@ class CorrelationExplorer {
             }
         });
         document.getElementById('geTissueFilter')?.addEventListener('change', () => {
-            this.switchGeneEffectView(this.currentGEView || 'tissue');
+            if (this.geneEffectViewMode === 'mutation' && this.mutationResults && this.currentGeneEffectGene) {
+                this.showGeneEffectDistribution(this.currentGeneEffectGene);
+            } else {
+                this.switchGeneEffectView(this.currentGEView || 'tissue');
+            }
         });
         document.getElementById('geShowAllBtn')?.addEventListener('click', () => {
             this.showAllGeneEffect();
@@ -1534,9 +1542,11 @@ class CorrelationExplorer {
 
     getGeneList() {
         const text = document.getElementById('geneTextarea').value;
-        return text.split(/\s+/)
+        const genes = text.split(/\s+/)
             .map(g => g.toUpperCase().trim())
             .filter(g => g !== '' && this.geneIndex.has(g));
+        // Remove duplicates
+        return [...new Set(genes)];
     }
 
     getFilteredCellLineIndices() {
@@ -2237,7 +2247,7 @@ class CorrelationExplorer {
             const row = document.createElement('tr');
             row.innerHTML = `
                 <td><a href="#" class="inspect-link" onclick="app.showGeneEffectDistribution('${r.gene}'); return false;">Inspect</a></td>
-                <td class="gene-hover" data-gene="${r.gene}"><a href="#" style="color: var(--green-700); text-decoration: none; cursor: pointer;" onclick="app.showGeneEffectDistribution('${r.gene}'); return false;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">${r.gene}</a></td>
+                <td class="gene-hover" data-gene="${r.gene}"><a href="#" style="color: var(--green-700); text-decoration: none; cursor: pointer;" onclick="app.openGeneEffectModal('${r.gene}', 'tissue'); return false;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">${r.gene}</a></td>
                 <td style="border-left: 2px solid #2563eb;">${r.n_wt}</td>
                 <td>${r.mean_wt.toFixed(3)}</td>
                 <td style="border-left: 2px solid #f97316;">${r.n_mut}</td>
@@ -2391,6 +2401,9 @@ class CorrelationExplorer {
             return;
         }
 
+        // Get tissue filter from dropdown
+        const inspectTissueFilter = document.getElementById('geTissueFilter')?.value || '';
+
         // Collect data for each cell line
         const cellLines = this.metadata.cellLines;
         const data = { wt: [], mut1: [], mut2: [] };
@@ -2417,6 +2430,12 @@ class CorrelationExplorer {
                     if (mr.additionalHotspotLevel === '2' && addMutLevel < 2) return;
                     if (mr.additionalHotspotLevel === '1+2' && addMutLevel === 0) return;
                 }
+            }
+
+            // Check tissue filter from dropdown in inspect modal
+            if (inspectTissueFilter) {
+                const lineage = this.cellLineMetadata?.lineage?.[cellLine] || '';
+                if (lineage !== inspectTissueFilter) return;
             }
 
             const ge = this.geneEffects[geneIdx * this.nCellLines + idx];
@@ -2553,6 +2572,9 @@ class CorrelationExplorer {
             }
             filterInfo.push(`Lineage: ${lineageText}`);
         }
+        if (inspectTissueFilter) {
+            filterInfo.push(`Tissue: ${inspectTissueFilter}`);
+        }
         if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
             filterInfo.push(`${mr.additionalHotspot}: ${mr.additionalHotspotLevel}`);
         }
@@ -2593,6 +2615,21 @@ class CorrelationExplorer {
         // Show modal
         document.getElementById('geneEffectModal').style.display = 'flex';
         document.getElementById('geneEffectTitle').textContent = `${gene} Gene Effect by ${hotspotGene} Mutation`;
+
+        // Populate tissue filter dropdown with available lineages
+        const tissueFilter = document.getElementById('geTissueFilter');
+        if (tissueFilter) {
+            const currentValue = tissueFilter.value;
+            const allLineages = [...new Set(cellLines.map(cl => this.cellLineMetadata?.lineage?.[cl]).filter(Boolean))].sort();
+            tissueFilter.innerHTML = '<option value="">All tissues</option>';
+            allLineages.forEach(l => {
+                const opt = document.createElement('option');
+                opt.value = l;
+                opt.textContent = l;
+                tissueFilter.appendChild(opt);
+            });
+            tissueFilter.value = currentValue || '';
+        }
 
         // Show gene search bar so user can change the gene (#12)
         document.getElementById('geSearchBar').style.display = '';
@@ -3208,6 +3245,29 @@ class CorrelationExplorer {
                 isDragging = false;
                 dragStartPos = null;
             }, 100);
+        });
+
+        // Hover over node to show gene info tooltip
+        this.network.on('hoverNode', (params) => {
+            const nodeId = params.node;
+            const domEvent = params.event && params.event.center ?
+                { clientX: params.event.center.x, clientY: params.event.center.y } :
+                { clientX: params.pointer?.DOM?.x || 0, clientY: params.pointer?.DOM?.y || 0 };
+            // Add offset for the network container position
+            const container = document.getElementById('networkPlot');
+            if (container) {
+                const rect = container.getBoundingClientRect();
+                domEvent.clientX += rect.left;
+                domEvent.clientY += rect.top;
+            }
+            clearTimeout(this._networkTooltipTimer);
+            this._networkTooltipTimer = setTimeout(() => {
+                this.showGeneTooltip(domEvent, nodeId);
+            }, 400);
+        });
+        this.network.on('blurNode', () => {
+            clearTimeout(this._networkTooltipTimer);
+            this.hideGeneTooltip();
         });
 
         // Double-click to open Gene Effect (node) or Inspect (edge)
@@ -8261,26 +8321,34 @@ Results:
         const tbody = table.querySelector('tbody');
         const rows = Array.from(tbody.querySelectorAll('tr')).filter(r => r.style.display !== 'none');
 
-        // Find the gene column index (look for data-sort="gene" or data-col="gene" header, or first text column)
+        // Find gene column indices
         const headers = Array.from(table.querySelectorAll('thead th'));
-        let geneColIndex = -1;
+        const geneColIndices = [];
         headers.forEach((th, idx) => {
             const sort = th.dataset.sort || th.dataset.col || '';
-            if (sort === 'gene' || sort === 'gene1') {
-                geneColIndex = idx;
+            if (sort === 'gene' || sort === 'gene1' || sort === 'gene2') {
+                geneColIndices.push(idx);
             }
         });
         // Fallback: mutation table has gene in col 1 (col 0 is inspect link)
-        if (geneColIndex === -1) {
-            if (tableId === 'mutationTable') geneColIndex = 1;
-            else geneColIndex = 0;
+        if (geneColIndices.length === 0) {
+            if (tableId === 'mutationTable') geneColIndices.push(1);
+            else geneColIndices.push(0);
         }
 
-        const genes = rows.map(r => {
-            const cell = r.children[geneColIndex];
-            return cell ? cell.textContent.trim().replace(/\*$/, '') : '';
-        }).filter(v => v !== '');
+        // Collect genes from all gene columns, deduplicate
+        const geneSet = new Set();
+        rows.forEach(r => {
+            geneColIndices.forEach(colIdx => {
+                const cell = r.children[colIdx];
+                if (cell) {
+                    const gene = cell.textContent.trim().replace(/\*$/, '');
+                    if (gene) geneSet.add(gene);
+                }
+            });
+        });
 
+        const genes = [...geneSet];
         navigator.clipboard.writeText(genes.join('\n')).then(() => {
             this.showCopyNotification(`Copied ${genes.length} genes`);
         });
@@ -8424,27 +8492,15 @@ Results:
         if (this.geneInfoCache[gene]) return this.geneInfoCache[gene];
 
         try {
-            const res = await fetch(`https://mygene.info/v3/query?q=symbol:${gene}&species=human&fields=symbol,name,summary,go.BP,go.MF&size=1`);
+            const res = await fetch(`https://mygene.info/v3/query?q=symbol:${gene}&species=human&fields=symbol,name,summary&size=1`);
             const data = await res.json();
             if (data.hits && data.hits.length > 0) {
                 const hit = data.hits[0];
                 const info = {
                     symbol: hit.symbol || gene,
                     name: hit.name || '',
-                    summary: hit.summary || '',
-                    goBP: [],
-                    goMF: []
+                    summary: hit.summary || ''
                 };
-                // Extract GO Biological Process terms
-                if (hit.go?.BP) {
-                    const bps = Array.isArray(hit.go.BP) ? hit.go.BP : [hit.go.BP];
-                    info.goBP = bps.slice(0, 5).map(t => t.term || t);
-                }
-                // Extract GO Molecular Function terms
-                if (hit.go?.MF) {
-                    const mfs = Array.isArray(hit.go.MF) ? hit.go.MF : [hit.go.MF];
-                    info.goMF = mfs.slice(0, 3).map(t => t.term || t);
-                }
                 this.geneInfoCache[gene] = info;
                 return info;
             }
@@ -8484,21 +8540,7 @@ Results:
 
             if (info.summary) {
                 const shortSummary = info.summary.length > 200 ? info.summary.substring(0, 200) + '...' : info.summary;
-                html += `<div style="color: #4b5563; margin-bottom: 6px;">${shortSummary}</div>`;
-            }
-
-            if (info.goBP.length > 0) {
-                html += `<div style="margin-bottom: 4px;"><b style="color: #0369a1;">GO Biological Process:</b></div>`;
-                info.goBP.forEach(term => {
-                    html += `<div style="padding-left: 8px; color: #0369a1; cursor: pointer;" class="go-term-click" data-term="${term}" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">${term}</div>`;
-                });
-            }
-
-            if (info.goMF.length > 0) {
-                html += `<div style="margin-top: 4px; margin-bottom: 4px;"><b style="color: #7c3aed;">GO Molecular Function:</b></div>`;
-                info.goMF.forEach(term => {
-                    html += `<div style="padding-left: 8px; color: #7c3aed;">${term}</div>`;
-                });
+                html += `<div style="color: #4b5563;">${shortSummary}</div>`;
             }
 
             el.innerHTML = html;
@@ -8508,45 +8550,12 @@ Results:
             if (rect.bottom > window.innerHeight) {
                 el.style.top = (window.innerHeight - rect.height - 10) + 'px';
             }
-
-            // Make GO terms clickable - search for genes with same GO term
-            el.querySelectorAll('.go-term-click').forEach(termEl => {
-                termEl.addEventListener('click', () => {
-                    const term = termEl.dataset.term;
-                    this.searchGenesByGOTerm(term);
-                    this.hideGeneTooltip();
-                });
-            });
         });
     }
 
     hideGeneTooltip() {
         const existing = document.getElementById('geneTooltip');
         if (existing) existing.remove();
-    }
-
-    async searchGenesByGOTerm(term) {
-        try {
-            this.showCopyNotification(`Searching for genes with: ${term}`);
-            const res = await fetch(`https://mygene.info/v3/query?q=go.BP.term:"${encodeURIComponent(term)}"&species=human&fields=symbol&size=50`);
-            const data = await res.json();
-            if (data.hits && data.hits.length > 0) {
-                const genes = data.hits.map(h => h.symbol).filter(Boolean);
-                // Add to gene textarea
-                const textarea = document.getElementById('geneTextarea');
-                const current = textarea.value.trim();
-                const newGenes = genes.filter(g => this.geneIndex.has(g));
-                if (newGenes.length > 0) {
-                    textarea.value = current ? current + '\n' + newGenes.join('\n') : newGenes.join('\n');
-                    this.updateGeneCount();
-                    this.showCopyNotification(`Added ${newGenes.length} genes from GO term`);
-                } else {
-                    this.showCopyNotification('No matching genes found in dataset');
-                }
-            }
-        } catch (e) {
-            console.warn('GO term search failed:', e);
-        }
     }
 
     // ===== Mutation Analysis Compare by Tissue/Hotspot (#16) =====
@@ -8620,7 +8629,9 @@ Results:
                 <h4 style="margin: 0;">${hotspotGene} mutation effect by Cancer Type</h4>
                 <button class="btn btn-primary btn-sm" id="mutCompareBackBtn">← Back to Table</button>
             </div>
-            <p style="font-size: 11px; color: #666; margin-bottom: 8px;">Average Δ GE (mut − WT) for top ${topGenes.length} significant genes across cancer types</p>
+            <div style="background: #f0f9ff; border: 1px solid #0ea5e9; border-radius: 4px; padding: 8px 12px; margin-bottom: 10px; font-size: 11px; color: #0c4a6e;">
+                <b>What this shows:</b> For each cancer type, we split cell lines into WT (no ${hotspotGene} mutation) and mutated groups, then calculate the difference in gene effect (Δ GE = mean mutated − mean WT) for the top ${topGenes.length} most significant genes from the mutation analysis. This reveals whether the ${hotspotGene} mutation has a stronger or weaker effect in certain cancer types. <b>Red</b> = lower gene effect in mutated cells (stronger dependency), <b>green</b> = higher.
+            </div>
             <table class="data-table" style="font-size: 11px; width: 100%;">
                 <thead><tr>
                     <th>Cancer Type</th>
@@ -8653,9 +8664,11 @@ Results:
         const container = document.getElementById('mutationCompareTable');
         container.innerHTML = html;
         container.style.display = 'block';
+        document.getElementById('mutCompareCloseBtn').style.display = 'inline-block';
 
         document.getElementById('mutCompareBackBtn')?.addEventListener('click', () => {
             container.style.display = 'none';
+            document.getElementById('mutCompareCloseBtn').style.display = 'none';
         });
     }
 
@@ -8724,7 +8737,9 @@ Results:
                 <h4 style="margin: 0;">Co-occurring mutations affecting ${mainHotspot}-sensitive genes</h4>
                 <button class="btn btn-primary btn-sm" id="mutCompareBackBtn">← Back to Table</button>
             </div>
-            <p style="font-size: 11px; color: #666; margin-bottom: 8px;">For each other hotspot, shows avg Δ GE (mut − WT) of top ${topGenes.length} ${mainHotspot}-significant genes. Sorted by magnitude.</p>
+            <div style="background: #f0f9ff; border: 1px solid #0ea5e9; border-radius: 4px; padding: 8px 12px; margin-bottom: 10px; font-size: 11px; color: #0c4a6e;">
+                <b>What this shows:</b> For each other hotspot mutation, we check whether cells carrying that mutation also show altered gene effects for the top ${topGenes.length} genes identified in the ${mainHotspot} mutation analysis. This helps identify co-occurring mutations that may amplify or counteract the effect of ${mainHotspot} mutations. <b>Red</b> = lower gene effect in mutated cells, <b>green</b> = higher. Sorted by magnitude.
+            </div>
             <table class="data-table" style="font-size: 11px; width: 100%;">
                 <thead><tr>
                     <th>Hotspot</th>
@@ -8757,9 +8772,11 @@ Results:
         const container = document.getElementById('mutationCompareTable');
         container.innerHTML = html;
         container.style.display = 'block';
+        document.getElementById('mutCompareCloseBtn').style.display = 'inline-block';
 
         document.getElementById('mutCompareBackBtn')?.addEventListener('click', () => {
             container.style.display = 'none';
+            document.getElementById('mutCompareCloseBtn').style.display = 'none';
         });
     }
 

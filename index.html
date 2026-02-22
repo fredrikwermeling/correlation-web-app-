@@ -1630,8 +1630,9 @@
                             <button class="btn btn-outline btn-sm" id="filterMutationToggle" title="Toggle column filters">Filters</button>
                             <button class="btn btn-outline btn-sm" id="copyMutationGenes" title="Copy gene names to clipboard">Copy Genes</button>
                             <button class="btn btn-outline btn-sm" id="downloadMutationResults">Export CSV</button>
-                            <button class="btn btn-secondary btn-sm" id="mutCompareByTissueBtn" title="Compare selected gene across cancer types">By Tissue</button>
-                            <button class="btn btn-secondary btn-sm" id="mutCompareByHotspotBtn" title="Compare selected gene across hotspot mutations">By Hotspot</button>
+                            <button class="btn btn-secondary btn-sm" id="mutCompareByTissueBtn" title="Show how the mutation effect on top genes varies across cancer types">Compare by Tissue</button>
+                            <button class="btn btn-secondary btn-sm" id="mutCompareByHotspotBtn" title="Check if other mutations also affect these top genes">Compare by Hotspot</button>
+                            <button class="btn btn-sm" id="mutCompareCloseBtn" style="display: none; background: #ef4444; color: white;" title="Close comparison table">✕ Close Compare</button>
                         </div>
                     </div>
                     <div id="mutationCompareTable" style="display: none; max-height: 500px; overflow-y: auto; margin-bottom: 15px;"></div>
@@ -1963,6 +1964,6 @@
         </div>
     </div>
 
-    <script src="app.js?v=20260222a"></script>
+    <script src="app.js?v=20260222b"></script>
 </body>
 </html>
