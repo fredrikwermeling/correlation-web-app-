@@ -1,3 +1,57 @@
+ What you asked for (17 items):                                                
+                                                                                
+  Bugs/fixes:                                                                   
+                                                                                
+  1. Add Matomo tracking code                                                   
+  2. Update favicon
+  3. P-value input showing comma instead of period (Swedish locale)             
+  4. Axis range inputs same comma issue                                         
+  5. Mutation analysis not respecting subtype filter                            
+                                                                                
+  Features:                                                                     
+                                                                                
+  6. Click gene name in mutation table → open gene effect modal
+  7. Network Select Mode - click genes to select them, populate gene box
+  8. Show all input genes in clusters tab + network (even uncorrelated ones)
+  9. Copy columns from tables (for pasting into Excel/gene box)
+  10. Copy gene names from lists
+  11. Gene effect hotspot view - add tissue filter
+  12. Mutation inspect - gene selection + tissue/hotspot breakdown views
+  13. Exports should match what's shown on screen
+  14. Filter table columns with numeric cutoffs
+  15. Gene info tooltips (GO terms via API, clickable)
+  16. Mutation analysis - compare by tissue or hotspot (like correlation
+  inspect)
+  17. Remove tissue types from analysis
+
+  What was done:
+
+  Items 1-8 were implemented in the previous session and pushed.
+
+  Items 9-17 were implemented in this session:
+
+  - #9/#10: Ctrl/Cmd+click any column header copies that column. "Copy Genes"
+  buttons on all three tables.
+  - #11: Tissue filter dropdown added to gene effect modal, filters both tissue
+  and hotspot views.
+  - #12: Gene search bar now shown in mutation inspect mode (was hidden). By
+  Tissue/By Hotspot buttons switch to full gene effect analysis.
+  - #13: CSV exports now include LFC/FDR columns when gene stats are loaded.
+  - #14: "Filters" toggle button on each table. Supports >0.5, <0.001, >=, <=,
+  != for numeric columns, text search for text columns.
+  - #15: Hover over gene names (400ms) shows tooltip with gene description, GO
+  Biological Process, GO Molecular Function from MyGene.info API. Click a GO
+  term to search for genes with that term and add to gene box.
+  - #16: "By Tissue" and "By Hotspot" buttons in mutation results. Shows how top
+   significant genes' effects vary across cancer types or co-occurring
+  mutations.
+  - #17: "Exclude Tissues" collapsible checkbox list in parameters panel.
+  Excluded tissues are removed from both correlation and mutation analyses.
+
+
+
+
+
 cd "/Users/fredrikwermeling/Documents/correlate app feb 2026 (färdig)/correlation app"
 claude
 
