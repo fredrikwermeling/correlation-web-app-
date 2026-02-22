@@ -3272,6 +3272,8 @@ class CorrelationExplorer {
 
         // Double-click to open Gene Effect (node) or Inspect (edge)
         this.network.on('doubleClick', (params) => {
+            clearTimeout(this._networkTooltipTimer);
+            this.hideGeneTooltip();
             if (params.nodes.length > 0) {
                 // Node double-clicked - open Gene Effect analysis
                 const nodeId = params.nodes[0];
