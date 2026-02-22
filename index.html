@@ -1273,6 +1273,11 @@
                         </select>
                     </div>
 
+                    <div class="form-group" id="tissueExcludeGroup">
+                        <label class="form-label" style="cursor: pointer;" onclick="document.getElementById('tissueExcludeList').style.display = document.getElementById('tissueExcludeList').style.display === 'none' ? 'block' : 'none'">Exclude Tissues: <span style="font-size: 10px; color: #6b7280;">▼ click to expand</span></label>
+                        <div id="tissueExcludeList" style="display: none; max-height: 150px; overflow-y: auto; border: 1px solid #d1d5db; border-radius: 4px; padding: 4px 8px; background: #f9fafb;"></div>
+                    </div>
+
                     <div class="form-group" id="paramHotspotFilterGroup" style="display: none;">
                         <label class="form-label">Hotspot Mutation Filter:</label>
                         <select id="paramHotspotGene" class="form-control" style="margin-bottom: 4px;">
@@ -1551,10 +1556,12 @@
                 <!-- Correlations Tab -->
                 <div class="tab-content" id="tab-correlations">
                     <div class="tip-box">
-                        <strong>Tip:</strong> Click <strong>Correlate</strong> to view a scatter plot, or <strong>By Tissue</strong> for tissue breakdown. You can adjust axis ranges, highlight specific cell lines, and download as PNG or CSV.
+                        <strong>Tip:</strong> Click <strong>Correlate</strong> to view a scatter plot, or <strong>By Tissue</strong> for tissue breakdown. Ctrl/Cmd+click a column header to copy that column. Use <strong>Filters</strong> to set numeric cutoffs on columns.
                     </div>
                     <div class="table-controls">
                         <input type="text" class="table-search" id="correlationsSearch" placeholder="Search...">
+                        <button class="btn btn-outline btn-sm" id="filterCorrelationsToggle" title="Toggle column filters">Filters</button>
+                        <button class="btn btn-outline btn-sm" id="copyCorrelationGenes" title="Copy gene names to clipboard">Copy Genes</button>
                         <button class="btn btn-outline btn-sm" id="downloadCorrelations">Download CSV</button>
                     </div>
                     <div class="table-container">
@@ -1585,6 +1592,8 @@
                     <p class="help-text" style="margin-bottom: 15px;">Mean (All) = all cells, Mean (Filt) = filtered cells. * indicates genes from your input list (Design mode). All input genes are shown; "Corr" column indicates if correlations were found.</p>
                     <div class="table-controls">
                         <input type="text" class="table-search" id="clustersSearch" placeholder="Search...">
+                        <button class="btn btn-outline btn-sm" id="filterClustersToggle" title="Toggle column filters">Filters</button>
+                        <button class="btn btn-outline btn-sm" id="copyClustersGenes" title="Copy gene names to clipboard">Copy Genes</button>
                         <button class="btn btn-outline btn-sm" id="downloadClusters">Download CSV</button>
                     </div>
                     <div class="table-container">
@@ -1616,27 +1625,32 @@
                         <div>
                             <span id="mutationResultsCount">0 genes with p < 0.001</span>
                         </div>
-                        <div>
-                            <input type="text" id="mutationSearch" class="form-control" placeholder="Search genes..." style="width: 200px; display: inline-block; margin-right: 10px;">
+                        <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+                            <input type="text" id="mutationSearch" class="form-control" placeholder="Search genes..." style="width: 200px; display: inline-block;">
+                            <button class="btn btn-outline btn-sm" id="filterMutationToggle" title="Toggle column filters">Filters</button>
+                            <button class="btn btn-outline btn-sm" id="copyMutationGenes" title="Copy gene names to clipboard">Copy Genes</button>
                             <button class="btn btn-outline btn-sm" id="downloadMutationResults">Export CSV</button>
+                            <button class="btn btn-secondary btn-sm" id="mutCompareByTissueBtn" title="Compare selected gene across cancer types">By Tissue</button>
+                            <button class="btn btn-secondary btn-sm" id="mutCompareByHotspotBtn" title="Compare selected gene across hotspot mutations">By Hotspot</button>
                         </div>
                     </div>
+                    <div id="mutationCompareTable" style="display: none; max-height: 500px; overflow-y: auto; margin-bottom: 15px;"></div>
                     <div class="table-container" style="max-height: 600px; overflow-y: auto;">
                         <table class="data-table" id="mutationTable">
                             <thead>
                                 <tr>
                                     <th></th>
-                                    <th onclick="app.sortMutationTable(this)" data-col="gene">Gene ▼</th>
-                                    <th onclick="app.sortMutationTable(this)" data-col="n_wt" style="border-left: 2px solid #2563eb;">N (WT)</th>
-                                    <th onclick="app.sortMutationTable(this)" data-col="mean_wt">Mean GE (WT)</th>
-                                    <th onclick="app.sortMutationTable(this)" data-col="n_mut" style="border-left: 2px solid #f97316;">N (1+2)</th>
-                                    <th onclick="app.sortMutationTable(this)" data-col="mean_mut">Mean GE (1+2)</th>
-                                    <th onclick="app.sortMutationTable(this)" data-col="diff_mut">Δ GE</th>
-                                    <th onclick="app.sortMutationTable(this)" data-col="p_mut">p-value</th>
-                                    <th onclick="app.sortMutationTable(this)" data-col="n_2" style="border-left: 2px solid #dc2626;">N (2)</th>
-                                    <th onclick="app.sortMutationTable(this)" data-col="mean_2">Mean GE (2)</th>
-                                    <th onclick="app.sortMutationTable(this)" data-col="diff_2">Δ GE (2v0)</th>
-                                    <th onclick="app.sortMutationTable(this)" data-col="p_2">p-value (2v0)</th>
+                                    <th onclick="app.sortMutationTable(this, event)" data-col="gene" title="Click to sort. Ctrl/Cmd+click to copy column.">Gene ▼</th>
+                                    <th onclick="app.sortMutationTable(this, event)" data-col="n_wt" style="border-left: 2px solid #2563eb;" title="Click to sort. Ctrl/Cmd+click to copy column.">N (WT)</th>
+                                    <th onclick="app.sortMutationTable(this, event)" data-col="mean_wt" title="Click to sort. Ctrl/Cmd+click to copy column.">Mean GE (WT)</th>
+                                    <th onclick="app.sortMutationTable(this, event)" data-col="n_mut" style="border-left: 2px solid #f97316;" title="Click to sort. Ctrl/Cmd+click to copy column.">N (1+2)</th>
+                                    <th onclick="app.sortMutationTable(this, event)" data-col="mean_mut" title="Click to sort. Ctrl/Cmd+click to copy column.">Mean GE (1+2)</th>
+                                    <th onclick="app.sortMutationTable(this, event)" data-col="diff_mut" title="Click to sort. Ctrl/Cmd+click to copy column.">Δ GE</th>
+                                    <th onclick="app.sortMutationTable(this, event)" data-col="p_mut" title="Click to sort. Ctrl/Cmd+click to copy column.">p-value</th>
+                                    <th onclick="app.sortMutationTable(this, event)" data-col="n_2" style="border-left: 2px solid #dc2626;" title="Click to sort. Ctrl/Cmd+click to copy column.">N (2)</th>
+                                    <th onclick="app.sortMutationTable(this, event)" data-col="mean_2" title="Click to sort. Ctrl/Cmd+click to copy column.">Mean GE (2)</th>
+                                    <th onclick="app.sortMutationTable(this, event)" data-col="diff_2" title="Click to sort. Ctrl/Cmd+click to copy column.">Δ GE (2v0)</th>
+                                    <th onclick="app.sortMutationTable(this, event)" data-col="p_2" title="Click to sort. Ctrl/Cmd+click to copy column.">p-value (2v0)</th>
                                 </tr>
                             </thead>
                             <tbody id="mutationTableBody">
@@ -1857,6 +1871,9 @@
                     <span id="geneEffectCurrentGene" style="font-weight: 600; color: #5a9f4a; margin-left: 10px;"></span>
                     <div style="margin-left: auto; display: flex; gap: 10px; align-items: center;">
                         <button class="btn btn-sm btn-outline" id="geShowAllBtn" style="display: none;">← Show All</button>
+                        <select id="geTissueFilter" class="form-control" style="width: 140px; font-size: 11px; padding: 3px 6px;" title="Filter by tissue/cancer type">
+                            <option value="">All tissues</option>
+                        </select>
                         <span style="font-size: 12px; color: #6b7280;">View:</span>
                         <button class="btn btn-sm" id="geViewTissue" style="background: #5a9f4a; color: white;">By Tissue</button>
                         <button class="btn btn-sm btn-secondary" id="geViewHotspot">By Hotspot</button>
@@ -1946,6 +1963,6 @@
         </div>
     </div>
 
-    <script src="app.js?v=20260207d"></script>
+    <script src="app.js?v=20260222a"></script>
 </body>
 </html>
