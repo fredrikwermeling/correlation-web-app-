@@ -46,6 +46,16 @@ class CorrelationExplorer {
         this.selectMode = false;
         this.selectedNodes = new Set();
 
+        // Expression data (loaded on demand)
+        this.expressionData = null;       // Float32Array
+        this.expressionMetadata = null;   // {genes, cellLines, nGenes, nCellLines, scaleFactor, naValue}
+        this.expressionGeneIndex = null;  // Map: gene name -> row index
+        this.expressionLoaded = false;
+        this.expressionCellLineMap = null; // array: GE cell line index -> expression cell line index (or -1)
+        this.expressionCorrelateResults = null;
+        this.exprCorrelatesSortCol = 'absR';
+        this.exprCorrelatesSortAsc = false;
+
         this.init();
     }
 
@@ -980,6 +990,16 @@ class CorrelationExplorer {
         });
         document.getElementById('downloadGeneEffectPNG').addEventListener('click', () => this.downloadGeneEffectPNG());
         document.getElementById('downloadGeneEffectSVG').addEventListener('click', () => this.downloadGeneEffectSVG());
+
+        // Expression Correlates panel
+        document.getElementById('toggleExprCorrelatesBtn').addEventListener('click', () => this.toggleExpressionCorrelatesPanel());
+        document.getElementById('closeExprCorrelatesPanel').addEventListener('click', () => this.hideExpressionCorrelatesPanel());
+        document.getElementById('runExprCorrelatesBtn').addEventListener('click', () => this.runExpressionCorrelates());
+        document.getElementById('downloadExprCorrelatesCSV').addEventListener('click', () => this.downloadExpressionCorrelatesCSV());
+        document.getElementById('backToExprResults').addEventListener('click', () => this.backToExprCorrelatesResults());
+        document.getElementById('downloadExprScatterPNG').addEventListener('click', () => this.downloadExprCorrelateScatter('png'));
+        document.getElementById('downloadExprScatterSVG').addEventListener('click', () => this.downloadExprCorrelateScatter('svg'));
+        document.getElementById('exprCorrelatesSearch').addEventListener('input', () => this.filterExprCorrelatesTable());
 
         // Network controls with slider bubble updates
         document.getElementById('netFontSize').addEventListener('input', (e) => {
@@ -2943,6 +2963,11 @@ class CorrelationExplorer {
 
         // Mark this as mutation analysis view
         this.geneEffectViewMode = 'mutation';
+
+        // Show Expression Correlates button (only in mutation inspect mode)
+        document.getElementById('toggleExprCorrelatesBtn').style.display = '';
+        // Update target gene label in the expression correlates panel
+        document.getElementById('exprCorrelatesTargetGene').textContent = gene.toUpperCase();
 
         Plotly.newPlot('geneEffectPlot', traces, layout, { responsive: true });
     }
@@ -7762,6 +7787,10 @@ Results:
         // Mark this as regular gene effect view
         this.geneEffectViewMode = 'geneEffect';
 
+        // Hide expression correlates button and panel (only for mutation inspect mode)
+        document.getElementById('toggleExprCorrelatesBtn').style.display = 'none';
+        document.getElementById('exprCorrelatesPanel').style.display = 'none';
+
         // Show modal
         document.getElementById('geneEffectModal').style.display = 'flex';
 
@@ -9224,6 +9253,465 @@ Results:
             label.appendChild(document.createTextNode(lineage));
             container.appendChild(label);
         });
+    }
+
+    // =========================================================================
+    // Expression Correlates (V2 feature)
+    // =========================================================================
+
+    async loadExpressionData() {
+        if (this.expressionLoaded) return;
+
+        const loadingEl = document.getElementById('exprDataLoadingIndicator');
+        const loadingTextEl = document.getElementById('exprDataLoadingText');
+        loadingEl.style.display = 'block';
+        loadingTextEl.textContent = 'Loading expression metadata...';
+
+        try {
+            // Load metadata first
+            const metaRes = await fetch('web_data/expression_metadata.json');
+            this.expressionMetadata = await metaRes.json();
+
+            // Build gene index
+            this.expressionGeneIndex = new Map();
+            this.expressionMetadata.genes.forEach((gene, idx) => {
+                this.expressionGeneIndex.set(gene.toUpperCase(), idx);
+            });
+
+            // Load binary expression data
+            loadingTextEl.textContent = 'Loading expression data (51 MB)...';
+            const response = await fetch('web_data/expression.bin.gz');
+            const compressedData = await response.arrayBuffer();
+
+            loadingTextEl.textContent = 'Decompressing expression data...';
+            await new Promise(resolve => setTimeout(resolve, 50)); // let UI update
+
+            const decompressed = pako.inflate(new Uint8Array(compressedData));
+            const int16Data = new Int16Array(decompressed.buffer);
+
+            const scaleFactor = this.expressionMetadata.scaleFactor;
+            const naValue = this.expressionMetadata.naValue;
+
+            this.expressionData = new Float32Array(int16Data.length);
+            for (let i = 0; i < int16Data.length; i++) {
+                if (int16Data[i] === naValue) {
+                    this.expressionData[i] = NaN;
+                } else {
+                    this.expressionData[i] = int16Data[i] / scaleFactor;
+                }
+            }
+
+            // Build cell line mapping: for each GE cell line index, find the expression cell line index
+            loadingTextEl.textContent = 'Building cell line mapping...';
+            const exprCellLineIndex = new Map();
+            this.expressionMetadata.cellLines.forEach((cl, idx) => {
+                exprCellLineIndex.set(cl, idx);
+            });
+
+            this.expressionCellLineMap = new Array(this.nCellLines);
+            let mapped = 0;
+            for (let i = 0; i < this.nCellLines; i++) {
+                const geCellLine = this.metadata.cellLines[i];
+                const exprIdx = exprCellLineIndex.get(geCellLine);
+                if (exprIdx !== undefined) {
+                    this.expressionCellLineMap[i] = exprIdx;
+                    mapped++;
+                } else {
+                    this.expressionCellLineMap[i] = -1;
+                }
+            }
+
+            this.expressionLoaded = true;
+            loadingEl.style.display = 'none';
+            console.log(`Expression data loaded: ${this.expressionMetadata.nGenes} genes, ${this.expressionMetadata.nCellLines} cell lines. Mapped ${mapped}/${this.nCellLines} GE cell lines.`);
+        } catch (error) {
+            loadingEl.style.display = 'none';
+            console.error('Failed to load expression data:', error);
+            document.getElementById('exprCorrelatesStatus').textContent = 'Error loading expression data: ' + error.message;
+            throw error;
+        }
+    }
+
+    toggleExpressionCorrelatesPanel() {
+        const panel = document.getElementById('exprCorrelatesPanel');
+        if (panel.style.display === 'none') {
+            panel.style.display = 'block';
+            // Update target gene label
+            if (this.currentGeneEffectGene) {
+                document.getElementById('exprCorrelatesTargetGene').textContent = this.currentGeneEffectGene.toUpperCase();
+            }
+        } else {
+            panel.style.display = 'none';
+        }
+    }
+
+    hideExpressionCorrelatesPanel() {
+        document.getElementById('exprCorrelatesPanel').style.display = 'none';
+    }
+
+    async runExpressionCorrelates() {
+        if (!this.mutationResults || !this.currentGeneEffectGene) return;
+
+        const statusEl = document.getElementById('exprCorrelatesStatus');
+        statusEl.textContent = '';
+
+        // Load expression data on demand
+        if (!this.expressionLoaded) {
+            try {
+                await this.loadExpressionData();
+            } catch (e) {
+                return;
+            }
+        }
+
+        statusEl.textContent = 'Computing correlations...';
+
+        // Use setTimeout to let UI update
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        const mr = this.mutationResults;
+        const hotspotGene = mr.hotspotGene;
+        const mutationData = this.mutations.geneData[hotspotGene];
+        const targetGene = this.currentGeneEffectGene.toUpperCase();
+        const targetGeneIdx = this.geneIndex.get(targetGene);
+
+        if (targetGeneIdx === undefined) {
+            statusEl.textContent = 'Target gene not found in gene effect data.';
+            return;
+        }
+
+        // Get selected subgroup
+        const subgroup = document.querySelector('input[name="exprSubgroup"]:checked').value;
+
+        // Build list of cell line indices in the subgroup (same filtering as showGeneEffectDistribution)
+        const cellLines = this.metadata.cellLines;
+        const subgroupIndices = [];
+
+        cellLines.forEach((cellLine, idx) => {
+            // Apply same filters as mutation analysis
+            if (mr.lineageFilter && this.cellLineMetadata?.lineage?.[cellLine] !== mr.lineageFilter) return;
+            if (mr.excludedTissues && mr.excludedTissues.size > 0) {
+                const lineage = this.cellLineMetadata?.lineage?.[cellLine];
+                if (lineage && mr.excludedTissues.has(lineage)) return;
+            }
+            if (mr.subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cellLine] !== mr.subLineageFilter) return;
+            if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
+                const addMutData = this.mutations.geneData[mr.additionalHotspot];
+                if (addMutData) {
+                    const addMutLevel = addMutData.mutations[cellLine] || 0;
+                    if (mr.additionalHotspotLevel === '0' && addMutLevel !== 0) return;
+                    if (mr.additionalHotspotLevel === '1' && addMutLevel !== 1) return;
+                    if (mr.additionalHotspotLevel === '2' && addMutLevel < 2) return;
+                    if (mr.additionalHotspotLevel === '1+2' && addMutLevel === 0) return;
+                }
+            }
+
+            // Check mutation subgroup
+            const mutLevel = mutationData.mutations[cellLine] || 0;
+            if (subgroup === '0' && mutLevel !== 0) return;
+            if (subgroup === '1+2' && mutLevel === 0) return;
+            if (subgroup === '2' && mutLevel < 2) return;
+            // 'all' = no filter
+
+            // Check that this cell line has expression data
+            if (this.expressionCellLineMap[idx] === -1) return;
+
+            // Check that target gene has valid GE value
+            const ge = this.geneEffects[targetGeneIdx * this.nCellLines + idx];
+            if (isNaN(ge)) return;
+
+            subgroupIndices.push(idx);
+        });
+
+        if (subgroupIndices.length < 10) {
+            statusEl.textContent = `Only ${subgroupIndices.length} cell lines in subgroup (need >= 10).`;
+            return;
+        }
+
+        // Extract target gene effect values for subgroup
+        const targetGE = new Float32Array(subgroupIndices.length);
+        for (let i = 0; i < subgroupIndices.length; i++) {
+            targetGE[i] = this.geneEffects[targetGeneIdx * this.nCellLines + subgroupIndices[i]];
+        }
+
+        // Correlate all expression genes against target GE
+        const nExprGenes = this.expressionMetadata.nGenes;
+        const nExprCellLines = this.expressionMetadata.nCellLines;
+        const results = [];
+
+        for (let exprGeneIdx = 0; exprGeneIdx < nExprGenes; exprGeneIdx++) {
+            // Extract expression values for the subgroup cell lines
+            const exprVals = new Float32Array(subgroupIndices.length);
+            let validCount = 0;
+
+            for (let i = 0; i < subgroupIndices.length; i++) {
+                const exprCellIdx = this.expressionCellLineMap[subgroupIndices[i]];
+                const val = this.expressionData[exprGeneIdx * nExprCellLines + exprCellIdx];
+                exprVals[i] = val;
+                if (!isNaN(val) && !isNaN(targetGE[i])) validCount++;
+            }
+
+            if (validCount < 10) continue;
+
+            // Compute Pearson correlation with slope
+            const stats = this.pearsonWithSlope(exprVals, targetGE);
+            if (isNaN(stats.correlation) || Math.abs(stats.correlation) < 0.2) continue;
+
+            // Compute p-value from t-statistic: t = r * sqrt((n-2)/(1-r^2))
+            const n = stats.n;
+            const r = stats.correlation;
+            const t = r * Math.sqrt((n - 2) / (1 - r * r));
+            const p = this.tDistributionPValue(Math.abs(t), n - 2);
+
+            results.push({
+                gene: this.expressionMetadata.genes[exprGeneIdx],
+                r: stats.correlation,
+                absR: Math.abs(stats.correlation),
+                slope: stats.slope,
+                n: stats.n,
+                p: p
+            });
+        }
+
+        // Sort by |r| descending
+        results.sort((a, b) => b.absR - a.absR);
+
+        // Limit to top 500
+        this.expressionCorrelateResults = results.slice(0, 500);
+        this.exprCorrelatesSortCol = 'absR';
+        this.exprCorrelatesSortAsc = false;
+
+        // Store context for scatter plots
+        this._exprCorrelateContext = {
+            targetGene,
+            targetGeneIdx,
+            hotspotGene,
+            mutationData,
+            subgroup,
+            subgroupIndices
+        };
+
+        const subgroupLabels = { '0': 'WT', '1+2': 'Mutated (1+2)', '2': 'High (2)', 'all': 'All' };
+        statusEl.textContent = `${results.length} genes (|r| >= 0.2), ${subgroupIndices.length} cell lines (${subgroupLabels[subgroup]})`;
+
+        // Show results
+        document.getElementById('exprCorrelatesResults').style.display = 'block';
+        document.getElementById('exprCorrelateScatterContainer').style.display = 'none';
+        document.getElementById('downloadExprCorrelatesCSV').style.display = '';
+        document.getElementById('exprCorrelatesCount').textContent = `${this.expressionCorrelateResults.length} genes shown (of ${results.length} total)`;
+        this.renderExprCorrelatesTable();
+    }
+
+    renderExprCorrelatesTable() {
+        const tbody = document.getElementById('exprCorrelatesTableBody');
+        const searchTerm = (document.getElementById('exprCorrelatesSearch').value || '').toUpperCase();
+        let data = this.expressionCorrelateResults || [];
+
+        if (searchTerm) {
+            data = data.filter(r => r.gene.toUpperCase().includes(searchTerm));
+        }
+
+        const formatP = (p) => {
+            if (isNaN(p) || p === null) return '-';
+            if (p < 0.001) return p.toExponential(1);
+            return p.toFixed(3);
+        };
+
+        tbody.innerHTML = data.map(r => {
+            const rColor = r.r > 0 ? '#059669' : '#dc2626';
+            return `<tr class="clickable-row" onclick="app.showExpressionCorrelateScatter('${r.gene}')" style="cursor: pointer;">
+                <td style="text-align: left; font-weight: 500;">${r.gene}</td>
+                <td style="color: ${rColor}; font-weight: 600;">${this.formatNum(r.r)}</td>
+                <td>${this.formatNum(r.slope)}</td>
+                <td>${r.n}</td>
+                <td>${formatP(r.p)}</td>
+            </tr>`;
+        }).join('');
+    }
+
+    filterExprCorrelatesTable() {
+        this.renderExprCorrelatesTable();
+    }
+
+    sortExprCorrelatesTable(col) {
+        if (!this.expressionCorrelateResults) return;
+
+        if (this.exprCorrelatesSortCol === col) {
+            this.exprCorrelatesSortAsc = !this.exprCorrelatesSortAsc;
+        } else {
+            this.exprCorrelatesSortCol = col;
+            this.exprCorrelatesSortAsc = col === 'gene'; // ascending for gene, descending for numbers
+        }
+
+        const asc = this.exprCorrelatesSortAsc;
+        this.expressionCorrelateResults.sort((a, b) => {
+            let va, vb;
+            if (col === 'gene') {
+                va = a.gene; vb = b.gene;
+                return asc ? va.localeCompare(vb) : vb.localeCompare(va);
+            } else if (col === 'r') {
+                va = a.absR; vb = b.absR;
+            } else if (col === 'slope') {
+                va = Math.abs(a.slope); vb = Math.abs(b.slope);
+            } else if (col === 'n') {
+                va = a.n; vb = b.n;
+            } else if (col === 'p') {
+                va = a.p; vb = b.p;
+                // for p-value, ascending is more interesting (smaller first)
+                return asc ? vb - va : va - vb;
+            }
+            return asc ? va - vb : vb - va;
+        });
+
+        this.renderExprCorrelatesTable();
+    }
+
+    showExpressionCorrelateScatter(expressionGene) {
+        if (!this._exprCorrelateContext || !this.expressionLoaded) return;
+
+        const ctx = this._exprCorrelateContext;
+        const exprGeneUpper = expressionGene.toUpperCase();
+        const exprGeneIdx = this.expressionGeneIndex.get(exprGeneUpper);
+
+        if (exprGeneIdx === undefined) {
+            alert(`Expression gene ${expressionGene} not found.`);
+            return;
+        }
+
+        const nExprCellLines = this.expressionMetadata.nCellLines;
+        const mutationData = ctx.mutationData;
+
+        // Collect data points
+        const points = { wt: [], mut1: [], mut2: [] };
+
+        for (let i = 0; i < ctx.subgroupIndices.length; i++) {
+            const geCellIdx = ctx.subgroupIndices[i];
+            const exprCellIdx = this.expressionCellLineMap[geCellIdx];
+
+            const exprVal = this.expressionData[exprGeneIdx * nExprCellLines + exprCellIdx];
+            const geVal = this.geneEffects[ctx.targetGeneIdx * this.nCellLines + geCellIdx];
+
+            if (isNaN(exprVal) || isNaN(geVal)) continue;
+
+            const cellLine = this.metadata.cellLines[geCellIdx];
+            const cellName = this.getCellLineName(cellLine);
+            const lineage = this.getCellLineLineage(cellLine);
+            const mutLevel = mutationData.mutations[cellLine] || 0;
+
+            const point = { x: exprVal, y: geVal, cellName, lineage, mutLevel };
+
+            if (mutLevel === 0) points.wt.push(point);
+            else if (mutLevel === 1) points.mut1.push(point);
+            else points.mut2.push(point);
+        }
+
+        const allPoints = [...points.wt, ...points.mut1, ...points.mut2];
+
+        // Compute correlation for display
+        const corrStats = this.pearsonWithSlope(allPoints.map(p => p.x), allPoints.map(p => p.y));
+
+        // Build traces colored by mutation status
+        const traces = [];
+        const groups = [
+            { data: points.wt, name: 'WT (0)', color: '#888888' },
+            { data: points.mut1, name: '1 mutation', color: '#3b82f6' },
+            { data: points.mut2, name: '2 mutations', color: '#dc2626' }
+        ];
+
+        groups.forEach(g => {
+            if (g.data.length === 0) return;
+            traces.push({
+                x: g.data.map(p => p.x),
+                y: g.data.map(p => p.y),
+                mode: 'markers',
+                type: 'scatter',
+                name: `${g.name} (n=${g.data.length})`,
+                marker: { color: g.color, size: 8, opacity: 0.7 },
+                text: g.data.map(p => `${p.cellName}<br>${p.lineage}<br>Expr: ${p.x.toFixed(3)}<br>GE: ${p.y.toFixed(3)}`),
+                hoverinfo: 'text'
+            });
+        });
+
+        // Add regression line
+        if (allPoints.length >= 3 && !isNaN(corrStats.slope)) {
+            const xVals = allPoints.map(p => p.x);
+            const xMin = Math.min(...xVals);
+            const xMax = Math.max(...xVals);
+            const meanX = xVals.reduce((a, b) => a + b, 0) / xVals.length;
+            const meanY = allPoints.map(p => p.y).reduce((a, b) => a + b, 0) / allPoints.length;
+            const yAtXmin = meanY + corrStats.slope * (xMin - meanX);
+            const yAtXmax = meanY + corrStats.slope * (xMax - meanX);
+
+            traces.push({
+                x: [xMin, xMax],
+                y: [yAtXmin, yAtXmax],
+                mode: 'lines',
+                type: 'scatter',
+                line: { color: '#7c3aed', width: 2, dash: 'dash' },
+                showlegend: false,
+                hoverinfo: 'skip'
+            });
+        }
+
+        const subgroupLabels = { '0': 'WT', '1+2': 'Mutated', '2': 'High (2)', 'all': 'All' };
+
+        const layout = {
+            title: {
+                text: `${expressionGene} Expression vs ${ctx.targetGene} Gene Effect<br><sub style="font-size:11px;color:#666">r=${this.formatNum(corrStats.correlation)}, slope=${this.formatNum(corrStats.slope)}, n=${corrStats.n} | ${ctx.hotspotGene} ${subgroupLabels[ctx.subgroup]}</sub>`,
+                font: { size: 15 }
+            },
+            xaxis: { title: `${expressionGene} Expression (log TPM+1)` },
+            yaxis: { title: `${ctx.targetGene} Gene Effect` },
+            showlegend: true,
+            legend: { x: 0, y: 1, bgcolor: 'rgba(255,255,255,0.8)' },
+            margin: { t: 80, r: 30, b: 60, l: 70 }
+        };
+
+        // Show scatter, hide table
+        document.getElementById('exprCorrelatesResults').style.display = 'none';
+        document.getElementById('exprCorrelateScatterContainer').style.display = 'block';
+
+        this._currentExprScatterGene = expressionGene;
+
+        Plotly.newPlot('exprCorrelateScatterPlot', traces, layout, { responsive: true });
+    }
+
+    backToExprCorrelatesResults() {
+        document.getElementById('exprCorrelateScatterContainer').style.display = 'none';
+        document.getElementById('exprCorrelatesResults').style.display = 'block';
+    }
+
+    downloadExprCorrelateScatter(format) {
+        const plotEl = document.getElementById('exprCorrelateScatterPlot');
+        if (!plotEl || !plotEl.data) return;
+        const gene = this._currentExprScatterGene || 'expression';
+        const ctx = this._exprCorrelateContext;
+        const filename = `expr_correlate_${gene}_vs_${ctx?.targetGene || 'target'}`;
+        Plotly.downloadImage(plotEl, { format, width: 1000, height: 600, filename });
+    }
+
+    downloadExpressionCorrelatesCSV() {
+        if (!this.expressionCorrelateResults || this.expressionCorrelateResults.length === 0) return;
+
+        const ctx = this._exprCorrelateContext;
+        const subgroupLabels = { '0': 'WT', '1+2': 'Mutated (1+2)', '2': 'High (2)', 'all': 'All' };
+
+        let csv = `# Expression Correlates\n`;
+        csv += `# Target Gene: ${ctx?.targetGene || '-'}\n`;
+        csv += `# Hotspot: ${ctx?.hotspotGene || '-'}\n`;
+        csv += `# Subgroup: ${subgroupLabels[ctx?.subgroup] || '-'}\n`;
+        csv += `# Cell lines: ${ctx?.subgroupIndices?.length || '-'}\n`;
+        csv += `# Date: ${new Date().toISOString().slice(0, 10)}\n`;
+        csv += '#\n';
+        csv += 'Gene,r,Slope,N,p-value\n';
+
+        this.expressionCorrelateResults.forEach(r => {
+            const pStr = r.p < 0.001 ? r.p.toExponential(3) : r.p.toFixed(6);
+            csv += `${r.gene},${r.r.toFixed(4)},${r.slope.toFixed(4)},${r.n},${pStr}\n`;
+        });
+
+        const filename = `expression_correlates_${ctx?.targetGene || 'gene'}_${ctx?.hotspotGene || 'hotspot'}.csv`;
+        this.downloadFile(csv, filename, 'text/csv');
     }
 }
 

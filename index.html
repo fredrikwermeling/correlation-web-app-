@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Correlate</title>
+    <title>Correlate V2</title>
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
     <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;600;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -1847,7 +1847,7 @@
 
     <!-- Footer -->
     <footer class="footer">
-        <p>Correlate | Part of the <a href="https://greenlisted.cmm.se" target="_blank">Green Listed</a> tool family | Data from <a href="https://depmap.org/portal/" target="_blank">DepMap</a> | <a href="https://wermelinglab.com" target="_blank">Wermeling Lab</a></p>
+        <p>Correlate V2 | Part of the <a href="https://greenlisted.cmm.se" target="_blank">Green Listed</a> tool family | Data from <a href="https://depmap.org/portal/" target="_blank">DepMap</a> | <a href="https://wermelinglab.com" target="_blank">Wermeling Lab</a></p>
         <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--gray-200); font-size: 0.8em; line-height: 1.6; color: var(--gray-500);">
             <p style="margin: 0 0 4px 0;">Data source: <a href="https://depmap.org" target="_blank">DepMap</a> (Broad Institute). DepMap, Broad (2025). DepMap 25Q3 Public. Figshare+. Dataset.</p>
             <p style="margin: 0 0 4px 0;">Licensed under <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank">CC BY 4.0</a>. This data is provided for research purposes only and should not be used for clinical decision-making.</p>
@@ -1946,6 +1946,76 @@
                     <span style="font-size: 12px; color: #6b7280; margin-left: 15px; margin-right: 5px;">Export CSV:</span>
                     <button class="btn btn-outline btn-sm" id="downloadGETableCSV">By Group</button>
                     <button class="btn btn-outline btn-sm" id="downloadGECellLineCSV">By Cell Line</button>
+                    <span style="border-left: 1px solid #d1d5db; height: 20px; margin: 0 4px;"></span>
+                    <button class="btn btn-sm" id="toggleExprCorrelatesBtn" style="background: #7c3aed; color: white; display: none;">Expression Correlates</button>
+                </div>
+
+                <!-- Expression Correlates Panel -->
+                <div id="exprCorrelatesPanel" style="display: none; margin-top: 15px; border: 2px solid #7c3aed; border-radius: 8px; overflow: hidden;">
+                    <div style="background: #7c3aed; color: white; padding: 10px 15px; font-weight: 600; font-size: 13px; display: flex; justify-content: space-between; align-items: center;">
+                        <span>Expression Correlates</span>
+                        <button id="closeExprCorrelatesPanel" style="background: none; border: none; color: white; font-size: 18px; cursor: pointer; padding: 0; line-height: 1;">&times;</button>
+                    </div>
+                    <div style="padding: 15px;">
+                        <div style="background: #f5f3ff; border: 1px solid #c4b5fd; border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; font-size: 11px; color: #5b21b6;">
+                            Find gene expression patterns that correlate with the gene effect of <strong id="exprCorrelatesTargetGene">-</strong> within a mutation subgroup.
+                        </div>
+
+                        <!-- Controls row -->
+                        <div style="display: flex; gap: 15px; align-items: center; flex-wrap: wrap; margin-bottom: 12px;">
+                            <div>
+                                <label style="font-size: 12px; font-weight: 600; color: #374151; margin-right: 6px;">Subgroup:</label>
+                                <label style="font-size: 12px; margin-right: 8px;"><input type="radio" name="exprSubgroup" value="0" style="accent-color: #7c3aed;"> WT (0)</label>
+                                <label style="font-size: 12px; margin-right: 8px;"><input type="radio" name="exprSubgroup" value="1+2" checked style="accent-color: #7c3aed;"> Mutated (1+2)</label>
+                                <label style="font-size: 12px; margin-right: 8px;"><input type="radio" name="exprSubgroup" value="2" style="accent-color: #7c3aed;"> High (2)</label>
+                                <label style="font-size: 12px;"><input type="radio" name="exprSubgroup" value="all" style="accent-color: #7c3aed;"> All</label>
+                            </div>
+                            <button class="btn btn-sm" id="runExprCorrelatesBtn" style="background: #7c3aed; color: white;">Run</button>
+                            <span id="exprCorrelatesStatus" style="font-size: 12px; color: #6b7280;"></span>
+                            <button class="btn btn-outline btn-sm" id="downloadExprCorrelatesCSV" style="display: none; margin-left: auto; border-color: #7c3aed; color: #7c3aed;">Export CSV</button>
+                        </div>
+
+                        <!-- Loading indicator -->
+                        <div id="exprDataLoadingIndicator" style="display: none; text-align: center; padding: 20px;">
+                            <div style="width: 30px; height: 30px; border: 3px solid #ddd6fe; border-top-color: #7c3aed; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto;"></div>
+                            <div style="margin-top: 10px; font-size: 13px; color: #6b7280;" id="exprDataLoadingText">Loading expression data...</div>
+                        </div>
+
+                        <!-- Results table -->
+                        <div id="exprCorrelatesResults" style="display: none;">
+                            <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 8px;">
+                                <input type="text" id="exprCorrelatesSearch" class="form-control" placeholder="Search genes..." style="width: 160px; font-size: 12px; padding: 4px 8px;">
+                                <span id="exprCorrelatesCount" style="font-size: 12px; color: #6b7280;"></span>
+                            </div>
+                            <div class="table-container" style="max-height: 350px; overflow-y: auto;">
+                                <table class="data-table" id="exprCorrelatesTable" style="font-size: 12px;">
+                                    <thead>
+                                        <tr>
+                                            <th onclick="app.sortExprCorrelatesTable('gene')" style="cursor: pointer;">Gene</th>
+                                            <th onclick="app.sortExprCorrelatesTable('r')" style="cursor: pointer;">r</th>
+                                            <th onclick="app.sortExprCorrelatesTable('slope')" style="cursor: pointer;">Slope</th>
+                                            <th onclick="app.sortExprCorrelatesTable('n')" style="cursor: pointer;">N</th>
+                                            <th onclick="app.sortExprCorrelatesTable('p')" style="cursor: pointer;">p-value</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="exprCorrelatesTableBody">
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Expression scatter plot (shown when clicking a result row) -->
+                        <div id="exprCorrelateScatterContainer" style="display: none; margin-top: 15px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                                <button class="btn btn-sm btn-outline" id="backToExprResults" style="border-color: #7c3aed; color: #7c3aed;">← Back to results</button>
+                                <div style="display: flex; gap: 6px;">
+                                    <button class="btn btn-outline btn-sm" id="downloadExprScatterPNG" style="border-color: #7c3aed; color: #7c3aed;">PNG</button>
+                                    <button class="btn btn-outline btn-sm" id="downloadExprScatterSVG" style="border-color: #7c3aed; color: #7c3aed;">SVG</button>
+                                </div>
+                            </div>
+                            <div id="exprCorrelateScatterPlot" style="width: 100%; height: 450px;"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1964,6 +2034,6 @@
         </div>
     </div>
 
-    <script src="app.js?v=20260223b"></script>
+    <script src="app.js?v=20260223v2"></script>
 </body>
 </html>
