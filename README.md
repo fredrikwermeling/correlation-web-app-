@@ -21,7 +21,9 @@ A web-based application for analyzing gene correlations from DepMap CRISPR scree
 - Color nodes by gene effect (signed or absolute)
 - Color nodes by uploaded statistics (LFC, FDR)
 - Show gene effect values and SD in node labels
+- Gene info tooltips on hover (via MyGene.info)
 - Click nodes to hide them, with restore option
+- Double-click nodes to open gene effect distribution
 - Export as PNG or SVG with legend
 - Physics-based or manual layout with auto-arrange
 
@@ -40,6 +42,7 @@ A web-based application for analyzing gene correlations from DepMap CRISPR scree
 
 - Box plots of gene effect by cancer type (tissue)
 - Box plots of gene effect by hotspot mutation status
+- Tissue filter dropdown for focused analysis
 - Sortable statistics tables
 - Export as PNG, SVG, or CSV
 
@@ -49,6 +52,9 @@ A web-based application for analyzing gene correlations from DepMap CRISPR scree
 - Three mutation levels (0 = WT, 1 = one hotspot mutation, 2 = two or more)
 - Filter by p-value threshold
 - Gene effect distribution charts per mutation group
+- **Compare by Cancer Type** - Δ GE for top significant genes across each tissue, with pinned "All" row; clickable values open inspect with tissue filter applied
+- **Compare by Hotspot** - Cross-compare other hotspot mutations against the top significant genes, with pinned reference row
+- Sortable compare table headers with pinned row support
 
 ### Gene Input
 
@@ -96,7 +102,7 @@ If you use this tool, please [acknowledge DepMap](https://depmap.org/portal/data
    - **Network tab**: Interactive visualization with export options
    - **Correlations tab**: Sortable table with Inspect button for each pair
    - **Clusters tab**: Gene cluster assignments with mean effect and SD
-   - **Mutation Analysis tab**: Differential gene effect results (mutation mode)
+   - **Mutation Analysis tab**: Differential gene effect results with compare tables (mutation mode)
    - **Synonyms/Orthologs tab**: Mapped gene symbols (synonym/ortholog mode)
    - **Summary tab**: Text summary of analysis parameters and results
 
@@ -136,6 +142,7 @@ This project was financially supported by the Swedish Cancer Society, the Swedis
 
 ## Related Tools
 
+- [CoExpress](https://fredrikwermeling.github.io/CoExpress/) - Same analysis engine for gene expression (RNA-seq) data
 - [Green Listed](https://greenlisted.cmm.se) - CRISPR screen sgRNA lookup tool
 - [YouTube Channel](https://www.youtube.com/@fredrikwermeling1330) - CRISPR-related tutorials
 
