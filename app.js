@@ -2959,12 +2959,16 @@ class CorrelationExplorer {
         const data = JSON.parse(JSON.stringify(plotEl.data));
         const layout = JSON.parse(JSON.stringify(plotEl.layout));
 
-        // Override margin for export — fixed left margin so y-axis title + tick labels fit
-        layout.margin = Object.assign({}, layout.margin, { l: 160 });
+        // Override layout for export
+        layout.margin = Object.assign({}, layout.margin, { l: 200 });
         layout.width = exportWidth;
         layout.height = exportHeight;
-        // Disable automargin on yaxis so our explicit margin is used
-        if (layout.yaxis) layout.yaxis.automargin = false;
+        // Add standoff to push y-axis title away from tick labels
+        if (layout.yaxis) {
+            const titleText = typeof layout.yaxis.title === 'string' ? layout.yaxis.title : layout.yaxis.title?.text || '';
+            layout.yaxis.title = { text: titleText, standoff: 40 };
+            layout.yaxis.automargin = true;
+        }
 
         // Render into a temporary off-screen div for a clean export
         const tempDiv = document.createElement('div');
