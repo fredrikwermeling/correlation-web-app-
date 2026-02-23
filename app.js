@@ -543,13 +543,31 @@ class CorrelationExplorer {
 
         const popup = document.createElement('div');
         popup.id = 'tissueBreakdownPopup';
-        popup.style.cssText = 'position: fixed; z-index: 10000; background: white; border: 1px solid #d1d5db; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); padding: 0; min-width: 340px; max-width: 420px; max-height: 480px; display: flex; flex-direction: column;';
+        popup.style.cssText = 'position: fixed; z-index: 10000; background: white; border: 1px solid #d1d5db; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); padding: 0; min-width: 340px; max-width: 420px; display: flex; flex-direction: column;';
 
-        // Position near the button
+        // Position near the button, clamped to viewport
         const btn = document.getElementById('tissueBreakdownBtn');
         const rect = btn.getBoundingClientRect();
-        popup.style.top = (rect.bottom + 6) + 'px';
-        popup.style.left = Math.max(8, Math.min(rect.left - 100, window.innerWidth - 440)) + 'px';
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const margin = 10;
+        const popupWidth = 400;
+
+        // Try below the button first; if not enough space, go above
+        let top = rect.bottom + 6;
+        let maxH = vh - top - margin;
+        if (maxH < 200) {
+            // Not enough room below — place above
+            maxH = rect.top - 6 - margin;
+            top = rect.top - 6 - Math.min(480, maxH);
+            maxH = Math.min(480, maxH);
+        } else {
+            maxH = Math.min(480, maxH);
+        }
+
+        popup.style.top = Math.max(margin, top) + 'px';
+        popup.style.left = Math.max(margin, Math.min(rect.left - 100, vw - popupWidth - margin)) + 'px';
+        popup.style.maxHeight = maxH + 'px';
 
         const maxMut = Math.max(...breakdown.map(t => t.nMut));
 
@@ -602,12 +620,6 @@ class CorrelationExplorer {
 
         popup.innerHTML = html;
         document.body.appendChild(popup);
-
-        // Ensure popup stays within viewport
-        const popupRect = popup.getBoundingClientRect();
-        if (popupRect.bottom > window.innerHeight - 10) {
-            popup.style.top = (rect.top - popupRect.height - 6) + 'px';
-        }
 
         // Row click toggles checkbox
         popup.querySelectorAll('.tb-row').forEach(row => {
