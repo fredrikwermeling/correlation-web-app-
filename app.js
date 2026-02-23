@@ -2410,13 +2410,19 @@ class CorrelationExplorer {
         this.currentGeneEffectData = []; // Store for CSV export
 
         cellLines.forEach((cellLine, idx) => {
-            // Apply same filters as mutation analysis
-            if (mr.lineageFilter && this.cellLineMetadata?.lineage?.[cellLine] !== mr.lineageFilter) {
-                return;
+            // If a tissue filter is active (from compare table or dropdown), it overrides the lineage filter
+            if (inspectTissueFilter) {
+                const lineage = this.cellLineMetadata?.lineage?.[cellLine] || '';
+                if (lineage !== inspectTissueFilter) return;
+            } else {
+                // Apply same filters as mutation analysis
+                if (mr.lineageFilter && this.cellLineMetadata?.lineage?.[cellLine] !== mr.lineageFilter) {
+                    return;
+                }
             }
 
             // Check sublineage filter
-            if (mr.subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cellLine] !== mr.subLineageFilter) {
+            if (!inspectTissueFilter && mr.subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cellLine] !== mr.subLineageFilter) {
                 return;
             }
 
@@ -2430,12 +2436,6 @@ class CorrelationExplorer {
                     if (mr.additionalHotspotLevel === '2' && addMutLevel < 2) return;
                     if (mr.additionalHotspotLevel === '1+2' && addMutLevel === 0) return;
                 }
-            }
-
-            // Check tissue filter from dropdown in inspect modal
-            if (inspectTissueFilter) {
-                const lineage = this.cellLineMetadata?.lineage?.[cellLine] || '';
-                if (lineage !== inspectTissueFilter) return;
             }
 
             const ge = this.geneEffects[geneIdx * this.nCellLines + idx];
