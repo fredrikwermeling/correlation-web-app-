@@ -655,7 +655,7 @@ class CorrelationExplorer {
         // Apply button
         document.getElementById('tbApplyBtn').addEventListener('click', () => {
             const selected = [...popup.querySelectorAll('.tb-check:checked')].map(cb => cb.value);
-            this.applyTissueBreakdownSelection(selected, breakdown.map(t => t.lineage));
+            this.applyTissueBreakdownSelection(selected);
             this.hideTissueBreakdownPopup();
         });
 
@@ -698,14 +698,14 @@ class CorrelationExplorer {
         if (label) label.textContent = count === 0 ? '0 selected' : `${count} selected`;
     }
 
-    applyTissueBreakdownSelection(selectedTissues, allTissues) {
+    applyTissueBreakdownSelection(selectedTissues) {
         const lineageSelect = document.getElementById('lineageFilter');
+        const selectedSet = new Set(selectedTissues);
 
         if (selectedTissues.length === 0) {
             // Clear all tissue filters
             lineageSelect.value = '';
             this.excludedTissues = new Set();
-            // Uncheck all sidebar exclude checkboxes
             document.querySelectorAll('#tissueExcludeList input[type="checkbox"]').forEach(cb => {
                 cb.checked = false;
             });
@@ -717,14 +717,16 @@ class CorrelationExplorer {
                 cb.checked = false;
             });
         } else {
-            // Multiple tissues: clear lineage dropdown, use excludedTissues
+            // Multiple tissues: clear lineage dropdown, exclude everything NOT selected
             lineageSelect.value = '';
+            const allLineages = this.cellLineMetadata?.lineage
+                ? new Set(Object.values(this.cellLineMetadata.lineage))
+                : new Set();
             const excludeSet = new Set();
-            allTissues.forEach(t => {
-                if (!selectedTissues.includes(t)) excludeSet.add(t);
+            allLineages.forEach(t => {
+                if (!selectedSet.has(t)) excludeSet.add(t);
             });
             this.excludedTissues = excludeSet;
-            // Sync sidebar checkboxes
             document.querySelectorAll('#tissueExcludeList input[type="checkbox"]').forEach(cb => {
                 cb.checked = excludeSet.has(cb.value);
             });
