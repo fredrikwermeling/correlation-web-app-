@@ -8549,6 +8549,11 @@ Results:
     }
 
     downloadGETableCSV() {
+        // Mutation inspect mode: export by group (WT / 1 mutation / 2 mutations)
+        if (this.geneEffectViewMode === 'mutation' && this.currentGeneEffectData && this.currentGeneEffectGene) {
+            return this.downloadGeneEffectCSV();
+        }
+
         if (!this.currentGeneEffect || !this.currentGEStats) return;
 
         const gene = this.currentGeneEffect.gene;
@@ -8570,6 +8575,19 @@ Results:
     }
 
     downloadGECellLineCSV() {
+        // Mutation inspect mode: export per cell line
+        if (this.geneEffectViewMode === 'mutation' && this.currentGeneEffectData && this.currentGeneEffectGene) {
+            const mr = this.mutationResults;
+            const gene = this.currentGeneEffectGene;
+            let csv = 'Cell_Line_ID,Cell_Line_Name,Cancer_Type,Cancer_Subtype,Gene_Effect,Mutation_Level\n';
+            this.currentGeneEffectData.forEach(d => {
+                const subtype = this.getCellLineSublineage?.(d.cellLine) || '';
+                csv += `"${d.cellLine}","${d.cellName}","${d.lineage}","${subtype}",${d.ge.toFixed(4)},${d.mutLevel}\n`;
+            });
+            this.downloadFile(csv, `gene_effect_${gene}_${mr.hotspotGene}_by_cell_line.csv`, 'text/csv');
+            return;
+        }
+
         if (!this.currentGeneEffect) return;
 
         const gene = this.currentGeneEffect.gene;
