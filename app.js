@@ -9387,22 +9387,14 @@ Results:
         const cellLines = this.metadata.cellLines;
         const subgroupIndices = [];
 
-        // Read inspect-level tissue filter (overrides analysis lineage filter, same as showGeneEffectDistribution)
-        const inspectTissueFilter = document.getElementById('geTissueFilter')?.value || '';
-
         cellLines.forEach((cellLine, idx) => {
-            // Apply tissue/lineage filters (same logic as showGeneEffectDistribution)
-            if (inspectTissueFilter) {
-                const lineage = this.cellLineMetadata?.lineage?.[cellLine] || '';
-                if (lineage !== inspectTissueFilter) return;
-            } else {
-                if (mr.lineageFilter && this.cellLineMetadata?.lineage?.[cellLine] !== mr.lineageFilter) return;
-                if (mr.excludedTissues && mr.excludedTissues.size > 0) {
-                    const lineage = this.cellLineMetadata?.lineage?.[cellLine];
-                    if (lineage && mr.excludedTissues.has(lineage)) return;
-                }
+            // Apply same filters as mutation analysis
+            if (mr.lineageFilter && this.cellLineMetadata?.lineage?.[cellLine] !== mr.lineageFilter) return;
+            if (mr.excludedTissues && mr.excludedTissues.size > 0) {
+                const lineage = this.cellLineMetadata?.lineage?.[cellLine];
+                if (lineage && mr.excludedTissues.has(lineage)) return;
             }
-            if (!inspectTissueFilter && mr.subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cellLine] !== mr.subLineageFilter) return;
+            if (mr.subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cellLine] !== mr.subLineageFilter) return;
             if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
                 const addMutData = this.mutations.geneData[mr.additionalHotspot];
                 if (addMutData) {
@@ -9558,9 +9550,9 @@ Results:
                 va = a.gene; vb = b.gene;
                 return asc ? va.localeCompare(vb) : vb.localeCompare(va);
             } else if (col === 'r') {
-                va = a.r; vb = b.r;
+                va = a.absR; vb = b.absR;
             } else if (col === 'slope') {
-                va = a.slope; vb = b.slope;
+                va = Math.abs(a.slope); vb = Math.abs(b.slope);
             } else if (col === 'n') {
                 va = a.n; vb = b.n;
             } else if (col === 'p') {
