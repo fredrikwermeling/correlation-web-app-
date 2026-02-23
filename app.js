@@ -1949,6 +1949,7 @@ class CorrelationExplorer {
                     subLineageFilter,
                     additionalHotspot,
                     additionalHotspotLevel,
+                    excludedTissues: new Set(this.excludedTissues),
                     nWT: analysisResult.nWT,
                     nMut: analysisResult.nMut,
                     n2: analysisResult.n2,
@@ -2509,6 +2510,18 @@ class CorrelationExplorer {
         if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
             settingsText += ` | Filter: ${mr.additionalHotspot} ${mr.additionalHotspotLevel}`;
         }
+        if (mr.excludedTissues && mr.excludedTissues.size > 0) {
+            // Show included tissues (inverse of excluded) for clarity
+            const allLineages = this.cellLineMetadata?.lineage
+                ? [...new Set(Object.values(this.cellLineMetadata.lineage))].sort()
+                : [];
+            const included = allLineages.filter(t => !mr.excludedTissues.has(t));
+            if (included.length <= 5) {
+                settingsText += ` | Tissues: ${included.join(', ')}`;
+            } else {
+                settingsText += ` | ${mr.excludedTissues.size} tissues excluded`;
+            }
+        }
 
         document.getElementById('mutationResultsCount').innerHTML =
             `<strong>${results.length} genes</strong> with p &lt; ${mr.pThreshold}<br>
@@ -2651,6 +2664,11 @@ class CorrelationExplorer {
                 // Apply same filters as mutation analysis
                 if (mr.lineageFilter && this.cellLineMetadata?.lineage?.[cellLine] !== mr.lineageFilter) {
                     return;
+                }
+                // Apply excluded tissues from analysis snapshot
+                if (mr.excludedTissues && mr.excludedTissues.size > 0) {
+                    const lineage = this.cellLineMetadata?.lineage?.[cellLine];
+                    if (lineage && mr.excludedTissues.has(lineage)) return;
                 }
             }
 
