@@ -2627,7 +2627,15 @@ class CorrelationExplorer {
         csv += `# Cells with 2 mutations: ${mr.n2}\n`;
         csv += `# Min cell lines: ${mr.minN}\n`;
         csv += `# P-value threshold: ${mr.pThreshold}\n`;
-        csv += `# Lineage filter: ${mr.lineageFilter || 'All lineages'}\n`;
+        if (mr.excludedTissues && mr.excludedTissues.size > 0) {
+            const allLineages = this.cellLineMetadata?.lineage
+                ? [...new Set(Object.values(this.cellLineMetadata.lineage))].sort()
+                : [];
+            const included = allLineages.filter(t => !mr.excludedTissues.has(t));
+            csv += `# Tissues: ${included.join(', ')}\n`;
+        } else {
+            csv += `# Lineage filter: ${mr.lineageFilter || 'All lineages'}\n`;
+        }
         if (mr.subLineageFilter) {
             csv += `# Subtype filter: ${mr.subLineageFilter}\n`;
         }
@@ -2939,19 +2947,27 @@ class CorrelationExplorer {
     }
 
     downloadGeneEffectPNG() {
+        if (this.geneEffectViewMode !== 'mutation') return;
+        const plotEl = document.getElementById('geneEffectPlot');
+        const chartWidth = plotEl?._fullLayout?.width || 1000;
+        const chartHeight = plotEl?._fullLayout?.height || 550;
         Plotly.downloadImage('geneEffectPlot', {
             format: 'png',
-            width: 1000,
-            height: 550,
+            width: chartWidth,
+            height: chartHeight,
             filename: `gene_effect_${this.currentGeneEffectGene}_${this.mutationResults.hotspotGene}`
         });
     }
 
     downloadGeneEffectSVG() {
+        if (this.geneEffectViewMode !== 'mutation') return;
+        const plotEl = document.getElementById('geneEffectPlot');
+        const chartWidth = plotEl?._fullLayout?.width || 1000;
+        const chartHeight = plotEl?._fullLayout?.height || 550;
         Plotly.downloadImage('geneEffectPlot', {
             format: 'svg',
-            width: 1000,
-            height: 550,
+            width: chartWidth,
+            height: chartHeight,
             filename: `gene_effect_${this.currentGeneEffectGene}_${this.mutationResults.hotspotGene}`
         });
     }
@@ -2963,7 +2979,15 @@ class CorrelationExplorer {
         let csv = `# Gene Effect Distribution Data\n`;
         csv += `# Gene: ${this.currentGeneEffectGene}\n`;
         csv += `# Hotspot Mutation: ${mr.hotspotGene}\n`;
-        csv += `# Lineage filter: ${mr.lineageFilter || 'All lineages'}\n`;
+        if (mr.excludedTissues && mr.excludedTissues.size > 0) {
+            const allLineages = this.cellLineMetadata?.lineage
+                ? [...new Set(Object.values(this.cellLineMetadata.lineage))].sort()
+                : [];
+            const included = allLineages.filter(t => !mr.excludedTissues.has(t));
+            csv += `# Tissues: ${included.join(', ')}\n`;
+        } else {
+            csv += `# Lineage filter: ${mr.lineageFilter || 'All lineages'}\n`;
+        }
         if (mr.subLineageFilter) {
             csv += `# Subtype filter: ${mr.subLineageFilter}\n`;
         }
@@ -8519,10 +8543,11 @@ Results:
     }
 
     downloadGeneEffectChartPNG() {
+        // Mutation inspect mode handled by downloadGeneEffectPNG
+        if (this.geneEffectViewMode === 'mutation') return;
         if (!this.currentGeneEffect) return;
         const plotId = this.currentGEView === 'tissue' ? 'geneEffectPlot' : 'geneEffectHotspotPlot';
         const plotEl = document.getElementById(plotId);
-        // Get the actual displayed chart dimensions
         const chartWidth = plotEl?._fullLayout?.width || 800;
         const chartHeight = plotEl?._fullLayout?.height || (this.geDetailedView ? 650 : 550);
         Plotly.downloadImage(plotId, {
@@ -8534,10 +8559,11 @@ Results:
     }
 
     downloadGeneEffectChartSVG() {
+        // Mutation inspect mode handled by downloadGeneEffectSVG
+        if (this.geneEffectViewMode === 'mutation') return;
         if (!this.currentGeneEffect) return;
         const plotId = this.currentGEView === 'tissue' ? 'geneEffectPlot' : 'geneEffectHotspotPlot';
         const plotEl = document.getElementById(plotId);
-        // Get the actual displayed chart dimensions
         const chartWidth = plotEl?._fullLayout?.width || 800;
         const chartHeight = plotEl?._fullLayout?.height || (this.geDetailedView ? 650 : 550);
         Plotly.downloadImage(plotId, {
