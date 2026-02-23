@@ -1615,28 +1615,23 @@
 
                 <!-- Mutation Analysis Tab -->
                 <div class="tab-content" id="tab-mutation">
-                    <div style="display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 10px; gap: 12px;">
-                        <div style="flex: 1; min-width: 0;">
-                            <span id="mutationResultsCount">0 genes with p < 0.001</span>
-                        </div>
-                        <div style="display: flex; gap: 5px; align-items: center; flex-wrap: wrap; flex-shrink: 0;">
-                            <input type="text" id="mutationSearch" class="form-control" placeholder="Search genes..." style="width: 160px; display: inline-block; font-size: 12px; padding: 4px 8px;">
-                            <button class="btn btn-outline btn-sm" id="filterMutationToggle" title="Toggle column filters">Filters</button>
-                            <button class="btn btn-outline btn-sm" id="copyMutationGenes" title="Copy gene names to clipboard">Copy Genes</button>
-                            <button class="btn btn-outline btn-sm" id="downloadMutationResults">Export CSV</button>
-                            <span style="border-left: 1px solid #d1d5db; height: 20px; margin: 0 2px;"></span>
-                            <button class="btn btn-secondary btn-sm" id="mutCompareByTissueBtn" title="Show how the mutation effect on top genes varies across cancer types">Compare by Tissue</button>
-                            <button class="btn btn-secondary btn-sm" id="mutCompareByHotspotBtn" title="Check if other mutations also affect these top genes">Compare by Hotspot</button>
-                            <button class="btn btn-sm" id="mutCompareCloseBtn" style="display: none; background: #ef4444; color: white;" title="Close comparison table">✕ Close</button>
-                        </div>
+                    <div style="background: #fef3c7; border: 1px solid #f59e0b; border-radius: 4px; padding: 8px 12px; margin-bottom: 10px; font-size: 11px; color: #92400e;">
+                        <strong>Note:</strong> Differential gene effects may reflect selection bias (e.g., mutations enriched in certain cancer types) rather than direct functional consequences of the mutation. Consider filtering by lineage to control for tissue-specific effects.
                     </div>
-                    <details style="margin-bottom: 10px; font-size: 11px;">
-                        <summary style="cursor: pointer; color: #6b7280; font-size: 11px;">Info: Selection bias & statistics</summary>
-                        <div style="margin-top: 6px; padding: 6px 10px; background: #f9fafb; border-radius: 4px; color: #4b5563; line-height: 1.5;">
-                            <strong>Note:</strong> Differential gene effects may reflect selection bias (e.g., mutations enriched in certain cancer types) rather than direct functional consequences. Consider filtering by lineage to control for tissue-specific effects.<br>
-                            <strong>Statistics:</strong> p-values are calculated using Welch's t-test comparing gene effect scores between wild-type (WT, 0 mutations) and mutated cells (1+2 or 2 mutations). Δ GE = Mean(mutated) − Mean(WT).
-                        </div>
-                    </details>
+                    <div style="background: #f0f9ff; border: 1px solid #0ea5e9; border-radius: 4px; padding: 8px 12px; margin-bottom: 10px; font-size: 11px; color: #0c4a6e;">
+                        <strong>Statistics:</strong> p-values are calculated using Welch's t-test comparing gene effect scores between wild-type (WT, 0 mutations) and mutated cells (1+2 or 2 mutations). Δ GE = Mean(mutated) − Mean(WT).
+                    </div>
+                    <div id="mutationResultsCount" style="margin-bottom: 10px;">0 genes with p < 0.001</div>
+                    <div style="display: flex; gap: 5px; align-items: center; flex-wrap: wrap; margin-bottom: 12px;">
+                        <input type="text" id="mutationSearch" class="form-control" placeholder="Search genes..." style="width: 160px; display: inline-block; font-size: 12px; padding: 4px 8px;">
+                        <button class="btn btn-outline btn-sm" id="filterMutationToggle" title="Toggle column filters">Filters</button>
+                        <button class="btn btn-outline btn-sm" id="copyMutationGenes" title="Copy gene names to clipboard">Copy Genes</button>
+                        <button class="btn btn-outline btn-sm" id="downloadMutationResults">Export CSV</button>
+                        <span style="border-left: 1px solid #d1d5db; height: 20px; margin: 0 2px;"></span>
+                        <button class="btn btn-secondary btn-sm" id="mutCompareByTissueBtn" title="Show how the mutation effect on top genes varies across cancer types">Compare by Tissue</button>
+                        <button class="btn btn-secondary btn-sm" id="mutCompareByHotspotBtn" title="Check if other mutations also affect these top genes">Compare by Hotspot</button>
+                        <button class="btn btn-sm" id="mutCompareCloseBtn" style="display: none; background: #5a9f4a; color: white;" title="Close comparison table">✕ Close</button>
+                    </div>
                     <div id="mutationCompareTable" style="display: none; max-height: 500px; overflow-y: auto; margin-bottom: 15px;"></div>
                     <div class="table-container" style="max-height: 600px; overflow-y: auto;">
                         <table class="data-table" id="mutationTable">
@@ -1966,6 +1961,6 @@
         </div>
     </div>
 
-    <script src="app.js?v=20260223a"></script>
+    <script src="app.js?v=20260223b"></script>
 </body>
 </html>
