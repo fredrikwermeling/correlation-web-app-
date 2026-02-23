@@ -2902,7 +2902,7 @@ class CorrelationExplorer {
                 range: [-0.5, 2.5]
             },
             showlegend: false,
-            margin: { t: 100, r: 30, b: 50, l: 140 }
+            margin: { t: 100, r: 30, b: 50, l: 160 }
         };
 
         // Show modal
