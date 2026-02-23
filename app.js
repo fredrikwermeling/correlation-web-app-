@@ -8612,11 +8612,7 @@ Results:
             return { totalDelta, countDelta, geneDiffs };
         };
 
-        // Build "All" row
-        const allResult = calcGeneDiffs(allWT, allMut);
-        const allRow = { lineage: 'All', nWT: allWT.length, nMut: allMut.length, avgDelta: allResult.countDelta > 0 ? allResult.totalDelta / allResult.countDelta : 0, geneDiffs: allResult.geneDiffs, isAll: true };
-
-        // Build per-tissue rows
+        // Build per-tissue rows first
         const tableData = [];
         Object.entries(lineageMap).forEach(([lineage, groups]) => {
             if (groups.wt.length < 3 || groups.mut.length < 1) return;
@@ -8626,6 +8622,16 @@ Results:
         });
 
         tableData.sort((a, b) => Math.abs(b.avgDelta) - Math.abs(a.avgDelta));
+
+        // Build "All" row as average of per-tissue deltas (tissue-corrected)
+        const allGeneDiffs = {};
+        topGenes.forEach(gene => {
+            const tissueVals = tableData.map(t => t.geneDiffs[gene]).filter(v => v !== undefined);
+            if (tissueVals.length > 0) allGeneDiffs[gene] = tissueVals.reduce((a, b) => a + b, 0) / tissueVals.length;
+        });
+        const allAvgVals = Object.values(allGeneDiffs);
+        const allAvgDelta = allAvgVals.length > 0 ? allAvgVals.reduce((a, b) => a + b, 0) / allAvgVals.length : 0;
+        const allRow = { lineage: 'All (avg)', nWT: allWT.length, nMut: allMut.length, avgDelta: allAvgDelta, geneDiffs: allGeneDiffs, isAll: true };
 
         // Combine: All row first, then per-tissue
         const allRows = [allRow, ...tableData];
