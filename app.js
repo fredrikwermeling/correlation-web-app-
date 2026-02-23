@@ -2949,20 +2949,44 @@ class CorrelationExplorer {
 
     _exportMutationInspectChart(format) {
         if (this.geneEffectViewMode !== 'mutation') return;
-        const plotId = 'geneEffectPlot';
+        const plotEl = document.getElementById('geneEffectPlot');
+        if (!plotEl || !plotEl.data) return;
         const exportWidth = 1200;
         const exportHeight = 600;
-        // Temporarily set explicit left margin for export, then restore
-        Plotly.relayout(plotId, { 'margin.l': 160 }).then(() => {
-            return Plotly.downloadImage(plotId, {
+        const filename = `gene_effect_${this.currentGeneEffectGene}_${this.mutationResults.hotspotGene}`;
+
+        // Deep-copy data and layout from live chart
+        const data = JSON.parse(JSON.stringify(plotEl.data));
+        const layout = JSON.parse(JSON.stringify(plotEl.layout));
+
+        // Override margin for export — fixed left margin so y-axis title + tick labels fit
+        layout.margin = Object.assign({}, layout.margin, { l: 160 });
+        layout.width = exportWidth;
+        layout.height = exportHeight;
+        // Disable automargin on yaxis so our explicit margin is used
+        if (layout.yaxis) layout.yaxis.automargin = false;
+
+        // Render into a temporary off-screen div for a clean export
+        const tempDiv = document.createElement('div');
+        tempDiv.style.position = 'absolute';
+        tempDiv.style.left = '-10000px';
+        tempDiv.style.top = '0';
+        tempDiv.style.width = exportWidth + 'px';
+        tempDiv.style.height = exportHeight + 'px';
+        document.body.appendChild(tempDiv);
+
+        Plotly.newPlot(tempDiv, data, layout, { staticPlot: true }).then(() => {
+            return Plotly.downloadImage(tempDiv, {
                 format,
                 width: exportWidth,
                 height: exportHeight,
-                filename: `gene_effect_${this.currentGeneEffectGene}_${this.mutationResults.hotspotGene}`
+                filename
             });
         }).then(() => {
-            // Restore automargin
-            Plotly.relayout(plotId, { 'margin.l': 30 });
+            Plotly.purge(tempDiv);
+            document.body.removeChild(tempDiv);
+        }).catch(() => {
+            try { Plotly.purge(tempDiv); document.body.removeChild(tempDiv); } catch(e) {}
         });
     }
 
