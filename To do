@@ -59,18 +59,10 @@ claude
 make sure to use settings that saves tookens doing the following (dont use opus 4.6 if not needed use lower effort settings if not needed more)
 Start trying to understand this list and then work on some of them after discussing with me. Always try to learn from other functions in the app, instead if you inventing the wheel again) 
 
-in the network. Add a button to select nodes by clicking them. When clicking them, they should show up in the input gene list, removing other genes from the list (but not the network image). In this way, you could click genes of more interest and then click run and remake the network (analysis or design mode) to focus on these genes. In the same way, if using the remove mode, also remove the genes from the input list, so one could refine the search by pressing "run" again, now focusing on all other genes in the list. I realize this is complicated. always ask if unclear. 
-Allow for getting a list showing GE and SD for all genes input, not only the ones where there is a correlation. could eg the clusters tab allow for toggling all gene s in list on/off? or just show all genes, and indicate in column if they were found in correlations or not (also if they were correlated in the design mode (soemthing similar is already done, right? consider if there is a smart way to combione this with the current functionalities)
-Allow for pressing one or several columns in any of the lists, and copying them so they could be pasted into excel, or the input gene box direcetly.
-Mutational analysis doesn't seem to work with the subtype filter.
-change favicon. see the Favicon v2.png in the following map /Users/fredrikwermeling/Documents/correlate app feb 2026 (färdig)/correlation app
+
 In the mutation analysis table, allow for clicking the gene name and opening the gene effect interface.
-mutational analysis, p value "," separated instead of ".". change it. this seems to only be true sometimes, which confuses me. 
-in gene effect inspect, hotspot mutation. allow for tissue fiilter
 make sure that all exports looks the same as on the screen. I noticed that some where different 
-allow for genes to be entered into the network althugh not any correlations found. I suggest that a table could be clicked opening a table (that could be kept open at the same time as looking at the network) where toggle on/of of all genes in the input list is possiuble.
-allow to filter all table columns with cut offs
-allow to copy the gene names in a list (to allow to paste into the gene box
+
 allow for showing brief info about genes (hover over or click). part of go terms and similar. could press go term and open in gene box 
 axis range in correlation/correlate inspect. use "." and not "," for separating decimals.
 inspect in the mutational analyis, allow to select gene effect gene in box. also allow for buttons bringing up tables of how the difference for the selected gene effect and hotspot mutation, dffers for different tissues and hotspot mutations. this is similar to the correlation inspcet function.
