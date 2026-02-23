@@ -700,25 +700,37 @@ class CorrelationExplorer {
 
     applyTissueBreakdownSelection(selectedTissues) {
         const lineageSelect = document.getElementById('lineageFilter');
+        const lineageGroup = document.getElementById('lineageFilterGroup');
         const selectedSet = new Set(selectedTissues);
 
         if (selectedTissues.length === 0) {
             // Clear all tissue filters
             lineageSelect.value = '';
+            lineageSelect.disabled = false;
+            lineageSelect.style.opacity = '';
             this.excludedTissues = new Set();
             document.querySelectorAll('#tissueExcludeList input[type="checkbox"]').forEach(cb => {
                 cb.checked = false;
             });
+            // Remove override label
+            const overrideLabel = lineageGroup?.querySelector('.tb-override-label');
+            if (overrideLabel) overrideLabel.remove();
         } else if (selectedTissues.length === 1) {
-            // Single tissue: use lineage dropdown
+            // Single tissue: use lineage dropdown directly
             lineageSelect.value = selectedTissues[0];
+            lineageSelect.disabled = false;
+            lineageSelect.style.opacity = '';
             this.excludedTissues = new Set();
             document.querySelectorAll('#tissueExcludeList input[type="checkbox"]').forEach(cb => {
                 cb.checked = false;
             });
+            const overrideLabel = lineageGroup?.querySelector('.tb-override-label');
+            if (overrideLabel) overrideLabel.remove();
         } else {
-            // Multiple tissues: clear lineage dropdown, exclude everything NOT selected
+            // Multiple tissues: disable lineage dropdown, use excludedTissues
             lineageSelect.value = '';
+            lineageSelect.disabled = true;
+            lineageSelect.style.opacity = '0.5';
             const allLineages = this.cellLineMetadata?.lineage
                 ? new Set(Object.values(this.cellLineMetadata.lineage))
                 : new Set();
@@ -730,6 +742,21 @@ class CorrelationExplorer {
             document.querySelectorAll('#tissueExcludeList input[type="checkbox"]').forEach(cb => {
                 cb.checked = excludeSet.has(cb.value);
             });
+            // Show override label
+            let overrideLabel = lineageGroup?.querySelector('.tb-override-label');
+            if (!overrideLabel && lineageGroup) {
+                overrideLabel = document.createElement('div');
+                overrideLabel.className = 'tb-override-label';
+                overrideLabel.style.cssText = 'font-size: 11px; color: #5a9f4a; margin-top: 2px; cursor: pointer;';
+                overrideLabel.title = 'Click to clear tissue selection';
+                overrideLabel.addEventListener('click', () => {
+                    this.applyTissueBreakdownSelection([]);
+                });
+                lineageGroup.appendChild(overrideLabel);
+            }
+            if (overrideLabel) {
+                overrideLabel.textContent = `Tissue filter: ${selectedTissues.join(', ')} (click to clear)`;
+            }
         }
 
         // Trigger UI updates
@@ -2825,6 +2852,13 @@ class CorrelationExplorer {
         }
         if (inspectTissueFilter) {
             filterInfo.push(`Tissue: ${inspectTissueFilter}`);
+        }
+        if (mr.excludedTissues && mr.excludedTissues.size > 0 && !inspectTissueFilter) {
+            const allLineages = this.cellLineMetadata?.lineage
+                ? [...new Set(Object.values(this.cellLineMetadata.lineage))].sort()
+                : [];
+            const included = allLineages.filter(t => !mr.excludedTissues.has(t));
+            filterInfo.push(`Tissues: ${included.join(', ')}`);
         }
         if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
             filterInfo.push(`${mr.additionalHotspot}: ${mr.additionalHotspotLevel}`);
