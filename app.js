@@ -511,6 +511,218 @@ class CorrelationExplorer {
         }
     }
 
+    getTissueBreakdownForHotspot(gene) {
+        if (!this.mutations?.geneData?.[gene] || !this.cellLineMetadata?.lineage) return [];
+        const mutations = this.mutations.geneData[gene].mutations;
+        const cellLines = this.metadata.cellLines;
+        const tissueMap = {};
+
+        cellLines.forEach(cl => {
+            const lineage = this.cellLineMetadata.lineage[cl];
+            if (!lineage) return;
+            if (!tissueMap[lineage]) tissueMap[lineage] = { lineage, nMut: 0, nWT: 0 };
+            if (mutations[cl] && mutations[cl] > 0) {
+                tissueMap[lineage].nMut++;
+            } else {
+                tissueMap[lineage].nWT++;
+            }
+        });
+
+        return Object.values(tissueMap).sort((a, b) => b.nMut - a.nMut);
+    }
+
+    showTissueBreakdownPopup() {
+        this.hideTissueBreakdownPopup();
+        const gene = document.getElementById('mutationHotspotSelect').value;
+        if (!gene) return;
+
+        const breakdown = this.getTissueBreakdownForHotspot(gene);
+        if (breakdown.length === 0) return;
+
+        const currentLineage = document.getElementById('lineageFilter').value;
+
+        const popup = document.createElement('div');
+        popup.id = 'tissueBreakdownPopup';
+        popup.style.cssText = 'position: fixed; z-index: 10000; background: white; border: 1px solid #d1d5db; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); padding: 0; min-width: 340px; max-width: 420px; max-height: 480px; display: flex; flex-direction: column;';
+
+        // Position near the button
+        const btn = document.getElementById('tissueBreakdownBtn');
+        const rect = btn.getBoundingClientRect();
+        popup.style.top = (rect.bottom + 6) + 'px';
+        popup.style.left = Math.max(8, Math.min(rect.left - 100, window.innerWidth - 440)) + 'px';
+
+        const maxMut = Math.max(...breakdown.map(t => t.nMut));
+
+        // Header
+        let html = `<div style="padding: 10px 14px 8px; border-bottom: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-weight: 600; font-size: 13px; color: #1f2937;">${gene} — Tissue Breakdown</span>
+            <button id="tbCloseBtn" style="background: none; border: none; cursor: pointer; font-size: 18px; color: #6b7280; line-height: 1; padding: 0 2px;">&times;</button>
+        </div>`;
+
+        // Table
+        html += `<div style="overflow-y: auto; flex: 1; padding: 4px 0;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+            <thead><tr style="position: sticky; top: 0; background: #f9fafb; z-index: 1;">
+                <th style="padding: 4px 8px; text-align: left; width: 28px;"><input type="checkbox" id="tbSelectAll" title="Select all"></th>
+                <th style="padding: 4px 4px; text-align: left;">Tissue</th>
+                <th style="padding: 4px 6px; text-align: right; color: #dc2626;">Mut</th>
+                <th style="padding: 4px 6px; text-align: right; color: #6b7280;">WT</th>
+                <th style="padding: 4px 8px; text-align: left; width: 90px;"></th>
+                <th style="padding: 4px 8px; text-align: right; width: 44px;">%</th>
+            </tr></thead><tbody>`;
+
+        breakdown.forEach(t => {
+            const total = t.nMut + t.nWT;
+            const pct = total > 0 ? (t.nMut / total * 100).toFixed(1) : '0.0';
+            const barWidth = maxMut > 0 ? (t.nMut / maxMut * 100) : 0;
+            const isCurrentFilter = (currentLineage && t.lineage === currentLineage);
+            const rowBg = isCurrentFilter ? 'background: #ecfdf5;' : '';
+            const checked = isCurrentFilter ? ' checked' : '';
+
+            html += `<tr class="tb-row" data-tissue="${t.lineage}" style="cursor: pointer; ${rowBg}" onmouseenter="this.style.background=this.style.background||'#f3f4f6'" onmouseleave="this.style.background='${isCurrentFilter ? '#ecfdf5' : ''}'">
+                <td style="padding: 3px 8px;"><input type="checkbox" class="tb-check" value="${t.lineage}"${checked}></td>
+                <td style="padding: 3px 4px; font-weight: ${t.nMut > 0 ? '500' : '400'}; color: ${t.nMut > 0 ? '#1f2937' : '#9ca3af'};">${t.lineage}</td>
+                <td style="padding: 3px 6px; text-align: right; color: #dc2626; font-weight: 600;">${t.nMut}</td>
+                <td style="padding: 3px 6px; text-align: right; color: #6b7280;">${t.nWT}</td>
+                <td style="padding: 3px 8px;"><div style="background: #fee2e2; border-radius: 2px; height: 10px; width: 100%;"><div style="background: #ef4444; border-radius: 2px; height: 10px; width: ${barWidth}%;"></div></div></td>
+                <td style="padding: 3px 8px; text-align: right; color: #6b7280; font-size: 11px;">${pct}%</td>
+            </tr>`;
+        });
+
+        html += `</tbody></table></div>`;
+
+        // Footer
+        html += `<div style="padding: 8px 14px; border-top: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center;">
+            <span id="tbSelectionCount" style="font-size: 11px; color: #6b7280;">0 selected</span>
+            <div style="display: flex; gap: 6px;">
+                <button id="tbClearBtn" style="padding: 4px 12px; font-size: 12px; background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; border-radius: 4px; cursor: pointer;">Clear</button>
+                <button id="tbApplyBtn" style="padding: 4px 12px; font-size: 12px; background: #5a9f4a; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">Apply Filter</button>
+            </div>
+        </div>`;
+
+        popup.innerHTML = html;
+        document.body.appendChild(popup);
+
+        // Ensure popup stays within viewport
+        const popupRect = popup.getBoundingClientRect();
+        if (popupRect.bottom > window.innerHeight - 10) {
+            popup.style.top = (rect.top - popupRect.height - 6) + 'px';
+        }
+
+        // Row click toggles checkbox
+        popup.querySelectorAll('.tb-row').forEach(row => {
+            row.addEventListener('click', (e) => {
+                if (e.target.type === 'checkbox') return;
+                const cb = row.querySelector('.tb-check');
+                cb.checked = !cb.checked;
+                this.updateTBSelectionCount();
+            });
+        });
+
+        // Checkbox change
+        popup.querySelectorAll('.tb-check').forEach(cb => {
+            cb.addEventListener('change', () => this.updateTBSelectionCount());
+        });
+
+        // Select all
+        document.getElementById('tbSelectAll').addEventListener('change', (e) => {
+            popup.querySelectorAll('.tb-check').forEach(cb => { cb.checked = e.target.checked; });
+            this.updateTBSelectionCount();
+        });
+
+        // Close button
+        document.getElementById('tbCloseBtn').addEventListener('click', () => this.hideTissueBreakdownPopup());
+
+        // Clear button
+        document.getElementById('tbClearBtn').addEventListener('click', () => {
+            popup.querySelectorAll('.tb-check').forEach(cb => { cb.checked = false; });
+            document.getElementById('tbSelectAll').checked = false;
+            this.updateTBSelectionCount();
+        });
+
+        // Apply button
+        document.getElementById('tbApplyBtn').addEventListener('click', () => {
+            const selected = [...popup.querySelectorAll('.tb-check:checked')].map(cb => cb.value);
+            this.applyTissueBreakdownSelection(selected, breakdown.map(t => t.lineage));
+            this.hideTissueBreakdownPopup();
+        });
+
+        // Escape key
+        this._tbEscHandler = (e) => { if (e.key === 'Escape') this.hideTissueBreakdownPopup(); };
+        document.addEventListener('keydown', this._tbEscHandler);
+
+        // Click outside
+        setTimeout(() => {
+            this._tbOutsideHandler = (e) => {
+                const p = document.getElementById('tissueBreakdownPopup');
+                if (p && !p.contains(e.target) && e.target.id !== 'tissueBreakdownBtn') {
+                    this.hideTissueBreakdownPopup();
+                }
+            };
+            document.addEventListener('mousedown', this._tbOutsideHandler);
+        }, 0);
+
+        this.updateTBSelectionCount();
+    }
+
+    hideTissueBreakdownPopup() {
+        const popup = document.getElementById('tissueBreakdownPopup');
+        if (popup) popup.remove();
+        if (this._tbEscHandler) {
+            document.removeEventListener('keydown', this._tbEscHandler);
+            this._tbEscHandler = null;
+        }
+        if (this._tbOutsideHandler) {
+            document.removeEventListener('mousedown', this._tbOutsideHandler);
+            this._tbOutsideHandler = null;
+        }
+    }
+
+    updateTBSelectionCount() {
+        const popup = document.getElementById('tissueBreakdownPopup');
+        if (!popup) return;
+        const count = popup.querySelectorAll('.tb-check:checked').length;
+        const label = document.getElementById('tbSelectionCount');
+        if (label) label.textContent = count === 0 ? '0 selected' : `${count} selected`;
+    }
+
+    applyTissueBreakdownSelection(selectedTissues, allTissues) {
+        const lineageSelect = document.getElementById('lineageFilter');
+
+        if (selectedTissues.length === 0) {
+            // Clear all tissue filters
+            lineageSelect.value = '';
+            this.excludedTissues = new Set();
+            // Uncheck all sidebar exclude checkboxes
+            document.querySelectorAll('#tissueExcludeList input[type="checkbox"]').forEach(cb => {
+                cb.checked = false;
+            });
+        } else if (selectedTissues.length === 1) {
+            // Single tissue: use lineage dropdown
+            lineageSelect.value = selectedTissues[0];
+            this.excludedTissues = new Set();
+            document.querySelectorAll('#tissueExcludeList input[type="checkbox"]').forEach(cb => {
+                cb.checked = false;
+            });
+        } else {
+            // Multiple tissues: clear lineage dropdown, use excludedTissues
+            lineageSelect.value = '';
+            const excludeSet = new Set();
+            allTissues.forEach(t => {
+                if (!selectedTissues.includes(t)) excludeSet.add(t);
+            });
+            this.excludedTissues = excludeSet;
+            // Sync sidebar checkboxes
+            document.querySelectorAll('#tissueExcludeList input[type="checkbox"]').forEach(cb => {
+                cb.checked = excludeSet.has(cb.value);
+            });
+        }
+
+        // Trigger UI updates
+        this.updateSubLineageFilter();
+        this.updateHotspotCountsForCurrentFilters();
+    }
+
     getCellLineName(cellLineId) {
         if (this.cellLineMetadata && this.cellLineMetadata.strippedCellLineName) {
             return this.cellLineMetadata.strippedCellLineName[cellLineId] ||
@@ -687,6 +899,13 @@ class CorrelationExplorer {
         // Analysis mode change
         document.querySelectorAll('input[name="analysisMode"]').forEach(radio => {
             radio.addEventListener('change', () => this.updateAnalysisModeUI());
+        });
+
+        // Tissue breakdown button
+        document.getElementById('tissueBreakdownBtn').addEventListener('click', () => this.showTissueBreakdownPopup());
+        document.getElementById('mutationHotspotSelect').addEventListener('change', () => {
+            const btn = document.getElementById('tissueBreakdownBtn');
+            btn.style.display = document.getElementById('mutationHotspotSelect').value ? 'inline-block' : 'none';
         });
 
         // Mutation results search
