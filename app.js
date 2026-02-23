@@ -2388,7 +2388,7 @@ class CorrelationExplorer {
         this.downloadFile(csv, filename, 'text/csv');
     }
 
-    showGeneEffectDistribution(gene) {
+    showGeneEffectDistribution(gene, tissueOverride) {
         if (!this.mutationResults) return;
 
         const mr = this.mutationResults;
@@ -2401,8 +2401,8 @@ class CorrelationExplorer {
             return;
         }
 
-        // Get tissue filter from dropdown
-        const inspectTissueFilter = document.getElementById('geTissueFilter')?.value || '';
+        // Get tissue filter - use override if provided, otherwise read from dropdown
+        const inspectTissueFilter = tissueOverride !== undefined ? tissueOverride : (document.getElementById('geTissueFilter')?.value || '');
 
         // Collect data for each cell line
         const cellLines = this.metadata.cellLines;
@@ -2617,18 +2617,17 @@ class CorrelationExplorer {
         document.getElementById('geneEffectTitle').textContent = `${gene} Gene Effect by ${hotspotGene} Mutation`;
 
         // Populate tissue filter dropdown with available lineages
-        const tissueFilter = document.getElementById('geTissueFilter');
-        if (tissueFilter) {
-            const currentValue = tissueFilter.value;
+        const tissueFilterEl = document.getElementById('geTissueFilter');
+        if (tissueFilterEl) {
             const allLineages = [...new Set(cellLines.map(cl => this.cellLineMetadata?.lineage?.[cl]).filter(Boolean))].sort();
-            tissueFilter.innerHTML = '<option value="">All tissues</option>';
+            tissueFilterEl.innerHTML = '<option value="">All tissues</option>';
             allLineages.forEach(l => {
                 const opt = document.createElement('option');
                 opt.value = l;
                 opt.textContent = l;
-                tissueFilter.appendChild(opt);
+                tissueFilterEl.appendChild(opt);
             });
-            tissueFilter.value = currentValue || '';
+            tissueFilterEl.value = inspectTissueFilter;
         }
 
         // Show gene search bar so user can change the gene (#12)
@@ -8824,10 +8823,7 @@ Results:
     }
 
     openCompareInspect(gene, tissue) {
-        // Set tissue filter dropdown then open inspect
-        const tissueFilter = document.getElementById('geTissueFilter');
-        if (tissueFilter) tissueFilter.value = tissue || '';
-        this.showGeneEffectDistribution(gene);
+        this.showGeneEffectDistribution(gene, tissue || '');
     }
 
     updateExcludedTissues() {
