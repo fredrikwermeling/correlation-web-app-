@@ -8634,8 +8634,9 @@ Results:
         const buildRow = (row) => {
             const deltaColor = row.avgDelta < 0 ? '#dc2626' : '#16a34a';
             const rowStyle = row.isAll ? 'background: #f9fafb; border-bottom: 2px solid #d1d5db;' : '';
+            const pinned = row.isAll ? ' data-pinned="1"' : '';
             const tissue = row.isAll ? '' : row.lineage;
-            return `<tr style="${rowStyle}" data-nwt="${row.nWT}" data-nmut="${row.nMut}" data-avg="${row.avgDelta}">
+            return `<tr style="${rowStyle}"${pinned} data-nwt="${row.nWT}" data-nmut="${row.nMut}" data-avg="${row.avgDelta}">
                 <td><b>${row.lineage}</b></td>
                 <td style="text-align: center;">${row.nWT}</td>
                 <td style="text-align: center;">${row.nMut}</td>
@@ -8699,25 +8700,16 @@ Results:
             filteredIndices.push(idx);
         });
 
-        // For each hotspot mutation gene, calculate avg delta GE for top genes
-        const tableData = [];
-        this.mutations.genes.forEach(hotspotGene => {
-            if (hotspotGene === mainHotspot) return; // skip the main one
-            const mutData = this.mutations.geneData[hotspotGene]?.mutations || {};
-
-            const wtIndices = filteredIndices.filter(i => (mutData[cellLines[i]] || 0) === 0);
-            const mutIndices = filteredIndices.filter(i => (mutData[cellLines[i]] || 0) >= 1);
-
-            if (wtIndices.length < 3 || mutIndices.length < 3) return;
-
+        // Helper to calculate gene diffs for given WT/mut indices
+        const calcGeneDiffs = (wtIdx, mutIdx) => {
             let totalDelta = 0, countDelta = 0;
             const geneDiffs = {};
             topGenes.forEach(gene => {
                 const geneIdx = this.geneIndex.get(gene);
                 if (geneIdx === undefined) return;
                 const geneData = this.getGeneData(geneIdx);
-                const wtEffects = wtIndices.map(i => geneData[i]).filter(v => !isNaN(v));
-                const mutEffects = mutIndices.map(i => geneData[i]).filter(v => !isNaN(v));
+                const wtEffects = wtIdx.map(i => geneData[i]).filter(v => !isNaN(v));
+                const mutEffects = mutIdx.map(i => geneData[i]).filter(v => !isNaN(v));
                 if (wtEffects.length >= 3 && mutEffects.length >= 3) {
                     const meanWT = wtEffects.reduce((a, b) => a + b, 0) / wtEffects.length;
                     const meanMut = mutEffects.reduce((a, b) => a + b, 0) / mutEffects.length;
@@ -8727,16 +8719,57 @@ Results:
                     countDelta++;
                 }
             });
+            return { totalDelta, countDelta, geneDiffs };
+        };
 
-            if (countDelta === 0) return;
-            const avgDelta = totalDelta / countDelta;
+        // Build reference row for the main hotspot
+        const mainMutData = this.mutations.geneData[mainHotspot]?.mutations || {};
+        const mainWT = filteredIndices.filter(i => (mainMutData[cellLines[i]] || 0) === 0);
+        const mainMut = filteredIndices.filter(i => (mainMutData[cellLines[i]] || 0) >= 1);
+        const mainResult = calcGeneDiffs(mainWT, mainMut);
+        const mainRow = {
+            hotspotGene: `${mainHotspot} (reference)`, nWT: mainWT.length, nMut: mainMut.length,
+            avgDelta: mainResult.countDelta > 0 ? mainResult.totalDelta / mainResult.countDelta : 0,
+            geneDiffs: mainResult.geneDiffs, isRef: true
+        };
 
-            tableData.push({ hotspotGene, nWT: wtIndices.length, nMut: mutIndices.length, avgDelta, geneDiffs });
+        // For each other hotspot mutation gene, calculate avg delta GE for top genes
+        const tableData = [];
+        this.mutations.genes.forEach(hotspotGene => {
+            if (hotspotGene === mainHotspot) return;
+            const mutData = this.mutations.geneData[hotspotGene]?.mutations || {};
+            const wtIndices = filteredIndices.filter(i => (mutData[cellLines[i]] || 0) === 0);
+            const mutIndices = filteredIndices.filter(i => (mutData[cellLines[i]] || 0) >= 1);
+            if (wtIndices.length < 3 || mutIndices.length < 3) return;
+            const result = calcGeneDiffs(wtIndices, mutIndices);
+            if (result.countDelta === 0) return;
+            tableData.push({ hotspotGene, nWT: wtIndices.length, nMut: mutIndices.length, avgDelta: result.totalDelta / result.countDelta, geneDiffs: result.geneDiffs });
         });
 
         tableData.sort((a, b) => Math.abs(b.avgDelta) - Math.abs(a.avgDelta));
 
+        const allRows = [mainRow, ...tableData.slice(0, 30)];
+
         // Build HTML
+        const buildRow = (row) => {
+            const deltaColor = row.avgDelta < 0 ? '#dc2626' : '#16a34a';
+            const rowStyle = row.isRef ? 'background: #f9fafb; border-bottom: 2px solid #d1d5db;' : '';
+            const pinned = row.isRef ? ' data-pinned="1"' : '';
+            const label = row.isRef ? `${mainHotspot} (reference)` : row.hotspotGene;
+            return `<tr style="${rowStyle}"${pinned} data-nwt="${row.nWT}" data-nmut="${row.nMut}" data-avg="${row.avgDelta}">
+                <td><b>${label}</b></td>
+                <td style="text-align: center;">${row.nWT}</td>
+                <td style="text-align: center;">${row.nMut}</td>
+                <td style="text-align: center; color: ${deltaColor}; font-weight: 600;">${row.avgDelta.toFixed(3)}</td>
+                ${topGenes.map(g => {
+                    const d = row.geneDiffs[g];
+                    if (d === undefined) return '<td style="text-align: center; color: #999;">-</td>';
+                    const c = d < 0 ? '#dc2626' : '#16a34a';
+                    return `<td style="text-align: center; color: ${c}; cursor: pointer; text-decoration: underline;" data-val="${d}" onclick="app.openCompareInspect('${g}', '')">${d.toFixed(3)}</td>`;
+                }).join('')}
+            </tr>`;
+        };
+
         let html = `
             <div style="margin-bottom: 10px;">
                 <h4 style="margin: 0;">Co-occurring mutations affecting ${mainHotspot}-sensitive genes</h4>
@@ -8753,25 +8786,10 @@ Results:
                     ${topGenes.map((g, i) => `<th style="font-size: 10px; cursor: pointer;" data-col="${4 + i}">${g}</th>`).join('')}
                 </tr></thead>
                 <tbody>
+                    ${allRows.map(row => buildRow(row)).join('')}
+                </tbody>
+            </table>
         `;
-
-        tableData.slice(0, 30).forEach(row => {
-            const deltaColor = row.avgDelta < 0 ? '#dc2626' : '#16a34a';
-            html += `<tr data-nwt="${row.nWT}" data-nmut="${row.nMut}" data-avg="${row.avgDelta}">
-                <td><b>${row.hotspotGene}</b></td>
-                <td style="text-align: center;">${row.nWT}</td>
-                <td style="text-align: center;">${row.nMut}</td>
-                <td style="text-align: center; color: ${deltaColor}; font-weight: 600;">${row.avgDelta.toFixed(3)}</td>
-                ${topGenes.map(g => {
-                    const d = row.geneDiffs[g];
-                    if (d === undefined) return '<td style="text-align: center; color: #999;">-</td>';
-                    const c = d < 0 ? '#dc2626' : '#16a34a';
-                    return `<td style="text-align: center; color: ${c}; cursor: pointer; text-decoration: underline;" data-val="${d}" onclick="app.openCompareInspect('${g}', '')">${d.toFixed(3)}</td>`;
-                }).join('')}
-            </tr>`;
-        });
-
-        html += '</tbody></table>';
 
         const container = document.getElementById('mutationCompareTable');
         container.innerHTML = html;
@@ -8791,9 +8809,9 @@ Results:
                 const colIdx = parseInt(th.dataset.col);
                 const tbody = table.querySelector('tbody');
                 const rows = Array.from(tbody.querySelectorAll('tr'));
-                // Separate pinned "All" row from the rest
-                const pinnedRows = rows.filter(r => r.querySelector('td b')?.textContent === 'All');
-                const sortableRows = rows.filter(r => r.querySelector('td b')?.textContent !== 'All');
+                // Separate pinned rows (All / reference) from the rest
+                const pinnedRows = rows.filter(r => r.dataset.pinned === '1');
+                const sortableRows = rows.filter(r => r.dataset.pinned !== '1');
 
                 const dir = th._sortDir === 'asc' ? 'desc' : 'asc';
                 th._sortDir = dir;
