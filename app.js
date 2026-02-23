@@ -2899,10 +2899,11 @@ class CorrelationExplorer {
                 tickmode: 'array',
                 tickvals: [0, 1, 2],
                 ticktext: [`0 WT (n=${data.wt.length})`, `1 (n=${data.mut1.length})`, `2 (n=${data.mut2.length})`],
-                range: [-0.5, 2.5]
+                range: [-0.5, 2.5],
+                automargin: true
             },
             showlegend: false,
-            margin: { t: 100, r: 30, b: 50, l: 160 }
+            margin: { t: 100, r: 30, b: 50, l: 30 }
         };
 
         // Show modal
