@@ -8568,7 +8568,7 @@ Results:
         const mutationData = this.mutations.geneData[hotspotGene];
         if (!mutationData) return;
 
-        // Get all unique lineages and also track all WT/mut indices
+        // Get all unique lineages and track all WT/mut indices
         const cellLines = this.metadata.cellLines;
         const lineageMap = {};
         const allWT = [], allMut = [];
@@ -8592,7 +8592,6 @@ Results:
 
         // Helper to calculate gene diffs for a set of WT/mut indices
         const calcGeneDiffs = (wtIndices, mutIndices) => {
-            let totalDelta = 0, countDelta = 0;
             const geneDiffs = {};
             topGenes.forEach(gene => {
                 const geneIdx = this.geneIndex.get(gene);
@@ -8603,50 +8602,40 @@ Results:
                 if (wtEffects.length >= 3 && mutEffects.length >= 1) {
                     const meanWT = wtEffects.reduce((a, b) => a + b, 0) / wtEffects.length;
                     const meanMut = mutEffects.reduce((a, b) => a + b, 0) / mutEffects.length;
-                    const diff = meanMut - meanWT;
-                    geneDiffs[gene] = diff;
-                    totalDelta += diff;
-                    countDelta++;
+                    geneDiffs[gene] = meanMut - meanWT;
                 }
             });
-            return { totalDelta, countDelta, geneDiffs };
+            return geneDiffs;
         };
 
-        // Build per-tissue rows first
+        // Build "All" row from pooled data
+        const allGeneDiffs = calcGeneDiffs(allWT, allMut);
+        const allRow = { lineage: 'All', nWT: allWT.length, nMut: allMut.length, geneDiffs: allGeneDiffs, isAll: true };
+
+        // Build per-tissue rows
         const tableData = [];
         Object.entries(lineageMap).forEach(([lineage, groups]) => {
             if (groups.wt.length < 3 || groups.mut.length < 1) return;
-            const result = calcGeneDiffs(groups.wt, groups.mut);
-            if (result.countDelta === 0) return;
-            tableData.push({ lineage, nWT: groups.wt.length, nMut: groups.mut.length, avgDelta: result.totalDelta / result.countDelta, geneDiffs: result.geneDiffs });
+            const geneDiffs = calcGeneDiffs(groups.wt, groups.mut);
+            if (Object.keys(geneDiffs).length === 0) return;
+            tableData.push({ lineage, nWT: groups.wt.length, nMut: groups.mut.length, geneDiffs });
         });
 
-        tableData.sort((a, b) => Math.abs(b.avgDelta) - Math.abs(a.avgDelta));
+        // Sort by absolute average delta across genes
+        const avgAbsDelta = (row) => { const vals = Object.values(row.geneDiffs); return vals.length > 0 ? vals.reduce((a, b) => a + Math.abs(b), 0) / vals.length : 0; };
+        tableData.sort((a, b) => avgAbsDelta(b) - avgAbsDelta(a));
 
-        // Build "All" row as average of per-tissue deltas (tissue-corrected)
-        const allGeneDiffs = {};
-        topGenes.forEach(gene => {
-            const tissueVals = tableData.map(t => t.geneDiffs[gene]).filter(v => v !== undefined);
-            if (tissueVals.length > 0) allGeneDiffs[gene] = tissueVals.reduce((a, b) => a + b, 0) / tissueVals.length;
-        });
-        const allAvgVals = Object.values(allGeneDiffs);
-        const allAvgDelta = allAvgVals.length > 0 ? allAvgVals.reduce((a, b) => a + b, 0) / allAvgVals.length : 0;
-        const allRow = { lineage: 'All (avg)', nWT: allWT.length, nMut: allMut.length, avgDelta: allAvgDelta, geneDiffs: allGeneDiffs, isAll: true };
-
-        // Combine: All row first, then per-tissue
         const allRows = [allRow, ...tableData];
 
         // Build HTML
         const buildRow = (row) => {
-            const deltaColor = row.avgDelta < 0 ? '#dc2626' : '#16a34a';
             const rowStyle = row.isAll ? 'background: #f9fafb; border-bottom: 2px solid #d1d5db;' : '';
             const pinned = row.isAll ? ' data-pinned="1"' : '';
             const tissue = row.isAll ? '' : row.lineage;
-            return `<tr style="${rowStyle}"${pinned} data-nwt="${row.nWT}" data-nmut="${row.nMut}" data-avg="${row.avgDelta}">
+            return `<tr style="${rowStyle}"${pinned} data-nwt="${row.nWT}" data-nmut="${row.nMut}">
                 <td><b>${row.lineage}</b></td>
                 <td style="text-align: center;">${row.nWT}</td>
                 <td style="text-align: center;">${row.nMut}</td>
-                <td style="text-align: center; color: ${deltaColor}; font-weight: 600;">${row.avgDelta.toFixed(3)}</td>
                 ${topGenes.map(g => {
                     const d = row.geneDiffs[g];
                     if (d === undefined) return '<td style="text-align: center; color: #999;">-</td>';
@@ -8668,8 +8657,7 @@ Results:
                     <th style="cursor: pointer;" data-col="0">Cancer Type ▼</th>
                     <th style="cursor: pointer;" data-col="1">N (WT)</th>
                     <th style="cursor: pointer;" data-col="2">N (Mut)</th>
-                    <th style="cursor: pointer;" data-col="3">Avg Δ GE</th>
-                    ${topGenes.map((g, i) => `<th style="font-size: 10px; cursor: pointer;" data-col="${4 + i}">${g}</th>`).join('')}
+                    ${topGenes.map((g, i) => `<th style="font-size: 10px; cursor: pointer;" data-col="${3 + i}">${g}</th>`).join('')}
                 </tr></thead>
                 <tbody>
                     ${allRows.map(row => buildRow(row)).join('')}
@@ -8708,7 +8696,6 @@ Results:
 
         // Helper to calculate gene diffs for given WT/mut indices
         const calcGeneDiffs = (wtIdx, mutIdx) => {
-            let totalDelta = 0, countDelta = 0;
             const geneDiffs = {};
             topGenes.forEach(gene => {
                 const geneIdx = this.geneIndex.get(gene);
@@ -8719,27 +8706,22 @@ Results:
                 if (wtEffects.length >= 3 && mutEffects.length >= 3) {
                     const meanWT = wtEffects.reduce((a, b) => a + b, 0) / wtEffects.length;
                     const meanMut = mutEffects.reduce((a, b) => a + b, 0) / mutEffects.length;
-                    const diff = meanMut - meanWT;
-                    geneDiffs[gene] = diff;
-                    totalDelta += diff;
-                    countDelta++;
+                    geneDiffs[gene] = meanMut - meanWT;
                 }
             });
-            return { totalDelta, countDelta, geneDiffs };
+            return geneDiffs;
         };
 
         // Build reference row for the main hotspot
         const mainMutData = this.mutations.geneData[mainHotspot]?.mutations || {};
         const mainWT = filteredIndices.filter(i => (mainMutData[cellLines[i]] || 0) === 0);
         const mainMut = filteredIndices.filter(i => (mainMutData[cellLines[i]] || 0) >= 1);
-        const mainResult = calcGeneDiffs(mainWT, mainMut);
         const mainRow = {
             hotspotGene: `${mainHotspot} (reference)`, nWT: mainWT.length, nMut: mainMut.length,
-            avgDelta: mainResult.countDelta > 0 ? mainResult.totalDelta / mainResult.countDelta : 0,
-            geneDiffs: mainResult.geneDiffs, isRef: true
+            geneDiffs: calcGeneDiffs(mainWT, mainMut), isRef: true
         };
 
-        // For each other hotspot mutation gene, calculate avg delta GE for top genes
+        // For each other hotspot mutation gene, calculate diffs for top genes
         const tableData = [];
         this.mutations.genes.forEach(hotspotGene => {
             if (hotspotGene === mainHotspot) return;
@@ -8747,26 +8729,25 @@ Results:
             const wtIndices = filteredIndices.filter(i => (mutData[cellLines[i]] || 0) === 0);
             const mutIndices = filteredIndices.filter(i => (mutData[cellLines[i]] || 0) >= 1);
             if (wtIndices.length < 3 || mutIndices.length < 3) return;
-            const result = calcGeneDiffs(wtIndices, mutIndices);
-            if (result.countDelta === 0) return;
-            tableData.push({ hotspotGene, nWT: wtIndices.length, nMut: mutIndices.length, avgDelta: result.totalDelta / result.countDelta, geneDiffs: result.geneDiffs });
+            const geneDiffs = calcGeneDiffs(wtIndices, mutIndices);
+            if (Object.keys(geneDiffs).length === 0) return;
+            tableData.push({ hotspotGene, nWT: wtIndices.length, nMut: mutIndices.length, geneDiffs });
         });
 
-        tableData.sort((a, b) => Math.abs(b.avgDelta) - Math.abs(a.avgDelta));
+        const avgAbsDelta = (row) => { const vals = Object.values(row.geneDiffs); return vals.length > 0 ? vals.reduce((a, b) => a + Math.abs(b), 0) / vals.length : 0; };
+        tableData.sort((a, b) => avgAbsDelta(b) - avgAbsDelta(a));
 
         const allRows = [mainRow, ...tableData.slice(0, 30)];
 
         // Build HTML
         const buildRow = (row) => {
-            const deltaColor = row.avgDelta < 0 ? '#dc2626' : '#16a34a';
             const rowStyle = row.isRef ? 'background: #f9fafb; border-bottom: 2px solid #d1d5db;' : '';
             const pinned = row.isRef ? ' data-pinned="1"' : '';
             const label = row.isRef ? `${mainHotspot} (reference)` : row.hotspotGene;
-            return `<tr style="${rowStyle}"${pinned} data-nwt="${row.nWT}" data-nmut="${row.nMut}" data-avg="${row.avgDelta}">
+            return `<tr style="${rowStyle}"${pinned} data-nwt="${row.nWT}" data-nmut="${row.nMut}">
                 <td><b>${label}</b></td>
                 <td style="text-align: center;">${row.nWT}</td>
                 <td style="text-align: center;">${row.nMut}</td>
-                <td style="text-align: center; color: ${deltaColor}; font-weight: 600;">${row.avgDelta.toFixed(3)}</td>
                 ${topGenes.map(g => {
                     const d = row.geneDiffs[g];
                     if (d === undefined) return '<td style="text-align: center; color: #999;">-</td>';
@@ -8788,8 +8769,7 @@ Results:
                     <th style="cursor: pointer;" data-col="0">Hotspot ▼</th>
                     <th style="cursor: pointer;" data-col="1">N (WT)</th>
                     <th style="cursor: pointer;" data-col="2">N (Mut)</th>
-                    <th style="cursor: pointer;" data-col="3">Avg Δ GE</th>
-                    ${topGenes.map((g, i) => `<th style="font-size: 10px; cursor: pointer;" data-col="${4 + i}">${g}</th>`).join('')}
+                    ${topGenes.map((g, i) => `<th style="font-size: 10px; cursor: pointer;" data-col="${3 + i}">${g}</th>`).join('')}
                 </tr></thead>
                 <tbody>
                     ${allRows.map(row => buildRow(row)).join('')}
