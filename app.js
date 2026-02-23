@@ -2278,8 +2278,8 @@ class CorrelationExplorer {
         }
 
         document.getElementById('mutationResultsCount').innerHTML =
-            `<strong>${results.length} genes</strong> with p < ${mr.pThreshold}<br>
-            <small style="color: #666;">${settingsText}</small>`;
+            `<strong>${results.length} genes</strong> with p &lt; ${mr.pThreshold}
+            <span style="color: #888; font-size: 11px; margin-left: 6px;">${settingsText}</span>`;
 
         // Store for sorting
         this.mutationTableData = results;
@@ -8627,12 +8627,11 @@ Results:
 
         // Build HTML
         let html = `
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <div style="margin-bottom: 10px;">
                 <h4 style="margin: 0;">${hotspotGene} mutation effect by Cancer Type</h4>
-                <button class="btn btn-primary btn-sm" id="mutCompareBackBtn">← Back to Table</button>
             </div>
             <div style="background: #f0f9ff; border: 1px solid #0ea5e9; border-radius: 4px; padding: 8px 12px; margin-bottom: 10px; font-size: 11px; color: #0c4a6e;">
-                <b>What this shows:</b> For each cancer type, we split cell lines into WT (no ${hotspotGene} mutation) and mutated groups, then calculate the difference in gene effect (Δ GE = mean mutated − mean WT) for the top ${topGenes.length} most significant genes from the mutation analysis. This reveals whether the ${hotspotGene} mutation has a stronger or weaker effect in certain cancer types. <b>Red</b> = lower gene effect in mutated cells (stronger dependency), <b>green</b> = higher.
+                <b>What this shows:</b> For each cancer type, we split cell lines into WT (no ${hotspotGene} mutation) and mutated groups, then calculate the difference in gene effect (Δ GE = mean mutated − mean WT) for the top ${topGenes.length} most significant genes. <b>Red</b> = lower gene effect in mutated cells (stronger dependency), <b>green</b> = higher. Click a value to inspect that gene filtered by tissue.
             </div>
             <table class="data-table" style="font-size: 11px; width: 100%;">
                 <thead><tr>
@@ -8656,7 +8655,7 @@ Results:
                     const d = row.geneDiffs[g];
                     if (d === undefined) return '<td style="text-align: center; color: #999;">-</td>';
                     const c = d < 0 ? '#dc2626' : '#16a34a';
-                    return `<td style="text-align: center; color: ${c};">${d.toFixed(3)}</td>`;
+                    return `<td style="text-align: center; color: ${c}; cursor: pointer; text-decoration: underline;" onclick="app.openCompareInspect('${g}', '${row.lineage}')">${d.toFixed(3)}</td>`;
                 }).join('')}
             </tr>`;
         });
@@ -8667,11 +8666,6 @@ Results:
         container.innerHTML = html;
         container.style.display = 'block';
         document.getElementById('mutCompareCloseBtn').style.display = 'inline-block';
-
-        document.getElementById('mutCompareBackBtn')?.addEventListener('click', () => {
-            container.style.display = 'none';
-            document.getElementById('mutCompareCloseBtn').style.display = 'none';
-        });
     }
 
     showMutationCompareByHotspot() {
@@ -8735,12 +8729,11 @@ Results:
 
         // Build HTML
         let html = `
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <div style="margin-bottom: 10px;">
                 <h4 style="margin: 0;">Co-occurring mutations affecting ${mainHotspot}-sensitive genes</h4>
-                <button class="btn btn-primary btn-sm" id="mutCompareBackBtn">← Back to Table</button>
             </div>
             <div style="background: #f0f9ff; border: 1px solid #0ea5e9; border-radius: 4px; padding: 8px 12px; margin-bottom: 10px; font-size: 11px; color: #0c4a6e;">
-                <b>What this shows:</b> For each other hotspot mutation, we check whether cells carrying that mutation also show altered gene effects for the top ${topGenes.length} genes identified in the ${mainHotspot} mutation analysis. This helps identify co-occurring mutations that may amplify or counteract the effect of ${mainHotspot} mutations. <b>Red</b> = lower gene effect in mutated cells, <b>green</b> = higher. Sorted by magnitude.
+                <b>What this shows:</b> For each other hotspot mutation, we check whether cells carrying that mutation also show altered gene effects for the top ${topGenes.length} genes identified in the ${mainHotspot} analysis. This helps identify co-occurring mutations that may amplify or counteract the effect. <b>Red</b> = lower gene effect in mutated cells, <b>green</b> = higher. Click a value to inspect that gene.
             </div>
             <table class="data-table" style="font-size: 11px; width: 100%;">
                 <thead><tr>
@@ -8764,7 +8757,7 @@ Results:
                     const d = row.geneDiffs[g];
                     if (d === undefined) return '<td style="text-align: center; color: #999;">-</td>';
                     const c = d < 0 ? '#dc2626' : '#16a34a';
-                    return `<td style="text-align: center; color: ${c};">${d.toFixed(3)}</td>`;
+                    return `<td style="text-align: center; color: ${c}; cursor: pointer; text-decoration: underline;" onclick="app.openCompareInspect('${g}', '')">${d.toFixed(3)}</td>`;
                 }).join('')}
             </tr>`;
         });
@@ -8775,14 +8768,16 @@ Results:
         container.innerHTML = html;
         container.style.display = 'block';
         document.getElementById('mutCompareCloseBtn').style.display = 'inline-block';
-
-        document.getElementById('mutCompareBackBtn')?.addEventListener('click', () => {
-            container.style.display = 'none';
-            document.getElementById('mutCompareCloseBtn').style.display = 'none';
-        });
     }
 
     // ===== Tissue exclusion from analysis (#17) =====
+
+    openCompareInspect(gene, tissue) {
+        // Set tissue filter dropdown then open inspect
+        const tissueFilter = document.getElementById('geTissueFilter');
+        if (tissueFilter) tissueFilter.value = tissue || '';
+        this.showGeneEffectDistribution(gene);
+    }
 
     updateExcludedTissues() {
         const checkboxes = document.querySelectorAll('#tissueExcludeList input[type="checkbox"]');
