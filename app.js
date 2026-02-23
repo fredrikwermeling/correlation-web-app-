@@ -2867,12 +2867,18 @@ class CorrelationExplorer {
         document.getElementById('geneEffectModal').style.display = 'flex';
         document.getElementById('geneEffectTitle').textContent = `${gene} Gene Effect by ${hotspotGene} Mutation`;
 
-        // Populate tissue filter dropdown with available lineages
+        // Populate tissue filter dropdown with available lineages (respecting excluded tissues)
         const tissueFilterEl = document.getElementById('geTissueFilter');
         if (tissueFilterEl) {
             const allLineages = [...new Set(cellLines.map(cl => this.cellLineMetadata?.lineage?.[cl]).filter(Boolean))].sort();
-            tissueFilterEl.innerHTML = '<option value="">All tissues</option>';
-            allLineages.forEach(l => {
+            const visibleLineages = mr.excludedTissues && mr.excludedTissues.size > 0
+                ? allLineages.filter(l => !mr.excludedTissues.has(l))
+                : allLineages;
+            const defaultLabel = mr.excludedTissues && mr.excludedTissues.size > 0
+                ? `Filtered tissues (${visibleLineages.length})`
+                : 'All tissues';
+            tissueFilterEl.innerHTML = `<option value="">${defaultLabel}</option>`;
+            visibleLineages.forEach(l => {
                 const opt = document.createElement('option');
                 opt.value = l;
                 opt.textContent = l;
