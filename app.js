@@ -2947,30 +2947,31 @@ class CorrelationExplorer {
         Plotly.newPlot('geneEffectPlot', traces, layout, { responsive: true });
     }
 
-    downloadGeneEffectPNG() {
+    _exportMutationInspectChart(format) {
         if (this.geneEffectViewMode !== 'mutation') return;
-        const plotEl = document.getElementById('geneEffectPlot');
-        const chartWidth = plotEl?._fullLayout?.width || 1000;
-        const chartHeight = plotEl?._fullLayout?.height || 550;
-        Plotly.downloadImage('geneEffectPlot', {
-            format: 'png',
-            width: chartWidth,
-            height: chartHeight,
-            filename: `gene_effect_${this.currentGeneEffectGene}_${this.mutationResults.hotspotGene}`
+        const plotId = 'geneEffectPlot';
+        const exportWidth = 1200;
+        const exportHeight = 600;
+        // Temporarily set explicit left margin for export, then restore
+        Plotly.relayout(plotId, { 'margin.l': 160 }).then(() => {
+            return Plotly.downloadImage(plotId, {
+                format,
+                width: exportWidth,
+                height: exportHeight,
+                filename: `gene_effect_${this.currentGeneEffectGene}_${this.mutationResults.hotspotGene}`
+            });
+        }).then(() => {
+            // Restore automargin
+            Plotly.relayout(plotId, { 'margin.l': 30 });
         });
     }
 
+    downloadGeneEffectPNG() {
+        this._exportMutationInspectChart('png');
+    }
+
     downloadGeneEffectSVG() {
-        if (this.geneEffectViewMode !== 'mutation') return;
-        const plotEl = document.getElementById('geneEffectPlot');
-        const chartWidth = plotEl?._fullLayout?.width || 1000;
-        const chartHeight = plotEl?._fullLayout?.height || 550;
-        Plotly.downloadImage('geneEffectPlot', {
-            format: 'svg',
-            width: chartWidth,
-            height: chartHeight,
-            filename: `gene_effect_${this.currentGeneEffectGene}_${this.mutationResults.hotspotGene}`
-        });
+        this._exportMutationInspectChart('svg');
     }
 
     downloadGeneEffectCSV() {
