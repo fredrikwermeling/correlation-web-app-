@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Correlate</title>
+    <title>Correlate V2</title>
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
     <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;600;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -430,6 +430,7 @@
             accent-color: var(--green-600);
             width: 16px;
             height: 16px;
+            flex-shrink: 0;
         }
 
         /* Sliders - Shiny IRS style */
@@ -528,6 +529,21 @@
 
         .tab-content.active {
             display: block;
+        }
+
+        /* Network tab uses visibility instead of display to preserve
+           container dimensions and prevent vis.js from breaking the viewport */
+        #tab-network {
+            display: block !important;
+            visibility: hidden;
+            position: absolute;
+            left: -9999px;
+        }
+
+        #tab-network.active {
+            visibility: visible;
+            position: static;
+            left: auto;
         }
 
         /* Status boxes - exact Shiny match */
@@ -637,6 +653,22 @@
             border: 1px solid var(--gray-200);
             border-radius: 6px;
             background: white;
+            position: relative;
+        }
+        .network-filter-banner {
+            position: absolute;
+            top: 4px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+            background: rgba(255,255,255,0.9);
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            padding: 3px 10px;
+            font-size: 10px;
+            color: #374151;
+            white-space: nowrap;
+            pointer-events: none;
         }
 
         /* New horizontal grid layout for network controls */
@@ -907,7 +939,8 @@
             border-radius: 8px;
             max-width: 1400px;
             width: 100%;
-            max-height: calc(100vh - 40px);
+            max-height: calc(100vh - 20px);
+            margin-top: 10px;
             overflow: hidden;
             display: flex;
             flex-direction: column;
@@ -915,7 +948,7 @@
         }
 
         .modal-header {
-            padding: 15px 20px;
+            padding: 8px 20px;
             border-bottom: 1px solid var(--gray-200);
             display: flex;
             justify-content: space-between;
@@ -945,7 +978,7 @@
         }
 
         .modal-body {
-            padding: 20px;
+            padding: 12px 20px;
             overflow-y: auto;
             flex: 1;
         }
@@ -963,39 +996,48 @@
         .inspect-layout {
             display: flex;
             gap: 20px;
+            align-items: flex-start;
         }
 
         .inspect-controls {
-            width: 260px;
+            width: 380px;
             flex-shrink: 0;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+            align-content: start;
         }
 
         .inspect-plot {
             flex: 1;
             min-width: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
         }
 
         .control-box {
             background: #f9fafb;
-            padding: 10px 12px;
-            border-radius: 8px;
+            padding: 8px 10px;
+            border-radius: 6px;
             border: 1px solid #e5e7eb;
-            margin-bottom: 12px;
+            margin-bottom: 0;
         }
 
         .control-box-compact {
             background: #f9fafb;
-            padding: 8px 10px;
+            padding: 6px 8px;
             border-radius: 6px;
             border: 1px solid #e5e7eb;
-            margin-bottom: 8px;
+            margin-bottom: 0;
         }
 
         .control-label {
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 600;
             color: #374151;
-            margin-bottom: 8px;
+            margin-bottom: 4px;
             display: block;
         }
 
@@ -1018,10 +1060,10 @@
 
         .axis-inputs input {
             width: 100%;
-            padding: 6px 8px;
+            padding: 2px 4px;
             border: 1.5px solid #d1d5db;
             border-radius: 6px;
-            font-size: 13px;
+            font-size: 11px;
             text-align: center;
             background: white;
         }
@@ -1135,6 +1177,7 @@
             }
             .inspect-controls {
                 width: 100%;
+                grid-template-columns: 1fr 1fr;
             }
         }
     </style>
@@ -1162,7 +1205,7 @@
 
     <!-- Logo Header -->
     <div class="logo-header">
-        <img src="web_data/correlate_logo.png" alt="Correlate - a CRISPR Screen Analysis Tool">
+        <img src="web_data/correlate_logo.png" alt="Correlate - a Gene Effect Analysis Tool">
     </div>
 
     <!-- Navigation Bar -->
@@ -1190,9 +1233,11 @@
                             <li>CRISPRGeneEffect.csv</li>
                             <li>Model.csv</li>
                             <li>OmicsSomaticMutationsMatrixHotspot.csv</li>
+                            <li>OmicsFusionFiltered.csv</li>
                         </ul>
                         <p style="margin: 6px 0 0 0; font-style: italic;"><a href="https://depmap.org/portal/data_page/?tab=overview#how-to-cite" target="_blank" style="color: #0066cc;">Please acknowledge DepMap</a> if you use this data.</p>
                     </div>
+                    <button class="btn btn-secondary btn-sm" id="resetAppBtn" style="margin-top: 10px; width: 100%;">Reset App</button>
                 </div>
             </div>
 
@@ -1213,6 +1258,12 @@
                                 <input type="radio" name="analysisMode" value="design">
                                 Design (all genes)
                             </label>
+                            <div id="designExpandOption" style="display: none; margin-top: 2px; margin-bottom: 4px; margin-left: 20px;">
+                                <label style="font-size: 11px; color: #4b5563;">
+                                    <input type="checkbox" id="designExpandNetwork">
+                                    Expand network (find correlations between discovered genes)
+                                </label>
+                            </div>
                             <label>
                                 <input type="radio" name="analysisMode" value="mutation">
                                 Mutation Analysis (differential GE)
@@ -1220,12 +1271,6 @@
                             <label>
                                 <input type="radio" name="analysisMode" value="synonym">
                                 Synonym/Ortholog Lookup
-                            </label>
-                        </div>
-                        <div id="designExpandOption" style="display: none; margin-top: 6px; margin-left: 20px;">
-                            <label style="font-size: 11px; color: #4b5563;">
-                                <input type="checkbox" id="designExpandNetwork">
-                                Expand network (find correlations between discovered genes)
                             </label>
                         </div>
                     </div>
@@ -1243,12 +1288,33 @@
                     </div>
 
                     <div class="form-group" id="mutationHotspotGroup" style="display: none;">
-                        <label class="form-label" style="color: #5a9f4a; font-weight: 600;">Hotspot Mutation (required):</label>
-                        <div style="display: flex; gap: 6px; align-items: center;">
-                            <select id="mutationHotspotSelect" class="form-control" style="flex: 1;">
-                                <option value="">Select hotspot gene...</option>
-                            </select>
-                            <button id="tissueBreakdownBtn" type="button" style="display: none; padding: 4px 10px; font-size: 12px; background: #5a9f4a; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap;" title="Show tissue breakdown for this mutation">Tissues</button>
+                        <div id="mutAnalysisTypeSelector" style="margin-bottom: 8px;">
+                            <label class="form-label" style="color: #5a9f4a; font-weight: 600; margin-bottom: 4px;">Analysis Sub-type:</label>
+                            <div style="display: flex; flex-direction: column; gap: 4px; font-size: 12px;">
+                                <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
+                                    <input type="radio" name="mutAnalysisType" value="hotspot" checked> Hotspot Mutation
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
+                                    <input type="radio" name="mutAnalysisType" value="translocation"> Translocation/Fusion
+                                </label>
+                            </div>
+                        </div>
+                        <div id="hotspotAnalysisControls">
+                            <label class="form-label" style="color: #5a9f4a; font-weight: 600;">Hotspot Mutation (required):</label>
+                            <div style="display: flex; gap: 6px; align-items: center;">
+                                <select id="mutationHotspotSelect" class="form-control" style="flex: 1;">
+                                    <option value="">Select hotspot gene...</option>
+                                </select>
+                                <button id="tissueBreakdownBtn" type="button" style="display: none; padding: 4px 10px; font-size: 12px; background: #5a9f4a; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap;" title="Show tissue breakdown for this mutation">Tissues</button>
+                            </div>
+                        </div>
+                        <div id="translocationAnalysisControls" style="display: none;">
+                            <label class="form-label" style="color: #5a9f4a; font-weight: 600;">Translocation/Fusion Gene (required):</label>
+                            <div style="display: flex; gap: 6px; align-items: center;">
+                                <input type="text" id="translocationHotspotSelect" list="translocationHotspotList" class="form-control" placeholder="Search fusion gene..." style="flex: 1;" autocomplete="off">
+                                <datalist id="translocationHotspotList"></datalist>
+                                <button id="translocationTissueBreakdownBtn" type="button" style="display: none; padding: 4px 10px; font-size: 12px; background: #5a9f4a; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap;" title="Show tissue breakdown for this fusion">Tissues</button>
+                            </div>
                         </div>
                     </div>
 
@@ -1264,9 +1330,12 @@
 
                     <div class="form-group" id="lineageFilterGroup" style="display: none;">
                         <label class="form-label">Lineage Filter:</label>
-                        <select id="lineageFilter" class="form-control">
-                            <option value="">All lineages</option>
-                        </select>
+                        <div style="display: flex; gap: 6px; align-items: center;">
+                            <select id="lineageFilter" class="form-control" style="flex: 1;">
+                                <option value="">All lineages</option>
+                            </select>
+                            <button id="generalTissueBreakdownBtn" type="button" style="padding: 4px 10px; font-size: 12px; background: #5a9f4a; color: white; border: none; border-radius: 4px; cursor: pointer; white-space: nowrap;" title="Show cell line counts per tissue">Tissues</button>
+                        </div>
                     </div>
 
                     <div class="form-group" id="subLineageFilterGroup" style="display: none;">
@@ -1277,7 +1346,10 @@
                     </div>
 
                     <div class="form-group" id="tissueExcludeGroup">
-                        <label class="form-label" style="cursor: pointer;" onclick="document.getElementById('tissueExcludeList').style.display = document.getElementById('tissueExcludeList').style.display === 'none' ? 'block' : 'none'">Exclude Tissues: <span style="font-size: 10px; color: #6b7280;">▼ click to expand</span></label>
+                        <div style="display: flex; align-items: center; justify-content: space-between;">
+                            <label class="form-label" style="cursor: pointer; margin-bottom: 0;" onclick="document.getElementById('tissueExcludeList').style.display = document.getElementById('tissueExcludeList').style.display === 'none' ? 'block' : 'none'">Exclude Tissues: <span style="font-size: 10px; color: #6b7280;">▼ click to expand</span></label>
+                            <button class="btn btn-secondary" id="resetExcludedTissuesBtn" style="padding: 1px 6px; font-size: 10px;">Reset</button>
+                        </div>
                         <div id="tissueExcludeList" style="display: none; max-height: 150px; overflow-y: auto; border: 1px solid #d1d5db; border-radius: 4px; padding: 4px 8px; background: #f9fafb;"></div>
                     </div>
 
@@ -1292,6 +1364,22 @@
                             <option value="1">Only 1 mutation</option>
                             <option value="2">Only 2 mutations</option>
                             <option value="1+2">Only mutated (1+2)</option>
+                        </select>
+                        <div style="background: #fef3c7; border: 1px solid #f59e0b; border-radius: 4px; padding: 4px 6px; margin-top: 4px; font-size: 9px; color: #92400e;">
+                            Selecting for mutations may introduce bias — mutations are often enriched in specific cancer types.
+                        </div>
+                    </div>
+
+                    <div class="form-group" id="paramTranslocationFilterGroup" style="display: none;">
+                        <label class="form-label">Translocation/Fusion Filter:</label>
+                        <input type="text" id="paramTranslocationGene" list="paramTranslocationGeneList" class="form-control" placeholder="Search fusion gene..." style="margin-bottom: 4px;" autocomplete="off">
+                        <datalist id="paramTranslocationGeneList"></datalist>
+                        <select id="paramTranslocationLevel" class="form-control">
+                            <option value="all">All cells</option>
+                            <option value="0">Only WT (no fusion)</option>
+                            <option value="1">Only 1 fusion partner</option>
+                            <option value="2">Only 2+ fusion partners</option>
+                            <option value="1+2">Only fused (1+2)</option>
                         </select>
                     </div>
                     </div> <!-- end card-content -->
@@ -1373,7 +1461,6 @@
                         </div>
                     </div>
 
-                    <div id="geneCountDisplay" style="margin-top: 8px;"></div>
                     <button class="btn btn-warning btn-sm" id="findSynonyms" style="display: none; margin-top: 8px;">
                         Find Synonyms
                     </button>
@@ -1381,6 +1468,7 @@
                     <button class="btn btn-success" id="runAnalysis" disabled style="width: 100%; margin-top: 12px; font-size: 15px;">
                         Run ▶
                     </button>
+                    <div id="geneCountDisplay" style="margin-top: 8px;"></div>
                     <div id="geneValidationDisplay" style="margin-top: 8px;"></div>
                     <div id="analysisStatus"></div>
                     </div> <!-- end card-content -->
@@ -1455,10 +1543,10 @@
                                 </span>
                             </div>
                             <div class="checkbox-group" style="margin-bottom: 4px;">
-                                <label><input type="checkbox" id="colorByGeneEffect"> Color by GE</label>
+                                <label><input type="checkbox" id="showUncorrelatedGenes"> Show all input genes in network</label>
                             </div>
                             <div class="checkbox-group" style="margin-bottom: 4px;">
-                                <label><input type="checkbox" id="showUncorrelatedGenes"> Show all input genes in network</label>
+                                <label><input type="checkbox" id="colorByGeneEffect"> Color by GE</label>
                             </div>
                             <div id="colorGEOptions" style="display: none; margin-left: 20px; margin-bottom: 4px;">
                                 <div class="radio-group-inline">
@@ -1513,6 +1601,9 @@
                                 <button class="btn btn-sm" id="restoreAllNodes" style="padding: 1px 4px; font-size: 8px; margin-left: 4px;">Restore All</button>
                             </div>
                             <label style="font-weight: 600; margin-bottom: 4px; display: block;">Export:</label>
+                            <label style="font-size: 11px; margin-bottom: 4px; cursor: pointer;">
+                                <input type="checkbox" id="exportNetworkTransparentBg"> Transparent background
+                            </label>
                             <div class="button-group-horizontal">
                                 <button class="btn btn-secondary" id="downloadNetworkPNG">PNG</button>
                                 <button class="btn btn-secondary" id="downloadNetworkSVG">SVG</button>
@@ -1567,6 +1658,7 @@
                         <button class="btn btn-outline btn-sm" id="filterCorrelationsToggle" title="Toggle column filters">Filters</button>
                         <button class="btn btn-outline btn-sm" id="copyCorrelationGenes" title="Copy gene names to clipboard">Copy Genes</button>
                         <button class="btn btn-outline btn-sm" id="downloadCorrelations">Download CSV</button>
+                        <button class="btn btn-secondary btn-sm enrichrBtn" data-source="correlations" title="Pathway enrichment analysis via Enrichr">Enrichr</button><a href="https://maayanlab.cloud/Enrichr/" target="_blank" rel="noopener" title="Enrichr — Ma'ayan Lab" style="color:#9ca3af; font-size:10px; margin-left:2px; text-decoration:none;">&#8599;</a>
                     </div>
                     <div class="table-container">
                         <table class="data-table" id="correlationsTable">
@@ -1599,6 +1691,7 @@
                         <button class="btn btn-outline btn-sm" id="filterClustersToggle" title="Toggle column filters">Filters</button>
                         <button class="btn btn-outline btn-sm" id="copyClustersGenes" title="Copy gene names to clipboard">Copy Genes</button>
                         <button class="btn btn-outline btn-sm" id="downloadClusters">Download CSV</button>
+                        <button class="btn btn-secondary btn-sm enrichrBtn" data-source="clusters" title="Pathway enrichment analysis via Enrichr">Enrichr</button><a href="https://maayanlab.cloud/Enrichr/" target="_blank" rel="noopener" title="Enrichr — Ma'ayan Lab" style="color:#9ca3af; font-size:10px; margin-left:2px; text-decoration:none;">&#8599;</a>
                     </div>
                     <div class="table-container">
                         <table class="data-table" id="clustersTable">
@@ -1634,23 +1727,29 @@
                         <span style="border-left: 1px solid #d1d5db; height: 20px; margin: 0 2px;"></span>
                         <button class="btn btn-secondary btn-sm" id="mutCompareByTissueBtn" title="Compare mutation effect across cancer types">Compare by Tissue</button>
                         <button class="btn btn-secondary btn-sm" id="mutCompareByHotspotBtn" title="Compare with other hotspot mutations">Compare by Hotspot</button>
+                        <button class="btn btn-secondary btn-sm" id="mutCompareByFusionBtn" title="Compare with fusion genes" style="display: none;">Compare by Fusion</button>
+                        <button class="btn btn-secondary btn-sm enrichrBtn" data-source="mutations" title="Pathway enrichment analysis via Enrichr">Enrichr</button><a href="https://maayanlab.cloud/Enrichr/" target="_blank" rel="noopener" title="Enrichr — Ma'ayan Lab" style="color:#9ca3af; font-size:10px; margin-left:2px; text-decoration:none;">&#8599;</a>
                     </div>
                     <div class="table-container" style="max-height: 600px; overflow-y: auto;">
                         <table class="data-table" id="mutationTable">
                             <thead>
                                 <tr>
                                     <th></th>
-                                    <th onclick="app.sortMutationTable(this, event)" data-col="gene" title="Click to sort. Ctrl/Cmd+click to copy column.">Gene ▼</th>
+                                    <th onclick="app.sortMutationTable(this, event)" data-col="gene" title="Click to sort. Ctrl/Cmd+click to copy column.">Gene</th>
                                     <th onclick="app.sortMutationTable(this, event)" data-col="n_wt" style="border-left: 2px solid #2563eb;" title="Click to sort. Ctrl/Cmd+click to copy column.">N (WT)</th>
                                     <th onclick="app.sortMutationTable(this, event)" data-col="mean_wt" title="Click to sort. Ctrl/Cmd+click to copy column.">Mean GE (WT)</th>
                                     <th onclick="app.sortMutationTable(this, event)" data-col="n_mut" style="border-left: 2px solid #f97316;" title="Click to sort. Ctrl/Cmd+click to copy column.">N (1+2)</th>
                                     <th onclick="app.sortMutationTable(this, event)" data-col="mean_mut" title="Click to sort. Ctrl/Cmd+click to copy column.">Mean GE (1+2)</th>
-                                    <th onclick="app.sortMutationTable(this, event)" data-col="diff_mut" title="Click to sort. Ctrl/Cmd+click to copy column.">Δ GE</th>
+                                    <th onclick="app.sortMutationTable(this, event)" data-col="diff_mut" data-sort-dir="asc" title="Click to sort. Ctrl/Cmd+click to copy column.">Δ GE ▲</th>
                                     <th onclick="app.sortMutationTable(this, event)" data-col="p_mut" title="Click to sort. Ctrl/Cmd+click to copy column.">p-value</th>
                                     <th onclick="app.sortMutationTable(this, event)" data-col="n_2" style="border-left: 2px solid #dc2626;" title="Click to sort. Ctrl/Cmd+click to copy column.">N (2)</th>
                                     <th onclick="app.sortMutationTable(this, event)" data-col="mean_2" title="Click to sort. Ctrl/Cmd+click to copy column.">Mean GE (2)</th>
                                     <th onclick="app.sortMutationTable(this, event)" data-col="diff_2" title="Click to sort. Ctrl/Cmd+click to copy column.">Δ GE (2v0)</th>
                                     <th onclick="app.sortMutationTable(this, event)" data-col="p_2" title="Click to sort. Ctrl/Cmd+click to copy column.">p-value (2v0)</th>
+                                    <th onclick="app.sortMutationTable(this, event)" data-col="n_fused" class="fusion-col" style="border-left: 2px solid #8b5cf6; display: none;" title="Click to sort. Ctrl/Cmd+click to copy column.">N (Fused)</th>
+                                    <th onclick="app.sortMutationTable(this, event)" data-col="mean_fused" class="fusion-col" style="display: none;" title="Click to sort. Ctrl/Cmd+click to copy column.">Mean GE (F)</th>
+                                    <th onclick="app.sortMutationTable(this, event)" data-col="diff_fused" class="fusion-col" style="display: none;" title="Click to sort. Ctrl/Cmd+click to copy column.">Δ GE (F)</th>
+                                    <th onclick="app.sortMutationTable(this, event)" data-col="p_fused" class="fusion-col" style="display: none;" title="Click to sort. Ctrl/Cmd+click to copy column.">p (F)</th>
                                 </tr>
                             </thead>
                             <tbody id="mutationTableBody">
@@ -1716,19 +1815,30 @@
                 <div class="inspect-layout">
                     <div class="inspect-controls">
                         <!-- Gene Selection -->
-                        <div class="control-box-compact">
-                            <span class="control-label">Genes (X / Y axis)</span>
-                            <div style="display: flex; gap: 6px;">
-                                <input type="text" id="inspectGeneX" class="form-control" style="flex: 1; font-size: 12px;" placeholder="X gene">
-                                <input type="text" id="inspectGeneY" class="form-control" style="flex: 1; font-size: 12px;" placeholder="Y gene">
+                        <div class="control-box-compact" style="padding: 4px 8px;">
+                            <span class="control-label" style="margin-bottom: 2px;">Genes (X/Y)</span>
+                            <div style="display: flex; gap: 4px; align-items: center;">
+                                <input type="text" id="inspectGeneX" class="form-control" style="flex: 1; font-size: 11px; padding: 2px 6px;" placeholder="X gene">
+                                <input type="text" id="inspectGeneY" class="form-control" style="flex: 1; font-size: 11px; padding: 2px 6px;" placeholder="Y gene">
+                                <button class="btn btn-outline btn-sm" id="updateInspectGenes" style="font-size: 10px; padding: 2px 6px; white-space: nowrap;">Update</button>
                             </div>
-                            <button class="btn btn-outline btn-sm" id="updateInspectGenes" style="width: 100%; margin-top: 6px;">Update Genes</button>
+                        </div>
+
+                        <!-- Plot Size -->
+                        <div class="control-box-compact" style="padding: 4px 8px;">
+                            <span class="control-label" style="margin-bottom: 2px;">Plot Size</span>
+                            <div style="display: flex; gap: 6px; align-items: center;">
+                                <input type="number" id="plotWidth" min="200" max="1200" step="50" class="form-control" style="width: 60px; font-size: 11px; padding: 2px 4px; text-align: center;">
+                                <span style="font-size: 10px; color: #999;">&times;</span>
+                                <input type="number" id="plotHeight" min="200" max="1200" step="50" class="form-control" style="width: 60px; font-size: 11px; padding: 2px 4px; text-align: center;">
+                                <span style="font-size: 9px; color: #999;">px</span>
+                            </div>
                         </div>
 
                         <!-- Axis Ranges -->
-                        <div class="control-box-compact">
+                        <div class="control-box-compact" style="grid-column: span 2;">
                             <span class="control-label">Axis Ranges</span>
-                            <div class="axis-inputs">
+                            <div class="axis-inputs" style="gap: 4px;">
                                 <div>
                                     <label>X min</label>
                                     <input type="text" inputmode="decimal" id="scatterXmin" step="0.1">
@@ -1745,96 +1855,126 @@
                                     <label>Y max</label>
                                     <input type="text" inputmode="decimal" id="scatterYmax" step="0.1">
                                 </div>
-                            </div>
-                            <button class="btn btn-outline btn-sm" id="resetAxes" style="width: 100%; margin-top: 8px;">Reset</button>
-                        </div>
-
-                        <!-- Aspect Ratio -->
-                        <div class="control-box-compact">
-                            <span class="control-label">Y/X Ratio</span>
-                            <div style="display: flex; align-items: center; gap: 8px;">
-                                <input type="range" id="aspectRatio" min="0.3" max="3" step="0.1" value="1" style="flex: 1;">
-                                <span id="aspectRatioValue" style="font-size: 12px; min-width: 40px;">1.0</span>
+                                <div style="display: flex; align-items: flex-end;">
+                                    <button class="btn btn-outline btn-sm" id="resetAxes" style="font-size: 10px; padding: 2px 6px; width: 100%;">Reset</button>
+                                </div>
                             </div>
                         </div>
 
                         <!-- Filter by Cancer Type -->
                         <div class="control-box-compact" id="cancerFilterBox" style="display: none;">
-                            <span class="control-label">Filter by Cancer Type</span>
-                            <select id="scatterCancerFilter" class="form-control">
-                                <option value="">All cancer types</option>
+                            <span class="control-label">Tissue Filter</span>
+                            <select id="scatterCancerFilter" class="form-control" style="font-size: 11px; padding: 2px 4px;">
+                                <option value="">All tissues</option>
                             </select>
-                            <select id="scatterSubtypeFilter" class="form-control" style="margin-top: 4px; display: none;">
+                            <select id="scatterSubtypeFilter" class="form-control" style="margin-top: 3px; display: none; font-size: 11px; padding: 2px 4px;">
                                 <option value="">All subtypes</option>
                             </select>
                         </div>
 
                         <!-- Filter by Hotspot Mutation -->
                         <div class="control-box-compact" id="mutationFilterBox" style="display: none;">
-                            <span class="control-label">Filter by Hotspot Mutation</span>
-                            <select id="mutationFilterGene" class="form-control">
+                            <span class="control-label">Hotspot Filter</span>
+                            <select id="mutationFilterGene" class="form-control" style="font-size: 11px; padding: 2px 4px;">
                                 <option value="">No filter</option>
                             </select>
-                            <select id="mutationFilterLevel" class="form-control" style="margin-top: 4px;">
+                            <select id="mutationFilterLevel" class="form-control" style="margin-top: 3px; font-size: 11px; padding: 2px 4px;">
                                 <option value="all">All cells</option>
-                                <option value="0">Only WT (0 mutations)</option>
-                                <option value="1">Only 1 mutation</option>
-                                <option value="2">Only 2 mutations</option>
-                                <option value="1+2">Only mutated (1+2)</option>
+                                <option value="0">Only WT (0)</option>
+                                <option value="1">Only 1 mut</option>
+                                <option value="2">Only 2 mut</option>
+                                <option value="1+2">Mutated (1+2)</option>
                             </select>
                         </div>
 
-                        <!-- Compare All Buttons -->
-                        <div class="control-box-compact">
-                            <button class="btn btn-secondary btn-sm" id="compareAllCancerTypesBtn" style="width: 100%;">Compare All Cancer Types</button>
-                            <button class="btn btn-secondary btn-sm" id="compareAllMutationsBtn" style="width: 100%; margin-top: 4px;">Compare All Mutations</button>
-                            <p style="font-size: 10px; color: #666; margin: 4px 0 0 0;">Stratify correlation by cancer type or mutation</p>
+                        <!-- Filter by Translocation/Fusion -->
+                        <div class="control-box-compact" id="translocationFilterBox" style="display: none;">
+                            <span class="control-label">Fusion Filter</span>
+                            <input type="text" id="translocationFilterGene" list="translocationFilterGeneList" class="form-control" placeholder="Search..." autocomplete="off" style="font-size: 11px; padding: 2px 4px;">
+                            <datalist id="translocationFilterGeneList"></datalist>
+                            <select id="translocationFilterLevel" class="form-control" style="margin-top: 3px; font-size: 11px; padding: 2px 4px;">
+                                <option value="all">All cells</option>
+                                <option value="0">Only WT</option>
+                                <option value="1">Only 1 partner</option>
+                                <option value="2">Only 2+</option>
+                                <option value="1+2">Fused (1+2)</option>
+                            </select>
                         </div>
 
-                        <!-- Reset Filters -->
+                        <!-- Compare + Reset -->
                         <div class="control-box-compact">
-                            <button class="btn btn-outline btn-sm" id="resetAllFilters" style="width: 100%;">Reset Filters</button>
+                            <span class="control-label">Compare</span>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 3px;">
+                                <button class="btn btn-secondary btn-sm" id="compareAllCancerTypesBtn" style="font-size: 10px; padding: 2px 4px;">By Tissue</button>
+                                <button class="btn btn-secondary btn-sm" id="compareAllMutationsBtn" style="font-size: 10px; padding: 2px 4px;">By Hotspot</button>
+                                <button class="btn btn-secondary btn-sm" id="compareAllTranslocationsBtn" style="font-size: 10px; padding: 2px 4px; display: none;">By Fusion</button>
+                                <button class="btn btn-outline btn-sm" id="resetAllFilters" style="font-size: 10px; padding: 2px 4px;">Reset</button>
+                            </div>
                         </div>
 
                         <!-- Highlight Cell Lines -->
-                        <div class="control-box-compact">
+                        <div class="control-box-compact" style="grid-column: span 2;">
                             <div style="display: flex; justify-content: space-between; align-items: center;">
                                 <span class="control-label" style="margin-bottom: 0;">Highlight Cell Lines</span>
                                 <div style="display: flex; align-items: center; gap: 4px;">
-                                    <span style="font-size: 11px; color: #666;">Font</span>
-                                    <input type="number" id="scatterFontSize" value="3" min="1" max="10" style="width: 45px; padding: 2px 4px; font-size: 11px; text-align: center;">
+                                    <span style="font-size: 10px; color: #666;">Font</span>
+                                    <input type="number" id="scatterFontSize" value="3" min="1" max="10" style="width: 40px; padding: 1px 3px; font-size: 10px; text-align: center;">
+                                    <button class="btn btn-secondary btn-sm" id="clearHighlights" style="font-size: 10px; padding: 1px 6px;">Clear</button>
                                 </div>
                             </div>
-                            <textarea id="scatterCellSearch" class="form-control" style="min-height: 40px; font-size: 12px; margin-top: 6px;" placeholder="Type names or click plot..."></textarea>
-                            <button class="btn btn-secondary btn-sm" id="clearHighlights" style="margin-top: 4px;">Clear All</button>
+                            <textarea id="scatterCellSearch" class="form-control" style="min-height: 40px; height: 40px; font-size: 11px; margin-top: 4px;" placeholder="Type names or click plot..."></textarea>
+                            <select id="colorByCategory" class="form-control" style="font-size: 11px; padding: 2px 4px; margin-top: 4px;">
+                                <option value="">Color by...</option>
+                                <option value="tissue">Color by tissue</option>
+                                <option value="subtype" id="colorBySubtypeOption" style="display: none;">Color by subtype</option>
+                            </select>
+                            <div id="colorByLegend" style="display: none; margin-top: 4px; max-height: 150px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 4px; padding: 4px;"></div>
                         </div>
 
                         <!-- Mutation Overlay -->
                         <div class="control-box" id="mutationBox">
-                            <span class="control-label">Hotspot Mutation Overlay</span>
-                            <select id="hotspotGene" class="form-control">
+                            <span class="control-label">Hotspot Overlay</span>
+                            <select id="hotspotGene" class="form-control" style="font-size: 11px; padding: 2px 4px;">
                                 <option value="">Select gene...</option>
                             </select>
-                            <select id="hotspotMode" class="form-control" style="margin-top: 6px;">
+                            <select id="hotspotMode" class="form-control" style="margin-top: 4px; font-size: 11px; padding: 2px 4px;">
                                 <option value="none">None</option>
-                                <option value="color" selected>Color by mutation (0/1/2)</option>
-                                <option value="three_panel">3-panel (0 / 1 / 2 mutations)</option>
-                                <option value="compare_table">Compare 0 vs 2 by cancer (table)</option>
+                                <option value="color" selected>Color (0/1/2)</option>
+                                <option value="three_panel">3-panel</option>
+                                <option value="compare_table">Compare table</option>
                             </select>
-                            <div id="mutationCautionScatter" style="display: none; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 4px; padding: 6px 8px; margin-top: 8px; font-size: 10px; color: #92400e;">
-                                <strong>⚠️</strong> Mutations may be enriched in specific cancer types - correlations could reflect tissue rather than mutation effects.
+                            <div id="mutationCautionScatter" style="display: none; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 4px; padding: 4px 6px; margin-top: 6px; font-size: 9px; color: #92400e;">
+                                <strong>⚠️</strong> Mutations may be enriched in specific cancer types.
                             </div>
+                        </div>
+
+                        <!-- Translocation/Fusion Overlay -->
+                        <div class="control-box" id="translocationBox" style="display: none;">
+                            <span class="control-label">Fusion Overlay</span>
+                            <input type="text" id="translocationGene" list="translocationGeneList" class="form-control" placeholder="Search..." autocomplete="off" style="font-size: 11px; padding: 2px 4px;">
+                            <datalist id="translocationGeneList"></datalist>
+                            <select id="translocationMode" class="form-control" style="margin-top: 4px; font-size: 11px; padding: 2px 4px;">
+                                <option value="none">None</option>
+                                <option value="color" selected>Color (0/1/2+)</option>
+                                <option value="three_panel">3-panel</option>
+                                <option value="compare_table">Compare table</option>
+                            </select>
                         </div>
                     </div>
                     <div class="inspect-plot">
-                        <div id="scatterPlot" style="height: 550px;"></div>
+                        <div id="scatterPlot"></div>
                         <div id="compareTable" style="display: none; max-height: 500px; overflow-y: auto;"></div>
                     </div>
                 </div>
+                <div id="byTissueContainer" style="display: none;"></div>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-outline" id="downloadScatterPNG">Download PNG</button>
                 <button class="btn btn-outline" id="downloadScatterSVG">Download SVG</button>
+                <span style="font-size: 11px; margin-left: 8px; display: inline-flex; gap: 10px; align-items: center; color: #666;">
+                    <label style="cursor: pointer;"><input type="checkbox" id="exportWhitePlotBg" checked> White plot area</label>
+                    <label style="cursor: pointer;"><input type="checkbox" id="exportTransparentBg"> Transparent bg</label>
+                </span>
                 <button class="btn btn-outline" id="downloadScatterCSV">Download CSV</button>
                 <button class="btn btn-outline" id="downloadTissuePNG" style="display: none;">Download Chart PNG</button>
                 <button class="btn btn-outline" id="downloadTissueSVG" style="display: none;">Download Chart SVG</button>
@@ -1846,7 +1986,7 @@
 
     <!-- Footer -->
     <footer class="footer">
-        <p>Correlate | Part of the <a href="https://greenlisted.cmm.se" target="_blank">Green Listed</a> tool family | Data from <a href="https://depmap.org/portal/" target="_blank">DepMap</a> | <a href="https://wermelinglab.com" target="_blank">Wermeling Lab</a></p>
+        <p>Correlate V2 | Part of the <a href="https://greenlisted.cmm.se" target="_blank">Green Listed</a> tool family | Data from <a href="https://depmap.org/portal/" target="_blank">DepMap</a> | <a href="https://wermelinglab.com" target="_blank">Wermeling Lab</a></p>
         <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--gray-200); font-size: 0.8em; line-height: 1.6; color: var(--gray-500);">
             <p style="margin: 0 0 4px 0;">Data source: <a href="https://depmap.org" target="_blank">DepMap</a> (Broad Institute). DepMap, Broad (2025). DepMap 25Q3 Public. Figshare+. Dataset.</p>
             <p style="margin: 0 0 4px 0;">Licensed under <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank">CC BY 4.0</a>. This data is provided for research purposes only and should not be used for clinical decision-making.</p>
@@ -1887,13 +2027,21 @@
                         <select id="geTissueFilter" class="form-control" style="width: 140px; font-size: 11px; padding: 3px 6px;" title="Filter by tissue/cancer type">
                             <option value="">All tissues</option>
                         </select>
+                        <select id="geSubtypeFilter" class="form-control" style="width: 140px; font-size: 11px; padding: 3px 6px; display: none;" title="Filter by disease subtype">
+                            <option value="">All subtypes</option>
+                        </select>
                         <select id="geHotspotFilter" class="form-control" style="width: 140px; font-size: 11px; padding: 3px 6px; display: none;" title="Additional hotspot filter — only show cell lines mutated in this gene">
                             <option value="">No hotspot filter</option>
+                        </select>
+                        <span id="geHotspotBiasWarning" style="display: none; font-size: 9px; color: #92400e;" title="Selecting for mutations may introduce bias — mutations are often enriched in specific cancer types.">&#9888;</span>
+                        <select id="geFusionFilter" class="form-control" style="width: 140px; font-size: 11px; padding: 3px 6px; display: none;" title="Fusion filter — only show cell lines with this fusion">
+                            <option value="">No fusion filter</option>
                         </select>
                         <span id="geCompareButtons" style="display: none;">
                             <span style="border-left: 1px solid #d1d5db; height: 20px; margin: 0 2px;"></span>
                             <button class="btn btn-secondary btn-sm" id="geCompareByTissueBtn" title="Show Δ GE per tissue for this gene">Δ Tissue</button>
                             <button class="btn btn-secondary btn-sm" id="geCompareByHotspotBtn" title="Show Δ GE per additional hotspot for this gene">Δ Hotspot</button>
+                            <button class="btn btn-secondary btn-sm" id="geCompareByTranslocationBtn" title="Show Δ GE per fusion gene" style="display: none;">Δ Fusion</button>
                         </span>
                         <span style="font-size: 12px; color: #6b7280;">View:</span>
                         <button class="btn btn-sm" id="geViewTissue" style="background: #5a9f4a; color: white;">By Tissue</button>
@@ -1917,9 +2065,14 @@
                     <div id="geChartContainer" style="flex: 0 0 55%; min-width: 0;">
                         <!-- Aspect ratio control (shown in detailed view) -->
                         <div id="geAspectRatioControl" style="display: none; margin-bottom: 8px; font-size: 11px;">
-                            <label style="margin-right: 8px;">Chart Width:</label>
-                            <input type="range" id="geAspectRatio" min="0.3" max="1" step="0.1" value="1" style="width: 100px; vertical-align: middle;">
+                            <label style="margin-right: 8px;">Width:</label>
+                            <input type="range" id="geAspectRatio" min="0.3" max="1.8" step="0.05" value="1" style="width: 100px; vertical-align: middle;">
                             <span id="geAspectRatioValue" style="margin-left: 4px;">1.0</span>
+                            <div id="geHeightControl" style="display: inline-flex; gap: 6px; align-items: center; margin-left: 16px;">
+                                <label>Height:</label>
+                                <input type="range" id="geHeightRatio" min="0.5" max="2" step="0.1" value="1" style="width: 80px; vertical-align: middle;">
+                                <span id="geHeightRatioValue" style="margin-left: 4px;">1.0</span>
+                            </div>
                         </div>
                         <div id="geByTissueView">
                             <div id="geneEffectPlot" style="width: 100%; min-height: 400px;"></div>
@@ -1976,6 +2129,7 @@
                     <button class="btn btn-outline btn-sm" id="downloadGETableCSV">By Group</button>
                     <button class="btn btn-outline btn-sm" id="downloadGECellLineCSV">By Cell Line</button>
                 </div>
+
             </div>
         </div>
     </div>
@@ -2005,6 +2159,24 @@
         </div>
         <div id="mutCompareModalInfo" style="padding:8px 20px; font-size:11px; color:#6b7280; background:#f9fafb; border-bottom:1px solid #e5e7eb;"></div>
         <div id="mutCompareModalBody" style="flex:1; overflow:auto; padding:0;"></div>
+      </div>
+    </div>
+
+    <!-- Enrichr Pathway Analysis Modal -->
+    <div id="enrichrModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85); z-index:10000;">
+      <div style="background:#1e1e1e; margin:30px auto; width:90%; max-width:1100px; max-height:90vh; border-radius:8px; display:flex; flex-direction:column;">
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 20px; border-bottom:1px solid #444;">
+          <div>
+            <h3 id="enrichrTitle" style="margin:0; color:#e0e0e0; font-size:15px;">Enrichr Pathway Analysis</h3>
+            <div style="font-size:10px; color:#888; margin-top:2px;">Powered by <a href="https://maayanlab.cloud/Enrichr/" target="_blank" rel="noopener" style="color:#7cabcf; text-decoration:none;">Enrichr</a> — Chen et al. <a href="https://doi.org/10.1186/1471-2105-14-128" target="_blank" rel="noopener" style="color:#7cabcf; text-decoration:none;">BMC Bioinformatics 2013</a></div>
+          </div>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <button id="enrichrDownloadBtn" class="btn btn-outline btn-sm" style="color:#ccc; border-color:#555;">Download CSV</button>
+            <button id="enrichrCloseBtn" style="background:none; border:none; color:#aaa; font-size:24px; cursor:pointer; padding:0 4px; line-height:1;">&times;</button>
+          </div>
+        </div>
+        <div style="padding:8px 20px; border-bottom:1px solid #333; display:flex; gap:6px; flex-wrap:wrap;" id="enrichrTabs"></div>
+        <div id="enrichrContent" style="flex:1; overflow-y:auto; padding:20px; color:#ccc;"></div>
       </div>
     </div>
 

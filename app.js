@@ -7,11 +7,26 @@
  */
 
 class CorrelationExplorer {
+    static CATEGORY_COLORS = [
+        '#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4',
+        '#42d4f4', '#f032e6', '#bfef45', '#fabed4', '#469990',
+        '#dcbeff', '#9A6324', '#800000', '#aaffc3', '#808000',
+        '#000075', '#a9a9a9', '#e6beff', '#ffe119', '#ffd8b1'
+    ];
+
+    static PRIORITY_FUSION_GENES = new Set([
+        'BCR','ABL1','ALK','EML4','EWSR1','FLI1','MYC','KMT2A','PML','RARA',
+        'RET','ROS1','NTRK1','NTRK2','NTRK3','ETV6','RUNX1','BRAF','FGFR1',
+        'FGFR2','FGFR3','TMPRSS2','ERG','SS18','PAX3','PAX7','NUTM1','RAF1',
+        'MET','NRG1','PDGFRA','PDGFRB'
+    ]);
+
     constructor() {
         // Data storage
         this.metadata = null;
         this.cellLineMetadata = null;
         this.mutations = null;
+        this.translocations = null;
         this.orthologs = null;
         this.geneEffects = null; // Float32Array [nGenes x nCellLines]
         this.nGenes = 0;
@@ -27,6 +42,9 @@ class CorrelationExplorer {
         // Current inspect state
         this.currentInspect = null;
         this.clickedCells = new Set();
+        this._userLegendPosition = null;
+        this._userTitlePosition = null;
+        this._userLabelPositions = new Map();
 
         // Gene statistics (LFC, FDR)
         this.geneStats = null;
@@ -86,17 +104,39 @@ class CorrelationExplorer {
         this.updateLoadingText('Loading metadata...');
 
         // Load essential JSON files in parallel (synonyms loaded lazily on demand)
-        const [metadataRes, cellLineRes, mutationsRes, orthologsRes] = await Promise.all([
+        const [metadataRes, cellLineRes, mutationsRes, orthologsRes, translocationsRes] = await Promise.all([
             fetch('web_data/metadata.json'),
             fetch('web_data/cellLineMetadata.json'),
             fetch('web_data/mutations.json'),
-            fetch('web_data/orthologs.json')
+            fetch('web_data/orthologs.json'),
+            fetch('web_data/translocations.json').catch(() => null)
         ]);
 
         this.metadata = await metadataRes.json();
         this.cellLineMetadata = await cellLineRes.json();
         this.mutations = await mutationsRes.json();
         this.orthologs = await orthologsRes.json();
+        if (translocationsRes && translocationsRes.ok) {
+            this.translocations = await translocationsRes.json();
+            // Pre-compute fusion gene counts for fast dropdown population
+            if (this.translocations?.genes) {
+                const PRIO = CorrelationExplorer.PRIORITY_FUSION_GENES;
+                this._fusionGeneCounts = this.translocations.genes
+                    .map(g => {
+                        const td = this.translocations.geneData[g];
+                        let nFused = 0;
+                        if (td) { for (const v of Object.values(td.translocations)) { if (v >= 1) nFused++; } }
+                        return { gene: g, nFused };
+                    })
+                    .filter(x => x.nFused > 0)
+                    .sort((a, b) => {
+                        const aPri = PRIO.has(a.gene) ? 1 : 0;
+                        const bPri = PRIO.has(b.gene) ? 1 : 0;
+                        if (aPri !== bPri) return bPri - aPri;
+                        return b.nFused - a.nFused;
+                    });
+            }
+        }
         // synonymLookup loaded lazily when "Find Synonyms" is clicked
 
         this.nGenes = this.metadata.nGenes;
@@ -198,6 +238,9 @@ class CorrelationExplorer {
 
         // Also populate parameter hotspot filter
         this.populateParamHotspotFilter();
+
+        // Populate parameter translocation filter
+        this.populateParamTranslocationFilter();
     }
 
     updateSubLineageFilter() {
@@ -284,6 +327,60 @@ class CorrelationExplorer {
         }
     }
 
+    _styleActiveFilters() {
+        const ids = ['scatterCancerFilter', 'scatterSubtypeFilter', 'colorByCategory'];
+        ids.forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            if (el.value) {
+                el.style.borderColor = '#3b82f6';
+                el.style.background = '#eff6ff';
+                el.style.fontWeight = '600';
+            } else {
+                el.style.borderColor = '';
+                el.style.background = '';
+                el.style.fontWeight = '';
+            }
+        });
+    }
+
+    updateGeSubtypeFilter() {
+        const lineage = document.getElementById('geTissueFilter')?.value;
+        const subSelect = document.getElementById('geSubtypeFilter');
+        if (!subSelect) return;
+
+        if (!lineage || !this.cellLineMetadata?.primaryDisease) {
+            subSelect.style.display = 'none';
+            subSelect.innerHTML = '<option value="">All subtypes</option>';
+            return;
+        }
+
+        // Gather primaryDisease counts from ALL cell lines in this lineage
+        const cellLines = this.metadata?.cellLines || [];
+        const subtypeCounts = {};
+        let lineageTotal = 0;
+        cellLines.forEach(cl => {
+            if ((this.cellLineMetadata?.lineage?.[cl] || '') !== lineage) return;
+            lineageTotal++;
+            const subtype = this.cellLineMetadata.primaryDisease[cl] || '';
+            if (subtype) {
+                subtypeCounts[subtype] = (subtypeCounts[subtype] || 0) + 1;
+            }
+        });
+
+        const subtypes = Object.keys(subtypeCounts).sort();
+        if (subtypes.length > 1) {
+            subSelect.innerHTML = `<option value="">All subtypes (n=${lineageTotal})</option>`;
+            subtypes.forEach(sub => {
+                subSelect.innerHTML += `<option value="${sub}">${sub} (n=${subtypeCounts[sub]})</option>`;
+            });
+            subSelect.style.display = '';
+        } else {
+            subSelect.style.display = 'none';
+            subSelect.innerHTML = '<option value="">All subtypes</option>';
+        }
+    }
+
     updateHotspotCountsForCurrentFilters() {
         if (this.mutations?.geneData) {
             this.updateParamHotspotGeneCounts();
@@ -292,7 +389,11 @@ class CorrelationExplorer {
             const isMutationMode = document.querySelector('input[name="analysisMode"]:checked')?.value === 'mutation';
             if (isMutationMode) {
                 this.populateMutationHotspotSelector();
+                this.populateTranslocationHotspotSelector();
             }
+        }
+        if (this.translocations?.geneData) {
+            this.updateParamTranslocationGeneCounts();
         }
     }
 
@@ -399,6 +500,112 @@ class CorrelationExplorer {
         `;
     }
 
+    populateParamTranslocationFilter() {
+        if (this.translocations && this.translocations.geneData) {
+            const input = document.getElementById('paramTranslocationGene');
+            document.getElementById('paramTranslocationFilterGroup').style.display = 'block';
+
+            input.addEventListener('input', () => {
+                // Only act on valid gene names or empty (clear filter)
+                const val = input.value.trim();
+                if (val === '' || this.translocations.geneData[val]) {
+                    this.updateParamTranslocationLevelCounts();
+                }
+            });
+
+            this.updateParamTranslocationGeneCounts();
+        }
+    }
+
+    updateParamTranslocationGeneCounts() {
+        if (!this.translocations?.geneData) return;
+        const genes = Object.keys(this.translocations.geneData);
+        const input = document.getElementById('paramTranslocationGene');
+        const datalist = document.getElementById('paramTranslocationGeneList');
+        const cellLines = this.metadata.cellLines;
+        const lineageFilter = document.getElementById('lineageFilter').value;
+        const subLineageFilter = document.getElementById('subLineageFilter')?.value;
+        const currentValue = input.value;
+
+        // Build filtered cell line list once
+        const filteredCLs = lineageFilter || subLineageFilter
+            ? cellLines.filter(cl => {
+                if (lineageFilter && this.cellLineMetadata?.lineage?.[cl] !== lineageFilter) return false;
+                if (subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cl] !== subLineageFilter) return false;
+                return true;
+            }) : cellLines;
+
+        // Count fusions per gene, skip genes with 0 fusions
+        const geneCounts = [];
+        for (const gene of genes) {
+            const translocations = this.translocations.geneData[gene].translocations;
+            let nFused = 0;
+            for (const cl of filteredCLs) {
+                if (translocations[cl] && translocations[cl] > 0) nFused++;
+            }
+            if (nFused > 0) geneCounts.push({ gene, nFused });
+        }
+        geneCounts.sort((a, b) => {
+            const aPri = CorrelationExplorer.PRIORITY_FUSION_GENES.has(a.gene) ? 1 : 0;
+            const bPri = CorrelationExplorer.PRIORITY_FUSION_GENES.has(b.gene) ? 1 : 0;
+            if (aPri !== bPri) return bPri - aPri;
+            return b.nFused - a.nFused;
+        });
+
+        let html = '';
+        geneCounts.forEach(({ gene, nFused }) => {
+            html += `<option value="${gene}">${gene} (n=${nFused} fused)</option>`;
+        });
+        datalist.innerHTML = html;
+
+        if (currentValue) input.value = currentValue;
+
+        this.updateParamTranslocationLevelCounts();
+    }
+
+    updateParamTranslocationLevelCounts() {
+        const gene = document.getElementById('paramTranslocationGene').value;
+        const levelSelect = document.getElementById('paramTranslocationLevel');
+        const lineageFilter = document.getElementById('lineageFilter').value;
+        const subLineageFilter = document.getElementById('subLineageFilter')?.value;
+
+        if (!gene || !this.translocations?.geneData?.[gene]) {
+            levelSelect.innerHTML = `
+                <option value="all">All cells</option>
+                <option value="0">Only WT (no fusion)</option>
+                <option value="1">Only 1 fusion partner</option>
+                <option value="2">Only 2+ fusion partners</option>
+                <option value="1+2">Only fused (1+2)</option>
+            `;
+            return;
+        }
+
+        const translocations = this.translocations.geneData[gene].translocations;
+        const cellLines = this.metadata.cellLines;
+        let n0 = 0, n1 = 0, n2 = 0;
+
+        cellLines.forEach(cellLine => {
+            if (lineageFilter && this.cellLineMetadata?.lineage?.[cellLine] !== lineageFilter) return;
+            if (subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cellLine] !== subLineageFilter) return;
+
+            const level = translocations[cellLine] || 0;
+            if (level === 0) n0++;
+            else if (level === 1) n1++;
+            else n2++;
+        });
+
+        const nFused = n1 + n2;
+        const total = n0 + n1 + n2;
+
+        levelSelect.innerHTML = `
+            <option value="all">All cells (n=${total})</option>
+            <option value="0">Only WT (n=${n0})</option>
+            <option value="1">Only 1 partner (n=${n1})</option>
+            <option value="2">Only 2+ partners (n=${n2})</option>
+            <option value="1+2">Only fused 1+2 (n=${nFused})</option>
+        `;
+    }
+
     updateAnalysisModeUI() {
         const mode = document.querySelector('input[name="analysisMode"]:checked').value;
         const isMutationMode = mode === 'mutation';
@@ -416,6 +623,7 @@ class CorrelationExplorer {
             document.getElementById('lineageFilterGroup').style.display = 'none';
             document.getElementById('subLineageFilterGroup').style.display = 'none';
             document.getElementById('paramHotspotFilterGroup').style.display = 'none';
+            document.getElementById('paramTranslocationFilterGroup').style.display = 'none';
         } else {
             // Restore filters if data is loaded
             if (this.cellLineMetadata && this.cellLineMetadata.lineage) {
@@ -425,6 +633,9 @@ class CorrelationExplorer {
             }
             if (this.mutations && this.mutations.geneData) {
                 document.getElementById('paramHotspotFilterGroup').style.display = 'block';
+            }
+            if (this.translocations && this.translocations.geneData) {
+                document.getElementById('paramTranslocationFilterGroup').style.display = 'block';
             }
         }
 
@@ -466,8 +677,21 @@ class CorrelationExplorer {
         if (isMutationMode) {
             minCellLinesInput.value = '10';
             this.populateMutationHotspotSelector();
+            this.populateTranslocationHotspotSelector();
+            this.updateMutAnalysisTypeUI();
         } else {
             minCellLinesInput.value = '50';
+        }
+    }
+
+    updateMutAnalysisTypeUI() {
+        const subType = document.querySelector('input[name="mutAnalysisType"]:checked')?.value || 'hotspot';
+        const isTranslocation = subType === 'translocation';
+        document.getElementById('hotspotAnalysisControls').style.display = isTranslocation ? 'none' : '';
+        document.getElementById('translocationAnalysisControls').style.display = isTranslocation ? '' : 'none';
+        // Hide translocation radio if no data
+        if (!this.translocations?.geneData) {
+            document.getElementById('mutAnalysisTypeSelector').style.display = 'none';
         }
     }
 
@@ -511,6 +735,53 @@ class CorrelationExplorer {
         }
     }
 
+    populateTranslocationHotspotSelector() {
+        const input = document.getElementById('translocationHotspotSelect');
+        if (!input) return;
+        if (!this.translocations || !this.translocations.geneData) return;
+
+        const datalist = document.getElementById('translocationHotspotList');
+        const lineageFilter = document.getElementById('lineageFilter').value;
+        const subLineageFilter = document.getElementById('subLineageFilter')?.value;
+        const currentValue = input.value;
+
+        const genes = Object.keys(this.translocations.geneData);
+        const cellLines = this.metadata.cellLines;
+
+        // Build filtered cell line list once
+        const filteredCLs = lineageFilter || subLineageFilter
+            ? cellLines.filter(cl => {
+                if (lineageFilter && this.cellLineMetadata?.lineage?.[cl] !== lineageFilter) return false;
+                if (subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cl] !== subLineageFilter) return false;
+                return true;
+            }) : cellLines;
+
+        // Count fusions per gene, skip genes with 0 fusions
+        const geneCounts = [];
+        for (const gene of genes) {
+            const translocations = this.translocations.geneData[gene].translocations;
+            let nFused = 0;
+            for (const cl of filteredCLs) {
+                if (translocations[cl] && translocations[cl] > 0) nFused++;
+            }
+            if (nFused > 0) geneCounts.push({ gene, nFused });
+        }
+        geneCounts.sort((a, b) => {
+            const aPri = CorrelationExplorer.PRIORITY_FUSION_GENES.has(a.gene) ? 1 : 0;
+            const bPri = CorrelationExplorer.PRIORITY_FUSION_GENES.has(b.gene) ? 1 : 0;
+            if (aPri !== bPri) return bPri - aPri;
+            return b.nFused - a.nFused;
+        });
+
+        let html = '';
+        geneCounts.forEach(({ gene, nFused }) => {
+            html += `<option value="${gene}">${gene} (${nFused} fused cells)</option>`;
+        });
+        datalist.innerHTML = html;
+
+        if (currentValue) input.value = currentValue;
+    }
+
     getTissueBreakdownForHotspot(gene) {
         if (!this.mutations?.geneData?.[gene] || !this.cellLineMetadata?.lineage) return [];
         const mutations = this.mutations.geneData[gene].mutations;
@@ -531,22 +802,48 @@ class CorrelationExplorer {
         return Object.values(tissueMap).sort((a, b) => b.nMut - a.nMut);
     }
 
-    showTissueBreakdownPopup() {
+    getTissueBreakdownForTranslocation(gene) {
+        if (!this.translocations?.geneData?.[gene] || !this.cellLineMetadata?.lineage) return [];
+        const translocations = this.translocations.geneData[gene].translocations;
+        const cellLines = this.metadata.cellLines;
+        const tissueMap = {};
+
+        cellLines.forEach(cl => {
+            const lineage = this.cellLineMetadata.lineage[cl];
+            if (!lineage) return;
+            if (!tissueMap[lineage]) tissueMap[lineage] = { lineage, nMut: 0, nWT: 0 };
+            if (translocations[cl] && translocations[cl] > 0) {
+                tissueMap[lineage].nMut++;
+            } else {
+                tissueMap[lineage].nWT++;
+            }
+        });
+
+        return Object.values(tissueMap).sort((a, b) => b.nMut - a.nMut);
+    }
+
+    showTissueBreakdownPopup(type) {
         this.hideTissueBreakdownPopup();
-        const gene = document.getElementById('mutationHotspotSelect').value;
+        const isTransloc = type === 'translocation';
+        const gene = isTransloc
+            ? document.getElementById('translocationHotspotSelect').value
+            : document.getElementById('mutationHotspotSelect').value;
         if (!gene) return;
 
-        const breakdown = this.getTissueBreakdownForHotspot(gene);
+        const breakdown = isTransloc
+            ? this.getTissueBreakdownForTranslocation(gene)
+            : this.getTissueBreakdownForHotspot(gene);
         if (breakdown.length === 0) return;
 
         const currentLineage = document.getElementById('lineageFilter').value;
+        const mutLabel = isTransloc ? 'Fused' : 'Mut';
 
         const popup = document.createElement('div');
         popup.id = 'tissueBreakdownPopup';
         popup.style.cssText = 'position: fixed; z-index: 10000; background: white; border: 1px solid #d1d5db; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); padding: 0; min-width: 340px; max-width: 420px; display: flex; flex-direction: column;';
 
         // Position near the button, clamped to viewport
-        const btn = document.getElementById('tissueBreakdownBtn');
+        const btn = document.getElementById(isTransloc ? 'translocationTissueBreakdownBtn' : 'tissueBreakdownBtn');
         const rect = btn.getBoundingClientRect();
         const vw = window.innerWidth;
         const vh = window.innerHeight;
@@ -583,7 +880,7 @@ class CorrelationExplorer {
             <thead><tr style="position: sticky; top: 0; background: #f9fafb; z-index: 1;">
                 <th style="padding: 4px 8px; text-align: left; width: 28px;"><input type="checkbox" id="tbSelectAll" title="Select all"></th>
                 <th style="padding: 4px 4px; text-align: left;">Tissue</th>
-                <th style="padding: 4px 6px; text-align: right; color: #dc2626;">Mut</th>
+                <th style="padding: 4px 6px; text-align: right; color: #dc2626;">${mutLabel}</th>
                 <th style="padding: 4px 6px; text-align: right; color: #6b7280;">WT</th>
                 <th style="padding: 4px 8px; text-align: left; width: 90px;"></th>
                 <th style="padding: 4px 8px; text-align: right; width: 44px;">%</th>
@@ -667,7 +964,7 @@ class CorrelationExplorer {
         setTimeout(() => {
             this._tbOutsideHandler = (e) => {
                 const p = document.getElementById('tissueBreakdownPopup');
-                if (p && !p.contains(e.target) && e.target.id !== 'tissueBreakdownBtn') {
+                if (p && !p.contains(e.target) && e.target.id !== 'tissueBreakdownBtn' && e.target.id !== 'translocationTissueBreakdownBtn') {
                     this.hideTissueBreakdownPopup();
                 }
             };
@@ -764,6 +1061,94 @@ class CorrelationExplorer {
         this.updateHotspotCountsForCurrentFilters();
     }
 
+    showGeneralTissueBreakdownPopup() {
+        this.hideTissueBreakdownPopup();
+        if (!this.cellLineMetadata?.lineage) return;
+
+        // Count cell lines per tissue
+        const tissueCounts = {};
+        const cellLines = this.metadata?.cellLines || [];
+        cellLines.forEach(cellLine => {
+            const lineage = this.cellLineMetadata.lineage[cellLine] || 'Unknown';
+            if (!tissueCounts[lineage]) tissueCounts[lineage] = 0;
+            tissueCounts[lineage]++;
+        });
+
+        const breakdown = Object.entries(tissueCounts)
+            .map(([lineage, count]) => ({ lineage, count }))
+            .sort((a, b) => b.count - a.count);
+
+        if (breakdown.length === 0) return;
+
+        const currentLineage = document.getElementById('lineageFilter').value;
+        const maxCount = Math.max(...breakdown.map(t => t.count));
+
+        const popup = document.createElement('div');
+        popup.id = 'tissueBreakdownPopup';
+        popup.style.cssText = 'position: fixed; z-index: 10000; background: white; border: 1px solid #d1d5db; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); padding: 0; min-width: 300px; max-width: 380px; display: flex; flex-direction: column;';
+
+        const btn = document.getElementById('generalTissueBreakdownBtn');
+        const rect = btn.getBoundingClientRect();
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const margin = 10;
+        let top = rect.bottom + 6;
+        let maxH = vh - top - margin;
+        if (maxH < 200) { maxH = rect.top - 6 - margin; top = rect.top - 6 - Math.min(480, maxH); maxH = Math.min(480, maxH); } else { maxH = Math.min(480, maxH); }
+        popup.style.top = Math.max(margin, top) + 'px';
+        popup.style.left = Math.max(margin, Math.min(rect.left - 50, vw - 380 - margin)) + 'px';
+        popup.style.maxHeight = maxH + 'px';
+
+        let html = `<div style="padding: 10px 14px 8px; border-bottom: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-weight: 600; font-size: 13px; color: #1f2937;">Cell Lines per Tissue (${cellLines.length} total)</span>
+            <button id="tbCloseBtn" style="background: none; border: none; cursor: pointer; font-size: 18px; color: #6b7280; line-height: 1; padding: 0 2px;">&times;</button>
+        </div>`;
+        html += `<div style="overflow-y: auto; flex: 1; padding: 4px 0;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+            <thead><tr style="position: sticky; top: 0; background: #f9fafb; z-index: 1;">
+                <th style="padding: 4px 8px; text-align: left;">Tissue</th>
+                <th style="padding: 4px 6px; text-align: right;">N</th>
+                <th style="padding: 4px 8px; text-align: left; width: 90px;"></th>
+            </tr></thead><tbody>`;
+
+        breakdown.forEach(t => {
+            const barWidth = maxCount > 0 ? (t.count / maxCount * 100) : 0;
+            const isCurrentFilter = (currentLineage && t.lineage === currentLineage);
+            const rowBg = isCurrentFilter ? 'background: #ecfdf5;' : '';
+            html += `<tr style="cursor: pointer; ${rowBg}" data-tissue="${t.lineage}" onmouseenter="this.style.background=this.style.background||'#f3f4f6'" onmouseleave="this.style.background='${isCurrentFilter ? '#ecfdf5' : ''}'">
+                <td style="padding: 3px 8px; font-weight: 500;">${t.lineage}</td>
+                <td style="padding: 3px 6px; text-align: right; font-weight: 600;">${t.count}</td>
+                <td style="padding: 3px 8px;"><div style="background: #e2f4de; border-radius: 2px; height: 10px; width: 100%;"><div style="background: #5a9f4a; border-radius: 2px; height: 10px; width: ${barWidth}%;"></div></div></td>
+            </tr>`;
+        });
+
+        html += `</tbody></table></div>`;
+        popup.innerHTML = html;
+        document.body.appendChild(popup);
+
+        // Click row to set lineage filter
+        popup.querySelectorAll('tr[data-tissue]').forEach(row => {
+            row.addEventListener('click', () => {
+                const tissue = row.dataset.tissue;
+                const lineageSelect = document.getElementById('lineageFilter');
+                lineageSelect.value = lineageSelect.value === tissue ? '' : tissue;
+                this.updateSubLineageFilter();
+                this.hideTissueBreakdownPopup();
+            });
+        });
+
+        document.getElementById('tbCloseBtn').addEventListener('click', () => this.hideTissueBreakdownPopup());
+        this._tbEscHandler = (e) => { if (e.key === 'Escape') this.hideTissueBreakdownPopup(); };
+        document.addEventListener('keydown', this._tbEscHandler);
+        setTimeout(() => {
+            this._tbOutsideHandler = (e) => {
+                const p = document.getElementById('tissueBreakdownPopup');
+                if (p && !p.contains(e.target) && e.target.id !== 'generalTissueBreakdownBtn') this.hideTissueBreakdownPopup();
+            };
+            document.addEventListener('mousedown', this._tbOutsideHandler);
+        }, 0);
+    }
+
     getCellLineName(cellLineId) {
         if (this.cellLineMetadata && this.cellLineMetadata.strippedCellLineName) {
             return this.cellLineMetadata.strippedCellLineName[cellLineId] ||
@@ -786,56 +1171,13 @@ class CorrelationExplorer {
     }
 
     setupUI() {
-        // Tab switching - preserve network view state
+        // Tab switching
         document.querySelectorAll('.nav-link').forEach(tab => {
             tab.addEventListener('click', () => {
-                // Save network view state before switching away
-                if (this.network) {
-                    this.savedNetworkView = {
-                        scale: this.network.getScale(),
-                        position: this.network.getViewPosition()
-                    };
-                }
-
                 document.querySelectorAll('.nav-link').forEach(t => t.classList.remove('active'));
                 document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
                 tab.classList.add('active');
                 document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
-
-                // Restore network view state when switching back to network tab
-                if (tab.dataset.tab === 'network' && this.network && this.savedNetworkView) {
-                    const container = document.getElementById('networkPlot');
-                    const savedView = this.savedNetworkView;
-
-                    const restoreView = () => {
-                        if (savedView && this.network) {
-                            this.network.moveTo({
-                                position: savedView.position,
-                                scale: savedView.scale,
-                                animation: false
-                            });
-                        }
-                    };
-
-                    // Wait for container to have valid dimensions
-                    const waitForDimensions = () => {
-                        const width = container.clientWidth;
-                        const height = container.clientHeight;
-                        if (width > 0 && height > 0) {
-                            // Tell vis.js to use the correct size
-                            this.network.setSize(width + 'px', height + 'px');
-                            // Restore view multiple times to ensure it sticks
-                            restoreView();
-                            setTimeout(restoreView, 100);
-                            setTimeout(restoreView, 300);
-                        } else {
-                            // Container not ready yet, try again
-                            requestAnimationFrame(waitForDimensions);
-                        }
-                    };
-
-                    requestAnimationFrame(waitForDimensions);
-                }
             });
         });
 
@@ -868,7 +1210,8 @@ class CorrelationExplorer {
         document.getElementById('loadTestGenes').addEventListener('click', () => {
             const testGenes = ['TP53', 'BRCA1', 'BRCA2', 'MYC', 'KRAS', 'EGFR', 'PTEN',
                 'RB1', 'APC', 'CDKN2A', 'NOTCH1', 'PIK3CA', 'BRAF',
-                'ATM', 'ERBB2', 'CDK4', 'MDM2', 'NRAS', 'TSC1', 'TSC2'];
+                'ATM', 'ERBB2', 'CDK4', 'MDM2', 'NRAS', 'TSC1', 'TSC2',
+                'BCR', 'ABL1'];
             document.getElementById('geneTextarea').value = testGenes.join('\n');
             this.updateGeneCount();
         });
@@ -937,16 +1280,52 @@ class CorrelationExplorer {
         // Run analysis
         document.getElementById('runAnalysis').addEventListener('click', () => this.runAnalysis());
 
+        // Reset App button
+        document.getElementById('resetAppBtn')?.addEventListener('click', () => location.reload());
+
+        // Reset excluded tissues button
+        document.getElementById('resetExcludedTissuesBtn')?.addEventListener('click', () => {
+            document.querySelectorAll('#tissueExcludeList input[type="checkbox"]').forEach(cb => cb.checked = false);
+            this.excludedTissues = new Set();
+        });
+
         // Analysis mode change
         document.querySelectorAll('input[name="analysisMode"]').forEach(radio => {
             radio.addEventListener('change', () => this.updateAnalysisModeUI());
         });
 
-        // Tissue breakdown button
-        document.getElementById('tissueBreakdownBtn').addEventListener('click', () => this.showTissueBreakdownPopup());
+        // Tissue breakdown button (mutations)
+        document.getElementById('tissueBreakdownBtn').addEventListener('click', () => this.showTissueBreakdownPopup('mutation'));
         document.getElementById('mutationHotspotSelect').addEventListener('change', () => {
             const btn = document.getElementById('tissueBreakdownBtn');
             btn.style.display = document.getElementById('mutationHotspotSelect').value ? 'inline-block' : 'none';
+        });
+
+        // Tissue breakdown button (translocations)
+        document.getElementById('translocationTissueBreakdownBtn')?.addEventListener('click', () => this.showTissueBreakdownPopup('translocation'));
+        document.getElementById('translocationHotspotSelect')?.addEventListener('input', () => {
+            const btn = document.getElementById('translocationTissueBreakdownBtn');
+            const val = document.getElementById('translocationHotspotSelect').value.trim();
+            if (btn) btn.style.display = (val && this.translocations?.geneData?.[val]) ? 'inline-block' : 'none';
+        });
+
+        // General tissue breakdown button (for lineage filter area)
+        document.getElementById('generalTissueBreakdownBtn')?.addEventListener('click', () => this.showGeneralTissueBreakdownPopup());
+
+        // Mutation analysis sub-type selector
+        document.querySelectorAll('input[name="mutAnalysisType"]').forEach(radio => {
+            radio.addEventListener('change', () => this.updateMutAnalysisTypeUI());
+        });
+
+        // Parameter translocation filter
+        document.getElementById('paramTranslocationGene')?.addEventListener('input', () => {
+            const val = document.getElementById('paramTranslocationGene').value.trim();
+            if (val === '' || this.translocations?.geneData?.[val]) {
+                this.updateParamTranslocationLevelCounts();
+            }
+        });
+        document.getElementById('paramTranslocationLevel')?.addEventListener('change', () => {
+            // Counts stay the same; filter applies on Run
         });
 
         // Mutation results search
@@ -1042,7 +1421,13 @@ class CorrelationExplorer {
         document.getElementById('toggleSelectMode').addEventListener('click', () => this.toggleSelectMode());
         document.getElementById('clearSelectedNodes').addEventListener('click', () => this.clearSelectedNodes());
         document.getElementById('showUncorrelatedGenes').addEventListener('change', () => {
-            if (this.results) this.displayNetwork();
+            if (this.results) {
+                this.displayNetwork();
+                // Re-apply colors after network rebuild if color by GE is active
+                if (document.getElementById('colorByGeneEffect').checked) {
+                    setTimeout(() => this.updateNetworkColors(), 100);
+                }
+            }
         });
         document.querySelectorAll('input[name="colorStatType"]').forEach(radio => {
             radio.addEventListener('change', () => this.updateNetworkColors());
@@ -1104,6 +1489,9 @@ class CorrelationExplorer {
         document.getElementById('clearHighlights').addEventListener('click', () => {
             document.getElementById('scatterCellSearch').value = '';
             this.clickedCells.clear();
+            this._userLabelPositions.clear();
+            document.getElementById('colorByCategory').value = '';
+            this._styleActiveFilters();
             this.updateInspectPlot();
         });
 
@@ -1116,15 +1504,42 @@ class CorrelationExplorer {
         });
 
         document.getElementById('scatterCellSearch').addEventListener('input', () => this.updateInspectPlot());
-        document.getElementById('scatterCancerFilter').addEventListener('change', () => {
-            this.updateScatterSubtypeFilter();
+        document.getElementById('colorByCategory').addEventListener('change', () => {
+            this._styleActiveFilters();
             this.updateInspectPlot();
         });
-        document.getElementById('scatterSubtypeFilter').addEventListener('change', () => this.updateInspectPlot());
+        document.getElementById('scatterCancerFilter').addEventListener('change', () => {
+            this.updateScatterSubtypeFilter();
+            // Show/hide "Color by subtype" option based on whether a tissue is selected
+            const subtypeOpt = document.getElementById('colorBySubtypeOption');
+            if (subtypeOpt) {
+                subtypeOpt.style.display = document.getElementById('scatterCancerFilter').value ? '' : 'none';
+                // Reset color-by if subtype was selected but tissue filter cleared
+                if (!document.getElementById('scatterCancerFilter').value && document.getElementById('colorByCategory').value === 'subtype') {
+                    document.getElementById('colorByCategory').value = '';
+                }
+            }
+            this._styleActiveFilters();
+            this.updateInspectPlot();
+        });
+        document.getElementById('scatterSubtypeFilter').addEventListener('change', () => {
+            this._styleActiveFilters();
+            this.updateInspectPlot();
+        });
         document.getElementById('mutationFilterGene').addEventListener('change', () => this.updateInspectPlot());
         document.getElementById('mutationFilterLevel').addEventListener('change', () => this.updateInspectPlot());
         document.getElementById('hotspotGene').addEventListener('change', () => this.updateInspectPlot());
         document.getElementById('hotspotMode').addEventListener('change', () => this.updateInspectPlot());
+        document.getElementById('translocationGene')?.addEventListener('input', () => {
+            const val = document.getElementById('translocationGene').value.trim();
+            if (val === '' || this.translocations?.geneData?.[val]) this.updateInspectPlot();
+        });
+        document.getElementById('translocationMode')?.addEventListener('change', () => this.updateInspectPlot());
+        document.getElementById('translocationFilterGene')?.addEventListener('input', () => {
+            const val = document.getElementById('translocationFilterGene').value.trim();
+            if (val === '' || this.translocations?.geneData?.[val]) this.updateInspectPlot();
+        });
+        document.getElementById('translocationFilterLevel')?.addEventListener('change', () => this.updateInspectPlot());
 
         document.getElementById('downloadScatterPNG').addEventListener('click', () => this.downloadScatterPNG());
         document.getElementById('downloadScatterSVG').addEventListener('click', () => this.downloadScatterSVG());
@@ -1134,13 +1549,15 @@ class CorrelationExplorer {
         document.getElementById('downloadTissueCSV').addEventListener('click', () => this.downloadTissueTableCSV());
         document.getElementById('scatterFontSize')?.addEventListener('change', () => this.updateInspectPlot());
         document.getElementById('compareAllMutationsBtn')?.addEventListener('click', () => this.showCompareAllMutations());
+        document.getElementById('compareAllTranslocationsBtn')?.addEventListener('click', () => this.showCompareAllTranslocations());
         document.getElementById('compareAllCancerTypesBtn')?.addEventListener('click', () => this.showCompareAllCancerTypes());
         document.getElementById('updateInspectGenes')?.addEventListener('click', () => this.updateInspectGenes());
 
-        // Aspect ratio control
-        document.getElementById('aspectRatio')?.addEventListener('input', (e) => {
-            document.getElementById('aspectRatioValue').textContent = parseFloat(e.target.value).toFixed(1);
-            this.updateInspectPlot();
+        // Plot size controls
+        ['plotWidth', 'plotHeight'].forEach(id => {
+            const el = document.getElementById(id);
+            el.addEventListener('change', () => this.updateInspectPlot());
+            el.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.updateInspectPlot(); });
         });
 
         // Table header sorting (Ctrl/Cmd+click to copy column)
@@ -1161,12 +1578,25 @@ class CorrelationExplorer {
         document.getElementById('copyClustersGenes')?.addEventListener('click', () => this.copyGeneColumn('clustersTable'));
         document.getElementById('copyMutationGenes')?.addEventListener('click', () => this.copyGeneColumn('mutationTable'));
 
+
         // Table filter toggles
         document.getElementById('filterCorrelationsToggle')?.addEventListener('click', () => this.toggleTableFilters('correlationsTable'));
         document.getElementById('filterClustersToggle')?.addEventListener('click', () => this.toggleTableFilters('clustersTable'));
         document.getElementById('filterMutationToggle')?.addEventListener('click', () => this.toggleTableFilters('mutationTable'));
 
-
+        // Enrichr buttons
+        document.querySelectorAll('.enrichrBtn').forEach(btn => {
+            btn.addEventListener('click', () => this.openEnrichr(btn.dataset.source));
+        });
+        document.getElementById('enrichrCloseBtn')?.addEventListener('click', () => {
+            document.getElementById('enrichrModal').style.display = 'none';
+        });
+        document.getElementById('enrichrModal')?.addEventListener('click', (e) => {
+            if (e.target.id === 'enrichrModal') {
+                document.getElementById('enrichrModal').style.display = 'none';
+            }
+        });
+        document.getElementById('enrichrDownloadBtn')?.addEventListener('click', () => this.downloadEnrichrCSV());
 
         // Infographic modal
         document.getElementById('showInfoGraphic')?.addEventListener('click', () => {
@@ -1220,14 +1650,29 @@ class CorrelationExplorer {
             }
         });
         document.getElementById('geTissueFilter')?.addEventListener('change', () => {
+            this.updateGeSubtypeFilter();
             if (this.geneEffectViewMode === 'mutation' && this.mutationResults && this.currentGeneEffectGene) {
                 this.showGeneEffectDistribution(this.currentGeneEffectGene);
             } else {
                 this.switchGeneEffectView(this.currentGEView || 'tissue');
             }
         });
+        // Inspect-level subtype filter
+        document.getElementById('geSubtypeFilter')?.addEventListener('change', () => {
+            if (this.geneEffectViewMode === 'mutation' && this.currentGeneEffectGene) {
+                this.showGeneEffectDistribution(this.currentGeneEffectGene);
+            }
+        });
         // Inspect-level hotspot filter
         document.getElementById('geHotspotFilter')?.addEventListener('change', () => {
+            const warn = document.getElementById('geHotspotBiasWarning');
+            if (warn) warn.style.display = document.getElementById('geHotspotFilter').value ? 'inline' : 'none';
+            if (this.geneEffectViewMode === 'mutation' && this.currentGeneEffectGene) {
+                this.showGeneEffectDistribution(this.currentGeneEffectGene);
+            }
+        });
+        // Inspect-level fusion filter
+        document.getElementById('geFusionFilter')?.addEventListener('change', () => {
             if (this.geneEffectViewMode === 'mutation' && this.currentGeneEffectGene) {
                 this.showGeneEffectDistribution(this.currentGeneEffectGene);
             }
@@ -1236,7 +1681,11 @@ class CorrelationExplorer {
         document.getElementById('geHotspotGeneSelect')?.addEventListener('change', () => {
             if (this.geneEffectViewMode === 'mutation' && this.currentGeneEffectGene && this.mutationResults) {
                 const newHotspot = document.getElementById('geHotspotGeneSelect').value;
-                if (newHotspot && this.mutations.geneData[newHotspot]) {
+                const isTransloc = this.mutationResults.isTranslocation;
+                const hasData = isTransloc
+                    ? this.translocations?.geneData?.[newHotspot]
+                    : this.mutations?.geneData?.[newHotspot];
+                if (newHotspot && hasData) {
                     this.mutationResults.hotspotGene = newHotspot;
                     this.showGeneEffectDistribution(this.currentGeneEffectGene);
                 }
@@ -1245,12 +1694,17 @@ class CorrelationExplorer {
         // Inline compare buttons
         document.getElementById('geCompareByTissueBtn')?.addEventListener('click', () => this.showInlineCompareByTissue());
         document.getElementById('geCompareByHotspotBtn')?.addEventListener('click', () => this.showInlineCompareByHotspot());
+        document.getElementById('geCompareByTranslocationBtn')?.addEventListener('click', () => this.showInlineCompareByTranslocation());
         document.getElementById('geInlineCompareClose')?.addEventListener('click', () => {
             document.getElementById('geInlineCompareTable').style.display = 'none';
         });
         document.getElementById('geResetFiltersBtn')?.addEventListener('click', () => {
             document.getElementById('geTissueFilter').value = '';
+            document.getElementById('geSubtypeFilter').value = '';
+            const geSubEl = document.getElementById('geSubtypeFilter');
+            if (geSubEl) geSubEl.style.display = 'none';
             document.getElementById('geHotspotFilter').value = '';
+            document.getElementById('geFusionFilter').value = '';
             // Clear analysis-level filters so inspect truly shows ALL cell lines
             if (this.mutationResults) {
                 this.mutationResults.lineageFilter = '';
@@ -1266,6 +1720,7 @@ class CorrelationExplorer {
         // Full-screen compare modal buttons
         document.getElementById('mutCompareByTissueBtn')?.addEventListener('click', () => this.showMutationCompareByTissue());
         document.getElementById('mutCompareByHotspotBtn')?.addEventListener('click', () => this.showMutationCompareByHotspot());
+        document.getElementById('mutCompareByFusionBtn')?.addEventListener('click', () => this.showMutationCompareByFusion());
         document.getElementById('mutCompareModalClose')?.addEventListener('click', () => {
             document.getElementById('mutCompareModal').style.display = 'none';
         });
@@ -1291,14 +1746,34 @@ class CorrelationExplorer {
         document.getElementById('downloadGETableCSV')?.addEventListener('click', () => this.downloadGETableCSV());
         document.getElementById('downloadGECellLineCSV')?.addEventListener('click', () => this.downloadGECellLineCSV());
 
-        // Aspect ratio control for detailed views
+        // Chart width control — works for both inspect and detailed views
         document.getElementById('geAspectRatio')?.addEventListener('input', (e) => {
             const ratio = parseFloat(e.target.value);
             document.getElementById('geAspectRatioValue').textContent = ratio.toFixed(1);
             this.geChartWidthRatio = ratio;
-            // Re-render the detailed view with new width
+            const container = document.getElementById('geChartContainer');
+            if (container) {
+                container.style.flex = `0 0 ${Math.round(ratio * 55)}%`;
+            }
+            // Re-render the detailed view with new width if in that mode
             if (this.geDetailedView) {
                 this.showGEDetailedView(this.geDetailedView.group, this.geDetailedView.mode);
+            } else {
+                // Trigger Plotly resize for the inspect plot
+                const plotEl = document.getElementById('geneEffectPlot');
+                if (plotEl?.data?.length) Plotly.Plots.resize(plotEl);
+            }
+        });
+
+        // Chart height control for inspect plot
+        document.getElementById('geHeightRatio')?.addEventListener('input', (e) => {
+            const ratio = parseFloat(e.target.value);
+            document.getElementById('geHeightRatioValue').textContent = ratio.toFixed(1);
+            this.geChartHeightRatio = ratio;
+            const plotEl = document.getElementById('geneEffectPlot');
+            if (plotEl?.data?.length) {
+                const baseHeight = 400;
+                Plotly.relayout(plotEl, { height: Math.round(baseHeight * ratio) });
             }
         });
     }
@@ -1329,13 +1804,101 @@ class CorrelationExplorer {
             display.innerHTML = `<div class="status-box status-success">&#10003; All ${found.length} genes found in reference data</div>`;
             synonymBtn.style.display = 'none';
         } else {
+            // Find fuzzy suggestions for not-found genes
+            const suggestions = this._findGeneSuggestions(notFound);
+            let notFoundHtml = notFound.slice(0, 10).map(g => {
+                const sugg = suggestions.get(g);
+                if (sugg && sugg.length > 0) {
+                    const links = sugg.slice(0, 3).map(s =>
+                        `<a href="#" style="color: #0066cc;" onclick="app.replaceGeneInTextarea('${g}', '${s}'); return false;">${s}</a>`
+                    ).join(', ');
+                    return `${g} → ${links}?`;
+                }
+                return g;
+            }).join(', ');
+            if (notFound.length > 10) notFoundHtml += ` (+${notFound.length - 10} more)`;
+
             display.innerHTML = `<div class="status-box status-warning">
                 <strong>${found.length} found</strong>, <strong>${notFound.length} not found</strong><br>
-                <span>Not found: ${notFound.slice(0, 10).join(', ')}${notFound.length > 10 ? ` (+${notFound.length - 10} more)` : ''}</span>
+                <span>Not found: ${notFoundHtml}</span>
             </div>`;
             synonymBtn.style.display = 'block';
             this.genesNotFound = notFound;
         }
+    }
+
+    _findGeneSuggestions(notFoundGenes) {
+        const suggestions = new Map();
+        if (!this.geneIndex || this.geneIndex.size === 0) return suggestions;
+
+        const allGenes = Array.from(this.geneIndex.keys());
+
+        for (const query of notFoundGenes) {
+            const upper = query.toUpperCase();
+            const matches = [];
+
+            // 1. Check prefix matches
+            for (const gene of allGenes) {
+                if (gene.startsWith(upper) || upper.startsWith(gene)) {
+                    matches.push(gene);
+                    if (matches.length >= 3) break;
+                }
+            }
+
+            // 2. Check edit distance ≤ 2 (only if few/no prefix matches found)
+            if (matches.length < 3) {
+                for (const gene of allGenes) {
+                    if (matches.includes(gene)) continue;
+                    if (Math.abs(gene.length - upper.length) > 2) continue;
+                    const dist = this._editDistance(upper, gene);
+                    if (dist <= 2) {
+                        matches.push(gene);
+                        if (matches.length >= 3) break;
+                    }
+                }
+            }
+
+            if (matches.length > 0) {
+                suggestions.set(query, matches);
+            }
+        }
+        return suggestions;
+    }
+
+    _editDistance(a, b) {
+        if (a.length === 0) return b.length;
+        if (b.length === 0) return a.length;
+        // Quick bail for very different lengths
+        if (Math.abs(a.length - b.length) > 2) return 3;
+
+        const m = a.length, n = b.length;
+        let prev = new Array(n + 1);
+        let curr = new Array(n + 1);
+        for (let j = 0; j <= n; j++) prev[j] = j;
+
+        for (let i = 1; i <= m; i++) {
+            curr[0] = i;
+            for (let j = 1; j <= n; j++) {
+                curr[j] = a[i - 1] === b[j - 1]
+                    ? prev[j - 1]
+                    : 1 + Math.min(prev[j - 1], prev[j], curr[j - 1]);
+            }
+            [prev, curr] = [curr, prev];
+        }
+        return prev[n];
+    }
+
+    replaceGeneInTextarea(oldGene, newGene) {
+        const textarea = document.getElementById('geneTextarea');
+        const lines = textarea.value.split('\n');
+        const updatedLines = lines.map(line => {
+            if (line.trim().toUpperCase() === oldGene.toUpperCase()) {
+                return newGene;
+            }
+            return line;
+        });
+        textarea.value = updatedLines.join('\n');
+        this.updateGeneCount();
     }
 
     async findSynonymsForMissingGenes() {
@@ -1777,28 +2340,30 @@ class CorrelationExplorer {
     }
 
     loadTestGenesWithStats() {
-        // Test data with LFC and FDR values (20 genes)
+        // Test data with LFC and FDR values (22 genes — matches simple test gene list)
         const testData = [
             { gene: 'TP53', lfc: 1.8, fdr: 0.001 },
-            { gene: 'MDM2', lfc: -2.3, fdr: 0.0001 },
             { gene: 'BRCA1', lfc: 0.3, fdr: 0.15 },
+            { gene: 'BRCA2', lfc: -0.5, fdr: 0.11 },
             { gene: 'MYC', lfc: -1.5, fdr: 0.02 },
             { gene: 'KRAS', lfc: 2.1, fdr: 0.005 },
             { gene: 'EGFR', lfc: -0.8, fdr: 0.08 },
             { gene: 'PTEN', lfc: 1.2, fdr: 0.03 },
-            { gene: 'AKT1', lfc: -0.4, fdr: 0.25 },
+            { gene: 'RB1', lfc: -0.6, fdr: 0.12 },
+            { gene: 'APC', lfc: 0.7, fdr: 0.09 },
+            { gene: 'CDKN2A', lfc: 1.4, fdr: 0.007 },
+            { gene: 'NOTCH1', lfc: -1.1, fdr: 0.03 },
             { gene: 'PIK3CA', lfc: 0.9, fdr: 0.04 },
             { gene: 'BRAF', lfc: -1.9, fdr: 0.002 },
             { gene: 'ATM', lfc: 0.7, fdr: 0.06 },
-            { gene: 'CHEK2', lfc: 1.1, fdr: 0.01 },
-            { gene: 'RB1', lfc: -0.6, fdr: 0.12 },
-            { gene: 'CDKN2A', lfc: 1.4, fdr: 0.007 },
-            { gene: 'NFE2L2', lfc: -1.2, fdr: 0.015 },
-            { gene: 'KEAP1', lfc: 0.8, fdr: 0.05 },
-            { gene: 'STK11', lfc: -0.9, fdr: 0.04 },
-            { gene: 'CREBBP', lfc: 0.4, fdr: 0.18 },
+            { gene: 'ERBB2', lfc: 1.6, fdr: 0.008 },
+            { gene: 'CDK4', lfc: -0.3, fdr: 0.22 },
+            { gene: 'MDM2', lfc: -2.3, fdr: 0.0001 },
+            { gene: 'NRAS', lfc: 1.3, fdr: 0.015 },
             { gene: 'TSC1', lfc: 1.0, fdr: 0.02 },
-            { gene: 'TSC2', lfc: 0.9, fdr: 0.03 }
+            { gene: 'TSC2', lfc: 0.9, fdr: 0.03 },
+            { gene: 'BCR', lfc: -0.7, fdr: 0.14 },
+            { gene: 'ABL1', lfc: 0.6, fdr: 0.07 }
         ];
 
         this.geneStats = new Map();
@@ -1823,25 +2388,27 @@ class CorrelationExplorer {
         const sampleData = [
             ['Gene', 'LFC', 'FDR'],
             ['TP53', '1.8', '0.001'],
-            ['MDM2', '-2.3', '0.0001'],
             ['BRCA1', '0.3', '0.15'],
+            ['BRCA2', '-0.5', '0.11'],
             ['MYC', '-1.5', '0.02'],
             ['KRAS', '2.1', '0.005'],
             ['EGFR', '-0.8', '0.08'],
             ['PTEN', '1.2', '0.03'],
-            ['AKT1', '-0.4', '0.25'],
+            ['RB1', '-0.6', '0.12'],
+            ['APC', '0.7', '0.09'],
+            ['CDKN2A', '1.4', '0.007'],
+            ['NOTCH1', '-1.1', '0.03'],
             ['PIK3CA', '0.9', '0.04'],
             ['BRAF', '-1.9', '0.002'],
             ['ATM', '0.7', '0.06'],
-            ['CHEK2', '1.1', '0.01'],
-            ['RB1', '-0.6', '0.12'],
-            ['CDKN2A', '1.4', '0.007'],
-            ['SMAD4', '-0.3', '0.35'],
-            ['ARID1A', '0.5', '0.09'],
-            ['NFE2L2', '-1.2', '0.015'],
-            ['KEAP1', '0.8', '0.05'],
-            ['STK11', '-0.9', '0.04'],
-            ['CREBBP', '0.4', '0.18']
+            ['ERBB2', '1.6', '0.008'],
+            ['CDK4', '-0.3', '0.22'],
+            ['MDM2', '-2.3', '0.0001'],
+            ['NRAS', '1.3', '0.015'],
+            ['TSC1', '1.0', '0.02'],
+            ['TSC2', '0.9', '0.03'],
+            ['BCR', '-0.7', '0.14'],
+            ['ABL1', '0.6', '0.07']
         ];
 
         const csv = sampleData.map(row => row.join(',')).join('\n');
@@ -1862,11 +2429,19 @@ class CorrelationExplorer {
         const subLineageFilter = document.getElementById('subLineageFilter')?.value;
         const hotspotGene = document.getElementById('paramHotspotGene').value;
         const hotspotLevel = document.getElementById('paramHotspotLevel').value;
+        const transGene = document.getElementById('paramTranslocationGene').value;
+        const transLevel = document.getElementById('paramTranslocationLevel').value;
 
         // Get mutation data for hotspot filter
         let mutationData = null;
         if (hotspotGene && this.mutations?.geneData?.[hotspotGene]) {
             mutationData = this.mutations.geneData[hotspotGene].mutations;
+        }
+
+        // Get translocation data for fusion filter
+        let transData = null;
+        if (transGene && this.translocations?.geneData?.[transGene]) {
+            transData = this.translocations.geneData[transGene].translocations;
         }
 
         const indices = [];
@@ -1904,11 +2479,22 @@ class CorrelationExplorer {
                 if (hotspotLevel === '1+2' && mutLevel < 1) return;
             }
 
+            // Check translocation filter
+            if (transData && transLevel !== 'all') {
+                const tLevel = transData[cellLine] || 0;
+                if (transLevel === '0' && tLevel !== 0) return;
+                if (transLevel === '1' && tLevel !== 1) return;
+                if (transLevel === '2' && tLevel < 2) return;
+                if (transLevel === '1+2' && tLevel < 1) return;
+            }
+
             indices.push(idx);
         });
 
         // Return all indices if no filters applied
-        if (indices.length === 0 && !lineageFilter && !subLineageFilter && (!hotspotGene || hotspotLevel === 'all')) {
+        if (indices.length === 0 && !lineageFilter && !subLineageFilter &&
+            (!hotspotGene || hotspotLevel === 'all') &&
+            (!transGene || transLevel === 'all')) {
             return Array.from({ length: this.nCellLines }, (_, i) => i);
         }
 
@@ -1998,7 +2584,13 @@ class CorrelationExplorer {
         this.currentGeneEffectGene = null;
         this.geneEffectViewMode = null;
 
-        const hotspotGene = document.getElementById('mutationHotspotSelect').value;
+        // Check mutation analysis sub-type
+        const mutAnalysisType = document.querySelector('input[name="mutAnalysisType"]:checked')?.value || 'hotspot';
+        const isTranslocation = mutAnalysisType === 'translocation';
+
+        const hotspotGene = isTranslocation
+            ? document.getElementById('translocationHotspotSelect').value
+            : document.getElementById('mutationHotspotSelect').value;
         const minN = parseInt(document.getElementById('minCellLines').value);
         const pThreshold = this.getInputNum('pValueThreshold');
         const lineageFilter = document.getElementById('lineageFilter').value;
@@ -2008,23 +2600,33 @@ class CorrelationExplorer {
         const additionalHotspot = document.getElementById('paramHotspotGene').value;
         const additionalHotspotLevel = document.getElementById('paramHotspotLevel').value;
 
+        // Get additional translocation filter (from parameter section)
+        const additionalTransGene = document.getElementById('paramTranslocationGene').value;
+        const additionalTransLevel = document.getElementById('paramTranslocationLevel').value;
+
         if (!hotspotGene) {
-            this.showStatus('error', 'Please select a hotspot mutation');
+            this.showStatus('error', isTranslocation ? 'Please select a translocation/fusion gene' : 'Please select a hotspot mutation');
+            return;
+        }
+        if (isTranslocation && !this.translocations?.geneData?.[hotspotGene]) {
+            this.showStatus('error', `"${hotspotGene}" is not a valid fusion gene. Please select from the list.`);
             return;
         }
 
-        this.showStatus('info', 'Running mutation analysis...');
+        this.showStatus('info', isTranslocation ? 'Running fusion analysis...' : 'Running mutation analysis...');
 
         // Use setTimeout to allow UI to update
         setTimeout(() => {
             try {
-                const analysisResult = this.calculateMutationAnalysis(hotspotGene, minN, lineageFilter, subLineageFilter, additionalHotspot, additionalHotspotLevel);
+                const analysisResult = isTranslocation
+                    ? this.calculateTranslocationAnalysis(hotspotGene, minN, lineageFilter, subLineageFilter, additionalHotspot, additionalHotspotLevel, additionalTransGene, additionalTransLevel)
+                    : this.calculateMutationAnalysis(hotspotGene, minN, lineageFilter, subLineageFilter, additionalHotspot, additionalHotspotLevel, additionalTransGene, additionalTransLevel);
 
                 // Filter by p-value threshold
-                const significantResults = analysisResult.results.filter(r => r.p_mut < pThreshold || r.p_2 < pThreshold);
+                const significantResults = analysisResult.results.filter(r => r.p_mut < pThreshold || r.p_2 < pThreshold || (r.p_fused !== undefined && r.p_fused < pThreshold));
 
-                // Sort by p-value (1+2 vs 0)
-                significantResults.sort((a, b) => a.p_mut - b.p_mut);
+                // Sort by Δ GE (1+2 vs 0) ascending — most negative first
+                significantResults.sort((a, b) => (a.diff_mut || 0) - (b.diff_mut || 0));
 
                 // Close compare modal on new analysis
                 if (document.getElementById('mutCompareModal')) {
@@ -2039,15 +2641,21 @@ class CorrelationExplorer {
                     subLineageFilter,
                     additionalHotspot,
                     additionalHotspotLevel,
+                    additionalTransGene,
+                    additionalTransLevel,
+                    isTranslocation,
                     excludedTissues: new Set(this.excludedTissues),
                     nWT: analysisResult.nWT,
                     nMut: analysisResult.nMut,
                     n2: analysisResult.n2,
+                    hasFusionData: analysisResult.hasFusionData,
+                    nFused: analysisResult.nFused,
+                    nWTFusion: analysisResult.nWTFusion,
                     allResults: analysisResult.results,
                     significantResults
                 };
 
-                this.displayMutationResults();
+                this.displayMutationResults(true);
 
                 // Switch to mutation tab
                 document.querySelectorAll('.nav-link').forEach(link => link.classList.remove('active'));
@@ -2055,8 +2663,9 @@ class CorrelationExplorer {
                 document.querySelector('[data-tab="mutation"]').classList.add('active');
                 document.getElementById('tab-mutation').classList.add('active');
 
+                const analysisLabel = isTranslocation ? 'Fusion' : 'Mutation';
                 this.showStatus('success',
-                    `&#10003; Mutation analysis complete: ${significantResults.length} genes with p < ${pThreshold}`);
+                    `&#10003; ${analysisLabel} analysis complete: ${significantResults.length} genes with p < ${pThreshold}`);
             } catch (error) {
                 console.error('Mutation analysis error:', error);
                 this.showStatus('error', 'Mutation analysis failed: ' + error.message);
@@ -2271,7 +2880,7 @@ class CorrelationExplorer {
         this.downloadFile(csv, 'synonym_ortholog_lookup.csv', 'text/csv');
     }
 
-    calculateMutationAnalysis(hotspotGene, minN, lineageFilter, subLineageFilter, additionalHotspot, additionalHotspotLevel) {
+    calculateMutationAnalysis(hotspotGene, minN, lineageFilter, subLineageFilter, additionalHotspot, additionalHotspotLevel, additionalTransGene, additionalTransLevel) {
         const mutationData = this.mutations.geneData[hotspotGene];
         if (!mutationData) {
             throw new Error(`No mutation data for ${hotspotGene}`);
@@ -2279,6 +2888,10 @@ class CorrelationExplorer {
 
         // Get additional hotspot mutation data if specified
         const additionalMutData = additionalHotspot ? this.mutations.geneData[additionalHotspot] : null;
+
+        // Get additional translocation filter data if specified
+        const additionalTransData = (additionalTransGene && this.translocations?.geneData?.[additionalTransGene])
+            ? this.translocations.geneData[additionalTransGene].translocations : null;
 
         const cellLines = this.metadata.cellLines;
         const results = [];
@@ -2316,6 +2929,15 @@ class CorrelationExplorer {
                 if (additionalHotspotLevel === '1+2' && addMutLevel === 0) return;
             }
 
+            // Check additional translocation filter
+            if (additionalTransData && additionalTransLevel !== 'all') {
+                const tLevel = additionalTransData[cellLine] || 0;
+                if (additionalTransLevel === '0' && tLevel !== 0) return;
+                if (additionalTransLevel === '1' && tLevel !== 1) return;
+                if (additionalTransLevel === '2' && tLevel < 2) return;
+                if (additionalTransLevel === '1+2' && tLevel < 1) return;
+            }
+
             const mutLevel = mutationData.mutations[cellLine] || 0;
             if (mutLevel === 0) {
                 wtCellIndices.push(idx);
@@ -2332,6 +2954,27 @@ class CorrelationExplorer {
         if (wtCellIndices.length < 3 || mutAllCellIndices.length < 3) {
             throw new Error(`Not enough cell lines: WT=${wtCellIndices.length}, Mutated=${mutAllCellIndices.length}`);
         }
+
+        // Also categorize by fusion status for the same hotspot gene (if translocation data exists)
+        const hotspotTransData = this.translocations?.geneData?.[hotspotGene]?.translocations;
+        let fusedCellIndices = null;
+        let wtFusionCellIndices = null;
+        if (hotspotTransData) {
+            fusedCellIndices = [];
+            wtFusionCellIndices = [];
+            // Use the same filtered cell set (union of wt + mut indices)
+            const allFilteredIndices = [...wtCellIndices, ...mutAllCellIndices];
+            allFilteredIndices.forEach(idx => {
+                const cellLine = cellLines[idx];
+                const tLevel = hotspotTransData[cellLine] || 0;
+                if (tLevel >= 1) {
+                    fusedCellIndices.push(idx);
+                } else {
+                    wtFusionCellIndices.push(idx);
+                }
+            });
+        }
+        const hasFusionData = fusedCellIndices && fusedCellIndices.length >= 3 && wtFusionCellIndices.length >= 3;
 
         // Analyze each gene
         for (let geneIdx = 0; geneIdx < this.nGenes; geneIdx++) {
@@ -2364,6 +3007,135 @@ class CorrelationExplorer {
                 p_2 = tTest_2.p;
             }
 
+            // Calculate fusion statistics (if hotspot gene has translocation data)
+            let n_fused = 0, mean_fused = NaN, diff_fused = NaN, p_fused = 1, n_wt_fusion = 0;
+            if (hasFusionData) {
+                const fusedEffects = this.getGeneEffectsForCells(geneIdx, fusedCellIndices);
+                const wtFusionEffects = this.getGeneEffectsForCells(geneIdx, wtFusionCellIndices);
+                n_fused = fusedEffects.length;
+                n_wt_fusion = wtFusionEffects.length;
+                if (fusedEffects.length >= 3 && wtFusionEffects.length >= 3) {
+                    mean_fused = this.mean(fusedEffects);
+                    const wtFusionMean = this.mean(wtFusionEffects);
+                    diff_fused = mean_fused - wtFusionMean;
+                    const tTest_fused = this.welchTTest(wtFusionEffects, fusedEffects);
+                    p_fused = tTest_fused.p;
+                }
+            }
+
+            results.push({
+                gene,
+                n_wt: wtEffects.length,
+                mean_wt: wtMean,
+                n_mut: mutAllEffects.length,
+                mean_mut: mutMean,
+                diff_mut,
+                p_mut: tTest_mut.p,
+                n_2,
+                mean_2,
+                diff_2,
+                p_2,
+                n_fused,
+                mean_fused,
+                diff_fused,
+                p_fused
+            });
+        }
+
+        return {
+            results,
+            nWT: wtCellIndices.length,
+            nMut: mutAllCellIndices.length,
+            n2: mut2CellIndices.length,
+            hasFusionData,
+            nFused: fusedCellIndices?.length || 0,
+            nWTFusion: wtFusionCellIndices?.length || 0
+        };
+    }
+
+    calculateTranslocationAnalysis(hotspotGene, minN, lineageFilter, subLineageFilter, additionalHotspot, additionalHotspotLevel, additionalTransGene, additionalTransLevel) {
+        const transData = this.translocations.geneData[hotspotGene];
+        if (!transData) {
+            throw new Error(`No translocation data for ${hotspotGene}`);
+        }
+
+        const additionalMutData = additionalHotspot ? this.mutations?.geneData?.[additionalHotspot] : null;
+        const additionalTransFilterData = (additionalTransGene && additionalTransGene !== hotspotGene && this.translocations?.geneData?.[additionalTransGene])
+            ? this.translocations.geneData[additionalTransGene].translocations : null;
+
+        const cellLines = this.metadata.cellLines;
+        const results = [];
+
+        const wtCellIndices = [];
+        const mut1CellIndices = [];
+        const mut2CellIndices = [];
+
+        cellLines.forEach((cellLine, idx) => {
+            if (this.excludedTissues && this.excludedTissues.size > 0) {
+                const lineage = this.cellLineMetadata?.lineage?.[cellLine];
+                if (lineage && this.excludedTissues.has(lineage)) return;
+            }
+            if (lineageFilter && this.cellLineMetadata?.lineage?.[cellLine] !== lineageFilter) return;
+            if (subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cellLine] !== subLineageFilter) return;
+
+            if (additionalMutData && additionalHotspotLevel !== 'all') {
+                const addMutLevel = additionalMutData.mutations[cellLine] || 0;
+                if (additionalHotspotLevel === '0' && addMutLevel !== 0) return;
+                if (additionalHotspotLevel === '1' && addMutLevel !== 1) return;
+                if (additionalHotspotLevel === '2' && addMutLevel < 2) return;
+                if (additionalHotspotLevel === '1+2' && addMutLevel === 0) return;
+            }
+
+            if (additionalTransFilterData && additionalTransLevel !== 'all') {
+                const tLevel = additionalTransFilterData[cellLine] || 0;
+                if (additionalTransLevel === '0' && tLevel !== 0) return;
+                if (additionalTransLevel === '1' && tLevel !== 1) return;
+                if (additionalTransLevel === '2' && tLevel < 2) return;
+                if (additionalTransLevel === '1+2' && tLevel < 1) return;
+            }
+
+            const transLevel = transData.translocations[cellLine] || 0;
+            if (transLevel === 0) {
+                wtCellIndices.push(idx);
+            } else if (transLevel === 1) {
+                mut1CellIndices.push(idx);
+            } else {
+                mut2CellIndices.push(idx);
+            }
+        });
+
+        const mutAllCellIndices = [...mut1CellIndices, ...mut2CellIndices];
+
+        if (wtCellIndices.length < 3 || mutAllCellIndices.length < 3) {
+            throw new Error(`Not enough cell lines: WT=${wtCellIndices.length}, Fused=${mutAllCellIndices.length}`);
+        }
+
+        for (let geneIdx = 0; geneIdx < this.nGenes; geneIdx++) {
+            const gene = this.geneNames[geneIdx];
+
+            const wtEffects = this.getGeneEffectsForCells(geneIdx, wtCellIndices);
+            const mutAllEffects = this.getGeneEffectsForCells(geneIdx, mutAllCellIndices);
+            const mut2Effects = this.getGeneEffectsForCells(geneIdx, mut2CellIndices);
+
+            if (wtEffects.length < minN || mutAllEffects.length < 3) continue;
+
+            const wtMean = this.mean(wtEffects);
+            const mutMean = this.mean(mutAllEffects);
+            const diff_mut = mutMean - wtMean;
+            const tTest_mut = this.welchTTest(wtEffects, mutAllEffects);
+
+            let n_2 = mut2Effects.length;
+            let mean_2 = NaN;
+            let diff_2 = NaN;
+            let p_2 = 1;
+
+            if (mut2Effects.length >= 3) {
+                mean_2 = this.mean(mut2Effects);
+                diff_2 = mean_2 - wtMean;
+                const tTest_2 = this.welchTTest(wtEffects, mut2Effects);
+                p_2 = tTest_2.p;
+            }
+
             results.push({
                 gene,
                 n_wt: wtEffects.length,
@@ -2383,7 +3155,8 @@ class CorrelationExplorer {
             results,
             nWT: wtCellIndices.length,
             nMut: mutAllCellIndices.length,
-            n2: mut2CellIndices.length
+            n2: mut2CellIndices.length,
+            hasFusionData: false
         };
     }
 
@@ -2559,17 +3332,70 @@ class CorrelationExplorer {
         return p.toFixed(4);
     }
 
-    displayMutationResults() {
+    displayMutationResults(resetSortIndicator = false) {
         if (!this.mutationResults) return;
 
         const mr = this.mutationResults;
         const results = mr.significantResults;
+        const hasFusion = mr.hasFusionData && mr.isTranslocation;
         const tbody = document.getElementById('mutationTableBody');
         tbody.innerHTML = '';
 
+        // Build dynamic header with hotspot gene name
+        if (resetSortIndicator) {
+            this._mutTableSortCol = 'diff_mut';
+            this._mutTableSortDir = 'asc';
+        }
+        const sortCol = this._mutTableSortCol || 'diff_mut';
+        const sortDir = this._mutTableSortDir || 'asc';
+        const hg = mr.hotspotGene || 'Hotspot';
+        const isT = mr.isTranslocation;
+        const wtLabel = isT ? `No ${hg} Fusion` : `${hg} WT`;
+        const mutLbl = isT ? `${hg} Fused` : `${hg} Mut`;
+        const thead = document.querySelector('#mutationTable thead');
+        const thStyle = 'cursor: pointer;';
+        const sortClick = 'onclick="app.sortMutationTable(this, event)"';
+        const tip = 'title="Click to sort. Ctrl/Cmd+click to copy column."';
+        const arrow = (col) => col === sortCol ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '';
+        const sortAttr = (col) => col === sortCol ? ` data-sort-dir="${sortDir}"` : '';
+        const cols = [
+            { col: 'gene', label: 'Gene', style: '' },
+            { col: 'n_wt', label: `N (${wtLabel})`, style: 'border-left: 2px solid #2563eb;' },
+            { col: 'mean_wt', label: `Mean GE (${wtLabel})`, style: '' },
+            { col: 'n_mut', label: `N (${mutLbl} 1+2)`, style: 'border-left: 2px solid #f97316;' },
+            { col: 'mean_mut', label: `Mean GE (${mutLbl} 1+2)`, style: '' },
+            { col: 'diff_mut', label: 'Δ GE', style: '' },
+            { col: 'p_mut', label: 'p-value', style: '' },
+            { col: 'n_2', label: `N (${mutLbl} 2${isT ? '+' : ''})`, style: 'border-left: 2px solid #dc2626;' },
+            { col: 'mean_2', label: `Mean GE (${mutLbl} 2${isT ? '+' : ''})`, style: '' },
+            { col: 'diff_2', label: 'Δ GE (2v0)', style: '' },
+            { col: 'p_2', label: 'p-value (2v0)', style: '' }
+        ];
+        let headerHTML = '<tr><th></th>';
+        cols.forEach(c => {
+            headerHTML += `<th ${sortClick} data-col="${c.col}" ${tip} style="${thStyle} ${c.style}"${sortAttr(c.col)}>${c.label}${arrow(c.col)}</th>`;
+        });
+        if (hasFusion) {
+            const fusionCols = [
+                { col: 'n_fused', label: 'N (Fused)', style: 'border-left: 2px solid #8b5cf6;' },
+                { col: 'mean_fused', label: 'Mean GE (F)', style: '' },
+                { col: 'diff_fused', label: 'Δ GE (F)', style: '' },
+                { col: 'p_fused', label: 'p (F)', style: '' }
+            ];
+            fusionCols.forEach(c => {
+                headerHTML += `<th ${sortClick} data-col="${c.col}" class="fusion-col" ${tip} style="${thStyle} ${c.style}"${sortAttr(c.col)}>${c.label}${arrow(c.col)}</th>`;
+            });
+        }
+        headerHTML += '</tr>';
+        thead.innerHTML = headerHTML;
+
+        // Show/hide Compare by Fusion button
+        const hasTranslocations = this.translocations?.genes?.length > 0;
+        document.getElementById('mutCompareByFusionBtn').style.display = hasTranslocations ? '' : 'none';
+
         results.forEach(r => {
             const row = document.createElement('tr');
-            row.innerHTML = `
+            let html = `
                 <td><a href="#" class="inspect-link" onclick="app.showGeneEffectDistribution('${r.gene}'); return false;">Inspect</a></td>
                 <td class="gene-hover" data-gene="${r.gene}"><a href="#" style="color: var(--green-700); text-decoration: none; cursor: pointer;" onclick="app.openGeneEffectModal('${r.gene}', 'tissue'); return false;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">${r.gene}</a></td>
                 <td style="border-left: 2px solid #2563eb;">${r.n_wt}</td>
@@ -2583,12 +3409,27 @@ class CorrelationExplorer {
                 <td class="${r.diff_2 < 0 ? 'negative' : 'positive'}">${isNaN(r.diff_2) ? '-' : r.diff_2.toFixed(2)}</td>
                 <td>${this.formatPValue(r.p_2)}</td>
             `;
+            if (hasFusion) {
+                html += `
+                    <td class="fusion-col" style="border-left: 2px solid #8b5cf6;">${r.n_fused || 0}</td>
+                    <td class="fusion-col">${isNaN(r.mean_fused) ? '-' : r.mean_fused.toFixed(2)}</td>
+                    <td class="fusion-col ${r.diff_fused < 0 ? 'negative' : 'positive'}">${isNaN(r.diff_fused) ? '-' : r.diff_fused.toFixed(2)}</td>
+                    <td class="fusion-col">${isNaN(r.diff_fused) ? '-' : this.formatPValue(r.p_fused)}</td>
+                `;
+            }
+            row.innerHTML = html;
             tbody.appendChild(row);
         });
 
         // Build settings summary
-        let settingsText = `Hotspot: ${mr.hotspotGene} | `;
-        settingsText += `WT: ${mr.nWT} cells | Mutated: ${mr.nMut} cells | `;
+        const typeLabel = mr.isTranslocation ? 'Fusion Gene' : 'Hotspot';
+        const mutLabel = mr.isTranslocation ? 'Fused' : 'Mutated';
+        let settingsText = `${typeLabel}: ${mr.hotspotGene} | `;
+        settingsText += `WT: ${mr.nWT} cells | ${mutLabel}: ${mr.nMut} cells`;
+        if (hasFusion) {
+            settingsText += ` | Fused: ${mr.nFused} cells`;
+        }
+        settingsText += ` | `;
         settingsText += `Min cells: ${mr.minN} | p < ${mr.pThreshold}`;
         if (mr.lineageFilter) {
             let lineageText = mr.lineageFilter;
@@ -2598,7 +3439,10 @@ class CorrelationExplorer {
             settingsText += ` | Lineage: ${lineageText}`;
         }
         if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
-            settingsText += ` | Filter: ${mr.additionalHotspot} ${mr.additionalHotspotLevel}`;
+            settingsText += ` | Mut Filter: ${mr.additionalHotspot} ${mr.additionalHotspotLevel}`;
+        }
+        if (mr.additionalTransGene && mr.additionalTransLevel !== 'all') {
+            settingsText += ` | Fusion Filter: ${mr.additionalTransGene} ${mr.additionalTransLevel}`;
         }
         if (mr.excludedTissues && mr.excludedTissues.size > 0) {
             // Show included tissues (inverse of excluded) for clarity
@@ -2646,13 +3490,8 @@ class CorrelationExplorer {
 
         const col = th.dataset.col;
         const currentDir = th.dataset.sortDir === 'asc' ? 'desc' : 'asc';
-        th.dataset.sortDir = currentDir;
-
-        // Update header indicators
-        th.closest('tr').querySelectorAll('th').forEach(h => {
-            h.textContent = h.textContent.replace(' ▲', '').replace(' ▼', '');
-        });
-        th.textContent += currentDir === 'asc' ? ' ▲' : ' ▼';
+        this._mutTableSortCol = col;
+        this._mutTableSortDir = currentDir;
 
         // Sort data
         this.mutationTableData.sort((a, b) => {
@@ -2708,12 +3547,16 @@ class CorrelationExplorer {
         csv += `# Date: ${new Date().toISOString().slice(0, 10)}\n`;
         csv += '#\n';
 
-        const headers = ['Gene', 'N_WT', 'Mean_GE_WT', 'N_1+2', 'Mean_GE_1+2', 'Delta_GE', 'pValue_1+2_vs_0',
+        const hasFusion = mr.hasFusionData && mr.isTranslocation;
+        let headers = ['Gene', 'N_WT', 'Mean_GE_WT', 'N_1+2', 'Mean_GE_1+2', 'Delta_GE', 'pValue_1+2_vs_0',
                         'N_2', 'Mean_GE_2', 'Delta_GE_2vs0', 'pValue_2_vs_0'];
+        if (hasFusion) {
+            headers.push('N_Fused', 'Mean_GE_Fused', 'Delta_GE_Fused', 'pValue_Fused');
+        }
 
         csv += headers.join(',') + '\n';
         results.forEach(r => {
-            csv += [
+            const row = [
                 r.gene,
                 r.n_wt,
                 r.mean_wt.toFixed(2),
@@ -2725,7 +3568,16 @@ class CorrelationExplorer {
                 isNaN(r.mean_2) ? '' : r.mean_2.toFixed(2),
                 isNaN(r.diff_2) ? '' : r.diff_2.toFixed(2),
                 this.formatPValue(r.p_2)
-            ].join(',') + '\n';
+            ];
+            if (hasFusion) {
+                row.push(
+                    r.n_fused || 0,
+                    isNaN(r.mean_fused) ? '' : r.mean_fused.toFixed(2),
+                    isNaN(r.diff_fused) ? '' : r.diff_fused.toFixed(2),
+                    isNaN(r.diff_fused) ? '' : this.formatPValue(r.p_fused)
+                );
+            }
+            csv += row.join(',') + '\n';
         });
 
         const filename = `mutation_analysis_${mr.hotspotGene}_${new Date().toISOString().slice(0, 10)}.csv`;
@@ -2737,7 +3589,10 @@ class CorrelationExplorer {
 
         const mr = this.mutationResults;
         const hotspotGene = mr.hotspotGene;
-        const mutationData = this.mutations.geneData[hotspotGene];
+        const isTranslocation = mr.isTranslocation;
+        const mutationData = isTranslocation
+            ? this.translocations.geneData[hotspotGene]
+            : this.mutations.geneData[hotspotGene];
         const geneIdx = this.geneIndex.get(gene.toUpperCase());
 
         if (geneIdx === undefined) {
@@ -2752,6 +3607,13 @@ class CorrelationExplorer {
         const inspectHotspot = inspectHotspotOverride !== undefined
             ? inspectHotspotOverride
             : (document.getElementById('geHotspotFilter')?.value || '');
+
+        // Compute inspect-level fusion filter
+        const inspectFusion = document.getElementById('geFusionFilter')?.value || '';
+        const inspFusionData = inspectFusion ? this.translocations?.geneData?.[inspectFusion]?.translocations : null;
+
+        // Compute inspect-level subtype filter
+        const inspectSubtype = document.getElementById('geSubtypeFilter')?.value || '';
 
         // Collect data for each cell line
         const cellLines = this.metadata.cellLines;
@@ -2775,14 +3637,19 @@ class CorrelationExplorer {
                 }
             }
 
-            // Check sublineage filter
+            // Check sublineage filter (analysis-level)
             if (!inspectTissueFilter && mr.subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cellLine] !== mr.subLineageFilter) {
                 return;
             }
 
+            // Check inspect-level subtype filter
+            if (inspectSubtype && this.cellLineMetadata?.primaryDisease) {
+                if (this.cellLineMetadata.primaryDisease[cellLine] !== inspectSubtype) return;
+            }
+
             // Check additional hotspot filter
             if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
-                const addMutData = this.mutations.geneData[mr.additionalHotspot];
+                const addMutData = this.mutations?.geneData?.[mr.additionalHotspot];
                 if (addMutData) {
                     const addMutLevel = addMutData.mutations[cellLine] || 0;
                     if (mr.additionalHotspotLevel === '0' && addMutLevel !== 0) return;
@@ -2792,19 +3659,39 @@ class CorrelationExplorer {
                 }
             }
 
+            // Check additional translocation filter
+            if (mr.additionalTransGene && mr.additionalTransLevel !== 'all') {
+                const addTransData = this.translocations?.geneData?.[mr.additionalTransGene]?.translocations;
+                if (addTransData) {
+                    const tLevel = addTransData[cellLine] || 0;
+                    if (mr.additionalTransLevel === '0' && tLevel !== 0) return;
+                    if (mr.additionalTransLevel === '1' && tLevel !== 1) return;
+                    if (mr.additionalTransLevel === '2' && tLevel < 2) return;
+                    if (mr.additionalTransLevel === '1+2' && tLevel < 1) return;
+                }
+            }
+
             // Check inspect-level additional hotspot filter
             if (inspectHotspot) {
-                const inspHotData = this.mutations.geneData[inspectHotspot];
+                const inspHotData = this.mutations?.geneData?.[inspectHotspot];
                 if (inspHotData) {
                     const inspMutLevel = inspHotData.mutations[cellLine] || 0;
-                    if (inspMutLevel === 0) return; // Only show cells mutated (>=1) in the selected hotspot
+                    if (inspMutLevel === 0) return;
                 }
+            }
+
+            // Check inspect-level fusion filter
+            if (inspectFusion && inspFusionData) {
+                const fusionLevel = inspFusionData[cellLine] || 0;
+                if (fusionLevel < 1) return;
             }
 
             const ge = this.geneEffects[geneIdx * this.nCellLines + idx];
             if (isNaN(ge)) return;
 
-            const mutLevel = mutationData.mutations[cellLine] || 0;
+            const mutLevel = isTranslocation
+                ? (mutationData.translocations[cellLine] || 0)
+                : (mutationData.mutations[cellLine] || 0);
             const cellName = this.getCellLineName(cellLine);
             const lineage = this.getCellLineLineage(cellLine);
 
@@ -2827,6 +3714,24 @@ class CorrelationExplorer {
         // Create jitter for y-axis
         const jitter = (base, spread = 0.15) => base + (Math.random() - 0.5) * spread;
 
+        // Labels and colors depend on translocation mode
+        const mut1Label = isTranslocation ? '1 fusion partner' : '1 mutation';
+        const mut2Label = isTranslocation ? '2+ fusion partners' : '2 mutations';
+        const color1 = '#3b82f6';
+        const color2 = '#dc2626';
+
+        // Build hover text with fusion partner info for translocation mode
+        const makeHoverText = (d) => {
+            let text = `${d.cellName}<br>${d.lineage}<br>GE: ${d.ge.toFixed(2)}`;
+            if (isTranslocation && mutationData.partners) {
+                const partners = mutationData.partners[d.cellLine];
+                if (partners && partners.length > 0) {
+                    text += `<br>Partners: ${partners.join(', ')}`;
+                }
+            }
+            return text;
+        };
+
         // Build Plotly traces
         const traces = [
             {
@@ -2836,7 +3741,7 @@ class CorrelationExplorer {
                 type: 'scatter',
                 name: `WT (n=${data.wt.length})`,
                 marker: { color: '#888888', size: 8, opacity: 0.7 },
-                text: data.wt.map(d => `${d.cellName}<br>${d.lineage}<br>GE: ${d.ge.toFixed(2)}`),
+                text: data.wt.map(d => makeHoverText(d)),
                 hoverinfo: 'text'
             },
             {
@@ -2844,9 +3749,9 @@ class CorrelationExplorer {
                 y: data.mut1.map(() => jitter(1)),
                 mode: 'markers',
                 type: 'scatter',
-                name: `1 mutation (n=${data.mut1.length})`,
-                marker: { color: '#3b82f6', size: 8, opacity: 0.7 },
-                text: data.mut1.map(d => `${d.cellName}<br>${d.lineage}<br>GE: ${d.ge.toFixed(2)}`),
+                name: `${mut1Label} (n=${data.mut1.length})`,
+                marker: { color: color1, size: 8, opacity: 0.7 },
+                text: data.mut1.map(d => makeHoverText(d)),
                 hoverinfo: 'text'
             },
             {
@@ -2854,9 +3759,9 @@ class CorrelationExplorer {
                 y: data.mut2.map(() => jitter(2)),
                 mode: 'markers',
                 type: 'scatter',
-                name: `2 mutations (n=${data.mut2.length})`,
-                marker: { color: '#dc2626', size: 8, opacity: 0.7 },
-                text: data.mut2.map(d => `${d.cellName}<br>${d.lineage}<br>GE: ${d.ge.toFixed(2)}`),
+                name: `${mut2Label} (n=${data.mut2.length})`,
+                marker: { color: color2, size: 8, opacity: 0.7 },
+                text: data.mut2.map(d => makeHoverText(d)),
                 hoverinfo: 'text'
             }
         ];
@@ -2911,7 +3816,7 @@ class CorrelationExplorer {
                 x: [meanMut1, meanMut1],
                 y: [0.7, 1.3],
                 mode: 'lines',
-                line: { color: '#3b82f6', width: 3 },
+                line: { color: color1, width: 3 },
                 showlegend: false,
                 hoverinfo: 'skip'
             });
@@ -2921,7 +3826,7 @@ class CorrelationExplorer {
                 x: [meanMut2, meanMut2],
                 y: [1.7, 2.3],
                 mode: 'lines',
-                line: { color: '#dc2626', width: 3 },
+                line: { color: color2, width: 3 },
                 showlegend: false,
                 hoverinfo: 'skip'
             });
@@ -2937,7 +3842,12 @@ class CorrelationExplorer {
             filterInfo.push(`Lineage: ${lineageText}`);
         }
         if (inspectTissueFilter) {
-            filterInfo.push(`Tissue: ${inspectTissueFilter}`);
+            let tissueText = `Tissue: ${inspectTissueFilter}`;
+            if (inspectSubtype) tissueText += ` (${inspectSubtype})`;
+            filterInfo.push(tissueText);
+        }
+        if (inspectSubtype && !inspectTissueFilter) {
+            filterInfo.push(`Subtype: ${inspectSubtype}`);
         }
         if (mr.excludedTissues && mr.excludedTissues.size > 0 && !inspectTissueFilter) {
             const allLineages = this.cellLineMetadata?.lineage
@@ -2949,85 +3859,136 @@ class CorrelationExplorer {
         if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
             filterInfo.push(`${mr.additionalHotspot}: ${mr.additionalHotspotLevel}`);
         }
+        if (mr.additionalTransGene && mr.additionalTransLevel !== 'all') {
+            filterInfo.push(`Fusion ${mr.additionalTransGene}: ${mr.additionalTransLevel}`);
+        }
         if (inspectHotspot) {
             filterInfo.push(`Also ${inspectHotspot}-mutated`);
         }
+        if (inspectFusion) {
+            filterInfo.push(`Also ${inspectFusion}-fused`);
+        }
         const lineageText = filterInfo.length > 0 ? filterInfo.join(' | ') : 'All lineages';
 
-        // Build stats text for subtitle
+        // Build stats text for subtitle - condensed to one line
         const formatP = (p) => isNaN(p) ? '-' : (p < 0.001 ? p.toExponential(1) : p.toFixed(3));
-        let statsLine1 = `WT: n=${wtStats.n}, mean=${wtStats.mean.toFixed(2)}, med=${wtStats.median.toFixed(2)}`;
-        statsLine1 += `  ·  Mut: n=${mutAllStats.n}, mean=${mutAllStats.mean.toFixed(2)}, med=${mutAllStats.median.toFixed(2)}`;
-        let statsLine2 = `p(WT vs Mut): ${formatP(pWTvsMut)}`;
+        const fusedLabel = isTranslocation ? 'Fused' : 'Mut';
+        let statsLine = `WT: n=${wtStats.n}, mean=${wtStats.mean.toFixed(2)}, med=${wtStats.median.toFixed(2)}  ·  ${fusedLabel}: n=${mutAllStats.n}, mean=${mutAllStats.mean.toFixed(2)}, med=${mutAllStats.median.toFixed(2)}`;
+        statsLine += `  ·  p(WT vs ${fusedLabel}): ${formatP(pWTvsMut)}`;
         if (mut2Stats.n >= 3) {
-            statsLine2 += `  ·  p(WT vs 2): ${formatP(pWTvs2)}`;
+            statsLine += `  ·  p(WT vs 2${isTranslocation ? '+' : ''}): ${formatP(pWTvs2)}`;
         }
 
         // Combine lineage info and stats in subtitle
-        const subtitle = `${lineageText}<br>${statsLine1}<br>${statsLine2}`;
+        const subtitle = `${lineageText}<br>${statsLine}`;
+
+        const statusLabel = isTranslocation ? 'Fusion Status' : 'Mutation Status';
+        const yAxisTitle = isTranslocation ? `${hotspotGene} Fusions` : `${hotspotGene} Mutations`;
+        const tick0Label = isTranslocation ? '0 No fusion' : '0 WT';
+        const tick1Label = isTranslocation ? '1 partner' : '1';
+        const tick2Label = isTranslocation ? '2+ partners' : '2';
+
+        const titleText = `${gene} Gene Effect by ${hotspotGene} ${statusLabel}`;
+        const subtitleText = subtitle;
 
         const layout = {
-            title: {
-                text: `${gene} Gene Effect by ${hotspotGene} Mutation Status<br><sub style="font-size:10px;color:#666">${subtitle}</sub>`,
-                font: { size: 16 }
-            },
+            annotations: [{
+                text: `<b>${titleText}</b><br><span style="font-size:10px;color:#666">${subtitleText}</span>`,
+                xref: 'paper',
+                yref: 'paper',
+                x: 0.5,
+                y: 1.35,
+                xanchor: 'center',
+                yanchor: 'top',
+                showarrow: false,
+                font: { size: 13 }
+            }],
             xaxis: {
                 title: `${gene} Gene Effect`,
                 range: [xMin, xMax]
             },
             yaxis: {
-                title: `${hotspotGene} Mutations`,
+                title: yAxisTitle,
                 tickmode: 'array',
                 tickvals: [0, 1, 2],
-                ticktext: [`0 WT (n=${data.wt.length})`, `1 (n=${data.mut1.length})`, `2 (n=${data.mut2.length})`],
+                ticktext: [`${tick0Label} (n=${data.wt.length})`, `${tick1Label} (n=${data.mut1.length})`, `${tick2Label} (n=${data.mut2.length})`],
                 range: [-0.5, 2.5]
             },
             showlegend: false,
-            margin: { t: 160, r: 30, b: 50, l: 130 }
+            margin: { t: 160, r: 30, b: 50, l: 130 },
+            height: Math.round(400 * (this.geChartHeightRatio || 1))
         };
 
         // Show modal
         document.getElementById('geneEffectModal').style.display = 'flex';
-        document.getElementById('geneEffectTitle').textContent = `${gene} Gene Effect by ${hotspotGene} Mutation`;
+        document.getElementById('geneEffectTitle').textContent = `${gene} Gene Effect by ${hotspotGene} ${isTranslocation ? 'Fusion' : 'Mutation'}`;
 
         // Populate tissue filter dropdown with ALL lineages (inspect can override analysis filters)
         const tissueFilterEl = document.getElementById('geTissueFilter');
         if (tissueFilterEl) {
             const allLineages = [...new Set(cellLines.map(cl => this.cellLineMetadata?.lineage?.[cl]).filter(Boolean))].sort();
-            tissueFilterEl.innerHTML = '<option value="">All tissues</option>';
-            allLineages.forEach(l => {
-                const opt = document.createElement('option');
-                opt.value = l;
-                opt.textContent = l;
-                tissueFilterEl.appendChild(opt);
-            });
-            tissueFilterEl.value = inspectTissueFilter;
+            let tHtml = '<option value="">All tissues</option>';
+            for (const l of allLineages) {
+                const sel = l === inspectTissueFilter ? ' selected' : '';
+                tHtml += `<option value="${l}"${sel}>${l}</option>`;
+            }
+            tissueFilterEl.innerHTML = tHtml;
+
+            // Pre-select lineage filter from analysis params if no inspect override
+            if (!inspectTissueFilter && mr.lineageFilter) {
+                tissueFilterEl.value = mr.lineageFilter;
+                this.updateGeSubtypeFilter();
+                if (mr.subLineageFilter) {
+                    const geSubEl = document.getElementById('geSubtypeFilter');
+                    if (geSubEl) geSubEl.value = mr.subLineageFilter;
+                }
+            } else {
+                this.updateGeSubtypeFilter();
+                // Restore subtype selection after repopulating dropdown
+                if (inspectSubtype) {
+                    const geSubEl = document.getElementById('geSubtypeFilter');
+                    if (geSubEl) geSubEl.value = inspectSubtype;
+                }
+            }
         }
 
         // Populate inspect-level hotspot filter dropdown
         const hotspotFilterEl = document.getElementById('geHotspotFilter');
         if (hotspotFilterEl && this.mutations?.genes) {
-            hotspotFilterEl.innerHTML = '<option value="">No hotspot filter</option>';
-            this.mutations.genes.forEach(g => {
-                if (g === hotspotGene) return; // Skip the main analysis hotspot
-                const opt = document.createElement('option');
-                opt.value = g; opt.textContent = g;
-                if (g === inspectHotspot) opt.selected = true;
-                hotspotFilterEl.appendChild(opt);
-            });
+            let hHtml = '<option value="">No hotspot filter</option>';
+            for (const g of this.mutations.genes) {
+                if (g === hotspotGene) continue;
+                const sel = g === inspectHotspot ? ' selected' : '';
+                hHtml += `<option value="${g}"${sel}>${g}</option>`;
+            }
+            hotspotFilterEl.innerHTML = hHtml;
         }
 
-        // Populate and show hotspot gene selector (Y axis mutation)
+        // Populate inspect-level fusion filter dropdown (using pre-computed cache)
+        const fusionFilterEl = document.getElementById('geFusionFilter');
+        if (fusionFilterEl && this._fusionGeneCounts?.length > 0) {
+            const currentFusion = fusionFilterEl.value;
+            let html = '<option value="">No fusion filter</option>';
+            for (const { gene, nFused } of this._fusionGeneCounts) {
+                if (gene === hotspotGene) continue;
+                const sel = gene === currentFusion ? ' selected' : '';
+                html += `<option value="${gene}"${sel}>${gene} (${nFused} fused)</option>`;
+            }
+            fusionFilterEl.innerHTML = html;
+        }
+
+        // Populate and show hotspot gene selector (Y axis mutation/fusion)
         const hotspotGeneSelectEl = document.getElementById('geHotspotGeneSelect');
-        if (hotspotGeneSelectEl && this.mutations?.genes) {
-            hotspotGeneSelectEl.innerHTML = '';
-            this.mutations.genes.forEach(g => {
-                const opt = document.createElement('option');
-                opt.value = g;
-                opt.textContent = g;
-                if (g === hotspotGene) opt.selected = true;
-                hotspotGeneSelectEl.appendChild(opt);
-            });
+        if (hotspotGeneSelectEl) {
+            const geneList = isTranslocation
+                ? (this.translocations?.genes || [])
+                : (this.mutations?.genes || []);
+            let gHtml = '';
+            for (const g of geneList) {
+                const sel = g === hotspotGene ? ' selected' : '';
+                gHtml += `<option value="${g}"${sel}>${g}</option>`;
+            }
+            hotspotGeneSelectEl.innerHTML = gHtml;
         }
         document.getElementById('geHotspotGeneGroup').style.display = '';
 
@@ -3047,8 +4008,12 @@ class CorrelationExplorer {
 
         // Show mutation inspect controls, hide non-mutation view buttons
         document.getElementById('geHotspotFilter').style.display = '';
+        document.getElementById('geFusionFilter').style.display =
+            this.translocations?.genes?.length > 0 ? '' : 'none';
         document.getElementById('geCompareButtons').style.display = '';
         document.getElementById('geResetFiltersBtn').style.display = '';
+        document.getElementById('geCompareByTranslocationBtn').style.display =
+            this.translocations?.genes?.length > 0 ? '' : 'none';
         document.getElementById('geViewTissue').style.display = 'none';
         document.getElementById('geViewHotspot').style.display = 'none';
         // Hide the "View:" label too (previous sibling span)
@@ -3059,7 +4024,20 @@ class CorrelationExplorer {
         }
         this._keepInlineCompare = false;
 
-        Plotly.newPlot('geneEffectPlot', traces, layout, { responsive: true });
+        // Apply current width ratio to container
+        const container = document.getElementById('geChartContainer');
+        const ratio = this.geChartWidthRatio || 1;
+        if (container) {
+            container.style.flex = `0 0 ${Math.round(ratio * 55)}%`;
+        }
+
+        Plotly.newPlot('geneEffectPlot', traces, layout, {
+            responsive: true,
+            edits: { annotationPosition: true, legendPosition: true }
+        });
+
+        // Show chart width and Y range controls
+        this.updateShowAllButton();
     }
 
     _exportMutationInspectChart(format) {
@@ -3668,6 +4646,16 @@ class CorrelationExplorer {
 
         this.network = new vis.Network(container, data, options);
         this.networkData = data;
+
+        // Add filter banner after vis.Network has set up its canvas
+        const filterText = this._getNetworkFilterText();
+        if (filterText) {
+            const banner = document.createElement('div');
+            banner.className = 'network-filter-banner';
+            banner.textContent = filterText;
+            container.appendChild(banner);
+        }
+
         this.hiddenNodes = [];
         this.removeMode = false;
         this.selectMode = false;
@@ -3699,17 +4687,18 @@ class CorrelationExplorer {
         }
         document.getElementById('selectedNodesList').style.display = 'none';
 
-        // For large networks, disable physics after stabilization
-        if (nodeCount > 30) {
-            this.network.once('stabilizationIterationsDone', () => {
+        // After stabilization: resolve edge crossings, then lock large networks
+        this.network.once('stabilizationIterationsDone', () => {
+            this.resolveEdgeCrossings();
+            if (nodeCount > 30) {
                 this.network.setOptions({ physics: { enabled: false } });
                 this.physicsEnabled = false;
                 if (physicsBtn) {
                     physicsBtn.textContent = 'Unlock Nodes';
                     physicsBtn.classList.add('btn-active');
                 }
-            });
-        }
+            }
+        });
 
         // Track state for click vs double-click vs drag
         let clickTimeout = null;
@@ -3867,6 +4856,72 @@ class CorrelationExplorer {
         this.updateEdgeLegend(edgeWidthBase, cutoff);
     }
 
+    resolveEdgeCrossings() {
+        if (!this.network || !this.networkData) return;
+
+        const positions = this.network.getPositions();
+        const edges = [];
+        this.networkData.edges.forEach(e => edges.push(e));
+
+        // Line segment intersection test (excludes shared endpoints)
+        const cross = (a, b, c, d) => {
+            const det = (c.x - a.x) * (d.y - a.y) - (d.x - a.x) * (c.y - a.y);
+            const det2 = (c.x - b.x) * (d.y - b.y) - (d.x - b.x) * (c.y - b.y);
+            if (det * det2 >= 0) return false;
+            const det3 = (a.x - c.x) * (b.y - c.y) - (b.x - c.x) * (a.y - c.y);
+            const det4 = (a.x - d.x) * (b.y - d.y) - (b.x - d.x) * (a.y - d.y);
+            return det3 * det4 < 0;
+        };
+
+        const countCrossings = () => {
+            let n = 0;
+            for (let i = 0; i < edges.length; i++) {
+                for (let j = i + 1; j < edges.length; j++) {
+                    const e1 = edges[i], e2 = edges[j];
+                    if (e1.from === e2.from || e1.from === e2.to || e1.to === e2.from || e1.to === e2.to) continue;
+                    const p1 = positions[e1.from], p2 = positions[e1.to], p3 = positions[e2.from], p4 = positions[e2.to];
+                    if (p1 && p2 && p3 && p4 && cross(p1, p2, p3, p4)) n++;
+                }
+            }
+            return n;
+        };
+
+        let crossings = countCrossings();
+        if (crossings === 0) return;
+
+        // Try swapping pairs of nodes to reduce crossings
+        const nodeIds = Object.keys(positions);
+        let improved = true;
+        while (improved && crossings > 0) {
+            improved = false;
+            for (let i = 0; i < nodeIds.length && !improved; i++) {
+                for (let j = i + 1; j < nodeIds.length && !improved; j++) {
+                    const a = nodeIds[i], b = nodeIds[j];
+                    // Swap positions
+                    const tmp = { x: positions[a].x, y: positions[a].y };
+                    positions[a] = { x: positions[b].x, y: positions[b].y };
+                    positions[b] = tmp;
+
+                    const newCrossings = countCrossings();
+                    if (newCrossings < crossings) {
+                        crossings = newCrossings;
+                        improved = true;
+                    } else {
+                        // Undo swap
+                        const tmp2 = { x: positions[a].x, y: positions[a].y };
+                        positions[a] = { x: positions[b].x, y: positions[b].y };
+                        positions[b] = tmp2;
+                    }
+                }
+            }
+        }
+
+        // Apply resolved positions
+        for (const nodeId of nodeIds) {
+            this.network.moveNode(nodeId, positions[nodeId].x, positions[nodeId].y);
+        }
+    }
+
     updateNetworkStyle() {
         if (!this.network || !this.networkData) return;
 
@@ -3962,6 +5017,7 @@ class CorrelationExplorer {
                     <td style="white-space: nowrap;">
                         <button class="btn btn-sm inspect-btn" style="padding: 2px 6px; font-size: 10px; background: #5a9f4a; color: white;" data-gene1="${c.gene1}" data-gene2="${c.gene2}">Correlate</button>
                         <button class="btn btn-sm tissue-btn" style="padding: 2px 6px; font-size: 10px; margin-left: 4px; background: #6b7280; color: white;" data-gene1="${c.gene1}" data-gene2="${c.gene2}">By Tissue</button>
+                        <button class="btn btn-sm hotspot-btn" style="padding: 2px 6px; font-size: 10px; margin-left: 4px; background: #6b7280; color: white;" data-gene1="${c.gene1}" data-gene2="${c.gene2}">By Hotspot</button>
                     </td>
                 `;
                 // Add click handlers
@@ -3971,11 +5027,29 @@ class CorrelationExplorer {
                 tr.querySelector('.tissue-btn').addEventListener('click', () => {
                     this.openByTissueByGenes(c.gene1, c.gene2);
                 });
+                tr.querySelector('.hotspot-btn').addEventListener('click', () => {
+                    this.openInspectWithHotspot(c.gene1, c.gene2);
+                });
                 tbody.appendChild(tr);
             });
 
         // Attach gene tooltip handlers
         this.attachGeneTooltips(tbody);
+    }
+
+    openInspectWithHotspot(gene1, gene2) {
+        // Open the inspect modal and pre-select hotspot overlay
+        this.openInspectByGenes(gene1, gene2);
+        // After opening, switch to hotspot overlay mode
+        setTimeout(() => {
+            const hotspotSelect = document.getElementById('hotspotGene');
+            const hotspotMode = document.getElementById('hotspotMode');
+            if (hotspotSelect && hotspotSelect.options.length > 1) {
+                hotspotSelect.selectedIndex = 1; // Select first available hotspot gene
+                if (hotspotMode) hotspotMode.value = 'color';
+                hotspotSelect.dispatchEvent(new Event('change'));
+            }
+        }, 300);
     }
 
     attachGeneTooltips(container) {
@@ -4117,7 +5191,8 @@ class CorrelationExplorer {
                 // Add analyze buttons
                 rowHtml += `
                     <td style="text-align: center; white-space: nowrap;">
-                        <button class="btn btn-sm tissue-btn" style="padding: 2px 6px; font-size: 10px; background: #5a9f4a; color: white;" data-gene="${c.gene}">By Tissue</button>
+                        <button class="btn btn-sm gene-effect-btn" style="padding: 2px 6px; font-size: 10px; background: #5a9f4a; color: white;" data-gene="${c.gene}">Gene Effect</button>
+                        <button class="btn btn-sm tissue-btn" style="padding: 2px 6px; font-size: 10px; margin-left: 4px; background: #6b7280; color: white;" data-gene="${c.gene}">By Tissue</button>
                         <button class="btn btn-sm hotspot-btn" style="padding: 2px 6px; font-size: 10px; margin-left: 4px; background: #6b7280; color: white;" data-gene="${c.gene}">By Hotspot</button>
                     </td>
                 `;
@@ -4127,6 +5202,9 @@ class CorrelationExplorer {
             });
 
         // Add event listeners to buttons
+        tbody.querySelectorAll('.gene-effect-btn').forEach(btn => {
+            btn.addEventListener('click', () => this.openGeneEffectModal(btn.dataset.gene, 'tissue'));
+        });
         tbody.querySelectorAll('.tissue-btn').forEach(btn => {
             btn.addEventListener('click', () => this.openGeneEffectModal(btn.dataset.gene, 'tissue'));
         });
@@ -4183,15 +5261,41 @@ ${this.genesNotFound.join(', ')}
             hour12: false
         });
 
+        // Build excluded tissues section
+        let excludedTissuesText = 'None';
+        if (this.excludedTissues && this.excludedTissues.size > 0) {
+            excludedTissuesText = [...this.excludedTissues].sort().join(', ');
+        }
+
+        // Build hotspot/translocation filter section
+        let hotspotFilterText = '';
+        const paramHotspotGene = document.getElementById('paramHotspotGene')?.value;
+        const paramHotspotLevel = document.getElementById('paramHotspotLevel')?.value;
+        if (paramHotspotGene) {
+            hotspotFilterText = `\nHotspot Mutation Filter: ${paramHotspotGene} (${paramHotspotLevel || 'all'})`;
+        }
+        const paramTranslocGene = document.getElementById('paramTranslocationGene')?.value;
+        const paramTranslocLevel = document.getElementById('paramTranslocationLevel')?.value;
+        if (paramTranslocGene) {
+            hotspotFilterText += `\nTranslocation Filter: ${paramTranslocGene} (${paramTranslocLevel || 'all'})`;
+        }
+
+        // P-value threshold (for mutation mode)
+        let pValueText = '';
+        if (this.results.mode === 'mutation') {
+            pValueText = `\nP-value Threshold: ${document.getElementById('pValueThreshold')?.value || '0.001'}`;
+        }
+
         text.textContent = `Gene Correlation Analysis Summary
 ================================
 Run: ${dateTimeStr}
 
-Analysis Mode: ${this.results.mode === 'analysis' ? 'Analysis (within gene list)' : 'Design (find correlated genes)'}
+Analysis Mode: ${this.results.mode === 'analysis' ? 'Analysis (within gene list)' : this.results.mode === 'design' ? 'Design (find correlated genes)' : this.results.mode === 'mutation' ? 'Mutation Analysis' : this.results.mode}
 Correlation Cutoff: ${this.results.cutoff}
 Minimum Cell Lines: ${document.getElementById('minCellLines').value}
 Minimum Slope: ${document.getElementById('minSlope').value}
 Lineage Filter: ${lineageText}
+Excluded Tissues: ${excludedTissuesText}${hotspotFilterText}${pValueText}
 
 Input Genes: ${this.results.geneList.length}
 ${this.results.geneList.join(', ')}
@@ -4329,6 +5433,32 @@ Results:
         URL.revokeObjectURL(url);
     }
 
+    _getNetworkFilterText() {
+        const parts = [];
+        const lineage = document.getElementById('lineageFilter')?.value;
+        const subLineage = document.getElementById('subLineageFilter')?.value;
+        if (lineage) {
+            parts.push(subLineage ? `${lineage} / ${subLineage}` : lineage);
+        }
+        if (this.excludedTissues && this.excludedTissues.size > 0) {
+            parts.push(`${this.excludedTissues.size} tissue${this.excludedTissues.size > 1 ? 's' : ''} excluded`);
+        }
+        const hotspotGene = document.getElementById('paramHotspotGene')?.value;
+        const hotspotLevel = document.getElementById('paramHotspotLevel')?.value;
+        if (hotspotGene) {
+            const levelLabel = hotspotLevel === '1+2' ? 'mut' : hotspotLevel === '0' ? 'WT' : `level ${hotspotLevel}`;
+            parts.push(`${hotspotGene} ${levelLabel}`);
+        }
+        const translocGene = document.getElementById('paramTranslocationGene')?.value;
+        const translocLevel = document.getElementById('paramTranslocationLevel')?.value;
+        if (translocGene) {
+            const levelLabel = translocLevel === '1+2' ? 'fused' : translocLevel === '0' ? 'not fused' : `level ${translocLevel}`;
+            parts.push(`${translocGene} ${levelLabel}`);
+        }
+        if (parts.length === 0) return null;
+        return `Filters: ${parts.join('  \u00b7  ')}  \u00b7  n=${this.results.nCellLines}`;
+    }
+
     downloadNetworkPNG() {
         if (!this.network) return;
 
@@ -4338,35 +5468,56 @@ Results:
             return;
         }
 
-        // Create a new canvas that includes the legend - larger for publication quality
+        // Create a high-resolution canvas for publication quality (300 DPI)
+        const pngScale = 2;
+        const container = document.getElementById('networkPlot');
+        const cssWidth = container.clientWidth;
+        const cssHeight = container.clientHeight;
         const legendHeight = 160;
         const padding = 30;
-        const networkWidth = networkCanvas.width;
-        const networkHeight = networkCanvas.height;
-        const totalWidth = networkWidth;
-        const totalHeight = networkHeight + legendHeight + padding;
+        const filterText = this._getNetworkFilterText();
+        const filterBannerHeight = filterText ? 24 : 0;
+        const totalWidth = cssWidth;
+        const totalHeight = filterBannerHeight + cssHeight + legendHeight + padding;
+
+        const transparentBg = document.getElementById('exportNetworkTransparentBg')?.checked;
 
         const canvas = document.createElement('canvas');
-        canvas.width = totalWidth;
-        canvas.height = totalHeight;
+        canvas.width = totalWidth * pngScale;
+        canvas.height = totalHeight * pngScale;
         const ctx = canvas.getContext('2d');
+        ctx.scale(pngScale, pngScale);
 
-        // Draw white background
-        ctx.fillStyle = 'white';
-        ctx.fillRect(0, 0, totalWidth, totalHeight);
+        // Draw background (skip for transparent)
+        if (!transparentBg) {
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, totalWidth, totalHeight);
+        }
 
-        // Draw network
-        ctx.drawImage(networkCanvas, 0, 0);
+        // Draw filter banner at top if active
+        if (filterText) {
+            ctx.font = '12px Arial';
+            ctx.fillStyle = '#374151';
+            ctx.textAlign = 'center';
+            ctx.fillText(filterText, totalWidth / 2, 16);
+            ctx.textAlign = 'left';
+        }
+
+        // Draw network scaled from canvas pixels to CSS dimensions
+        ctx.drawImage(networkCanvas, 0, filterBannerHeight, cssWidth, cssHeight);
 
         // Draw legend background
-        ctx.fillStyle = '#f9fafb';
-        ctx.strokeStyle = '#e5e7eb';
-        ctx.lineWidth = 1;
-        ctx.fillRect(15, networkHeight + 10, totalWidth - 30, legendHeight - 10);
-        ctx.strokeRect(15, networkHeight + 10, totalWidth - 30, legendHeight - 10);
+        const legendTop = filterBannerHeight + cssHeight;
+        if (!transparentBg) {
+            ctx.fillStyle = '#f9fafb';
+            ctx.strokeStyle = '#e5e7eb';
+            ctx.lineWidth = 1;
+            ctx.fillRect(15, legendTop + 10, totalWidth - 30, legendHeight - 10);
+            ctx.strokeRect(15, legendTop + 10, totalWidth - 30, legendHeight - 10);
+        }
 
-        // Draw legend - LARGER fonts for publication
-        const legendY = networkHeight + padding + 10;
+        // Draw legend
+        const legendY = legendTop + padding + 10;
         const titleFont = 'bold 16px Arial';
         const textFont = '14px Arial';
         const smallFont = '13px Arial';
@@ -4639,12 +5790,16 @@ Results:
     downloadNetworkSVG() {
         if (!this.network || !this.networkData) return;
 
+        const transparentBg = document.getElementById('exportNetworkTransparentBg')?.checked;
+
         // Build SVG from network data
         const container = document.getElementById('networkPlot');
         const width = container.clientWidth;
         const networkHeight = container.clientHeight;
         const legendHeight = 160;  // Larger for publication
-        const totalHeight = networkHeight + legendHeight;
+        const filterText = this._getNetworkFilterText();
+        const filterBannerHeight = filterText ? 24 : 0;
+        const totalHeight = filterBannerHeight + networkHeight + legendHeight;
 
         // Get positions from vis.js and convert to DOM coordinates
         const positions = this.network.getPositions();
@@ -4652,7 +5807,7 @@ Results:
         for (const nodeId in positions) {
             const canvasPos = positions[nodeId];
             const domPos = this.network.canvasToDOM({ x: canvasPos.x, y: canvasPos.y });
-            domPositions[nodeId] = domPos;
+            domPositions[nodeId] = { x: domPos.x, y: domPos.y + filterBannerHeight };
         }
 
         let svg = `<?xml version="1.0" encoding="UTF-8"?>
@@ -4680,46 +5835,48 @@ Results:
   .legend-text { font-family: Arial, sans-serif; font-size: 14px; fill: #333; }
   .legend-small { font-family: Arial, sans-serif; font-size: 13px; fill: #333; }
 </style>
-<rect width="100%" height="100%" fill="white"/>
+${transparentBg ? '' : '<rect width="100%" height="100%" fill="white"/>'}
+${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-family: Arial, sans-serif; font-size: 12px; fill: #374151;">${this.escapeXml(filterText)}</text>` : ''}
 `;
 
         // Get current scale for sizing elements
         const scale = this.network.getScale();
 
-        // Draw edges
+        // Draw edges — read stored width so SVG matches vis.js rendering
         this.networkData.edges.forEach(edge => {
             const from = domPositions[edge.from];
             const to = domPositions[edge.to];
             if (from && to) {
-                const color = edge.color || '#3182ce';
-                const strokeWidth = (edge.width || 2) * scale;
+                const color = typeof edge.color === 'object' ? (edge.color?.color || '#3182ce') : (edge.color || '#3182ce');
+                const strokeWidth = (edge.width || 1) * scale;
                 svg += `  <line x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}" stroke="${color}" stroke-width="${strokeWidth}" opacity="0.8"/>\n`;
             }
         });
 
-        // Draw nodes
-        const nodeSize = (parseInt(document.getElementById('netNodeSize').value) || 25) * scale;
-        const fontSize = (parseInt(document.getElementById('netFontSize').value) || 16) * scale;
+        // Draw nodes — read stored size/font so SVG matches vis.js rendering
         this.networkData.nodes.forEach(node => {
             const pos = domPositions[node.id];
             if (pos) {
                 const bgColor = node.color?.background || '#5a9f4a';
-                svg += `  <circle cx="${pos.x}" cy="${pos.y}" r="${nodeSize/2}" fill="${bgColor}" stroke="white" stroke-width="${2 * scale}"/>\n`;
+                const nodeRadius = (node.size || 25) * scale;
+                const nodeFontSize = (node.font?.size || 16) * scale;
+                svg += `  <circle cx="${pos.x}" cy="${pos.y}" r="${nodeRadius}" fill="${bgColor}" stroke="white" stroke-width="${2 * scale}"/>\n`;
 
                 // Handle multi-line labels
                 const labelLines = (node.label || node.id).split('\n');
                 labelLines.forEach((line, i) => {
-                    const yOffset = pos.y + nodeSize/2 + 14 * scale + (i * (fontSize - 2 * scale));
-                    svg += `  <text x="${pos.x}" y="${yOffset}" text-anchor="middle" style="font-family: Arial; font-size: ${fontSize - 2 * scale}px; fill: #333;">${this.escapeXml(line)}</text>\n`;
+                    const yOffset = pos.y + nodeRadius + 14 * scale + (i * nodeFontSize);
+                    svg += `  <text x="${pos.x}" y="${yOffset}" text-anchor="middle" style="font-family: Arial; font-size: ${nodeFontSize}px; fill: ${node.font?.color || '#333'};">${this.escapeXml(line)}</text>\n`;
                 });
             }
         });
 
         // Draw legend - LARGER for publication
-        const legendY = networkHeight + 35;
+        const legendTop = filterBannerHeight + networkHeight;
+        const legendY = legendTop + 35;
 
         // Calculate total legend width to center it
-        let totalLegendWidth = 160 + 160; // Correlation + Edge Thickness (note: 110+160 is used but let's use similar calc)
+        let totalLegendWidth = 160 + 160; // Correlation + Edge Thickness
         if (this.results?.mode === 'design') totalLegendWidth += 140;
         if (document.getElementById('colorByGeneEffect').checked && this.results?.clusters) totalLegendWidth += 170;
         if (document.getElementById('colorByStats').checked && this.geneStats && this.geneStats.size > 0) totalLegendWidth += 200;
@@ -4727,7 +5884,9 @@ Results:
         let legendX = Math.max(40, (width - totalLegendWidth) / 2);
 
         // Legend background
-        svg += `  <rect x="15" y="${networkHeight + 10}" width="${width - 30}" height="145" fill="#f9fafb" stroke="#e5e7eb" rx="4"/>\n`;
+        if (!transparentBg) {
+            svg += `  <rect x="15" y="${legendTop + 10}" width="${width - 30}" height="145" fill="#f9fafb" stroke="#e5e7eb" rx="4"/>\n`;
+        }
 
         // Correlation legend
         svg += `  <text x="${legendX}" y="${legendY}" class="legend-title">Correlation:</text>\n`;
@@ -4736,7 +5895,6 @@ Results:
         svg += `  <line x1="${legendX}" y1="${legendY + 48}" x2="${legendX + 35}" y2="${legendY + 48}" stroke="#e53e3e" stroke-width="4"/>\n`;
         svg += `  <text x="${legendX + 42}" y="${legendY + 53}" class="legend-text">Negative</text>\n`;
 
-        legendX += 110;
         legendX += 160;
 
         // Edge thickness legend - use actual data values
@@ -5010,7 +6168,13 @@ Results:
             const effectMap = new Map();
             this.results.clusters.forEach(c => effectMap.set(c.gene, c.meanEffect));
 
-            const effectValues = this.results.clusters.map(c => c.meanEffect).filter(v => !isNaN(v));
+            // Use visible network genes for scale (not all clusters)
+            const visibleEffects = [];
+            this.networkData.nodes.forEach(node => {
+                const effect = effectMap.get(node.id);
+                if (effect !== undefined && !isNaN(effect)) visibleEffects.push(effect);
+            });
+            const effectValues = visibleEffects.length > 0 ? visibleEffects : this.results.clusters.map(c => c.meanEffect).filter(v => !isNaN(v));
 
             if (colorGEType === 'signed') {
                 const minEffect = Math.min(...effectValues);
@@ -5382,8 +6546,8 @@ Results:
     changeNetworkLayout() {
         if (!this.network) return;
 
-        // Cycle through layout options: Barnes Hut (default), Force Atlas, Hierarchical
-        const layouts = ['barnesHut', 'forceAtlas2Based', 'hierarchical'];
+        // Cycle through layout options: Default (Barnes Hut), Force Atlas, Hierarchical
+        const layouts = ['default', 'forceAtlas2Based', 'hierarchical'];
         this.currentLayout = this.currentLayout || 0;
         this.currentLayout = (this.currentLayout + 1) % layouts.length;
 
@@ -5401,6 +6565,18 @@ Results:
                         nodeSpacing: 150,
                         levelSeparation: 150
                     }
+                }
+            };
+        } else if (layoutName === 'default') {
+            // Restore original Barnes Hut with original stabilization
+            const nodeCount = this.networkData?.nodes?.length || 50;
+            const stabilizationIterations = nodeCount > 50 ? 300 : 150;
+            options = {
+                layout: { hierarchical: { enabled: false } },
+                physics: {
+                    enabled: true,
+                    solver: 'barnesHut',
+                    stabilization: { iterations: stabilizationIterations }
                 }
             };
         } else {
@@ -5429,8 +6605,11 @@ Results:
 
         // Show which layout is active
         const layoutBtn = document.getElementById('changeLayout');
-        const layoutNames = { 'barnesHut': 'Barnes Hut', 'forceAtlas2Based': 'Force Atlas', 'hierarchical': 'Hierarchical' };
+        const layoutNames = { 'default': 'Default', 'forceAtlas2Based': 'Force Atlas', 'hierarchical': 'Hierarchical' };
         layoutBtn.textContent = layoutNames[layoutName];
+
+        // Re-center after layout change
+        setTimeout(() => this.network?.fit(), 500);
     }
 
     resetNetworkSettings() {
@@ -5455,7 +6634,7 @@ Results:
         this.currentLayout = 0;
         this.physicsEnabled = true;
         const layoutBtn = document.getElementById('changeLayout');
-        if (layoutBtn) layoutBtn.textContent = 'Change Layout';
+        if (layoutBtn) layoutBtn.textContent = 'Layout';
         const physicsBtn = document.getElementById('togglePhysics');
         if (physicsBtn) {
             physicsBtn.textContent = 'Lock Nodes';
@@ -5881,7 +7060,9 @@ Results:
         const width = container.clientWidth;
         const networkHeight = container.clientHeight;
         const legendHeight = 160;  // Larger for publication
-        const totalHeight = networkHeight + legendHeight;
+        const filterText = this._getNetworkFilterText();
+        const filterBannerHeight = filterText ? 24 : 0;
+        const totalHeight = filterBannerHeight + networkHeight + legendHeight;
 
         // Get positions from vis.js and convert to DOM coordinates
         const positions = this.network.getPositions();
@@ -5889,7 +7070,7 @@ Results:
         for (const nodeId in positions) {
             const canvasPos = positions[nodeId];
             const domPos = this.network.canvasToDOM({ x: canvasPos.x, y: canvasPos.y });
-            domPositions[nodeId] = domPos;
+            domPositions[nodeId] = { x: domPos.x, y: domPos.y + filterBannerHeight };
         }
 
         let svg = `<?xml version="1.0" encoding="UTF-8"?>
@@ -5918,42 +7099,44 @@ Results:
   .legend-small { font-family: Arial, sans-serif; font-size: 13px; fill: #333; }
 </style>
 <rect width="100%" height="100%" fill="white"/>
+${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-family: Arial, sans-serif; font-size: 12px; fill: #374151;">${this.escapeXml(filterText)}</text>` : ''}
 `;
 
         // Get current scale for sizing elements
         const scale = this.network.getScale();
 
-        // Draw edges
+        // Draw edges — read stored width so SVG matches vis.js rendering
         this.networkData.edges.forEach(edge => {
             const from = domPositions[edge.from];
             const to = domPositions[edge.to];
             if (from && to) {
-                const color = edge.color || '#3182ce';
-                const strokeWidth = (edge.width || 2) * scale;
+                const color = typeof edge.color === 'object' ? (edge.color?.color || '#3182ce') : (edge.color || '#3182ce');
+                const strokeWidth = (edge.width || 1) * scale;
                 svg += `  <line x1="${from.x}" y1="${from.y}" x2="${to.x}" y2="${to.y}" stroke="${color}" stroke-width="${strokeWidth}" opacity="0.8"/>\n`;
             }
         });
 
-        // Draw nodes
-        const nodeSize = (parseInt(document.getElementById('netNodeSize').value) || 25) * scale;
-        const fontSize = (parseInt(document.getElementById('netFontSize').value) || 16) * scale;
+        // Draw nodes — read stored size/font so SVG matches vis.js rendering
         this.networkData.nodes.forEach(node => {
             const pos = domPositions[node.id];
             if (pos) {
                 const bgColor = node.color?.background || '#5a9f4a';
-                svg += `  <circle cx="${pos.x}" cy="${pos.y}" r="${nodeSize/2}" fill="${bgColor}" stroke="white" stroke-width="${2 * scale}"/>\n`;
+                const nodeRadius = (node.size || 25) * scale;
+                const nodeFontSize = (node.font?.size || 16) * scale;
+                svg += `  <circle cx="${pos.x}" cy="${pos.y}" r="${nodeRadius}" fill="${bgColor}" stroke="white" stroke-width="${2 * scale}"/>\n`;
 
                 // Handle multi-line labels
                 const labelLines = (node.label || node.id).split('\n');
                 labelLines.forEach((line, i) => {
-                    const yOffset = pos.y + nodeSize/2 + 14 * scale + (i * (fontSize - 2 * scale));
-                    svg += `  <text x="${pos.x}" y="${yOffset}" text-anchor="middle" style="font-family: Arial; font-size: ${fontSize - 2 * scale}px; fill: #333;">${this.escapeXml(line)}</text>\n`;
+                    const yOffset = pos.y + nodeRadius + 14 * scale + (i * nodeFontSize);
+                    svg += `  <text x="${pos.x}" y="${yOffset}" text-anchor="middle" style="font-family: Arial; font-size: ${nodeFontSize}px; fill: ${node.font?.color || '#333'};">${this.escapeXml(line)}</text>\n`;
                 });
             }
         });
 
         // Draw legend - LARGER for publication
-        const legendY = networkHeight + 35;
+        const legendTopZip = filterBannerHeight + networkHeight;
+        const legendY = legendTopZip + 35;
 
         // Calculate total legend width to center it
         let totalLegendWidth = 160 + 160; // Correlation + Edge Thickness
@@ -5964,7 +7147,7 @@ Results:
         let legendX = Math.max(40, (width - totalLegendWidth) / 2);
 
         // Legend background
-        svg += `  <rect x="15" y="${networkHeight + 10}" width="${width - 30}" height="145" fill="#f9fafb" stroke="#e5e7eb" rx="4"/>\n`;
+        svg += `  <rect x="15" y="${legendTopZip + 10}" width="${width - 30}" height="145" fill="#f9fafb" stroke="#e5e7eb" rx="4"/>\n`;
 
         // Correlation legend
         svg += `  <text x="${legendX}" y="${legendY}" class="legend-title">Correlation:</text>\n`;
@@ -6128,6 +7311,8 @@ Results:
         }
 
         // Set up currentInspect with the data needed for By tissue
+        this._userLegendPosition = null;
+        this._userTitlePosition = null;
         this.currentInspect = {
             gene1: c.gene1,
             gene2: c.gene2,
@@ -6191,6 +7376,9 @@ Results:
 
     openInspect(c) {
         // c is now the correlation object directly
+        this._userLegendPosition = null;
+        this._userTitlePosition = null;
+        this._userLabelPositions = new Map();
         this.currentInspect = {
             gene1: c.gene1,
             gene2: c.gene2,
@@ -6256,7 +7444,7 @@ Results:
         });
         const lineages = Object.keys(lineageCounts).sort();
         if (lineages.length > 0) {
-            cancerFilter.innerHTML = `<option value="">All cancer types (n=${plotData.length})</option>`;
+            cancerFilter.innerHTML = `<option value="">All tissues (n=${plotData.length})</option>`;
             lineages.forEach(l => {
                 cancerFilter.innerHTML += `<option value="${l}">${l} (n=${lineageCounts[l]})</option>`;
             });
@@ -6279,6 +7467,13 @@ Results:
             cancerBox.style.display = 'none';
             document.getElementById('scatterSubtypeFilter').style.display = 'none';
         }
+
+        // Reset color-by dropdown
+        document.getElementById('colorByCategory').value = '';
+        // Show/hide subtype option based on initial cancer filter
+        const subtypeOpt = document.getElementById('colorBySubtypeOption');
+        if (subtypeOpt) subtypeOpt.style.display = (paramLineageFilter && lineages.includes(paramLineageFilter)) ? '' : 'none';
+        this._styleActiveFilters();
 
         // Populate hotspot genes
         // Count mutations based on cell lines with valid data (plotData)
@@ -6309,6 +7504,46 @@ Results:
         } else {
             document.getElementById('mutationBox').style.display = 'none';
             document.getElementById('mutationFilterBox').style.display = 'none';
+        }
+
+        // Populate translocation/fusion selectors (datalists, sorted by count desc)
+        const transGeneInput = document.getElementById('translocationGene');
+        const transFilterGeneInput = document.getElementById('translocationFilterGene');
+        const transGeneDatalist = document.getElementById('translocationGeneList');
+        const transFilterGeneDatalist = document.getElementById('translocationFilterGeneList');
+
+        if (this.translocations?.genes?.length > 0) {
+            transGeneInput.value = '';
+            transFilterGeneInput.value = '';
+            const geneCounts = [];
+            for (const g of this.translocations.genes) {
+                const transData = this.translocations.geneData?.[g]?.translocations || {};
+                let count = 0;
+                for (const cl of cellLinesInPlot) {
+                    if (transData[cl] && transData[cl] > 0) count++;
+                }
+                if (count > 0) geneCounts.push({ gene: g, count });
+            }
+            geneCounts.sort((a, b) => {
+                const aPri = CorrelationExplorer.PRIORITY_FUSION_GENES.has(a.gene) ? 1 : 0;
+                const bPri = CorrelationExplorer.PRIORITY_FUSION_GENES.has(b.gene) ? 1 : 0;
+                if (aPri !== bPri) return bPri - aPri;
+                return b.count - a.count;
+            });
+
+            let transHtml = '';
+            geneCounts.forEach(({ gene, count }) => {
+                transHtml += `<option value="${gene}">${gene} (${count} fused)</option>`;
+            });
+            transGeneDatalist.innerHTML = transHtml;
+            transFilterGeneDatalist.innerHTML = transHtml;
+            document.getElementById('translocationBox').style.display = 'block';
+            document.getElementById('translocationFilterBox').style.display = 'block';
+            document.getElementById('compareAllTranslocationsBtn').style.display = '';
+        } else {
+            document.getElementById('translocationBox').style.display = 'none';
+            document.getElementById('translocationFilterBox').style.display = 'none';
+            document.getElementById('compareAllTranslocationsBtn').style.display = 'none';
         }
 
         // Calculate stats for ALL cells (unfiltered) for the title
@@ -6362,6 +7597,16 @@ Results:
         document.getElementById('hotspotMode').value = 'color';
         document.getElementById('mutationCautionScatter').style.display = 'none';
 
+        // Reset translocation filters
+        document.getElementById('translocationFilterGene').value = '';
+        document.getElementById('translocationFilterLevel').value = 'all';
+        document.getElementById('translocationGene').value = '';
+        document.getElementById('translocationMode').value = 'color';
+
+        // Reset color-by
+        document.getElementById('colorByCategory').value = '';
+
+        this._styleActiveFilters();
         // Update the plot
         this.updateInspectPlot();
     }
@@ -6383,6 +7628,11 @@ Results:
         const fontSize = parseInt(document.getElementById('scatterFontSize')?.value) || 3;
         const hotspotGene = document.getElementById('hotspotGene').value;
         const hotspotMode = document.getElementById('hotspotMode').value;
+        const transOverlayGene = document.getElementById('translocationGene').value;
+        const transOverlayMode = document.getElementById('translocationMode').value;
+        const transFilterGene = document.getElementById('translocationFilterGene').value;
+        const transFilterLevel = document.getElementById('translocationFilterLevel').value;
+        const colorByCategory = document.getElementById('colorByCategory').value;
 
         // Show/hide mutation caution message
         const cautionEl = document.getElementById('mutationCautionScatter');
@@ -6414,6 +7664,19 @@ Results:
             });
         }
 
+        // Apply translocation filter
+        if (transFilterGene && this.translocations?.geneData?.[transFilterGene] && transFilterLevel !== 'all') {
+            const filterTrans = this.translocations.geneData[transFilterGene].translocations;
+            filteredData = filteredData.filter(d => {
+                const tLevel = filterTrans[d.cellLineId] || 0;
+                if (transFilterLevel === '0') return tLevel === 0;
+                if (transFilterLevel === '1') return tLevel === 1;
+                if (transFilterLevel === '2') return tLevel >= 2;
+                if (transFilterLevel === '1+2') return tLevel >= 1;
+                return true;
+            });
+        }
+
         // Get mutation info for overlay (separate gene)
         let mutationMap = new Map();
         if (hotspotGene && this.mutations?.geneData?.[hotspotGene]) {
@@ -6423,10 +7686,27 @@ Results:
             });
         }
 
+        // Get translocation info for overlay
+        let translocationMap = new Map();
+        let translocationPartnersMap = new Map();
+        if (transOverlayGene && this.translocations?.geneData?.[transOverlayGene]) {
+            const tData = this.translocations.geneData[transOverlayGene];
+            Object.entries(tData.translocations).forEach(([cellLine, level]) => {
+                translocationMap.set(cellLine, level);
+            });
+            if (tData.partners) {
+                Object.entries(tData.partners).forEach(([cellLine, partners]) => {
+                    translocationPartnersMap.set(cellLine, partners);
+                });
+            }
+        }
+
         // Add mutation level to filtered data (for overlay coloring)
         filteredData = filteredData.map(d => ({
             ...d,
-            mutationLevel: mutationMap.get(d.cellLineId) || 0
+            mutationLevel: mutationMap.get(d.cellLineId) || 0,
+            translocationLevel: translocationMap.get(d.cellLineId) || 0,
+            translocationPartners: translocationPartnersMap.get(d.cellLineId) || []
         }));
 
         // Build filter description for title
@@ -6442,6 +7722,12 @@ Results:
                               mutFilterLevel === '2' ? '2 mut' : '1+2 mut';
             filterParts.push(`${mutFilterGene}: ${levelText}`);
         }
+        if (transFilterGene && transFilterLevel !== 'all') {
+            const levelText = transFilterLevel === '0' ? 'No fusion' :
+                              transFilterLevel === '1' ? '1 partner' :
+                              transFilterLevel === '2' ? '2+ partners' : '1+2 fused';
+            filterParts.push(`${transFilterGene}: ${levelText}`);
+        }
         const filterDesc = filterParts.length > 0 ? filterParts.join(' | ') : '';
 
         // Show/hide plot and table based on mode
@@ -6451,7 +7737,16 @@ Results:
         if (hotspotMode === 'compare_table' && hotspotGene) {
             scatterPlot.style.display = 'none';
             compareTable.style.display = 'block';
+            const legend = document.getElementById('colorByLegend');
+            if (legend) legend.style.display = 'none';
             this.renderCompareTable(filteredData, gene1, gene2, hotspotGene, filterDesc);
+            return;
+        } else if (transOverlayMode === 'compare_table' && transOverlayGene) {
+            scatterPlot.style.display = 'none';
+            compareTable.style.display = 'block';
+            const legend = document.getElementById('colorByLegend');
+            if (legend) legend.style.display = 'none';
+            this.renderCompareTable(filteredData, gene1, gene2, transOverlayGene, filterDesc, true);
             return;
         } else {
             scatterPlot.style.display = 'block';
@@ -6460,15 +7755,19 @@ Results:
 
         // Handle 3-panel mode
         if (hotspotMode === 'three_panel' && hotspotGene) {
-            this.renderThreePanelPlot(filteredData, gene1, gene2, hotspotGene, searchTerms, fontSize, filterDesc);
+            this.renderThreePanelPlot(filteredData, gene1, gene2, hotspotGene, searchTerms, fontSize, filterDesc, false, colorByCategory);
+            return;
+        }
+        if (transOverlayMode === 'three_panel' && transOverlayGene) {
+            this.renderThreePanelPlot(filteredData, gene1, gene2, transOverlayGene, searchTerms, fontSize, filterDesc, true, colorByCategory);
             return;
         }
 
         // Single panel color mode
-        this.renderSinglePanelPlot(filteredData, gene1, gene2, hotspotGene, hotspotMode, searchTerms, fontSize, filterDesc);
+        this.renderSinglePanelPlot(filteredData, gene1, gene2, hotspotGene, hotspotMode, searchTerms, fontSize, filterDesc, transOverlayGene, transOverlayMode, colorByCategory);
     }
 
-    renderSinglePanelPlot(filteredData, gene1, gene2, hotspotGene, hotspotMode, searchTerms, fontSize, filterDesc = '') {
+    renderSinglePanelPlot(filteredData, gene1, gene2, hotspotGene, hotspotMode, searchTerms, fontSize, filterDesc = '', transOverlayGene = '', transOverlayMode = 'none', colorByCategory = '') {
         // Calculate stats for each mutation group
         const wt = filteredData.filter(d => d.mutationLevel === 0);
         const mut1 = filteredData.filter(d => d.mutationLevel === 1);
@@ -6478,6 +7777,11 @@ Results:
         const mut1Stats = this.pearsonWithSlope(mut1.map(d => d.x), mut1.map(d => d.y));
         const mut2Stats = this.pearsonWithSlope(mut2.map(d => d.x), mut2.map(d => d.y));
         const allStats = this.pearsonWithSlope(filteredData.map(d => d.x), filteredData.map(d => d.y));
+
+        // Color-by tracking
+        let colorByCategories = null;
+        let colorByColors = null;
+        const colorByTraceIndices = {};
 
         // Build traces
         const traces = [];
@@ -6527,6 +7831,80 @@ Results:
                 marker: { color: '#dc2626', size: 11, opacity: 0.8 },
                 name: `2 mut (n=${mut2.length}, ${mut2Pct}%)`
             });
+        } else if (transOverlayMode === 'color' && transOverlayGene) {
+            // Color by translocation/fusion level (purple tones)
+            const tWT = filteredData.filter(d => d.translocationLevel === 0);
+            const t1 = filteredData.filter(d => d.translocationLevel === 1);
+            const t2 = filteredData.filter(d => d.translocationLevel >= 2);
+            const tWTPct = (tWT.length / filteredData.length * 100).toFixed(1);
+            const t1Pct = (t1.length / filteredData.length * 100).toFixed(1);
+            const t2Pct = (t2.length / filteredData.length * 100).toFixed(1);
+
+            const makeTransHover = (d, label) => {
+                let text = `${d.cellLineName}<br>${d.lineage}<br>${label}`;
+                if (d.translocationPartners && d.translocationPartners.length > 0) {
+                    text += `<br>Partners: ${d.translocationPartners.join(', ')}`;
+                }
+                return text;
+            };
+
+            traces.push({
+                x: tWT.map(d => d.x), y: tWT.map(d => d.y),
+                mode: 'markers', type: 'scatter',
+                text: tWT.map(d => makeTransHover(d, 'No fusion')),
+                hovertemplate: '%{text}<br>x: %{x:.3f}<br>y: %{y:.3f}<extra></extra>',
+                marker: { color: '#9ca3af', size: 8, opacity: 0.6 },
+                name: `No fusion (n=${tWT.length}, ${tWTPct}%)`
+            });
+            traces.push({
+                x: t1.map(d => d.x), y: t1.map(d => d.y),
+                mode: 'markers', type: 'scatter',
+                text: t1.map(d => makeTransHover(d, '1 fusion partner')),
+                hovertemplate: '%{text}<br>x: %{x:.3f}<br>y: %{y:.3f}<extra></extra>',
+                marker: { color: '#3b82f6', size: 10, opacity: 0.7 },
+                name: `1 partner (n=${t1.length}, ${t1Pct}%)`
+            });
+            traces.push({
+                x: t2.map(d => d.x), y: t2.map(d => d.y),
+                mode: 'markers', type: 'scatter',
+                text: t2.map(d => makeTransHover(d, '2+ fusion partners')),
+                hovertemplate: '%{text}<br>x: %{x:.3f}<br>y: %{y:.3f}<extra></extra>',
+                marker: { color: '#dc2626', size: 11, opacity: 0.8 },
+                name: `2+ partners (n=${t2.length}, ${t2Pct}%)`
+            });
+        } else if (colorByCategory === 'tissue' || colorByCategory === 'subtype') {
+            // Color by tissue or subtype
+            const categoryMap = {};
+            filteredData.forEach(d => {
+                let cat;
+                if (colorByCategory === 'subtype') {
+                    cat = this.cellLineMetadata?.primaryDisease?.[d.cellLineId] || d.lineage || 'Unknown';
+                } else {
+                    cat = d.lineage || 'Unknown';
+                }
+                if (!categoryMap[cat]) categoryMap[cat] = [];
+                categoryMap[cat].push(d);
+            });
+            // Sort categories by count descending
+            colorByCategories = Object.keys(categoryMap).sort((a, b) => categoryMap[b].length - categoryMap[a].length);
+            colorByColors = CorrelationExplorer.CATEGORY_COLORS;
+            colorByCategories.forEach((cat, i) => {
+                const catData = categoryMap[cat];
+                const color = i < colorByColors.length ? colorByColors[i] : '#999';
+                colorByTraceIndices[cat] = [traces.length];
+                traces.push({
+                    x: catData.map(d => d.x),
+                    y: catData.map(d => d.y),
+                    mode: 'markers',
+                    type: 'scatter',
+                    text: catData.map(d => `${d.cellLineName}<br>${cat}`),
+                    hovertemplate: '%{text}<br>x: %{x:.3f}<br>y: %{y:.3f}<extra></extra>',
+                    marker: { color: color, size: 8, opacity: 0.8 },
+                    name: `${cat} (${catData.length})`,
+                    legendgroup: cat,
+                    showlegend: true
+                });
+            });
         } else {
             // Default mode - all same color
             traces.push({
@@ -6554,12 +7932,9 @@ Results:
             traces.push({
                 x: highlightData.map(d => d.x),
                 y: highlightData.map(d => d.y),
-                mode: 'markers+text',
+                mode: 'markers',
                 type: 'scatter',
-                text: highlightData.map(d => `${d.cellLineName} (${d.lineage || 'Unknown'})`),
-                textposition: 'top center',
-                textfont: { size: fontSize * 3, color: '#000' },
-                hovertemplate: '%{text}<extra></extra>',
+                hovertemplate: highlightData.map(d => `${d.cellLineName} (${d.lineage || 'Unknown'})<extra></extra>`),
                 marker: {
                     color: '#f59e0b',
                     size: 12,
@@ -6570,6 +7945,25 @@ Results:
                 showlegend: false
             });
         }
+
+        // Build annotations for highlighted cell labels (draggable)
+        const highlightAnnotations = [];
+        highlightData.forEach(d => {
+            const saved = this._userLabelPositions.get(d.cellLineName);
+            highlightAnnotations.push({
+                x: d.x, y: d.y,
+                xref: 'x', yref: 'y',
+                text: `${d.cellLineName} (${d.lineage || 'Unknown'})`,
+                showarrow: true,
+                arrowhead: 0,
+                arrowcolor: '#999',
+                ax: saved ? saved.ax : 0,
+                ay: saved ? saved.ay : -25,
+                font: { size: fontSize * 3, color: '#000' },
+                bgcolor: 'rgba(255,255,255,0.7)',
+                borderpad: 2
+            });
+        });
 
         // Add regression line
         if (!isNaN(allStats.slope)) {
@@ -6595,74 +7989,185 @@ Results:
         const medianX = this.median(filteredData.map(d => d.x));
         const medianY = this.median(filteredData.map(d => d.y));
 
-        // Build title with all stats (like 3-panel style)
+        // Build title - condensed to avoid overlapping with data
         let titleLines = [`<b>${gene1} vs ${gene2}</b>`];
         if (filterDesc) {
-            titleLines.push(`<span style="font-size:11px;color:#666;">Filter: ${filterDesc}</span>`);
+            titleLines.push(`<span style="font-size:10px;color:#666;">${filterDesc}</span>`);
         }
-        titleLines.push(`<span style="font-size:11px;">n=${filteredData.length}, r=${allStats.correlation.toFixed(3)}, slope=${allStats.slope.toFixed(3)}</span>`);
-        titleLines.push(`<span style="font-size:10px;">mean: x=${meanX.toFixed(2)}, y=${meanY.toFixed(2)} | median: x=${medianX.toFixed(2)}, y=${medianY.toFixed(2)}</span>`);
+        titleLines.push(`<span style="font-size:10px;">n=${filteredData.length}, r=${allStats.correlation.toFixed(3)}, slope=${allStats.slope.toFixed(3)} | mean(${meanX.toFixed(2)}, ${meanY.toFixed(2)}) med(${medianX.toFixed(2)}, ${medianY.toFixed(2)})</span>`);
 
         if (hotspotMode === 'color' && hotspotGene) {
-            titleLines.push(`<span style="font-size:10px;"><b>${hotspotGene}:</b> WT: n=${wt.length}, r=${wtStats.correlation.toFixed(3)}, slope=${wtStats.slope.toFixed(3)} | ` +
-                `1mut: n=${mut1.length}, r=${mut1Stats.correlation.toFixed(3)}, slope=${mut1Stats.slope.toFixed(3)} | ` +
-                `2mut: n=${mut2.length}, r=${mut2Stats.correlation.toFixed(3)}, slope=${mut2Stats.slope.toFixed(3)}</span>`);
+            titleLines.push(`<span style="font-size:10px;"><b>${hotspotGene}:</b> WT n=${wt.length} r=${wtStats.correlation.toFixed(3)} | 1mut n=${mut1.length} r=${mut1Stats.correlation.toFixed(3)} | 2mut n=${mut2.length} r=${mut2Stats.correlation.toFixed(3)}</span>`);
+        } else if (transOverlayMode === 'color' && transOverlayGene) {
+            const tWT = filteredData.filter(d => d.translocationLevel === 0);
+            const tFused = filteredData.filter(d => d.translocationLevel >= 1);
+            const tWTStats = this.pearsonWithSlope(tWT.map(d => d.x), tWT.map(d => d.y));
+            const tFusedStats = this.pearsonWithSlope(tFused.map(d => d.x), tFused.map(d => d.y));
+            titleLines.push(`<span style="font-size:10px;">${transOverlayGene}: No fusion n=${tWT.length} r=${tWTStats.correlation.toFixed(3)} | Fused n=${tFused.length} r=${tFusedStats.correlation.toFixed(3)}</span>`);
         }
 
         const titleText = titleLines.join('<br>');
-        const annotations = [];
+
+        // Title as draggable annotation
+        const titleAnnotation = {
+            x: this._userTitlePosition ? this._userTitlePosition.x : 0.5,
+            y: this._userTitlePosition ? this._userTitlePosition.y : 1.0,
+            xref: 'paper', yref: 'paper',
+            xanchor: this._userTitlePosition ? 'auto' : 'center',
+            yanchor: this._userTitlePosition ? 'auto' : 'bottom',
+            text: titleText,
+            showarrow: false,
+            font: { size: 14 }
+        };
+        const annotations = [titleAnnotation, ...highlightAnnotations];
 
         // Calculate margin based on title lines
         const topMargin = 80 + (titleLines.length * 18);
 
         const layout = {
-            title: {
-                text: titleText,
-                x: 0.5,
-                y: 0.98,
-                yanchor: 'top',
-                font: { size: 14 }
-            },
             xaxis: {
-                title: `${gene1} CRISPR Effect`,
+                title: `${gene1} Gene Effect`,
                 range: xRange,
                 zeroline: true,
-                zerolinecolor: '#ddd',
-                constrain: 'domain'
+                zerolinecolor: '#ddd'
             },
             yaxis: {
-                title: `${gene2} CRISPR Effect`,
+                title: `${gene2} Gene Effect`,
                 range: yRange,
                 zeroline: true,
-                zerolinecolor: '#ddd',
-                scaleanchor: 'x',
-                scaleratio: parseFloat(document.getElementById('aspectRatio')?.value || 1),
-                constrain: 'domain'
+                zerolinecolor: '#ddd'
             },
             hovermode: 'closest',
-            margin: { t: topMargin, r: 150, b: 60, l: 60 },
-            showlegend: hotspotMode === 'color' && hotspotGene,
-            legend: {
+            margin: { t: topMargin, r: ((hotspotMode === 'color' && hotspotGene) || (transOverlayMode === 'color' && transOverlayGene)) ? 240 : 30, b: colorByCategory ? 100 : 60, l: 60, autoexpand: false },
+            showlegend: (hotspotMode === 'color' && hotspotGene) || (transOverlayMode === 'color' && transOverlayGene) || !!colorByCategory,
+            legend: colorByCategory ? {
+                orientation: 'h',
+                x: 0.5,
+                y: -0.15,
+                xanchor: 'center',
+                yanchor: 'top',
+                bgcolor: 'rgba(255,255,255,0.85)',
+                bordercolor: '#ddd',
+                borderwidth: 1,
+                font: { size: 10 },
+                tracegroupgap: 0,
+                entrywidth: 120,
+                entrywidthmode: 'pixels'
+            } : {
                 x: 1.02,
-                y: 0.5,
+                y: 1,
                 xanchor: 'left',
-                yanchor: 'middle',
-                title: { text: hotspotGene, font: { size: 12 } }
+                yanchor: 'top',
+                bgcolor: 'rgba(255,255,255,0.85)',
+                bordercolor: '#ddd',
+                borderwidth: 1,
+                title: { text: (transOverlayMode === 'color' && transOverlayGene) ? `${transOverlayGene} (fusion)` : hotspotGene, font: { size: 11 } },
+                font: { size: 11 }
             },
             annotations: annotations,
             plot_bgcolor: '#fafafa'
         };
 
-        Plotly.newPlot('scatterPlot', traces, layout, { responsive: true });
+        // Apply user-dragged legend position if available
+        if (this._userLegendPosition) {
+            layout.legend.x = this._userLegendPosition.x;
+            layout.legend.y = this._userLegendPosition.y;
+            layout.legend.xanchor = 'auto';
+            layout.legend.yanchor = 'auto';
+        }
 
-        // Add click handler
-        this.setupScatterClickHandler(filteredData);
+        // Apply plot dimensions (square by default)
+        // Values refer to the plot area; margins are added on top
+        const plotContainer = document.getElementById('scatterPlot');
+        const widthEl = document.getElementById('plotWidth');
+        const heightEl = document.getElementById('plotHeight');
+        const m = layout.margin;
+        let plotAreaW = parseInt(widthEl?.value);
+        let plotAreaH = parseInt(heightEl?.value);
+        if (isNaN(plotAreaW) || isNaN(plotAreaH)) {
+            // Default: square, fit within viewport
+            const defaultSize = 400;
+            if (isNaN(plotAreaW)) plotAreaW = defaultSize;
+            if (isNaN(plotAreaH)) plotAreaH = defaultSize;
+        }
+        // Show current values in the inputs
+        if (widthEl) widthEl.value = plotAreaW;
+        if (heightEl) heightEl.value = plotAreaH;
+        layout.width = plotAreaW + m.l + m.r;
+        layout.height = plotAreaH + m.t + m.b;
+        plotContainer.style.width = layout.width + 'px';
+        plotContainer.style.height = layout.height + 'px';
+
+        Plotly.newPlot('scatterPlot', traces, layout, {
+            responsive: false,
+            edits: { annotationPosition: true, annotationTail: true, legendPosition: true }
+        }).then(plotEl => {
+            // Listen for legend and title drag events
+            let isProgrammaticRelayout = false;
+            plotEl.on('plotly_relayout', (relayoutData) => {
+                if (isProgrammaticRelayout) return;
+                if (relayoutData['legend.x'] !== undefined && relayoutData['legend.y'] !== undefined) {
+                    this._userLegendPosition = {
+                        x: relayoutData['legend.x'],
+                        y: relayoutData['legend.y']
+                    };
+                }
+                if (relayoutData['annotations[0].x'] !== undefined && relayoutData['annotations[0].y'] !== undefined) {
+                    this._userTitlePosition = {
+                        x: relayoutData['annotations[0].x'],
+                        y: relayoutData['annotations[0].y']
+                    };
+                }
+                // Capture dragged cell label positions (annotations[1+])
+                for (let i = 0; i < highlightData.length; i++) {
+                    const idx = i + 1; // offset by 1 for title annotation
+                    const axKey = `annotations[${idx}].ax`;
+                    const ayKey = `annotations[${idx}].ay`;
+                    if (relayoutData[axKey] !== undefined || relayoutData[ayKey] !== undefined) {
+                        const current = this._userLabelPositions.get(highlightData[i].cellLineName) || { ax: 0, ay: -25 };
+                        this._userLabelPositions.set(highlightData[i].cellLineName, {
+                            ax: relayoutData[axKey] !== undefined ? relayoutData[axKey] : current.ax,
+                            ay: relayoutData[ayKey] !== undefined ? relayoutData[ayKey] : current.ay
+                        });
+                    }
+                }
+            });
+
+            // Auto-reposition vertical legend outside the actual plot domain
+            if (!this._userLegendPosition && layout.showlegend && layout.legend?.orientation !== 'h') {
+                const fl = plotEl._fullLayout;
+                if (fl && fl.xaxis && fl.yaxis) {
+                    const xDomain = fl.xaxis.domain;
+                    const yDomain = fl.yaxis.domain;
+                    // Place legend just outside the plot to the right
+                    isProgrammaticRelayout = true;
+                    Plotly.relayout('scatterPlot', {
+                        'legend.x': xDomain[1] + 0.02,
+                        'legend.y': yDomain[1],
+                        'legend.xanchor': 'left',
+                        'legend.yanchor': 'top'
+                    }).then(() => { isProgrammaticRelayout = false; });
+                }
+            }
+
+            // Add click handler
+            this.setupScatterClickHandler(filteredData);
+
+            // Build custom HTML legend for color-by mode
+            if (colorByCategories) {
+                this._buildColorByLegend(colorByCategories, colorByColors, colorByTraceIndices);
+            } else {
+                const legend = document.getElementById('colorByLegend');
+                if (legend) legend.style.display = 'none';
+            }
+        });
     }
 
-    renderThreePanelPlot(filteredData, gene1, gene2, hotspotGene, searchTerms, fontSize, filterDesc = '') {
-        const wt = filteredData.filter(d => d.mutationLevel === 0);
-        const mut1 = filteredData.filter(d => d.mutationLevel === 1);
-        const mut2 = filteredData.filter(d => d.mutationLevel >= 2);
+    renderThreePanelPlot(filteredData, gene1, gene2, hotspotGene, searchTerms, fontSize, filterDesc = '', isFusion = false, colorByCategory = '') {
+        const levelField = isFusion ? 'translocationLevel' : 'mutationLevel';
+        const wt = filteredData.filter(d => d[levelField] === 0);
+        const mut1 = filteredData.filter(d => d[levelField] === 1);
+        const mut2 = filteredData.filter(d => d[levelField] >= 2);
 
         const xRange = [this.getInputNum('scatterXmin'),
                        this.getInputNum('scatterXmax')];
@@ -6686,49 +8191,70 @@ Results:
 
         const traces = [];
 
-        // Panel 1: WT (0 mut)
-        traces.push({
-            x: wt.map(d => d.x),
-            y: wt.map(d => d.y),
-            xaxis: 'x',
-            yaxis: 'y',
-            mode: 'markers',
-            type: 'scatter',
-            text: wt.map(d => `${d.cellLineName}<br>${d.lineage}`),
-            hovertemplate: '%{text}<br>x: %{x:.3f}<br>y: %{y:.3f}<extra></extra>',
-            marker: { color: '#9ca3af', size: 7, opacity: 0.6 },
-            name: 'WT',
-            showlegend: false
-        });
+        // Panel labels
+        const panelLabels = isFusion
+            ? ['No fusion', '1 partner', '2+ partners']
+            : ['WT', '1 mut', '2 mut'];
 
-        // Panel 2: 1 mutation
-        traces.push({
-            x: mut1.map(d => d.x),
-            y: mut1.map(d => d.y),
-            xaxis: 'x2',
-            yaxis: 'y2',
-            mode: 'markers',
-            type: 'scatter',
-            text: mut1.map(d => `${d.cellLineName}<br>${d.lineage}`),
-            hovertemplate: '%{text}<br>x: %{x:.3f}<br>y: %{y:.3f}<extra></extra>',
-            marker: { color: '#3b82f6', size: 8, opacity: 0.7 },
-            name: '1 mut',
-            showlegend: false
-        });
+        // Build category map for color-by mode (shared across panels)
+        let categoryOrder = null;
+        if (colorByCategory === 'tissue' || colorByCategory === 'subtype') {
+            const catCounts = {};
+            filteredData.forEach(d => {
+                const cat = colorByCategory === 'subtype'
+                    ? (this.cellLineMetadata?.primaryDisease?.[d.cellLineId] || d.lineage || 'Unknown')
+                    : (d.lineage || 'Unknown');
+                catCounts[cat] = (catCounts[cat] || 0) + 1;
+            });
+            categoryOrder = Object.keys(catCounts).sort((a, b) => catCounts[b] - catCounts[a]);
+        }
 
-        // Panel 3: 2 mutations
-        traces.push({
-            x: mut2.map(d => d.x),
-            y: mut2.map(d => d.y),
-            xaxis: 'x3',
-            yaxis: 'y3',
-            mode: 'markers',
-            type: 'scatter',
-            text: mut2.map(d => `${d.cellLineName}<br>${d.lineage}`),
-            hovertemplate: '%{text}<br>x: %{x:.3f}<br>y: %{y:.3f}<extra></extra>',
-            marker: { color: '#dc2626', size: 8, opacity: 0.7 },
-            name: '2 mut',
-            showlegend: false
+        const getCategory = (d) => {
+            if (colorByCategory === 'subtype') return this.cellLineMetadata?.primaryDisease?.[d.cellLineId] || d.lineage || 'Unknown';
+            return d.lineage || 'Unknown';
+        };
+
+        // Build panel traces with optional category coloring
+        const panelConfigs = [
+            { data: wt, xaxis: 'x', yaxis: 'y', color: '#9ca3af', size: 7, opacity: 0.6 },
+            { data: mut1, xaxis: 'x2', yaxis: 'y2', color: '#3b82f6', size: 8, opacity: 0.7 },
+            { data: mut2, xaxis: 'x3', yaxis: 'y3', color: '#dc2626', size: 8, opacity: 0.7 }
+        ];
+
+        const colors = CorrelationExplorer.CATEGORY_COLORS;
+        const colorByTraceIndices = {};
+
+        panelConfigs.forEach((cfg, i) => {
+            if (categoryOrder) {
+                // Color by category within each panel
+                categoryOrder.forEach((cat, ci) => {
+                    const catData = cfg.data.filter(d => getCategory(d) === cat);
+                    if (catData.length === 0) return;
+                    if (!colorByTraceIndices[cat]) colorByTraceIndices[cat] = [];
+                    colorByTraceIndices[cat].push(traces.length);
+                    traces.push({
+                        x: catData.map(d => d.x), y: catData.map(d => d.y),
+                        xaxis: cfg.xaxis, yaxis: cfg.yaxis,
+                        mode: 'markers', type: 'scatter',
+                        text: catData.map(d => `${d.cellLineName}<br>${cat}`),
+                        hovertemplate: '%{text}<br>x: %{x:.3f}<br>y: %{y:.3f}<extra></extra>',
+                        marker: { color: ci < colors.length ? colors[ci] : '#999', size: cfg.size, opacity: 0.8 },
+                        name: `${cat} (${catData.length})`,
+                        showlegend: i === 0,
+                        legendgroup: cat
+                    });
+                });
+            } else {
+                traces.push({
+                    x: cfg.data.map(d => d.x), y: cfg.data.map(d => d.y),
+                    xaxis: cfg.xaxis, yaxis: cfg.yaxis,
+                    mode: 'markers', type: 'scatter',
+                    text: cfg.data.map(d => `${d.cellLineName}<br>${d.lineage}`),
+                    hovertemplate: '%{text}<br>x: %{x:.3f}<br>y: %{y:.3f}<extra></extra>',
+                    marker: { color: cfg.color, size: cfg.size, opacity: cfg.opacity },
+                    name: panelLabels[i], showlegend: false
+                });
+            }
         });
 
         // Add regression lines for each panel
@@ -6755,7 +8281,10 @@ Results:
         addRegressionLine(mut2, mut2Stats, 'x3', 'y3', '#5a9f4a');
 
         // Add highlighted cells for each panel
+        const threePanelHighlightAnnotations = [];
         const addHighlights = (data, xaxis, yaxis) => {
+            const xrefAxis = xaxis === 'x' ? 'x' : xaxis;
+            const yrefAxis = yaxis === 'y' ? 'y' : yaxis;
             const highlightData = data.filter(d =>
                 searchTerms.some(term =>
                     d.cellLineName.toUpperCase().includes(term) ||
@@ -6769,12 +8298,9 @@ Results:
                     y: highlightData.map(d => d.y),
                     xaxis: xaxis,
                     yaxis: yaxis,
-                    mode: 'markers+text',
+                    mode: 'markers',
                     type: 'scatter',
-                    text: highlightData.map(d => `${d.cellLineName} (${d.lineage || 'Unknown'})`),
-                    textposition: 'top center',
-                    textfont: { size: fontSize * 3, color: '#000' },
-                    hovertemplate: '%{text}<extra></extra>',
+                    hovertemplate: highlightData.map(d => `${d.cellLineName} (${d.lineage || 'Unknown'})<extra></extra>`),
                     marker: {
                         color: '#f59e0b',
                         size: 10,
@@ -6782,6 +8308,22 @@ Results:
                         line: { color: '#000', width: 2 }
                     },
                     showlegend: false
+                });
+                highlightData.forEach(d => {
+                    const saved = this._userLabelPositions.get(d.cellLineName);
+                    threePanelHighlightAnnotations.push({
+                        x: d.x, y: d.y,
+                        xref: xrefAxis, yref: yrefAxis,
+                        text: `${d.cellLineName} (${d.lineage || 'Unknown'})`,
+                        showarrow: true,
+                        arrowhead: 0,
+                        arrowcolor: '#999',
+                        ax: saved ? saved.ax : 0,
+                        ay: saved ? saved.ay : -25,
+                        font: { size: fontSize * 3, color: '#000' },
+                        bgcolor: 'rgba(255,255,255,0.7)',
+                        borderpad: 2
+                    });
                 });
             }
         };
@@ -6791,72 +8333,231 @@ Results:
         addHighlights(mut2, 'x3', 'y3');
 
         // Build title with filter info
-        let titleText = `<b>${gene1} vs ${gene2} - ${hotspotGene} hotspot mutation stratification</b>`;
+        const stratLabel = isFusion ? 'fusion stratification' : 'hotspot mutation stratification';
+        let titleText = `<b>${gene1} vs ${gene2} - ${hotspotGene} ${stratLabel}</b>`;
         if (filterDesc) {
             titleText += `<br><span style="font-size: 11px; color: #666;">Filter: ${filterDesc}</span>`;
         }
 
+        // Annotation labels for panels
+        const annotLabels = isFusion
+            ? [`<b>No fusion</b>`, `<b>1 partner</b>`, `<b>2+ partners</b>`]
+            : [`<b>WT (0 mut)</b>`, `<b>1 mutation</b>`, `<b>2 mutations</b>`];
+
+        // Title annotation (draggable)
+        const titleAnnotation = {
+            x: this._userTitlePosition ? this._userTitlePosition.x : 0.5,
+            y: this._userTitlePosition ? this._userTitlePosition.y : 1.12,
+            xref: 'paper', yref: 'paper',
+            xanchor: this._userTitlePosition ? 'auto' : 'center',
+            yanchor: this._userTitlePosition ? 'auto' : 'bottom',
+            text: titleText,
+            showarrow: false,
+            font: { size: 14 }
+        };
+
         const layout = {
-            title: {
-                text: titleText,
-                x: 0.5,
-                y: 0.98,
-                font: { size: 14 }
-            },
             grid: { rows: 1, columns: 3, pattern: 'independent' },
-            xaxis: { title: `${gene1} Effect`, range: xRange, domain: [0, 0.28], constrain: 'domain' },
-            yaxis: {
-                title: `${gene2} Effect`, range: yRange,
-                scaleanchor: 'x',
-                scaleratio: parseFloat(document.getElementById('aspectRatio')?.value || 1),
-                constrain: 'domain'
-            },
-            xaxis2: { title: `${gene1} Effect`, range: xRange, domain: [0.36, 0.64], constrain: 'domain' },
-            yaxis2: {
-                range: yRange, anchor: 'x2',
-                scaleanchor: 'x2',
-                scaleratio: parseFloat(document.getElementById('aspectRatio')?.value || 1),
-                constrain: 'domain'
-            },
-            xaxis3: { title: `${gene1} Effect`, range: xRange, domain: [0.72, 1], constrain: 'domain' },
-            yaxis3: {
-                range: yRange, anchor: 'x3',
-                scaleanchor: 'x3',
-                scaleratio: parseFloat(document.getElementById('aspectRatio')?.value || 1),
-                constrain: 'domain'
-            },
+            xaxis: { title: `${gene1} Effect`, range: xRange, domain: [0, 0.28] },
+            yaxis: { title: `${gene2} Effect`, range: yRange },
+            xaxis2: { title: `${gene1} Effect`, range: xRange, domain: [0.36, 0.64] },
+            yaxis2: { range: yRange, anchor: 'x2' },
+            xaxis3: { title: `${gene1} Effect`, range: xRange, domain: [0.72, 1] },
+            yaxis3: { range: yRange, anchor: 'x3' },
             annotations: [
+                titleAnnotation,
                 { x: 0.14, y: 1.02, xref: 'paper', yref: 'paper',
-                  text: `<b>WT (0 mut)</b> n=${wt.length}<br>r=${wtStats.correlation.toFixed(3)}, slope=${wtStats.slope.toFixed(3)}<br>mean: x=${wtExtra.meanX.toFixed(2)}, y=${wtExtra.meanY.toFixed(2)}<br>median: x=${wtExtra.medianX.toFixed(2)}, y=${wtExtra.medianY.toFixed(2)}`,
+                  text: `${annotLabels[0]} n=${wt.length}<br>r=${wtStats.correlation.toFixed(3)}, slope=${wtStats.slope.toFixed(3)}<br>mean: x=${wtExtra.meanX.toFixed(2)}, y=${wtExtra.meanY.toFixed(2)}<br>median: x=${wtExtra.medianX.toFixed(2)}, y=${wtExtra.medianY.toFixed(2)}`,
                   showarrow: false, font: { size: 9 } },
                 { x: 0.5, y: 1.02, xref: 'paper', yref: 'paper',
-                  text: `<b>1 mutation</b> n=${mut1.length}<br>r=${mut1Stats.correlation.toFixed(3)}, slope=${mut1Stats.slope.toFixed(3)}<br>mean: x=${mut1Extra.meanX.toFixed(2)}, y=${mut1Extra.meanY.toFixed(2)}<br>median: x=${mut1Extra.medianX.toFixed(2)}, y=${mut1Extra.medianY.toFixed(2)}`,
+                  text: `${annotLabels[1]} n=${mut1.length}<br>r=${mut1Stats.correlation.toFixed(3)}, slope=${mut1Stats.slope.toFixed(3)}<br>mean: x=${mut1Extra.meanX.toFixed(2)}, y=${mut1Extra.meanY.toFixed(2)}<br>median: x=${mut1Extra.medianX.toFixed(2)}, y=${mut1Extra.medianY.toFixed(2)}`,
                   showarrow: false, font: { size: 9 } },
                 { x: 0.86, y: 1.02, xref: 'paper', yref: 'paper',
-                  text: `<b>2 mutations</b> n=${mut2.length}<br>r=${mut2Stats.correlation.toFixed(3)}, slope=${mut2Stats.slope.toFixed(3)}<br>mean: x=${mut2Extra.meanX.toFixed(2)}, y=${mut2Extra.meanY.toFixed(2)}<br>median: x=${mut2Extra.medianX.toFixed(2)}, y=${mut2Extra.medianY.toFixed(2)}`,
-                  showarrow: false, font: { size: 9 } }
+                  text: `${annotLabels[2]} n=${mut2.length}<br>r=${mut2Stats.correlation.toFixed(3)}, slope=${mut2Stats.slope.toFixed(3)}<br>mean: x=${mut2Extra.meanX.toFixed(2)}, y=${mut2Extra.meanY.toFixed(2)}<br>median: x=${mut2Extra.medianX.toFixed(2)}, y=${mut2Extra.medianY.toFixed(2)}`,
+                  showarrow: false, font: { size: 9 } },
+                ...threePanelHighlightAnnotations
             ],
-            margin: { t: filterDesc ? 160 : 140, r: 30, b: 60, l: 60 },
+            margin: { t: filterDesc ? 160 : 140, r: 30, b: categoryOrder ? 100 : 60, l: 60 },
+            showlegend: !!categoryOrder,
+            legend: {
+                orientation: 'h',
+                x: 0.5,
+                y: -0.15,
+                xanchor: 'center',
+                yanchor: 'top',
+                bgcolor: 'rgba(255,255,255,0.85)',
+                bordercolor: '#ddd',
+                borderwidth: 1,
+                font: { size: 10 },
+                tracegroupgap: 0,
+                entrywidth: 120,
+                entrywidthmode: 'pixels'
+            },
             plot_bgcolor: '#fafafa'
         };
 
-        Plotly.newPlot('scatterPlot', traces, layout, { responsive: true });
+        // Apply user-dragged legend position if available
+        if (this._userLegendPosition && layout.showlegend) {
+            layout.legend.x = this._userLegendPosition.x;
+            layout.legend.y = this._userLegendPosition.y;
+            layout.legend.xanchor = 'auto';
+            layout.legend.yanchor = 'auto';
+        }
+
+        // Collect all highlight data across panels for relayout tracking
+        const allThreePanelHighlightData = [wt, mut1, mut2].flatMap(data =>
+            data.filter(d =>
+                searchTerms.some(term =>
+                    d.cellLineName.toUpperCase().includes(term) ||
+                    d.cellLineId.toUpperCase().includes(term)
+                ) || this.clickedCells.has(d.cellLineName)
+            )
+        );
+
+        // Apply plot dimensions (wide default for three-panel)
+        const plotContainer3 = document.getElementById('scatterPlot');
+        const m3 = layout.margin;
+        let plotAreaW3 = parseInt(document.getElementById('plotWidth')?.value);
+        let plotAreaH3 = parseInt(document.getElementById('plotHeight')?.value);
+        if (isNaN(plotAreaW3)) plotAreaW3 = Math.max(600, Math.min(1000, window.innerWidth - 500));
+        if (isNaN(plotAreaH3)) plotAreaH3 = Math.max(300, Math.min(500, window.innerHeight - 300));
+        layout.width = plotAreaW3 + m3.l + m3.r;
+        layout.height = plotAreaH3 + m3.t + m3.b;
+        plotContainer3.style.width = layout.width + 'px';
+        plotContainer3.style.height = layout.height + 'px';
+
+        Plotly.newPlot('scatterPlot', traces, layout, {
+            responsive: false,
+            edits: { annotationPosition: true, annotationTail: true, legendPosition: true }
+        }).then(plotEl => {
+            plotEl.on('plotly_relayout', (relayoutData) => {
+                if (relayoutData['legend.x'] !== undefined && relayoutData['legend.y'] !== undefined) {
+                    this._userLegendPosition = {
+                        x: relayoutData['legend.x'],
+                        y: relayoutData['legend.y']
+                    };
+                }
+                if (relayoutData['annotations[0].x'] !== undefined && relayoutData['annotations[0].y'] !== undefined) {
+                    this._userTitlePosition = {
+                        x: relayoutData['annotations[0].x'],
+                        y: relayoutData['annotations[0].y']
+                    };
+                }
+                // Capture dragged cell label positions (annotations[4+] in three-panel: title + 3 panel stats)
+                const labelOffset = 4;
+                for (let i = 0; i < allThreePanelHighlightData.length; i++) {
+                    const idx = i + labelOffset;
+                    const axKey = `annotations[${idx}].ax`;
+                    const ayKey = `annotations[${idx}].ay`;
+                    if (relayoutData[axKey] !== undefined || relayoutData[ayKey] !== undefined) {
+                        const current = this._userLabelPositions.get(allThreePanelHighlightData[i].cellLineName) || { ax: 0, ay: -25 };
+                        this._userLabelPositions.set(allThreePanelHighlightData[i].cellLineName, {
+                            ax: relayoutData[axKey] !== undefined ? relayoutData[axKey] : current.ax,
+                            ay: relayoutData[ayKey] !== undefined ? relayoutData[ayKey] : current.ay
+                        });
+                    }
+                }
+            });
+            this.setupScatterClickHandler(filteredData);
+
+            // Build custom HTML legend for color-by mode
+            if (categoryOrder) {
+                this._buildColorByLegend(categoryOrder, colors, colorByTraceIndices);
+            } else {
+                const legend = document.getElementById('colorByLegend');
+                if (legend) legend.style.display = 'none';
+            }
+        });
     }
 
-    renderCompareTable(filteredData, gene1, gene2, hotspotGene, filterDesc = '') {
-        // Group by cancer type (lineage) - comparing 0 vs 2 mutations only
+    _buildColorByLegend(categories, colors, categoryTraceIndices) {
+        const container = document.getElementById('colorByLegend');
+        if (!container) return;
+
+        if (!categories || categories.length === 0) {
+            container.style.display = 'none';
+            return;
+        }
+
+        container.style.display = 'block';
+        let html = '<div style="display: flex; gap: 2px; margin-bottom: 4px;">';
+        html += '<button id="colorByShowAll" class="btn btn-secondary btn-sm" style="font-size: 9px; padding: 1px 5px;">Show all</button>';
+        html += '<button id="colorByHideAll" class="btn btn-secondary btn-sm" style="font-size: 9px; padding: 1px 5px;">Hide all</button>';
+        html += '</div>';
+        html += '<div style="display: flex; flex-wrap: wrap; gap: 2px;">';
+        categories.forEach((cat, i) => {
+            const color = i < colors.length ? colors[i] : '#999';
+            html += `<span class="color-by-chip" data-cat-index="${i}" style="display: inline-flex; align-items: center; gap: 3px; padding: 1px 5px; border-radius: 3px; font-size: 10px; cursor: pointer; border: 1px solid ${color}; background: rgba(255,255,255,0.9); white-space: nowrap; user-select: none;">`;
+            html += `<span style="width: 8px; height: 8px; border-radius: 50%; background: ${color}; display: inline-block; flex-shrink: 0;"></span>`;
+            html += `${cat}`;
+            html += `</span>`;
+        });
+        html += '</div>';
+        container.innerHTML = html;
+
+        // Track hidden categories
+        const hidden = new Set();
+
+        // Click chip to toggle
+        container.querySelectorAll('.color-by-chip').forEach(chip => {
+            chip.addEventListener('click', () => {
+                const idx = parseInt(chip.dataset.catIndex);
+                const cat = categories[idx];
+                const indices = categoryTraceIndices[cat];
+                if (!indices) return;
+
+                if (hidden.has(cat)) {
+                    hidden.delete(cat);
+                    chip.style.opacity = '1';
+                    chip.style.textDecoration = 'none';
+                    Plotly.restyle('scatterPlot', { visible: true }, indices);
+                } else {
+                    hidden.add(cat);
+                    chip.style.opacity = '0.3';
+                    chip.style.textDecoration = 'line-through';
+                    Plotly.restyle('scatterPlot', { visible: false }, indices);
+                }
+            });
+        });
+
+        // Show all
+        document.getElementById('colorByShowAll')?.addEventListener('click', () => {
+            hidden.clear();
+            container.querySelectorAll('.color-by-chip').forEach(c => {
+                c.style.opacity = '1';
+                c.style.textDecoration = 'none';
+            });
+            const allIndices = Object.values(categoryTraceIndices).flat();
+            if (allIndices.length > 0) Plotly.restyle('scatterPlot', { visible: true }, allIndices);
+        });
+
+        // Hide all
+        document.getElementById('colorByHideAll')?.addEventListener('click', () => {
+            categories.forEach(cat => hidden.add(cat));
+            container.querySelectorAll('.color-by-chip').forEach(c => {
+                c.style.opacity = '0.3';
+                c.style.textDecoration = 'line-through';
+            });
+            const allIndices = Object.values(categoryTraceIndices).flat();
+            if (allIndices.length > 0) Plotly.restyle('scatterPlot', { visible: false }, allIndices);
+        });
+    }
+
+    renderCompareTable(filteredData, gene1, gene2, hotspotGene, filterDesc = '', isFusion = false) {
+        // Group by cancer type (lineage) - comparing 0 vs 2+ level only
+        const levelField = isFusion ? 'translocationLevel' : 'mutationLevel';
         const lineageGroups = {};
         filteredData.forEach(d => {
             if (!d.lineage) return;
             if (!lineageGroups[d.lineage]) {
                 lineageGroups[d.lineage] = { wt: [], mut: [] };
             }
-            if (d.mutationLevel === 0) {
+            if (d[levelField] === 0) {
                 lineageGroups[d.lineage].wt.push(d);
-            } else if (d.mutationLevel >= 2) {
+            } else if (d[levelField] >= (isFusion ? 1 : 2)) {
                 lineageGroups[d.lineage].mut.push(d);
             }
-            // Note: mutationLevel === 1 is excluded from comparison
+            // Note: for hotspot, mutationLevel === 1 is excluded from comparison
         });
 
         // Calculate stats for each lineage
@@ -6900,14 +8601,19 @@ Results:
         tableData.sort((a, b) => a.pR - b.pR);
 
         // Build HTML table
+        const typeLabel = isFusion ? 'Fusion' : 'Mutation';
+        const wtLabel = isFusion ? 'No fusion' : 'WT';
+        const mutLabel = isFusion ? 'Fused (1+)' : 'Mut';
         const filterInfo = filterDesc ? `<p style="font-size: 11px; color: #333; margin-bottom: 8px; background: #f0f9ff; padding: 4px 8px; border-radius: 4px;"><b>Filter:</b> ${filterDesc}</p>` : '';
+        const exclusionNote = isFusion ? '' : ' Note: Cells with exactly 1 mutation are excluded from this comparison.';
+        const wtDesc = isFusion ? `no ${hotspotGene} fusions` : `0 ${hotspotGene} mutations`;
+        const mutDesc = isFusion ? `${hotspotGene} fused (1+)` : `2+ ${hotspotGene} mutations`;
         let html = `
-            <h4 style="margin-bottom: 8px;">Effect of <span style="color: #0066cc;">${hotspotGene}</span> Mutation on ${gene1} vs ${gene2} Correlation</h4>
+            <h4 style="margin-bottom: 8px;">Effect of <span style="color: #0066cc;">${hotspotGene}</span> ${typeLabel} on ${gene1} vs ${gene2} Correlation</h4>
             ${filterInfo}
             <p style="font-size: 11px; color: #666; margin-bottom: 8px;">
-                Comparing correlation between WT (0 ${hotspotGene} mutations) vs Mutant (2+ ${hotspotGene} mutations) cells, stratified by cancer type.
-                Note: Cells with exactly 1 mutation are excluded from this comparison.
-                <strong>Click a cancer type</strong> to view its scatter plot with the ${hotspotGene} mutation overlay.
+                Comparing correlation between ${wtLabel} (${wtDesc}) vs ${mutLabel} (${mutDesc}) cells, stratified by cancer type.${exclusionNote}
+                <strong>Click a cancer type</strong> to view its scatter plot with the ${hotspotGene} ${typeLabel.toLowerCase()} overlay.
             </p>
             <p style="font-size: 10px; color: #0c4a6e; background: #f0f9ff; padding: 4px 8px; border-radius: 4px; margin-bottom: 12px;">
                 <b>Statistics:</b> p(Δr) uses Fisher z-transformation to compare correlations. p(Δslope) is an approximation based on correlation difference.
@@ -6917,12 +8623,12 @@ Results:
                 <thead>
                     <tr>
                         <th data-col="0" style="cursor: pointer;">Cancer Type ▼</th>
-                        <th data-col="1" style="cursor: pointer; border-left: 2px solid #2563eb;">N (WT)</th>
-                        <th data-col="2" style="cursor: pointer;">r (WT)</th>
-                        <th data-col="3" style="cursor: pointer;">slope (WT)</th>
-                        <th data-col="4" style="cursor: pointer; border-left: 2px solid #dc2626;">N (Mut)</th>
-                        <th data-col="5" style="cursor: pointer;">r (Mut)</th>
-                        <th data-col="6" style="cursor: pointer;">slope (Mut)</th>
+                        <th data-col="1" style="cursor: pointer; border-left: 2px solid #2563eb;">N (${wtLabel})</th>
+                        <th data-col="2" style="cursor: pointer;">r (${wtLabel})</th>
+                        <th data-col="3" style="cursor: pointer;">slope (${wtLabel})</th>
+                        <th data-col="4" style="cursor: pointer; border-left: 2px solid #dc2626;">N (${mutLabel})</th>
+                        <th data-col="5" style="cursor: pointer;">r (${mutLabel})</th>
+                        <th data-col="6" style="cursor: pointer;">slope (${mutLabel})</th>
                         <th data-col="7" style="cursor: pointer; border-left: 2px solid #6b7280;">Δr</th>
                         <th data-col="8" style="cursor: pointer;">p(Δr)</th>
                         <th data-col="9" style="cursor: pointer;">Δslope</th>
@@ -6974,28 +8680,34 @@ Results:
         // Add download handler
         document.getElementById('downloadCompareCSV')?.addEventListener('click', () => {
             let csv = `# Correlation: ${gene1} vs ${gene2}\n`;
-            csv += `# Hotspot filter: ${hotspotGene}\n`;
-            csv += `# Comparing WT (0 mutations) vs Mutant (2 mutations) by cancer type\n`;
-            csv += 'Cancer Type,N (WT),r (WT),slope (WT),N (Mut),r (Mut),slope (Mut),Δr,p(Δr),Δslope,p(Δslope)\n';
+            csv += `# ${isFusion ? 'Fusion' : 'Hotspot'} filter: ${hotspotGene}\n`;
+            csv += `# Comparing ${wtLabel} vs ${mutLabel} by cancer type\n`;
+            csv += `Cancer Type,N (${wtLabel}),r (${wtLabel}),slope (${wtLabel}),N (${mutLabel}),r (${mutLabel}),slope (${mutLabel}),Δr,p(Δr),Δslope,p(Δslope)\n`;
             tableData.forEach(row => {
                 csv += `"${row.lineage}",${row.nWT},${row.rWT.toFixed(4)},${row.slopeWT.toFixed(4)},${row.nMut},${row.rMut.toFixed(4)},${row.slopeMut.toFixed(4)},${row.deltaR.toFixed(4)},${row.pR.toExponential(2)},${row.deltaSlope.toFixed(4)},${row.pSlope.toExponential(2)}\n`;
             });
-            this.downloadFile(csv, `correlation_${gene1}_vs_${gene2}_by_${hotspotGene}_mutation.csv`, 'text/csv');
+            this.downloadFile(csv, `correlation_${gene1}_vs_${gene2}_by_${hotspotGene}_${isFusion ? 'fusion' : 'mutation'}.csv`, 'text/csv');
         });
 
         // Make table sortable
         this.setupSortableTable('compareByCancerTable');
 
-        // Make rows clickable - clicking a cancer type shows scatter with that cancer + hotspot filter
+        // Make rows clickable - clicking a cancer type shows scatter with that cancer + overlay filter
         document.querySelectorAll('#compareByCancerTable .clickable-row').forEach(row => {
             row.addEventListener('click', () => {
                 const lineage = row.dataset.lineage;
                 // Set cancer type filter
                 document.getElementById('scatterCancerFilter').value = lineage;
                 this.updateScatterSubtypeFilter();
-                // Keep the hotspot gene as color overlay
-                document.getElementById('hotspotGene').value = hotspotGene;
-                document.getElementById('hotspotMode').value = 'color';
+                this._styleActiveFilters();
+                // Keep the gene as color overlay
+                if (isFusion) {
+                    document.getElementById('translocationGene').value = hotspotGene;
+                    document.getElementById('translocationMode').value = 'color';
+                } else {
+                    document.getElementById('hotspotGene').value = hotspotGene;
+                    document.getElementById('hotspotMode').value = 'color';
+                }
                 // Switch back to scatter plot
                 document.getElementById('compareTable').style.display = 'none';
                 document.getElementById('scatterPlot').style.display = 'block';
@@ -7206,6 +8918,223 @@ Results:
         this.setupSortableTable('compareMutationsTable');
     }
 
+    showCompareAllTranslocations() {
+        if (!this.currentInspect) return;
+
+        const { gene1, gene2, data } = this.currentInspect;
+
+        // Apply current filters
+        const cancerFilter = document.getElementById('scatterCancerFilter').value;
+        const subtypeFilter = document.getElementById('scatterSubtypeFilter').value;
+        const mutFilterGene = document.getElementById('mutationFilterGene').value;
+        const mutFilterLevel = document.getElementById('mutationFilterLevel').value;
+        const transFilterGene = document.getElementById('translocationFilterGene').value;
+        const transFilterLevel = document.getElementById('translocationFilterLevel').value;
+
+        let filteredData = cancerFilter ?
+            data.filter(d => d.lineage === cancerFilter) : data;
+
+        if (subtypeFilter && this.cellLineMetadata?.primaryDisease) {
+            filteredData = filteredData.filter(d =>
+                this.cellLineMetadata.primaryDisease[d.cellLineId] === subtypeFilter
+            );
+        }
+
+        if (mutFilterGene && this.mutations?.geneData?.[mutFilterGene] && mutFilterLevel !== 'all') {
+            const filterMutations = this.mutations.geneData[mutFilterGene].mutations;
+            filteredData = filteredData.filter(d => {
+                const mutLevel = filterMutations[d.cellLineId] || 0;
+                if (mutFilterLevel === '0') return mutLevel === 0;
+                if (mutFilterLevel === '1') return mutLevel === 1;
+                if (mutFilterLevel === '2') return mutLevel >= 2;
+                if (mutFilterLevel === '1+2') return mutLevel >= 1;
+                return true;
+            });
+        }
+
+        if (transFilterGene && this.translocations?.geneData?.[transFilterGene] && transFilterLevel !== 'all') {
+            const filterTrans = this.translocations.geneData[transFilterGene].translocations;
+            filteredData = filteredData.filter(d => {
+                const tLevel = filterTrans[d.cellLineId] || 0;
+                if (transFilterLevel === '0') return tLevel === 0;
+                if (transFilterLevel === '1') return tLevel === 1;
+                if (transFilterLevel === '2') return tLevel >= 2;
+                if (transFilterLevel === '1+2') return tLevel >= 1;
+                return true;
+            });
+        }
+
+        let filterParts = [];
+        if (cancerFilter) {
+            let cancerText = `Cancer: ${cancerFilter}`;
+            if (subtypeFilter) cancerText += ` (${subtypeFilter})`;
+            filterParts.push(cancerText);
+        }
+        if (mutFilterGene && mutFilterLevel !== 'all') {
+            const levelText = mutFilterLevel === '0' ? 'WT' :
+                              mutFilterLevel === '1' ? '1 mut' :
+                              mutFilterLevel === '2' ? '2 mut' : '1+2 mut';
+            filterParts.push(`${mutFilterGene}: ${levelText}`);
+        }
+        if (transFilterGene && transFilterLevel !== 'all') {
+            const levelText = transFilterLevel === '0' ? 'WT' :
+                              transFilterLevel === '1' ? '1 fusion' :
+                              transFilterLevel === '2' ? '2 fusions' : '1+2 fusions';
+            filterParts.push(`${transFilterGene}: ${levelText}`);
+        }
+        const filterDesc = filterParts.length > 0 ? filterParts.join(' | ') : '';
+
+        document.getElementById('scatterPlot').style.display = 'none';
+        document.getElementById('compareTable').style.display = 'block';
+
+        this.renderTranslocationComparisonTable(filteredData, gene1, gene2, filterDesc);
+    }
+
+    renderTranslocationComparisonTable(filteredData, gene1, gene2, filterDesc = '') {
+        if (!this.translocations || !this.translocations.geneData) {
+            document.getElementById('compareTable').innerHTML = '<p>No fusion data available.</p>';
+            return;
+        }
+
+        const tableData = [];
+        const transGenes = Object.keys(this.translocations.geneData);
+
+        // Pre-filter: only process genes that have ≥3 fused cells in filteredData
+        const cellIdSet = new Set(filteredData.map(d => d.cellLineId));
+        const candidateGenes = transGenes.filter(tGene => {
+            const transData = this.translocations.geneData[tGene].translocations;
+            let fusedCount = 0;
+            for (const cl of cellIdSet) {
+                if (transData[cl] && transData[cl] > 0) fusedCount++;
+                if (fusedCount >= 3) return true;
+            }
+            return false;
+        });
+
+        candidateGenes.forEach(tGene => {
+            const transData = this.translocations.geneData[tGene].translocations;
+
+            const wt = filteredData.filter(d => (transData[d.cellLineId] || 0) === 0);
+            const fused = filteredData.filter(d => (transData[d.cellLineId] || 0) >= 1);
+
+            if (wt.length >= 3 && fused.length >= 3) {
+                const wtStats = this.pearsonWithSlope(wt.map(d => d.x), wt.map(d => d.y));
+                const fusedStats = this.pearsonWithSlope(fused.map(d => d.x), fused.map(d => d.y));
+
+                const deltaR = fusedStats.correlation - wtStats.correlation;
+                const deltaSlope = fusedStats.slope - wtStats.slope;
+
+                const z1 = 0.5 * Math.log((1 + wtStats.correlation) / (1 - wtStats.correlation));
+                const z2 = 0.5 * Math.log((1 + fusedStats.correlation) / (1 - fusedStats.correlation));
+                const se = Math.sqrt(1/(wt.length - 3) + 1/(fused.length - 3));
+                const zDiff = (z2 - z1) / se;
+                const pR = 2 * (1 - this.normalCDF(Math.abs(zDiff)));
+
+                tableData.push({
+                    tGene,
+                    nWT: wt.length,
+                    rWT: wtStats.correlation,
+                    slopeWT: wtStats.slope,
+                    nFused: fused.length,
+                    rFused: fusedStats.correlation,
+                    slopeFused: fusedStats.slope,
+                    deltaR,
+                    pR,
+                    deltaSlope
+                });
+            }
+        });
+
+        tableData.sort((a, b) => a.pR - b.pR);
+
+        const filterInfo = filterDesc ? `<p style="font-size: 11px; color: #333; margin-bottom: 8px; background: #f0f9ff; padding: 4px 8px; border-radius: 4px;"><b>Filter:</b> ${filterDesc}</p>` : '';
+        let html = `
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h4 style="margin: 0;">Fusions affecting ${gene1} vs ${gene2}</h4>
+                <div>
+                    <button class="btn btn-primary btn-sm" id="backToGraphBtnTrans" style="margin-right: 8px;">← Back to Graph</button>
+                    <button class="btn btn-success btn-sm" id="downloadTransCompareCSV">Download CSV</button>
+                </div>
+            </div>
+            ${filterInfo}
+            <p style="font-size: 11px; color: #666; margin-bottom: 6px;">
+                Comparing WT (0 fusions) vs Fused (1+ fusions). Sorted by p-value.
+            </p>
+            <p style="font-size: 10px; color: #0c4a6e; background: #f0f9ff; padding: 4px 8px; border-radius: 4px; margin-bottom: 8px;">
+                <b>Statistics:</b> p(Δr) uses Fisher z-transformation to test if correlations differ significantly between WT and fused cells.
+            </p>
+            <p style="font-size: 11px; color: #059669; margin-bottom: 8px;">Click any row to color scatter plot by that fusion</p>
+            <div class="table-container" style="max-height: 380px; overflow-y: auto;">
+            <table id="compareTranslocationsTable" class="data-table" style="width: 100%; font-size: 11px;">
+                <thead>
+                    <tr>
+                        <th data-sort="tGene" data-type="string" style="cursor: pointer;">Fusion Gene ↕</th>
+                        <th data-sort="nWT" data-type="number" style="cursor: pointer; border-left: 2px solid #2563eb;">N(WT) ↕</th>
+                        <th data-sort="rWT" data-type="number" style="cursor: pointer;">r(WT) ↕</th>
+                        <th data-sort="nFused" data-type="number" style="cursor: pointer; border-left: 2px solid #dc2626;">N(Fused) ↕</th>
+                        <th data-sort="rFused" data-type="number" style="cursor: pointer;">r(Fused) ↕</th>
+                        <th data-sort="deltaR" data-type="number" style="cursor: pointer; border-left: 2px solid #6b7280;">Δr ↕</th>
+                        <th data-sort="pR" data-type="number" style="cursor: pointer;">p(Δr) ↕</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        tableData.forEach(row => {
+            const deltaRColor = row.deltaR < 0 ? '#dc2626' : '#5a9f4a';
+            const pHighlight = row.pR < 0.05 ? 'background: #fef3c7;' : '';
+
+            html += `
+                <tr class="clickable-trans-row" data-trans-gene="${row.tGene}" style="${pHighlight} cursor: pointer;">
+                    <td><b>${row.tGene}</b></td>
+                    <td style="text-align: center; border-left: 2px solid #2563eb;">${row.nWT}</td>
+                    <td style="text-align: center;">${row.rWT.toFixed(3)}</td>
+                    <td style="text-align: center; border-left: 2px solid #dc2626;">${row.nFused}</td>
+                    <td style="text-align: center;">${row.rFused.toFixed(3)}</td>
+                    <td style="text-align: center; border-left: 2px solid #6b7280; color: ${deltaRColor}; font-weight: 600;">${row.deltaR.toFixed(3)}</td>
+                    <td style="text-align: center;">${row.pR.toExponential(1)}</td>
+                </tr>
+            `;
+        });
+
+        html += `
+                </tbody>
+            </table>
+            </div>
+            <p style="font-size: 11px; color: #666; margin-top: 8px;">
+                Yellow = p < 0.05. This analysis may be biased as fusions select for cancer types.
+            </p>
+        `;
+
+        document.getElementById('compareTable').innerHTML = html;
+
+        document.getElementById('backToGraphBtnTrans')?.addEventListener('click', () => {
+            document.getElementById('compareTable').style.display = 'none';
+            document.getElementById('scatterPlot').style.display = 'block';
+        });
+
+        document.getElementById('downloadTransCompareCSV')?.addEventListener('click', () => {
+            let csv = 'Fusion_Gene,N_WT,r_WT,slope_WT,N_Fused,r_Fused,slope_Fused,Delta_r,p_Delta_r,Delta_slope\n';
+            tableData.forEach(row => {
+                csv += `${row.tGene},${row.nWT},${row.rWT.toFixed(4)},${row.slopeWT.toFixed(4)},${row.nFused},${row.rFused.toFixed(4)},${row.slopeFused.toFixed(4)},${row.deltaR.toFixed(4)},${row.pR.toExponential(2)},${row.deltaSlope.toFixed(4)}\n`;
+            });
+            this.downloadFile(csv, `${gene1}_vs_${gene2}_fusion_comparison.csv`, 'text/csv');
+        });
+
+        document.querySelectorAll('#compareTranslocationsTable .clickable-trans-row').forEach(row => {
+            row.addEventListener('click', () => {
+                const tGene = row.dataset.transGene;
+                document.getElementById('translocationGene').value = tGene;
+                document.getElementById('translocationMode').value = 'color';
+                document.getElementById('compareTable').style.display = 'none';
+                document.getElementById('scatterPlot').style.display = 'block';
+                this.updateInspectPlot();
+            });
+        });
+
+        this.setupSortableTable('compareTranslocationsTable');
+    }
+
     updateInspectGenes() {
         const gene1 = document.getElementById('inspectGeneX').value.trim().toUpperCase();
         const gene2 = document.getElementById('inspectGeneY').value.trim().toUpperCase();
@@ -7383,6 +9312,7 @@ Results:
                 document.getElementById('compareTable').style.display = 'none';
                 document.getElementById('scatterPlot').style.display = 'block';
                 this.updateScatterSubtypeFilter();
+                this._styleActiveFilters();
                 this.updateInspectPlot();
             });
         });
@@ -7421,36 +9351,143 @@ Results:
         });
     }
 
-    downloadScatterPNG() {
+    async _exportScatterChart(format) {
+        const plotEl = document.getElementById('scatterPlot');
+        if (!plotEl || !plotEl.data) return;
+
         const hotspotGene = document.getElementById('hotspotGene').value;
         const hotspotMode = document.getElementById('hotspotMode').value;
-        // Increase height for 3-panel to accommodate annotations without overlap
-        const width = hotspotMode === 'three_panel' ? 1800 : 1000;
-        const height = hotspotMode === 'three_panel' ? 800 : 1000;
-        const suffix = hotspotGene && hotspotMode !== 'none' ? `_${hotspotGene}` : '';
+        const transGene = document.getElementById('translocationGene').value;
+        const transMode = document.getElementById('translocationMode').value;
 
-        Plotly.downloadImage('scatterPlot', {
-            format: 'png',
-            width: width,
-            height: height,
-            filename: `scatter_${this.currentInspect.gene1}_vs_${this.currentInspect.gene2}${suffix}`
+        let suffix = '';
+        if (hotspotGene && hotspotMode !== 'none') suffix = `_${hotspotGene}`;
+        else if (transGene && transMode !== 'none') suffix = `_${transGene}`;
+        const filename = `scatter_${this.currentInspect.gene1}_vs_${this.currentInspect.gene2}${suffix}`;
+
+        // Read export settings
+        const transparentBg = document.getElementById('exportTransparentBg')?.checked;
+        const whitePlotBg = document.getElementById('exportWhitePlotBg')?.checked;
+
+        // Determine export backgrounds
+        const origPaperBg = plotEl.layout.paper_bgcolor || '#fff';
+        const origPlotBg = plotEl.layout.plot_bgcolor || '#fafafa';
+        const exportPaperBg = transparentBg ? 'rgba(0,0,0,0)' : origPaperBg;
+        const exportPlotBg = transparentBg ? 'rgba(0,0,0,0)' : (whitePlotBg ? '#fff' : origPlotBg);
+
+        // Temporarily set export backgrounds on the live plot so Plotly.toImage renders them
+        await Plotly.relayout(plotEl, { paper_bgcolor: exportPaperBg, plot_bgcolor: exportPlotBg });
+
+        // Always export as SVG first so we can post-process (remove legend clipPath),
+        // then convert to PNG via canvas if needed.
+        const svgDataUrl = await Plotly.toImage(plotEl, {
+            format: 'svg',
+            width: plotEl.layout.width,
+            height: plotEl.layout.height
         });
+
+        // Restore original backgrounds
+        await Plotly.relayout(plotEl, { paper_bgcolor: origPaperBg, plot_bgcolor: origPlotBg });
+
+        // Decode SVG
+        let svgString;
+        if (svgDataUrl.indexOf('base64,') > -1) {
+            svgString = atob(svgDataUrl.split('base64,')[1]);
+        } else {
+            svgString = decodeURIComponent(svgDataUrl.split(',').slice(1).join(','));
+        }
+
+        // Fix legend: remove clipPath, measure text with canvas, widen rect to fit
+        svgString = svgString.replace(/clip-path="url\(#legend[^"]*\)"/g, '');
+        const parser = new DOMParser();
+        const svgDoc = parser.parseFromString(svgString, 'image/svg+xml');
+        const legendBg = svgDoc.querySelector('.legend rect.bg');
+        const legendTexts = svgDoc.querySelectorAll('.legend .legendtext, .legend .legendtitletext');
+        if (legendBg && legendTexts.length) {
+            // Use canvas.measureText with Open Sans (loaded on page) for accurate width
+            const measureCanvas = document.createElement('canvas');
+            const mctx = measureCanvas.getContext('2d');
+            let maxRight = 0;
+            legendTexts.forEach(t => {
+                const fs = t.style.fontSize || '11px';
+                const x = parseFloat(t.getAttribute('x')) || 0;
+                mctx.font = `${fs} "Open Sans", verdana, arial, sans-serif`;
+                const right = x + mctx.measureText(t.textContent).width;
+                if (right > maxRight) maxRight = right;
+            });
+            if (maxRight > 0) {
+                // Scale up by 1.3x — canvas.measureText uses a fallback font that's
+                // narrower than the actual Open Sans rendered in the SVG
+                const newWidth = Math.ceil(maxRight * 1.3);
+                const oldWidth = parseFloat(legendBg.getAttribute('width'));
+                if (newWidth > oldWidth) {
+                    legendBg.setAttribute('width', String(newWidth));
+                    // Expand SVG width if legend extends beyond edge
+                    const svgEl = svgDoc.documentElement;
+                    const legendTransform = svgDoc.querySelector('.legend')?.getAttribute('transform');
+                    const tMatch = legendTransform?.match(/translate\(([\d.]+)/);
+                    if (tMatch) {
+                        const legendX = parseFloat(tMatch[1]);
+                        const needed = legendX + newWidth + 5;
+                        const svgW = parseFloat(svgEl.getAttribute('width'));
+                        if (needed > svgW) {
+                            const w = Math.ceil(needed);
+                            svgEl.setAttribute('width', String(w));
+                            svgEl.setAttribute('viewBox', `0 0 ${w} ${svgEl.getAttribute('height')}`);
+                            // Expand paper background rect
+                            const paperRect = svgEl.querySelector('rect');
+                            if (paperRect) paperRect.setAttribute('width', String(w));
+                        }
+                    }
+                }
+            }
+            // Remove clipPath definitions too
+            svgDoc.querySelectorAll('clipPath[id^="legend"]').forEach(cp => cp.remove());
+        }
+        svgString = new XMLSerializer().serializeToString(svgDoc.documentElement);
+
+        const a = document.createElement('a');
+        if (format === 'svg') {
+            const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+            a.href = URL.createObjectURL(blob);
+            a.download = filename + '.svg';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        } else {
+            // Render the fixed SVG to canvas at 4x for publication quality PNG
+            const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+            const svgUrl = URL.createObjectURL(svgBlob);
+            const img = new Image();
+            img.onload = () => {
+                const scale = 4;
+                const canvas = document.createElement('canvas');
+                canvas.width = img.naturalWidth * scale;
+                canvas.height = img.naturalHeight * scale;
+                const ctx = canvas.getContext('2d');
+                ctx.scale(scale, scale);
+                if (!transparentBg) {
+                    ctx.fillStyle = 'white';
+                    ctx.fillRect(0, 0, img.naturalWidth, img.naturalHeight);
+                }
+                ctx.drawImage(img, 0, 0);
+                URL.revokeObjectURL(svgUrl);
+                a.href = canvas.toDataURL('image/png');
+                a.download = filename + '.png';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            };
+            img.src = svgUrl;
+        }
+    }
+
+    downloadScatterPNG() {
+        this._exportScatterChart('png');
     }
 
     downloadScatterSVG() {
-        const hotspotGene = document.getElementById('hotspotGene').value;
-        const hotspotMode = document.getElementById('hotspotMode').value;
-        // Increase height for 3-panel to accommodate annotations without overlap
-        const width = hotspotMode === 'three_panel' ? 1800 : 1000;
-        const height = hotspotMode === 'three_panel' ? 800 : 1000;
-        const suffix = hotspotGene && hotspotMode !== 'none' ? `_${hotspotGene}` : '';
-
-        Plotly.downloadImage('scatterPlot', {
-            format: 'svg',
-            width: width,
-            height: height,
-            filename: `scatter_${this.currentInspect.gene1}_vs_${this.currentInspect.gene2}${suffix}`
-        });
+        this._exportScatterChart('svg');
     }
 
     showByTissueModal() {
@@ -7600,22 +9637,18 @@ Results:
         tableHtml += '</tbody></table></div>';
         tableHtml += '<p style="font-size: 11px; color: #666; margin-top: 8px; font-style: italic;">Click a lineage to view its scatter plot</p>';
 
-        // Hide scatterPlot, use compareTable for side-by-side layout
-        const scatterPlotEl = document.getElementById('scatterPlot');
-        const compareTableEl = document.getElementById('compareTable');
+        // Hide inspect-layout, use byTissueContainer for full-width layout
+        document.querySelector('.inspect-layout').style.display = 'none';
+        const tissueContainer = document.getElementById('byTissueContainer');
 
-        scatterPlotEl.style.display = 'none';
-
-        // Create side-by-side layout in compareTable
         const chartHeight = Math.max(400, tissueStats.length * 22 + 80);
-        compareTableEl.style.display = 'block';
-        compareTableEl.style.maxHeight = 'none';
-        compareTableEl.innerHTML = `
+        tissueContainer.style.display = 'block';
+        tissueContainer.innerHTML = `
             <div style="display: flex; gap: 20px; align-items: flex-start;">
-                <div style="flex: 0 0 45%;">
+                <div style="flex: 1 1 50%; min-width: 400px;">
                     <div id="byTissueChart" style="height: ${chartHeight}px;"></div>
                 </div>
-                <div style="flex: 1; min-width: 0;">
+                <div style="flex: 1 1 50%; min-width: 0; overflow-x: auto;">
                     ${tableHtml}
                 </div>
             </div>
@@ -7633,6 +9666,11 @@ Results:
         if (!this.currentInspect || !this.currentInspect.data) return;
 
         const { gene1, gene2, data } = this.currentInspect;
+
+        // Restore inspect layout and hide tissue container
+        document.querySelector('.inspect-layout').style.display = '';
+        document.getElementById('byTissueContainer').style.display = 'none';
+        document.getElementById('scatterPlot').style.display = '';
 
         // Show the scatter plot controls again
         document.querySelector('.inspect-controls').style.display = '';
@@ -7666,7 +9704,7 @@ Results:
         });
         const lineages = Object.keys(lineageCounts).sort();
         if (lineages.length > 0) {
-            cancerFilter.innerHTML = `<option value="">All cancer types (n=${data.length})</option>`;
+            cancerFilter.innerHTML = `<option value="">All tissues (n=${data.length})</option>`;
             lineages.forEach(l => {
                 cancerFilter.innerHTML += `<option value="${l}">${l} (n=${lineageCounts[l]})</option>`;
             });
@@ -7675,6 +9713,7 @@ Results:
             cancerBox.style.display = 'block';
             // Update subtype filter for the selected tissue
             this.updateScatterSubtypeFilter();
+            this._styleActiveFilters();
         } else {
             cancerBox.style.display = 'none';
             document.getElementById('scatterSubtypeFilter').style.display = 'none';
@@ -7702,6 +9741,46 @@ Results:
         } else {
             document.getElementById('mutationBox').style.display = 'none';
             document.getElementById('mutationFilterBox').style.display = 'none';
+        }
+
+        // Populate translocation/fusion selectors (datalists, sorted by count desc)
+        const transGeneInput2 = document.getElementById('translocationGene');
+        const transFilterGeneInput2 = document.getElementById('translocationFilterGene');
+        const transGeneDatalist2 = document.getElementById('translocationGeneList');
+        const transFilterGeneDatalist2 = document.getElementById('translocationFilterGeneList');
+
+        if (this.translocations?.genes?.length > 0) {
+            transGeneInput2.value = '';
+            transFilterGeneInput2.value = '';
+            const geneCounts2 = [];
+            for (const g of this.translocations.genes) {
+                const transData = this.translocations.geneData?.[g]?.translocations || {};
+                let count = 0;
+                for (const cl of cellLinesInPlot) {
+                    if (transData[cl] && transData[cl] > 0) count++;
+                }
+                if (count > 0) geneCounts2.push({ gene: g, count });
+            }
+            geneCounts2.sort((a, b) => {
+                const aPri = CorrelationExplorer.PRIORITY_FUSION_GENES.has(a.gene) ? 1 : 0;
+                const bPri = CorrelationExplorer.PRIORITY_FUSION_GENES.has(b.gene) ? 1 : 0;
+                if (aPri !== bPri) return bPri - aPri;
+                return b.count - a.count;
+            });
+
+            let transHtml2 = '';
+            geneCounts2.forEach(({ gene, count }) => {
+                transHtml2 += `<option value="${gene}">${gene} (${count} fused)</option>`;
+            });
+            transGeneDatalist2.innerHTML = transHtml2;
+            transFilterGeneDatalist2.innerHTML = transHtml2;
+            document.getElementById('translocationBox').style.display = 'block';
+            document.getElementById('translocationFilterBox').style.display = 'block';
+            document.getElementById('compareAllTranslocationsBtn').style.display = '';
+        } else {
+            document.getElementById('translocationBox').style.display = 'none';
+            document.getElementById('translocationFilterBox').style.display = 'none';
+            document.getElementById('compareAllTranslocationsBtn').style.display = 'none';
         }
 
         // Reset hotspot mode to default
@@ -7916,6 +9995,7 @@ Results:
 
         // Hide mutation inspect controls
         document.getElementById('geHotspotFilter').style.display = 'none';
+        document.getElementById('geFusionFilter').style.display = 'none';
         document.getElementById('geCompareButtons').style.display = 'none';
         document.getElementById('geResetFiltersBtn').style.display = 'none';
         document.getElementById('geInlineCompareTable').style.display = 'none';
@@ -8010,15 +10090,21 @@ Results:
         const data = this.getGETissueFilteredData();
         const gene = this.currentGeneEffect.gene;
 
+        // Determine if we should group by subtype (when a lineage filter is active)
+        const tissueFilter = document.getElementById('geTissueFilter')?.value;
+        const groupBySubtype = !!tissueFilter && !!this.cellLineMetadata?.primaryDisease;
+
         // Get all gene effects for comparison
         const allEffects = data.map(d => d.geneEffect);
 
-        // Group data by cancer type (keep full data for box plots)
+        // Group data by cancer type or subtype
         const groupedData = {};
         data.forEach(d => {
-            const lineage = d.lineage || 'Unknown';
-            if (!groupedData[lineage]) groupedData[lineage] = [];
-            groupedData[lineage].push({
+            const groupKey = groupBySubtype
+                ? (this.cellLineMetadata.primaryDisease[d.cellLineId] || 'Unknown')
+                : (d.lineage || 'Unknown');
+            if (!groupedData[groupKey]) groupedData[groupKey] = [];
+            groupedData[groupKey].push({
                 geneEffect: d.geneEffect,
                 cellLineName: d.cellLineName || d.cellLineId,
                 cellLineId: d.cellLineId
@@ -8027,18 +10113,23 @@ Results:
 
         // Calculate stats for each group including p-value vs all cells
         const stats = [];
-        Object.entries(groupedData).forEach(([lineage, cellData]) => {
+        Object.entries(groupedData).forEach(([groupName, cellData]) => {
             if (cellData.length >= 3) {
                 const effects = cellData.map(c => c.geneEffect);
                 const mean = effects.reduce((a, b) => a + b, 0) / effects.length;
                 const sd = Math.sqrt(effects.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / effects.length);
 
                 // Calculate p-value comparing this group to all other cells
-                const otherEffects = data.filter(d => (d.lineage || 'Unknown') !== lineage).map(d => d.geneEffect);
+                const otherEffects = data.filter(d => {
+                    const key = groupBySubtype
+                        ? (this.cellLineMetadata.primaryDisease[d.cellLineId] || 'Unknown')
+                        : (d.lineage || 'Unknown');
+                    return key !== groupName;
+                }).map(d => d.geneEffect);
                 const tTest = this.welchTTest(effects, otherEffects);
 
                 stats.push({
-                    group: lineage,
+                    group: groupName,
                     n: cellData.length,
                     mean,
                     sd,
@@ -8052,7 +10143,7 @@ Results:
         stats.sort((a, b) => a.mean - b.mean);
         this.currentGEStats = stats;
 
-        // Create box plot traces for each cancer type
+        // Create box plot traces for each group
         const traces = stats.map((s, idx) => ({
             type: 'box',
             name: `${s.group} (n=${s.n})`,
@@ -8077,7 +10168,7 @@ Results:
         const chartHeight = Math.max(350, numEntries * boxHeight + 80);
 
         const layout = {
-            title: { text: `${gene} by Cancer Type`, font: { size: 13 } },
+            title: { text: `${gene} by ${groupBySubtype ? 'Disease Subtype' : 'Cancer Type'}`, font: { size: 13 } },
             xaxis: {
                 title: 'Gene Effect',
                 zeroline: true,
@@ -8107,6 +10198,7 @@ Results:
         }));
         tableStats.sort((a, b) => a.pValue - b.pValue); // Sort by p-value (low to high)
         this.currentGEStats = tableStats;
+        this._geGroupBySubtype = groupBySubtype;
         this.renderGETable(tableStats, 'tissue');
     }
 
@@ -8348,8 +10440,9 @@ Results:
         const sortIcon = ' ↕';
 
         if (mode === 'tissue') {
+            const groupLabel = this._geGroupBySubtype ? 'Disease Subtype' : 'Cancer Type';
             thead.innerHTML = `<tr>
-                <th style="${headerStyle}" data-sort="group" data-type="string">Cancer Type${sortIcon}</th>
+                <th style="${headerStyle}" data-sort="group" data-type="string">${groupLabel}${sortIcon}</th>
                 <th style="${headerStyle}" data-sort="n" data-type="number">N${sortIcon}</th>
                 <th style="${headerStyle}" data-sort="mean" data-type="number">Mean GE${sortIcon}</th>
                 <th style="${headerStyle}" data-sort="sd" data-type="number">SD${sortIcon}</th>
@@ -8357,14 +10450,18 @@ Results:
             </tr>`;
             this.renderGETableBody(stats, mode);
         } else {
+            const hg = this.mutationResults?.hotspotGene || 'Hotspot';
+            const isT = this.mutationResults?.isTranslocation;
+            const wtLbl = isT ? 'No Fusion' : `${hg} WT`;
+            const mutLbl = isT ? 'Fused' : `${hg} Mut`;
             thead.innerHTML = `<tr>
-                <th style="${headerStyle}" data-sort="group" data-type="string">Hotspot${sortIcon}</th>
-                <th style="${headerStyle}; border-left: 2px solid #2563eb;" data-sort="n0" data-type="number">n(0)${sortIcon}</th>
-                <th style="${headerStyle}" data-sort="mean0" data-type="number">GE(0)${sortIcon}</th>
-                <th style="${headerStyle}; border-left: 2px solid #f97316;" data-sort="n1" data-type="number">n(1)${sortIcon}</th>
-                <th style="${headerStyle}" data-sort="mean1" data-type="number">GE(1)${sortIcon}</th>
-                <th style="${headerStyle}; border-left: 2px solid #dc2626;" data-sort="n2" data-type="number">n(2)${sortIcon}</th>
-                <th style="${headerStyle}" data-sort="mean2" data-type="number">GE(2)${sortIcon}</th>
+                <th style="${headerStyle}" data-sort="group" data-type="string">Gene${sortIcon}</th>
+                <th style="${headerStyle}; border-left: 2px solid #2563eb;" data-sort="n0" data-type="number">N (${wtLbl})${sortIcon}</th>
+                <th style="${headerStyle}" data-sort="mean0" data-type="number">GE (${wtLbl})${sortIcon}</th>
+                <th style="${headerStyle}; border-left: 2px solid #f97316;" data-sort="n1" data-type="number">N (${mutLbl} 1)${sortIcon}</th>
+                <th style="${headerStyle}" data-sort="mean1" data-type="number">GE (${mutLbl} 1)${sortIcon}</th>
+                <th style="${headerStyle}; border-left: 2px solid #dc2626;" data-sort="n2" data-type="number">N (${mutLbl} 2${isT ? '+' : ''})${sortIcon}</th>
+                <th style="${headerStyle}" data-sort="mean2" data-type="number">GE (${mutLbl} 2${isT ? '+' : ''})${sortIcon}</th>
                 <th style="${headerStyle}; border-left: 2px solid #6b7280;" data-sort="diff" data-type="number">Δ GE${sortIcon}</th>
                 <th style="${headerStyle}" data-sort="pValue" data-type="number">p-value${sortIcon}</th>
             </tr>`;
@@ -8681,11 +10778,18 @@ Results:
     updateShowAllButton() {
         const btn = document.getElementById('geShowAllBtn');
         const ratioControl = document.getElementById('geAspectRatioControl');
+        const isInspect = this.geneEffectViewMode === 'mutation';
         if (btn) {
             btn.style.display = this.geDetailedView ? 'inline-block' : 'none';
         }
         if (ratioControl) {
-            ratioControl.style.display = this.geDetailedView ? 'flex' : 'none';
+            // Show controls for detailed views AND mutation inspect views
+            ratioControl.style.display = (this.geDetailedView || isInspect) ? 'flex' : 'none';
+            // Height control only relevant for inspect plot (not tissue/hotspot overview)
+            const heightControl = document.getElementById('geHeightControl');
+            if (heightControl) {
+                heightControl.style.display = isInspect ? 'inline-flex' : 'none';
+            }
         }
     }
 
@@ -8945,7 +11049,7 @@ Results:
                 const input = document.createElement('input');
                 input.type = 'text';
                 input.style.cssText = 'width: 100%; font-size: 10px; padding: 2px 4px; border: 1px solid #d1d5db; border-radius: 3px; box-sizing: border-box;';
-                input.placeholder = isNumeric ? '>0.5' : 'filter';
+                input.placeholder = isNumeric ? '>0.5 or <-1' : 'filter';
                 input.dataset.colIndex = idx;
                 input.dataset.isNumeric = isNumeric;
                 input.addEventListener('input', () => this.applyColumnFilters(tableId));
@@ -9099,7 +11203,10 @@ Results:
         const mr = this.mutationResults;
         const gene = this.currentGeneEffectGene;
         const hotspotGene = mr.hotspotGene;
-        const mutationData = this.mutations.geneData[hotspotGene];
+        const isTranslocation = mr.isTranslocation;
+        const mutationData = isTranslocation
+            ? this.translocations?.geneData?.[hotspotGene]
+            : this.mutations?.geneData?.[hotspotGene];
         if (!mutationData) return;
 
         const geneIdx = this.geneIndex.get(gene.toUpperCase());
@@ -9107,17 +11214,31 @@ Results:
 
         const cellLines = this.metadata.cellLines;
         const inspectHotspot = document.getElementById('geHotspotFilter')?.value || '';
+        const inspectFusion = document.getElementById('geFusionFilter')?.value || '';
+        const inspFusionData = inspectFusion ? this.translocations?.geneData?.[inspectFusion]?.translocations : null;
+        const inspectSubtype = document.getElementById('geSubtypeFilter')?.value || '';
+
+        // Determine if we should group by subtype (when a lineage filter is active)
+        const activeTissueFilter = document.getElementById('geTissueFilter')?.value || '';
+        const activeLineage = activeTissueFilter || mr.lineageFilter;
+        const groupBySubtype = !!activeLineage && !!this.cellLineMetadata?.primaryDisease;
 
         // Gather cell lines respecting all filters
-        const lineageMap = {};
+        const groupMap = {};
         const allWT = [], allMut = [];
         cellLines.forEach((cellLine, idx) => {
-            if (mr.lineageFilter && this.cellLineMetadata?.lineage?.[cellLine] !== mr.lineageFilter) return;
-            if (mr.subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cellLine] !== mr.subLineageFilter) return;
-            if (mr.excludedTissues && mr.excludedTissues.size > 0) {
-                const lineage = this.cellLineMetadata?.lineage?.[cellLine];
-                if (lineage && mr.excludedTissues.has(lineage)) return;
+            // Apply tissue/lineage filters
+            if (activeTissueFilter) {
+                if ((this.cellLineMetadata?.lineage?.[cellLine] || '') !== activeTissueFilter) return;
+            } else {
+                if (mr.lineageFilter && this.cellLineMetadata?.lineage?.[cellLine] !== mr.lineageFilter) return;
+                if (mr.excludedTissues && mr.excludedTissues.size > 0) {
+                    const lineage = this.cellLineMetadata?.lineage?.[cellLine];
+                    if (lineage && mr.excludedTissues.has(lineage)) return;
+                }
             }
+            if (!activeTissueFilter && mr.subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cellLine] !== mr.subLineageFilter) return;
+            if (inspectSubtype && this.cellLineMetadata?.primaryDisease?.[cellLine] !== inspectSubtype) return;
             if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
                 const addMutData = this.mutations.geneData[mr.additionalHotspot];
                 if (addMutData) {
@@ -9135,36 +11256,45 @@ Results:
                     if (inspMutLevel === 0) return;
                 }
             }
+            if (inspectFusion && inspFusionData) {
+                if ((inspFusionData[cellLine] || 0) < 1) return;
+            }
 
             const ge = this.geneEffects[geneIdx * this.nCellLines + idx];
             if (isNaN(ge)) return;
 
-            const lineage = this.cellLineMetadata?.lineage?.[cellLine] || 'Unknown';
-            const mutLevel = mutationData.mutations[cellLine] || 0;
-            if (!lineageMap[lineage]) lineageMap[lineage] = { wt: [], mut: [] };
-            if (mutLevel === 0) { lineageMap[lineage].wt.push(ge); allWT.push(ge); }
-            else { lineageMap[lineage].mut.push(ge); allMut.push(ge); }
+            const groupKey = groupBySubtype
+                ? (this.cellLineMetadata.primaryDisease[cellLine] || 'Unknown')
+                : (this.cellLineMetadata?.lineage?.[cellLine] || 'Unknown');
+            const mutLevel = isTranslocation
+                ? (mutationData.translocations[cellLine] || 0)
+                : (mutationData.mutations[cellLine] || 0);
+            if (!groupMap[groupKey]) groupMap[groupKey] = { wt: [], mut: [] };
+            if (mutLevel === 0) { groupMap[groupKey].wt.push(ge); allWT.push(ge); }
+            else { groupMap[groupKey].mut.push(ge); allMut.push(ge); }
         });
 
         // Build rows
         const rows = [];
+        const mutLabel = isTranslocation ? 'Fused' : 'Mut';
         if (allWT.length > 0 && allMut.length > 0) {
             const meanWT = allWT.reduce((a, b) => a + b, 0) / allWT.length;
             const meanMut = allMut.reduce((a, b) => a + b, 0) / allMut.length;
-            rows.push({ label: 'All', nWT: allWT.length, nMut: allMut.length, delta: meanMut - meanWT, isAll: true, tissue: '' });
+            rows.push({ label: 'All', nWT: allWT.length, meanWT, nMut: allMut.length, meanMut, delta: meanMut - meanWT, isAll: true, tissue: '' });
         }
-        Object.entries(lineageMap).forEach(([lineage, groups]) => {
+        Object.entries(groupMap).forEach(([group, groups]) => {
             if (groups.wt.length > 0 && groups.mut.length > 0) {
                 const meanWT = groups.wt.reduce((a, b) => a + b, 0) / groups.wt.length;
                 const meanMut = groups.mut.reduce((a, b) => a + b, 0) / groups.mut.length;
-                rows.push({ label: lineage, nWT: groups.wt.length, nMut: groups.mut.length, delta: meanMut - meanWT, tissue: lineage });
+                rows.push({ label: group, nWT: groups.wt.length, meanWT, nMut: groups.mut.length, meanMut, delta: meanMut - meanWT, tissue: group });
             }
         });
 
         const allRow = rows.filter(r => r.isAll);
         const otherRows = rows.filter(r => !r.isAll).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
 
-        this._inlineCompareData = { title: `${gene} — Δ GE by Tissue (${hotspotGene} WT vs Mut)`, headers: ['Tissue', 'N(WT)', 'N(Mut)', 'Δ GE'], refRows: allRow, sortableRows: otherRows, mode: 'tissue' };
+        const groupLabel = groupBySubtype ? 'Subtype' : 'Tissue';
+        this._inlineCompareData = { title: `${gene} — Δ GE by ${groupLabel} (${hotspotGene} WT vs ${mutLabel})`, headers: [groupLabel, 'N(WT)', 'GE(WT)', `N(${mutLabel})`, `GE(${mutLabel})`, 'Δ GE'], refRows: allRow, sortableRows: otherRows, mode: 'tissue' };
         this._renderInlineCompareTable();
     }
 
@@ -9175,7 +11305,10 @@ Results:
         const mr = this.mutationResults;
         const gene = this.currentGeneEffectGene;
         const mainHotspot = mr.hotspotGene;
-        const mainMutData = this.mutations.geneData[mainHotspot];
+        const isTranslocation = mr.isTranslocation;
+        const mainMutData = isTranslocation
+            ? this.translocations?.geneData?.[mainHotspot]
+            : this.mutations?.geneData?.[mainHotspot];
         if (!mainMutData) return;
 
         const geneIdx = this.geneIndex.get(gene.toUpperCase());
@@ -9183,6 +11316,7 @@ Results:
 
         const cellLines = this.metadata.cellLines;
         const tissueFilter = document.getElementById('geTissueFilter')?.value || '';
+        const inspectSubtype = document.getElementById('geSubtypeFilter')?.value || '';
 
         const baseCells = [];
         cellLines.forEach((cellLine, idx) => {
@@ -9197,8 +11331,9 @@ Results:
                 }
             }
             if (!tissueFilter && mr.subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cellLine] !== mr.subLineageFilter) return;
+            if (inspectSubtype && this.cellLineMetadata?.primaryDisease?.[cellLine] !== inspectSubtype) return;
             if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
-                const addMutData = this.mutations.geneData[mr.additionalHotspot];
+                const addMutData = this.mutations?.geneData?.[mr.additionalHotspot];
                 if (addMutData) {
                     const addMutLevel = addMutData.mutations[cellLine] || 0;
                     if (mr.additionalHotspotLevel === '0' && addMutLevel !== 0) return;
@@ -9209,20 +11344,25 @@ Results:
             }
             const ge = this.geneEffects[geneIdx * this.nCellLines + idx];
             if (isNaN(ge)) return;
-            baseCells.push({ cellLine, idx, ge, mainMut: mainMutData.mutations[cellLine] || 0 });
+            const mainLevel = isTranslocation
+                ? (mainMutData.translocations[cellLine] || 0)
+                : (mainMutData.mutations[cellLine] || 0);
+            baseCells.push({ cellLine, idx, ge, mainMut: mainLevel });
         });
 
         const rows = [];
+        const mutLabel = isTranslocation ? 'Fused' : 'Mut';
         const noneWT = baseCells.filter(c => c.mainMut === 0).map(c => c.ge);
         const noneMut = baseCells.filter(c => c.mainMut >= 1).map(c => c.ge);
         if (noneWT.length > 0 && noneMut.length > 0) {
             const meanWT = noneWT.reduce((a, b) => a + b, 0) / noneWT.length;
             const meanMut = noneMut.reduce((a, b) => a + b, 0) / noneMut.length;
-            rows.push({ label: 'None', nWT: noneWT.length, nMut: noneMut.length, delta: meanMut - meanWT, isRef: true, hotspot: '' });
+            rows.push({ label: 'None', nWT: noneWT.length, meanWT, nMut: noneMut.length, meanMut, delta: meanMut - meanWT, isRef: true, hotspot: '' });
         }
 
-        this.mutations.genes.forEach(hGene => {
-            if (hGene === mainHotspot) return;
+        // Iterate over hotspot mutation genes only (fusions handled by showInlineCompareByTranslocation)
+        this.mutations?.genes?.forEach(hGene => {
+            if (hGene === mainHotspot && !isTranslocation) return;
             const hMutData = this.mutations.geneData[hGene];
             if (!hMutData) return;
             const filtered = baseCells.filter(c => (hMutData.mutations[c.cellLine] || 0) >= 1);
@@ -9231,14 +11371,107 @@ Results:
             if (wtGE.length > 0 && mutGE.length > 0) {
                 const meanWT = wtGE.reduce((a, b) => a + b, 0) / wtGE.length;
                 const meanMut = mutGE.reduce((a, b) => a + b, 0) / mutGE.length;
-                rows.push({ label: hGene, nWT: wtGE.length, nMut: mutGE.length, delta: meanMut - meanWT, hotspot: hGene });
+                rows.push({ label: hGene, nWT: wtGE.length, meanWT, nMut: mutGE.length, meanMut, delta: meanMut - meanWT, hotspot: hGene });
             }
         });
 
         const refRow = rows.filter(r => r.isRef);
         const otherRows = rows.filter(r => !r.isRef).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
 
-        this._inlineCompareData = { title: `${gene} — Δ GE by Additional Hotspot (${mainHotspot} WT vs Mut)`, headers: ['Hotspot Filter', 'N(WT)', 'N(Mut)', 'Δ GE'], refRows: refRow, sortableRows: otherRows, mode: 'hotspot' };
+        const typeLabel = isTranslocation ? 'Fusion' : 'Hotspot';
+        this._inlineCompareData = { title: `${gene} — Δ GE by Additional ${typeLabel} (${mainHotspot} WT vs ${mutLabel})`, headers: [`${typeLabel} Filter`, 'N(WT)', 'GE(WT)', `N(${mutLabel})`, `GE(${mutLabel})`, 'Δ GE'], refRows: refRow, sortableRows: otherRows, mode: 'hotspot' };
+        this._renderInlineCompareTable();
+    }
+
+    showInlineCompareByTranslocation() {
+        if (!this.mutationResults || !this.currentGeneEffectGene) return;
+        if (!this.translocations?.genes?.length) return;
+        this._inlineSortCol = null;
+        this._inlineSortAsc = true;
+        const mr = this.mutationResults;
+        const gene = this.currentGeneEffectGene;
+        const mainHotspot = mr.hotspotGene;
+        const isTranslocation = mr.isTranslocation;
+        const mainMutData = isTranslocation
+            ? this.translocations?.geneData?.[mainHotspot]
+            : this.mutations?.geneData?.[mainHotspot];
+        if (!mainMutData) return;
+
+        const geneIdx = this.geneIndex.get(gene.toUpperCase());
+        if (geneIdx === undefined) return;
+
+        const cellLines = this.metadata.cellLines;
+        const tissueFilter = document.getElementById('geTissueFilter')?.value || '';
+        const inspectSubtype = document.getElementById('geSubtypeFilter')?.value || '';
+
+        const baseCells = [];
+        cellLines.forEach((cellLine, idx) => {
+            if (tissueFilter) {
+                const lineage = this.cellLineMetadata?.lineage?.[cellLine] || '';
+                if (lineage !== tissueFilter) return;
+            } else {
+                if (mr.lineageFilter && this.cellLineMetadata?.lineage?.[cellLine] !== mr.lineageFilter) return;
+                if (mr.excludedTissues && mr.excludedTissues.size > 0) {
+                    const lineage = this.cellLineMetadata?.lineage?.[cellLine];
+                    if (lineage && mr.excludedTissues.has(lineage)) return;
+                }
+            }
+            if (!tissueFilter && mr.subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cellLine] !== mr.subLineageFilter) return;
+            if (inspectSubtype && this.cellLineMetadata?.primaryDisease?.[cellLine] !== inspectSubtype) return;
+            if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
+                const addMutData = this.mutations?.geneData?.[mr.additionalHotspot];
+                if (addMutData) {
+                    const addMutLevel = addMutData.mutations[cellLine] || 0;
+                    if (mr.additionalHotspotLevel === '0' && addMutLevel !== 0) return;
+                    if (mr.additionalHotspotLevel === '1' && addMutLevel !== 1) return;
+                    if (mr.additionalHotspotLevel === '2' && addMutLevel < 2) return;
+                    if (mr.additionalHotspotLevel === '1+2' && addMutLevel === 0) return;
+                }
+            }
+            const ge = this.geneEffects[geneIdx * this.nCellLines + idx];
+            if (isNaN(ge)) return;
+            const mainLevel = isTranslocation
+                ? (mainMutData.translocations[cellLine] || 0)
+                : (mainMutData.mutations[cellLine] || 0);
+            baseCells.push({ cellLine, idx, ge, mainMut: mainLevel });
+        });
+
+        const rows = [];
+        const mutLabel = isTranslocation ? 'Fused' : 'Mut';
+        const noneWT = baseCells.filter(c => c.mainMut === 0).map(c => c.ge);
+        const noneMut = baseCells.filter(c => c.mainMut >= 1).map(c => c.ge);
+        if (noneWT.length > 0 && noneMut.length > 0) {
+            const meanWT = noneWT.reduce((a, b) => a + b, 0) / noneWT.length;
+            const meanMut = noneMut.reduce((a, b) => a + b, 0) / noneMut.length;
+            rows.push({ label: 'None', nWT: noneWT.length, meanWT, nMut: noneMut.length, meanMut, delta: meanMut - meanWT, isRef: true, fusion: '' });
+        }
+
+        // Iterate ONLY over translocation genes — pre-filter to genes with fusions in baseCells
+        const baseCellIds = new Set(baseCells.map(c => c.cellLine));
+        for (const tGene of this.translocations.genes) {
+            if (tGene === mainHotspot && isTranslocation) continue;
+            const tData = this.translocations.geneData[tGene];
+            if (!tData) continue;
+            // Quick check: does this gene have any fused cells in our base set?
+            let hasFused = false;
+            for (const cl of baseCellIds) {
+                if (tData.translocations[cl] && tData.translocations[cl] > 0) { hasFused = true; break; }
+            }
+            if (!hasFused) continue;
+            const filtered = baseCells.filter(c => (tData.translocations[c.cellLine] || 0) >= 1);
+            const wtGE = filtered.filter(c => c.mainMut === 0).map(c => c.ge);
+            const mutGE = filtered.filter(c => c.mainMut >= 1).map(c => c.ge);
+            if (wtGE.length > 0 && mutGE.length > 0) {
+                const meanWT = wtGE.reduce((a, b) => a + b, 0) / wtGE.length;
+                const meanMut = mutGE.reduce((a, b) => a + b, 0) / mutGE.length;
+                rows.push({ label: tGene, nWT: wtGE.length, meanWT, nMut: mutGE.length, meanMut, delta: meanMut - meanWT, fusion: tGene });
+            }
+        }
+
+        const refRow = rows.filter(r => r.isRef);
+        const otherRows = rows.filter(r => !r.isRef).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+
+        this._inlineCompareData = { title: `${gene} — Δ GE by Fusion (${mainHotspot} WT vs ${mutLabel})`, headers: ['Fusion Gene', 'N(WT)', 'GE(WT)', `N(${mutLabel})`, `GE(${mutLabel})`, 'Δ GE'], refRows: refRow, sortableRows: otherRows, mode: 'fusion' };
         this._renderInlineCompareTable();
     }
 
@@ -9251,7 +11484,8 @@ Results:
             this._inlineSortAsc = true;
         }
         const d = this._inlineCompareData;
-        const key = colIndex === 0 ? 'label' : colIndex === 1 ? 'nWT' : colIndex === 2 ? 'nMut' : 'delta';
+        const keyMap = ['label', 'nWT', 'meanWT', 'nMut', 'meanMut', 'delta'];
+        const key = keyMap[colIndex] || 'delta';
         const asc = this._inlineSortAsc;
         d.sortableRows.sort((a, b) => {
             const va = key === 'label' ? a[key].toLowerCase() : a[key];
@@ -9296,15 +11530,20 @@ Results:
             }
             const bgColor = `rgb(${r},${g},${b})`;
             const bold = row.isAll || row.isRef ? 'font-weight:600;' : '';
-            const clickVal = mode === 'tissue' ? row.tissue : row.hotspot;
-            const clickFn = mode === 'tissue'
+            const rowMode = row.clickMode || mode;
+            const clickVal = rowMode === 'tissue' ? row.tissue : rowMode === 'fusion' ? (row.fusion ?? '') : row.hotspot;
+            const clickFn = rowMode === 'tissue'
                 ? `app.onInlineCompareTissueClick('${(clickVal || '').replace(/'/g, "\\'")}')`
+                : rowMode === 'fusion'
+                ? `app.onInlineCompareFusionClick('${(clickVal || '').replace(/'/g, "\\'")}')`
                 : `app.onInlineCompareHotspotClick('${(clickVal || '').replace(/'/g, "\\'")}')`;
 
             html += `<tr onclick="${clickFn}" style="cursor:pointer; ${bold}">`;
             html += `<td style="padding:2px 6px; border-bottom:1px solid #e5e7eb;">${row.label}</td>`;
             html += `<td style="padding:2px 6px; border-bottom:1px solid #e5e7eb; text-align:right;">${row.nWT}</td>`;
+            html += `<td style="padding:2px 6px; border-bottom:1px solid #e5e7eb; text-align:right; color:#6b7280;">${row.meanWT !== undefined ? row.meanWT.toFixed(2) : ''}</td>`;
             html += `<td style="padding:2px 6px; border-bottom:1px solid #e5e7eb; text-align:right;">${row.nMut}</td>`;
+            html += `<td style="padding:2px 6px; border-bottom:1px solid #e5e7eb; text-align:right; color:#6b7280;">${row.meanMut !== undefined ? row.meanMut.toFixed(2) : ''}</td>`;
             html += `<td style="padding:2px 6px; border-bottom:1px solid #e5e7eb; text-align:right; background:${bgColor};">${delta.toFixed(2)}</td>`;
             html += '</tr>';
         });
@@ -9315,13 +11554,33 @@ Results:
     }
 
     onInlineCompareTissueClick(tissue) {
+        // If we're in subtype grouping mode, set the subtype filter instead
+        const activeTissueFilter = document.getElementById('geTissueFilter')?.value || '';
+        const activeLineage = activeTissueFilter || this.mutationResults?.lineageFilter;
+        if (activeLineage && this.cellLineMetadata?.primaryDisease) {
+            // Check if the clicked value is a subtype (not a lineage)
+            const lineages = this.cellLineMetadata?.lineage ? new Set(Object.values(this.cellLineMetadata.lineage)) : new Set();
+            if (!lineages.has(tissue)) {
+                document.getElementById('geSubtypeFilter').value = tissue;
+                this._keepInlineCompare = true;
+                this.showGeneEffectDistribution(this.currentGeneEffectGene);
+                return;
+            }
+        }
         document.getElementById('geTissueFilter').value = tissue;
+        this.updateGeSubtypeFilter();
         this._keepInlineCompare = true;
         this.showGeneEffectDistribution(this.currentGeneEffectGene);
     }
 
     onInlineCompareHotspotClick(hotspot) {
         document.getElementById('geHotspotFilter').value = hotspot;
+        this._keepInlineCompare = true;
+        this.showGeneEffectDistribution(this.currentGeneEffectGene);
+    }
+
+    onInlineCompareFusionClick(fusion) {
+        document.getElementById('geFusionFilter').value = fusion;
         this._keepInlineCompare = true;
         this.showGeneEffectDistribution(this.currentGeneEffectGene);
     }
@@ -9356,24 +11615,35 @@ Results:
             container.appendChild(label);
         });
     }
-
     // ===== Full-Screen Compare Modal =====
-
 
     showMutationCompareByTissue() {
         if (!this.mutationResults) return;
         const mr = this.mutationResults;
         const hotspotGene = mr.hotspotGene;
-        const mutationData = this.mutations.geneData[hotspotGene];
+        const isTranslocation = mr.isTranslocation;
+        const mutationData = isTranslocation
+            ? this.translocations?.geneData?.[hotspotGene]
+            : this.mutations?.geneData?.[hotspotGene];
         if (!mutationData) return;
 
         const cellLines = this.metadata.cellLines;
 
-        // Build tissue → { cellLine indices by mutation status } map
-        const tissueMap = {};
+        // Determine if we should group by subtype (when a lineage filter is active)
+        const groupBySubtype = !!(mr.lineageFilter) && !!this.cellLineMetadata?.primaryDisease;
+
+        // Build group -> { cellLine indices by mutation status } map
+        const groupMap = {};
         cellLines.forEach((cellLine, idx) => {
+            // Apply lineage/sublineage filters from analysis params
+            if (mr.lineageFilter && this.cellLineMetadata?.lineage?.[cellLine] !== mr.lineageFilter) return;
+            if (mr.subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cellLine] !== mr.subLineageFilter) return;
+            if (mr.excludedTissues && mr.excludedTissues.size > 0) {
+                const lineage = this.cellLineMetadata?.lineage?.[cellLine];
+                if (lineage && mr.excludedTissues.has(lineage)) return;
+            }
             if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
-                const addMutData = this.mutations.geneData[mr.additionalHotspot];
+                const addMutData = this.mutations?.geneData?.[mr.additionalHotspot];
                 if (addMutData) {
                     const addMutLevel = addMutData.mutations[cellLine] || 0;
                     if (mr.additionalHotspotLevel === '0' && addMutLevel !== 0) return;
@@ -9382,31 +11652,38 @@ Results:
                     if (mr.additionalHotspotLevel === '1+2' && addMutLevel === 0) return;
                 }
             }
-            const lineage = this.cellLineMetadata?.lineage?.[cellLine] || 'Unknown';
-            const mutLevel = mutationData.mutations[cellLine] || 0;
-            if (!tissueMap[lineage]) tissueMap[lineage] = { wt: [], mut: [], total: 0 };
-            tissueMap[lineage].total++;
-            if (mutLevel === 0) tissueMap[lineage].wt.push(idx);
-            else tissueMap[lineage].mut.push(idx);
+            const groupKey = groupBySubtype
+                ? (this.cellLineMetadata.primaryDisease[cellLine] || 'Unknown')
+                : (this.cellLineMetadata?.lineage?.[cellLine] || 'Unknown');
+            const mutLevel = isTranslocation
+                ? (mutationData.translocations[cellLine] || 0)
+                : (mutationData.mutations[cellLine] || 0);
+            if (!groupMap[groupKey]) groupMap[groupKey] = { wt: [], mut: [], total: 0 };
+            groupMap[groupKey].total++;
+            if (mutLevel === 0) groupMap[groupKey].wt.push(idx);
+            else groupMap[groupKey].mut.push(idx);
         });
 
         // Also build "All" column
         const allWT = [], allMut = [];
-        Object.values(tissueMap).forEach(t => { allWT.push(...t.wt); allMut.push(...t.mut); });
+        Object.values(groupMap).forEach(t => { allWT.push(...t.wt); allMut.push(...t.mut); });
 
-        // Build columns: "All" + each tissue
+        // Build columns: "All" + each group
         const cols = [{ label: 'All', wtIdx: allWT, mutIdx: allMut, totalCells: allWT.length + allMut.length, nWT: allWT.length, nMut: allMut.length, isRef: true }];
-        Object.entries(tissueMap).forEach(([tissue, data]) => {
-            cols.push({ label: tissue, wtIdx: data.wt, mutIdx: data.mut, totalCells: data.total, nWT: data.wt.length, nMut: data.mut.length, tissue });
+        Object.entries(groupMap).forEach(([group, data]) => {
+            cols.push({ label: group, wtIdx: data.wt, mutIdx: data.mut, totalCells: data.total, nWT: data.wt.length, nMut: data.mut.length, tissue: group });
         });
 
+        const typeLabel = isTranslocation ? 'Translocation/Fusion' : 'Hotspot Mutational';
+        const groupLabel = groupBySubtype ? 'Subtype' : 'Tissue';
         // Store data for rendering
         this._compareModalData = {
             cols,
             genes: mr.significantResults.map(r => r.gene),
             hotspotGene,
             mode: 'tissue',
-            title: `Compare by Tissue — ${hotspotGene} Hotspot Mutational Analysis`
+            title: `Compare by ${groupLabel} — ${hotspotGene} ${typeLabel} Analysis`,
+            isTranslocation
         };
         this._compareModalMode = 'tissue';
         this._compareSortCol = null;
@@ -9420,7 +11697,10 @@ Results:
         if (!this.mutationResults) return;
         const mr = this.mutationResults;
         const mainHotspot = mr.hotspotGene;
-        const mainMutData = this.mutations.geneData[mainHotspot];
+        const isTranslocation = mr.isTranslocation;
+        const mainMutData = isTranslocation
+            ? this.translocations?.geneData?.[mainHotspot]
+            : this.mutations?.geneData?.[mainHotspot];
         if (!mainMutData) return;
 
         const cellLines = this.metadata.cellLines;
@@ -9435,7 +11715,7 @@ Results:
                 if (lineage && mr.excludedTissues.has(lineage)) return;
             }
             if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
-                const addMutData = this.mutations.geneData[mr.additionalHotspot];
+                const addMutData = this.mutations?.geneData?.[mr.additionalHotspot];
                 if (addMutData) {
                     const addMutLevel = addMutData.mutations[cellLine] || 0;
                     if (mr.additionalHotspotLevel === '0' && addMutLevel !== 0) return;
@@ -9444,7 +11724,9 @@ Results:
                     if (mr.additionalHotspotLevel === '1+2' && addMutLevel === 0) return;
                 }
             }
-            const mainMut = mainMutData.mutations[cellLine] || 0;
+            const mainMut = isTranslocation
+                ? (mainMutData.translocations[cellLine] || 0)
+                : (mainMutData.mutations[cellLine] || 0);
             baseCells.push({ cellLine, idx, mainMut });
         });
 
@@ -9454,8 +11736,8 @@ Results:
         const cols = [{ label: 'All', wtIdx: allWT, mutIdx: allMut, totalCells: baseCells.length, nWT: allWT.length, nMut: allMut.length, isRef: true }];
 
         // For each other hotspot gene
-        this.mutations.genes.forEach(hGene => {
-            if (hGene === mainHotspot) return;
+        this.mutations?.genes?.forEach(hGene => {
+            if (hGene === mainHotspot && !isTranslocation) return;
             const hMutData = this.mutations.geneData[hGene];
             if (!hMutData) return;
             const filtered = baseCells.filter(c => (hMutData.mutations[c.cellLine] || 0) >= 1);
@@ -9466,12 +11748,103 @@ Results:
             }
         });
 
+        const typeLabel = isTranslocation ? 'Translocation/Fusion' : 'Hotspot Mutational';
         this._compareModalData = {
             cols,
             genes: mr.significantResults.map(r => r.gene),
             hotspotGene: mainHotspot,
             mode: 'hotspot',
-            title: `Compare by Hotspot — ${mainHotspot} Hotspot Mutational Analysis`
+            title: `Compare by Hotspot — ${mainHotspot} ${typeLabel} Analysis`,
+            isTranslocation
+        };
+        this._compareModalMode = 'hotspot';
+        this._compareSortCol = null;
+        this._compareSortAsc = true;
+
+        this.renderCompareModal();
+        document.getElementById('mutCompareModal').style.display = '';
+    }
+
+    showMutationCompareByFusion() {
+        if (!this.mutationResults) return;
+        if (!this.translocations?.genes?.length) return;
+        const mr = this.mutationResults;
+        const mainHotspot = mr.hotspotGene;
+        const isTranslocation = mr.isTranslocation;
+        const mainMutData = isTranslocation
+            ? this.translocations?.geneData?.[mainHotspot]
+            : this.mutations?.geneData?.[mainHotspot];
+        if (!mainMutData) return;
+
+        const cellLines = this.metadata.cellLines;
+
+        // Build base filtered cell indices
+        const baseCells = [];
+        cellLines.forEach((cellLine, idx) => {
+            if (mr.lineageFilter && this.cellLineMetadata?.lineage?.[cellLine] !== mr.lineageFilter) return;
+            if (mr.subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cellLine] !== mr.subLineageFilter) return;
+            if (mr.excludedTissues && mr.excludedTissues.size > 0) {
+                const lineage = this.cellLineMetadata?.lineage?.[cellLine];
+                if (lineage && mr.excludedTissues.has(lineage)) return;
+            }
+            if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
+                const addMutData = this.mutations?.geneData?.[mr.additionalHotspot];
+                if (addMutData) {
+                    const addMutLevel = addMutData.mutations[cellLine] || 0;
+                    if (mr.additionalHotspotLevel === '0' && addMutLevel !== 0) return;
+                    if (mr.additionalHotspotLevel === '1' && addMutLevel !== 1) return;
+                    if (mr.additionalHotspotLevel === '2' && addMutLevel < 2) return;
+                    if (mr.additionalHotspotLevel === '1+2' && addMutLevel === 0) return;
+                }
+            }
+            if (mr.additionalTransGene && mr.additionalTransLevel !== 'all') {
+                const addTransData = this.translocations?.geneData?.[mr.additionalTransGene]?.translocations;
+                if (addTransData) {
+                    const tLevel = addTransData[cellLine] || 0;
+                    if (mr.additionalTransLevel === '0' && tLevel !== 0) return;
+                    if (mr.additionalTransLevel === '1' && tLevel !== 1) return;
+                    if (mr.additionalTransLevel === '2' && tLevel < 2) return;
+                    if (mr.additionalTransLevel === '1+2' && tLevel < 1) return;
+                }
+            }
+            const mainMut = isTranslocation
+                ? (mainMutData.translocations[cellLine] || 0)
+                : (mainMutData.mutations[cellLine] || 0);
+            baseCells.push({ cellLine, idx, mainMut });
+        });
+
+        // "All" column — no fusion filter
+        const allWT = baseCells.filter(c => c.mainMut === 0).map(c => c.idx);
+        const allMut = baseCells.filter(c => c.mainMut >= 1).map(c => c.idx);
+        const cols = [{ label: 'All', wtIdx: allWT, mutIdx: allMut, totalCells: baseCells.length, nWT: allWT.length, nMut: allMut.length, isRef: true }];
+
+        // Pre-filter: only fusion genes with fused cells in baseCells
+        const baseCellIds = new Set(baseCells.map(c => c.cellLine));
+        for (const tGene of this.translocations.genes) {
+            if (tGene === mainHotspot && isTranslocation) continue;
+            const tData = this.translocations.geneData[tGene];
+            if (!tData) continue;
+            let hasFused = false;
+            for (const cl of baseCellIds) {
+                if (tData.translocations[cl] && tData.translocations[cl] > 0) { hasFused = true; break; }
+            }
+            if (!hasFused) continue;
+            const filtered = baseCells.filter(c => (tData.translocations[c.cellLine] || 0) >= 1);
+            const wt = filtered.filter(c => c.mainMut === 0).map(c => c.idx);
+            const mut = filtered.filter(c => c.mainMut >= 1).map(c => c.idx);
+            if (wt.length > 0 || mut.length > 0) {
+                cols.push({ label: tGene, wtIdx: wt, mutIdx: mut, totalCells: filtered.length, nWT: wt.length, nMut: mut.length, hotspot: tGene });
+            }
+        }
+
+        const typeLabel = isTranslocation ? 'Translocation/Fusion' : 'Hotspot Mutational';
+        this._compareModalData = {
+            cols,
+            genes: mr.significantResults.map(r => r.gene),
+            hotspotGene: mainHotspot,
+            mode: 'hotspot',
+            title: `Compare by Fusion — ${mainHotspot} ${typeLabel} Analysis`,
+            isTranslocation
         };
         this._compareModalMode = 'hotspot';
         this._compareSortCol = null;
@@ -9536,12 +11909,16 @@ Results:
 
         // Title and info
         document.getElementById('mutCompareModalTitle').textContent = d.title;
-        const modeLabel = d.mode === 'tissue' ? 'tissue/cancer type' : 'hotspot mutation';
+        const isTrans = d.isTranslocation;
+        const mutLabel = isTrans ? 'fused' : 'mutated';
+        const mutNoun = isTrans ? 'fusion' : 'mutation';
+        const mutAbbr = isTrans ? 'Fus' : 'Mut';
+        const modeLabel = d.mode === 'tissue' ? 'tissue/cancer type' : (isTrans ? 'fusion gene' : 'hotspot mutation');
         document.getElementById('mutCompareModalInfo').innerHTML =
-            `<b>Δ GE = Mean GE(mutated) − Mean GE(WT)</b> for ${d.hotspotGene} mutation, stratified by ${modeLabel}. ` +
-            `<span style="color:#dc2626;">Red = more essential when mutated</span>, <span style="color:#16a34a;">Green = less essential</span>. ` +
-            `${geneRows.length} genes × ${filteredCols.length} ${d.mode === 'tissue' ? 'tissues' : 'hotspots'} | Min mutated cells: ${minN} | ` +
-            `Click cell to inspect, hover column header for N(WT)/N(Mut)`;
+            `<b>Δ GE = Mean GE(${mutLabel}) − Mean GE(WT)</b> for ${d.hotspotGene} ${mutNoun}, stratified by ${modeLabel}. ` +
+            `<span style="color:#dc2626;">Red = more essential when ${mutLabel}</span>, <span style="color:#16a34a;">Green = less essential</span>. ` +
+            `${geneRows.length} genes × ${filteredCols.length} ${d.mode === 'tissue' ? 'tissues' : 'hotspots'} | Min ${mutLabel} cells: ${minN} | ` +
+            `Click cell to inspect, hover column header for N(WT)/N(${mutAbbr})`;
 
         // Build table HTML
         let html = '<table style="border-collapse:collapse; font-size:11px; width:auto; max-width:100%; margin:0 auto;">';
@@ -9645,7 +12022,8 @@ Results:
         const tooltip = document.createElement('div');
         tooltip.id = 'columnTooltip';
         tooltip.style.cssText = 'position:fixed; z-index:10001; background:white; border:1px solid #d1d5db; border-radius:8px; padding:8px 12px; max-width:250px; box-shadow:0 4px 12px rgba(0,0,0,0.15); font-size:11px; line-height:1.5;';
-        tooltip.innerHTML = `<b>${col.label}</b><br>Total cell lines: ${col.totalCells}<br>N(WT): ${col.nWT}<br>N(Mut): ${col.nMut}`;
+        const mutAbbr = this._compareModalData?.isTranslocation ? 'Fus' : 'Mut';
+        tooltip.innerHTML = `<b>${col.label}</b><br>Total cell lines: ${col.totalCells}<br>N(WT): ${col.nWT}<br>N(${mutAbbr}): ${col.nMut}`;
         const x = Math.min(event.clientX + 10, window.innerWidth - 270);
         const y = Math.min(event.clientY + 10, window.innerHeight - 100);
         tooltip.style.left = x + 'px';
@@ -9656,6 +12034,222 @@ Results:
     hideColumnTooltip() {
         const existing = document.getElementById('columnTooltip');
         if (existing) existing.remove();
+    }
+
+    // ===== Enrichr Pathway Analysis =====
+
+    getGenesFromTable(source) {
+        const geneSet = new Set();
+        const tableMap = {
+            'correlations':   { bodyId: 'correlationsBody', geneCols: [0, 1] },
+            'clusters':       { bodyId: 'clustersBody', geneCols: [0] },
+            'mutations':      { bodyId: 'mutationTableBody', geneCols: [1] }
+        };
+        const config = tableMap[source];
+        if (!config) return [];
+        const tbody = document.getElementById(config.bodyId);
+        if (!tbody) return [];
+        tbody.querySelectorAll('tr').forEach(row => {
+            if (row.style.display === 'none') return;
+            config.geneCols.forEach(colIdx => {
+                const cell = row.cells[colIdx];
+                if (cell) {
+                    const gene = cell.textContent.trim().replace(/\*$/, '');
+                    if (gene) geneSet.add(gene);
+                }
+            });
+        });
+        return [...geneSet];
+    }
+
+    async openEnrichr(source) {
+        const genes = this.getGenesFromTable(source);
+        if (genes.length < 2) {
+            this.showCopyNotification('Need at least 2 genes for Enrichr analysis');
+            return;
+        }
+
+        const modal = document.getElementById('enrichrModal');
+        const content = document.getElementById('enrichrContent');
+        const title = document.getElementById('enrichrTitle');
+        title.textContent = `Enrichr — ${genes.length} genes`;
+        content.innerHTML = '<div style="text-align:center; padding:60px; color:#aaa;"><div style="font-size:24px; margin-bottom:12px;">⏳</div>Submitting to Enrichr...</div>';
+        modal.style.display = 'block';
+
+        try {
+            await this.submitToEnrichr(genes);
+        } catch (err) {
+            content.innerHTML = `<div style="text-align:center; padding:60px; color:#ef4444;">Failed to connect to Enrichr. Check internet connection.<br><small style="color:#888;">${err.message}</small></div>`;
+        }
+    }
+
+    async submitToEnrichr(genes) {
+        const formData = new FormData();
+        formData.append('list', genes.join('\n'));
+        formData.append('description', 'Correlate V2');
+
+        const addRes = await fetch('https://maayanlab.cloud/Enrichr/addList', {
+            method: 'POST',
+            body: formData
+        });
+        if (!addRes.ok) throw new Error(`Enrichr addList failed: ${addRes.status}`);
+        const { userListId } = await addRes.json();
+
+        const libraries = [
+            { key: 'GO_Biological_Process_2023', label: 'GO:BP' },
+            { key: 'GO_Molecular_Function_2023', label: 'GO:MF' },
+            { key: 'GO_Cellular_Component_2023', label: 'GO:CC' },
+            { key: 'KEGG_2021_Human', label: 'KEGG' },
+            { key: 'Reactome_2022', label: 'Reactome' }
+        ];
+
+        const content = document.getElementById('enrichrContent');
+        content.innerHTML = '<div style="text-align:center; padding:60px; color:#aaa;"><div style="font-size:24px; margin-bottom:12px;">⏳</div>Fetching enrichment results...</div>';
+
+        const results = {};
+        await Promise.all(libraries.map(async (lib) => {
+            const res = await fetch(`https://maayanlab.cloud/Enrichr/enrich?userListId=${userListId}&backgroundType=${lib.key}`);
+            if (!res.ok) throw new Error(`Enrichr enrich failed for ${lib.key}: ${res.status}`);
+            const data = await res.json();
+            results[lib.key] = data[lib.key] || [];
+        }));
+
+        this._enrichrData = { genes, results, libraries };
+        this._enrichrSortState = {};
+        this.renderEnrichrResults(libraries[0].key);
+    }
+
+    renderEnrichrResults(activeLibrary) {
+        const { results, libraries } = this._enrichrData;
+        const tabsEl = document.getElementById('enrichrTabs');
+        const contentEl = document.getElementById('enrichrContent');
+
+        // Render tabs
+        tabsEl.innerHTML = libraries.map(lib => {
+            const active = lib.key === activeLibrary;
+            const total = results[lib.key]?.length || 0;
+            const sig = (results[lib.key] || []).filter(r => r[6] < 0.05).length;
+            return `<button data-lib="${lib.key}" style="padding:5px 12px; font-size:12px; border:1px solid ${active ? '#5a9f4a' : '#555'}; background:${active ? '#5a9f4a' : 'transparent'}; color:${active ? '#fff' : '#ccc'}; border-radius:4px; cursor:pointer;">${lib.label} (${sig}/${total})</button>`;
+        }).join('');
+
+        tabsEl.querySelectorAll('button').forEach(btn => {
+            btn.addEventListener('click', () => this.renderEnrichrResults(btn.dataset.lib));
+        });
+
+        const rows = results[activeLibrary] || [];
+        if (rows.length === 0) {
+            contentEl.innerHTML = '<div style="text-align:center; padding:60px; color:#aaa;">No pathways found for this library.</div>';
+            return;
+        }
+
+        // Parse rows: [rank, term, pvalue, zscore, combined_score, overlapping_genes, adj_pvalue, old_p, old_adj_p]
+        let parsed = rows.map(r => ({
+            rank: r[0],
+            term: r[1],
+            pValue: r[2],
+            zScore: r[3],
+            combinedScore: r[4],
+            genes: r[5],
+            adjPValue: r[6]
+        })).filter(r => r.adjPValue < 0.05);
+
+        if (parsed.length === 0) {
+            contentEl.innerHTML = '<div style="text-align:center; padding:60px; color:#aaa;">No significant pathways (adj p &lt; 0.05)</div>';
+            return;
+        }
+
+        // Sort
+        const sortState = this._enrichrSortState[activeLibrary] || { col: 'adjPValue', asc: true };
+        this._enrichrSortState[activeLibrary] = sortState;
+        this._enrichrActiveLibrary = activeLibrary;
+
+        parsed.sort((a, b) => {
+            let va = a[sortState.col], vb = b[sortState.col];
+            if (typeof va === 'string') return sortState.asc ? va.localeCompare(vb) : vb.localeCompare(va);
+            return sortState.asc ? va - vb : vb - va;
+        });
+
+        const columns = [
+            { key: 'rank', label: '#' },
+            { key: 'term', label: 'Term' },
+            { key: 'pValue', label: 'P-value' },
+            { key: 'adjPValue', label: 'Adj P-value' },
+            { key: 'zScore', label: 'Z-score' },
+            { key: 'combinedScore', label: 'Combined' },
+            { key: 'genesDisplay', label: 'Genes' },
+            { key: 'geneCount', label: '# Genes' }
+        ];
+
+        const arrow = (col) => {
+            if (sortState.col !== col) return '';
+            return sortState.asc ? ' ▲' : ' ▼';
+        };
+
+        let html = '<table style="width:100%; border-collapse:collapse; font-size:12px;">';
+        html += '<thead><tr>';
+        columns.forEach(c => {
+            const sortable = c.key !== 'genesDisplay';
+            const sortKey = c.key === 'geneCount' ? 'geneCount' : c.key;
+            html += `<th data-enrichr-sort="${sortable ? sortKey : ''}" style="padding:6px 8px; text-align:left; border-bottom:2px solid #555; color:#aaa; cursor:${sortable ? 'pointer' : 'default'}; white-space:nowrap; font-size:11px;">${c.label}${arrow(sortKey)}</th>`;
+        });
+        html += '</tr></thead><tbody>';
+
+        parsed.forEach((row, i) => {
+            const geneList = Array.isArray(row.genes) ? row.genes.join(', ') : String(row.genes);
+            const geneCount = Array.isArray(row.genes) ? row.genes.length : 0;
+            const truncatedGenes = geneList.length > 60 ? geneList.substring(0, 60) + '...' : geneList;
+
+            html += `<tr style="border-bottom:1px solid #333;">`;
+            html += `<td style="padding:5px 8px; color:#888;">${row.rank}</td>`;
+            html += `<td style="padding:5px 8px; max-width:350px; overflow:hidden; text-overflow:ellipsis;" title="${row.term}">${row.term}</td>`;
+            html += `<td style="padding:5px 8px; font-family:monospace; font-size:11px;">${row.pValue.toExponential(2)}</td>`;
+            html += `<td style="padding:5px 8px; font-family:monospace; font-size:11px; color:#5a9f4a; font-weight:bold;">${row.adjPValue.toExponential(2)}</td>`;
+            html += `<td style="padding:5px 8px;">${row.zScore.toFixed(2)}</td>`;
+            html += `<td style="padding:5px 8px;">${row.combinedScore.toFixed(1)}</td>`;
+            html += `<td style="padding:5px 8px; max-width:200px; overflow:hidden; text-overflow:ellipsis; font-size:11px;" title="${geneList}">${truncatedGenes}</td>`;
+            html += `<td style="padding:5px 8px; text-align:center;">${geneCount}</td>`;
+            html += '</tr>';
+
+            // Store geneCount for sorting
+            row.geneCount = geneCount;
+        });
+
+        html += '</tbody></table>';
+        contentEl.innerHTML = html;
+
+        // Wire sort clicks
+        contentEl.querySelectorAll('th[data-enrichr-sort]').forEach(th => {
+            const col = th.dataset.enrichrSort;
+            if (!col) return;
+            th.addEventListener('click', () => {
+                const st = this._enrichrSortState[activeLibrary];
+                if (st.col === col) {
+                    st.asc = !st.asc;
+                } else {
+                    st.col = col;
+                    st.asc = true;
+                }
+                this.renderEnrichrResults(activeLibrary);
+            });
+        });
+    }
+
+    downloadEnrichrCSV() {
+        if (!this._enrichrData || !this._enrichrActiveLibrary) return;
+        const lib = this._enrichrActiveLibrary;
+        const rows = this._enrichrData.results[lib] || [];
+        if (rows.length === 0) return;
+
+        let csv = 'Rank,Term,P-value,Adjusted P-value,Z-score,Combined Score,Genes,Num Genes\n';
+        rows.forEach(r => {
+            const genes = Array.isArray(r[5]) ? r[5].join(';') : String(r[5]);
+            const geneCount = Array.isArray(r[5]) ? r[5].length : 0;
+            const term = String(r[1]).replace(/"/g, '""');
+            csv += `${r[0]},"${term}",${r[2]},${r[6]},${r[3]},${r[4]},"${genes}",${geneCount}\n`;
+        });
+
+        const libLabel = this._enrichrData.libraries.find(l => l.key === lib)?.label || lib;
+        this.downloadFile(csv, `enrichr_${libLabel}.csv`, 'text/csv');
     }
 
     openCompareInspect(gene, tissue, hotspot, mode) {
