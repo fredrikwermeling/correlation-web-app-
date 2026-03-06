@@ -2980,11 +2980,10 @@ class CorrelationExplorer {
                 tickmode: 'array',
                 tickvals: [0, 1, 2],
                 ticktext: [`0 WT (n=${data.wt.length})`, `1 (n=${data.mut1.length})`, `2 (n=${data.mut2.length})`],
-                range: [-0.5, 2.5],
-                automargin: true
+                range: [-0.5, 2.5]
             },
             showlegend: false,
-            margin: { t: 130, r: 30, b: 50, l: 30 }
+            margin: { t: 160, r: 30, b: 50, l: 130 }
         };
 
         // Show modal
@@ -3067,46 +3066,83 @@ class CorrelationExplorer {
         if (this.geneEffectViewMode !== 'mutation') return;
         const plotEl = document.getElementById('geneEffectPlot');
         if (!plotEl || !plotEl.data) return;
-        const exportWidth = 1200;
-        const exportHeight = 600;
+
         const filename = `gene_effect_${this.currentGeneEffectGene}_${this.mutationResults.hotspotGene}`;
 
-        // Deep-copy data and layout from live chart
-        const data = JSON.parse(JSON.stringify(plotEl.data));
-        const layout = JSON.parse(JSON.stringify(plotEl.layout));
+        // Always export as SVG first so we can post-process (fix Y-axis title overlap),
+        // then convert to PNG via canvas if needed.
+        Plotly.toImage(plotEl, {
+            format: 'svg',
+            width: plotEl.offsetWidth,
+            height: plotEl.offsetHeight
+        }).then(svgDataUrl => {
+            // Decode SVG
+            let svgString;
+            if (svgDataUrl.indexOf('base64,') > -1) {
+                svgString = atob(svgDataUrl.split('base64,')[1]);
+            } else {
+                svgString = decodeURIComponent(svgDataUrl.split(',').slice(1).join(','));
+            }
 
-        // Override layout for export
-        layout.margin = Object.assign({}, layout.margin, { l: 200 });
-        layout.width = exportWidth;
-        layout.height = exportHeight;
-        // Add standoff to push y-axis title away from tick labels
-        if (layout.yaxis) {
-            const titleText = typeof layout.yaxis.title === 'string' ? layout.yaxis.title : layout.yaxis.title?.text || '';
-            layout.yaxis.title = { text: titleText, standoff: 40 };
-            layout.yaxis.automargin = true;
-        }
+            const parser = new DOMParser();
+            const svgDoc = parser.parseFromString(svgString, 'image/svg+xml');
 
-        // Render into a temporary off-screen div for a clean export
-        const tempDiv = document.createElement('div');
-        tempDiv.style.position = 'absolute';
-        tempDiv.style.left = '-10000px';
-        tempDiv.style.top = '0';
-        tempDiv.style.width = exportWidth + 'px';
-        tempDiv.style.height = exportHeight + 'px';
-        document.body.appendChild(tempDiv);
+            // Fix Y-axis title: Plotly underestimates Open Sans tick label width,
+            // causing the rotated Y-axis title to overlap with tick labels.
+            // Measure tick labels with canvas and reposition the title to their left.
+            const ytitleGroup = svgDoc.querySelector('.g-ytitle');
+            const ytitle = ytitleGroup?.querySelector('text.ytitle');
+            const yticks = svgDoc.querySelectorAll('.ytick text');
+            if (ytitle && yticks.length && ytitleGroup) {
+                const measureCanvas = document.createElement('canvas');
+                const mctx = measureCanvas.getContext('2d');
+                let maxTickWidth = 0;
+                yticks.forEach(t => {
+                    mctx.font = '12px "Open Sans", verdana, arial, sans-serif';
+                    maxTickWidth = Math.max(maxTickWidth, mctx.measureText(t.textContent).width * 1.3);
+                });
+                const tickX = parseFloat(yticks[0].getAttribute('x')) || 0;
+                const tickLeftEdge = tickX - maxTickWidth;
+                const titleX = parseFloat(ytitle.getAttribute('x')) || 0;
+                const newTitleX = tickLeftEdge - 15;
+                const shift = newTitleX - titleX;
+                ytitleGroup.setAttribute('transform', `translate(${shift},0)`);
+            }
 
-        Plotly.newPlot(tempDiv, data, layout, { staticPlot: true }).then(() => {
-            return Plotly.downloadImage(tempDiv, {
-                format,
-                width: exportWidth,
-                height: exportHeight,
-                filename
-            });
-        }).then(() => {
-            Plotly.purge(tempDiv);
-            document.body.removeChild(tempDiv);
-        }).catch(() => {
-            try { Plotly.purge(tempDiv); document.body.removeChild(tempDiv); } catch(e) {}
+            svgString = new XMLSerializer().serializeToString(svgDoc.documentElement);
+
+            const a = document.createElement('a');
+            if (format === 'svg') {
+                const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+                a.href = URL.createObjectURL(blob);
+                a.download = `${filename}.svg`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            } else {
+                // Render the fixed SVG to canvas at 4x for publication quality PNG
+                const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+                const svgUrl = URL.createObjectURL(svgBlob);
+                const img = new Image();
+                img.onload = () => {
+                    const scale = 4;
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.naturalWidth * scale;
+                    canvas.height = img.naturalHeight * scale;
+                    const ctx = canvas.getContext('2d');
+                    ctx.scale(scale, scale);
+                    ctx.fillStyle = 'white';
+                    ctx.fillRect(0, 0, img.naturalWidth, img.naturalHeight);
+                    ctx.drawImage(img, 0, 0);
+                    URL.revokeObjectURL(svgUrl);
+                    a.href = canvas.toDataURL('image/png');
+                    a.download = `${filename}.png`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                };
+                img.src = svgUrl;
+            }
         });
     }
 
