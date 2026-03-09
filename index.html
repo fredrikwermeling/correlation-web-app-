@@ -1180,6 +1180,61 @@
                 grid-template-columns: 1fr 1fr;
             }
         }
+
+        /* Cell Line Browser */
+        .clb-toolbar {
+            display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+            padding: 8px 20px; border-bottom: 1px solid var(--gray-200); background: var(--gray-100);
+        }
+        .clb-toolbar input[type="text"] {
+            width: 180px; padding: 5px 8px; border: 1px solid var(--gray-200); border-radius: 4px; font-size: 12px;
+        }
+        .clb-toolbar select {
+            padding: 5px 8px; border: 1px solid var(--gray-200); border-radius: 4px; font-size: 12px; max-width: 180px;
+        }
+        .clb-toolbar .btn-sm { font-size: 11px; padding: 4px 10px; }
+        .clb-content { display: flex; flex: 1; overflow: hidden; }
+        .clb-list-wrap { flex: 1; overflow-y: auto; padding: 10px 16px; max-height: calc(100vh - 220px); }
+        .clb-list { column-count: 3; column-gap: 12px; }
+        .clb-entry {
+            display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 4px;
+            cursor: pointer; break-inside: avoid; border: 1px solid transparent; font-size: 12px;
+        }
+        .clb-entry:hover { background: var(--green-50); }
+        .clb-entry.clb-selected { border-color: var(--green-400); background: var(--green-50); }
+        .clb-entry.clb-inspected { border-color: #60a5fa; background: #eff6ff; }
+        .clb-entry input[type="checkbox"] { flex-shrink: 0; cursor: pointer; }
+        .clb-entry-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .clb-entry-tissue { font-size: 10px; color: var(--gray-500); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .clb-detail {
+            width: 280px; flex-shrink: 0; border-left: 1px solid var(--gray-200);
+            padding: 14px 16px; overflow-y: auto; max-height: calc(100vh - 220px); font-size: 12px; display: none;
+        }
+        .clb-detail.active { display: block; }
+        .clb-detail h4 { margin: 0 0 4px 0; font-size: 14px; color: var(--green-800); }
+        .clb-detail .clb-detail-id { font-size: 10px; color: var(--gray-500); margin-bottom: 10px; word-break: break-all; }
+        .clb-detail-section { margin-bottom: 10px; }
+        .clb-detail-section strong { display: inline; margin-bottom: 2px; color: #374151; }
+        .clb-detail-section .clb-stat-row { display: flex; justify-content: space-between; padding: 1px 0; }
+        .clb-detail-section .clb-stat-label { color: var(--gray-500); }
+        .clb-detail-section .clb-stat-value { font-weight: 600; }
+        .clb-gene-link { color: var(--green-700); text-decoration: none; cursor: pointer; }
+        .clb-gene-link:hover { text-decoration: underline; }
+        .clb-enrichr-btn { font-size: 9px; padding: 1px 5px; background: none; border: 1px solid #9ca3af;
+            border-radius: 3px; color: #6b7280; cursor: pointer; margin-left: 4px; vertical-align: middle; }
+        .clb-enrichr-btn:hover { border-color: var(--green-500); color: var(--green-700); }
+        .clb-detail-placeholder { color: var(--gray-500); font-size: 12px; padding: 20px 0; text-align: center; }
+        .clb-no-results { text-align: center; color: var(--gray-500); padding: 40px 0; font-size: 13px; }
+        .clb-selection-count { font-size: 11px; color: var(--gray-500); white-space: nowrap; }
+        @media (max-width: 900px) {
+            .clb-list { column-count: 2; }
+            .clb-detail { width: 240px; }
+        }
+        @media (max-width: 600px) {
+            .clb-list { column-count: 1; }
+            .clb-content { flex-direction: column; }
+            .clb-detail { width: 100%; border-left: none; border-top: 1px solid var(--gray-200); max-height: 200px; }
+        }
     </style>
     <!-- Matomo -->
     <script>
@@ -1237,7 +1292,10 @@
                         </ul>
                         <p style="margin: 6px 0 0 0; font-style: italic;"><a href="https://depmap.org/portal/data_page/?tab=overview#how-to-cite" target="_blank" style="color: #0066cc;">Please acknowledge DepMap</a> if you use this data.</p>
                     </div>
-                    <button class="btn btn-secondary btn-sm" id="resetAppBtn" style="margin-top: 10px; width: 100%;">Reset App</button>
+                    <div style="display:flex; gap:6px; margin-top:10px;">
+                        <button class="btn btn-secondary btn-sm" id="resetAppBtn" style="flex:1;">Reset App</button>
+                        <button class="btn btn-outline btn-sm" id="showCellLineBrowser" style="flex:1; color:var(--green-700); border-color:var(--green-400);">Cell Lines</button>
+                    </div>
                 </div>
             </div>
 
@@ -1996,7 +2054,7 @@
     </footer>
 
     <!-- Gene Effect Analysis Modal -->
-    <div class="modal-overlay" id="geneEffectModal" style="display: none;">
+    <div class="modal-overlay" id="geneEffectModal" style="display: none; z-index: 1200;">
         <div class="modal" style="max-width: 1200px;">
             <div class="modal-header">
                 <h3 id="geneEffectTitle">Gene Effect Analysis</h3>
@@ -2037,6 +2095,7 @@
                         <select id="geFusionFilter" class="form-control" style="width: 140px; font-size: 11px; padding: 3px 6px; display: none;" title="Fusion filter — only show cell lines with this fusion">
                             <option value="">No fusion filter</option>
                         </select>
+                        <input type="text" id="geCellLineSearch" class="form-control" placeholder="Highlight cell line..." style="width: 140px; font-size: 11px; padding: 3px 6px;" title="Search and highlight a cell line in the plot">
                         <span id="geCompareButtons" style="display: none;">
                             <span style="border-left: 1px solid #d1d5db; height: 20px; margin: 0 2px;"></span>
                             <button class="btn btn-secondary btn-sm" id="geCompareByTissueBtn" title="Show Δ GE per tissue for this gene">Δ Tissue</button>
@@ -2177,6 +2236,54 @@
         </div>
         <div style="padding:8px 20px; border-bottom:1px solid #333; display:flex; gap:6px; flex-wrap:wrap;" id="enrichrTabs"></div>
         <div id="enrichrContent" style="flex:1; overflow-y:auto; padding:20px; color:#ccc;"></div>
+      </div>
+    </div>
+
+    <!-- Cell Line Browser Modal -->
+    <div id="cellLineBrowserModal" style="display:none; position:fixed; inset:0; z-index:1100; background:rgba(0,0,0,0.5); justify-content:center; align-items:flex-start; padding:20px;">
+      <div style="background:#fff; border-radius:8px; width:100%; max-width:1200px; max-height:calc(100vh - 40px); margin-top:20px; display:flex; flex-direction:column; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);">
+        <div class="modal-header">
+          <h3>Cell Line Browser</h3>
+          <button id="clbCloseBtn" class="modal-close">&times;</button>
+        </div>
+        <div class="clb-toolbar">
+          <input type="text" id="clbSearch" placeholder="Search cell lines...">
+          <select id="clbTissueFilter"><option value="">All tissues</option></select>
+          <select id="clbSubtypeFilter" style="display:none;"><option value="">All subtypes</option></select>
+          <select id="clbHotspotFilter"><option value="">Hotspot mutation</option></select>
+          <select id="clbTranslocationFilter"><option value="">Translocation</option></select>
+          <input type="text" id="clbSortGene" placeholder="Sort by gene..." style="width:120px;">
+          <button id="clbResetFilters" class="btn btn-outline btn-sm" title="Reset all filters">Reset</button>
+          <span id="clbSelectionCount" class="clb-selection-count">0 selected</span>
+          <div style="margin-left:auto; display:flex; gap:6px;">
+            <button id="clbSelectVisible" class="btn btn-outline btn-sm">Select Visible</button>
+            <button id="clbDeselectAll" class="btn btn-outline btn-sm">Deselect All</button>
+            <button id="clbExportMinimal" class="btn btn-outline btn-sm" style="color:var(--green-700); border-color:var(--green-400);">Export CSV</button>
+            <button id="clbExportFull" class="btn btn-outline btn-sm" style="color:var(--green-700); border-color:var(--green-400);">Export Report</button>
+          </div>
+        </div>
+        <div class="clb-content">
+          <div class="clb-list-wrap" id="clbListContainer">
+            <div class="clb-list" id="clbList"></div>
+          </div>
+          <div class="clb-detail" id="clbDetailPanel">
+            <div class="clb-detail-placeholder" id="clbDetailPlaceholder">Click a cell line to view details</div>
+            <div id="clbDetailContent" style="display:none;">
+              <div id="clbDetailTop"></div>
+              <div style="display:flex; align-items:center; gap:6px; margin:8px 0 4px 0;">
+                <label style="font-size:11px; color:var(--gray-500); white-space:nowrap;">Show top</label>
+                <select id="clbTopN" style="padding:2px 4px; font-size:11px; border:1px solid var(--gray-200); border-radius:3px;">
+                  <option value="5">5</option>
+                  <option value="10" selected>10</option>
+                  <option value="20">20</option>
+                  <option value="50">50</option>
+                </select>
+                <label style="font-size:11px; color:var(--gray-500);">genes per list</label>
+              </div>
+              <div id="clbDetailGeneLists"></div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 

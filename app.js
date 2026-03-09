@@ -22,6 +22,9 @@ class CorrelationExplorer {
     ]);
 
     constructor() {
+        // Cell Line Browser state
+        this._clbSelectedCellLines = new Set();
+
         // Data storage
         this.metadata = null;
         this.cellLineMetadata = null;
@@ -1171,6 +1174,8 @@ class CorrelationExplorer {
     }
 
     setupUI() {
+        this.setupCellLineBrowserEvents();
+
         // Tab switching
         document.querySelectorAll('.nav-link').forEach(tab => {
             tab.addEventListener('click', () => {
@@ -1351,10 +1356,12 @@ class CorrelationExplorer {
         // Gene effect distribution modal
         document.getElementById('closeGeneEffect').addEventListener('click', () => {
             document.getElementById('geneEffectModal').style.display = 'none';
+            this._geHighlightCellLine = null;
         });
         document.getElementById('geneEffectModal').addEventListener('click', (e) => {
             if (e.target.id === 'geneEffectModal') {
                 document.getElementById('geneEffectModal').style.display = 'none';
+                this._geHighlightCellLine = null;
             }
         });
         document.getElementById('downloadGeneEffectPNG').addEventListener('click', () => this.downloadGeneEffectPNG());
@@ -1463,16 +1470,27 @@ class CorrelationExplorer {
         // Global keyboard handler for closing modals with Enter or Escape
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' || e.key === 'Enter') {
+                // Close gene effect modal first (it sits on top of CLB at z-index 1200)
+                if (e.key === 'Escape') {
+                    const geneEffectModal = document.getElementById('geneEffectModal');
+                    if (geneEffectModal && geneEffectModal.style.display !== 'none') {
+                        geneEffectModal.style.display = 'none';
+                        this._geHighlightCellLine = null;
+                        return;
+                    }
+                }
+                // Close cell line browser if open (Escape only)
+                if (e.key === 'Escape') {
+                    const clbModal = document.getElementById('cellLineBrowserModal');
+                    if (clbModal && clbModal.style.display !== 'none') {
+                        this.closeCellLineBrowser();
+                        return;
+                    }
+                }
                 // Close inspect modal if open
                 const inspectModal = document.getElementById('inspectModal');
                 if (inspectModal && inspectModal.classList.contains('active')) {
                     this.closeInspectModal();
-                    return;
-                }
-                // Close gene effect modal if open
-                const geneEffectModal = document.getElementById('geneEffectModal');
-                if (geneEffectModal && geneEffectModal.style.display !== 'none') {
-                    geneEffectModal.style.display = 'none';
                     return;
                 }
                 // Close infographic modal if open
@@ -1669,12 +1687,16 @@ class CorrelationExplorer {
             if (warn) warn.style.display = document.getElementById('geHotspotFilter').value ? 'inline' : 'none';
             if (this.geneEffectViewMode === 'mutation' && this.currentGeneEffectGene) {
                 this.showGeneEffectDistribution(this.currentGeneEffectGene);
+            } else if (this.geneEffectViewMode === 'geneEffect') {
+                this.switchGeneEffectView(this.currentGEView || 'tissue');
             }
         });
         // Inspect-level fusion filter
         document.getElementById('geFusionFilter')?.addEventListener('change', () => {
             if (this.geneEffectViewMode === 'mutation' && this.currentGeneEffectGene) {
                 this.showGeneEffectDistribution(this.currentGeneEffectGene);
+            } else if (this.geneEffectViewMode === 'geneEffect') {
+                this.switchGeneEffectView(this.currentGEView || 'tissue');
             }
         });
         // Hotspot gene selector (Y axis mutation gene)
@@ -1690,6 +1712,16 @@ class CorrelationExplorer {
                     this.showGeneEffectDistribution(this.currentGeneEffectGene);
                 }
             }
+        });
+        // Cell line search in gene effect modal
+        let geCellLineSearchTimer;
+        document.getElementById('geCellLineSearch')?.addEventListener('input', () => {
+            clearTimeout(geCellLineSearchTimer);
+            geCellLineSearchTimer = setTimeout(() => {
+                if (this.currentGeneEffect) {
+                    this.switchGeneEffectView(this.currentGEView || 'tissue');
+                }
+            }, 200);
         });
         // Inline compare buttons
         document.getElementById('geCompareByTissueBtn')?.addEventListener('click', () => this.showInlineCompareByTissue());
@@ -9964,6 +9996,8 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
         document.getElementById('geneEffectTitle').textContent = `${geneUpper} - Gene Effect Analysis`;
         document.getElementById('geneEffectSearch').value = geneUpper;
         document.getElementById('geneEffectCurrentGene').textContent = '';
+        const geCellLineSearch = document.getElementById('geCellLineSearch');
+        if (geCellLineSearch) geCellLineSearch.value = '';
         document.getElementById('geSummaryGene').textContent = geneUpper;
         document.getElementById('geSummaryMean').textContent = mean.toFixed(2);
         document.getElementById('geSummarySD').textContent = sd.toFixed(2);
@@ -9993,13 +10027,37 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
         // Mark this as regular gene effect view
         this.geneEffectViewMode = 'geneEffect';
 
-        // Hide mutation inspect controls
-        document.getElementById('geHotspotFilter').style.display = 'none';
-        document.getElementById('geFusionFilter').style.display = 'none';
+        // Show hotspot/fusion filters in standalone mode (hide mutation-inspect-only controls)
         document.getElementById('geCompareButtons').style.display = 'none';
         document.getElementById('geResetFiltersBtn').style.display = 'none';
         document.getElementById('geInlineCompareTable').style.display = 'none';
         document.getElementById('geHotspotGeneGroup').style.display = 'none';
+
+        // Populate and show hotspot filter
+        const hotspotFilterEl = document.getElementById('geHotspotFilter');
+        if (hotspotFilterEl && this.mutations?.genes) {
+            let hHtml = '<option value="">No hotspot filter</option>';
+            for (const g of this.mutations.genes) {
+                hHtml += `<option value="${g}">${g}</option>`;
+            }
+            hotspotFilterEl.innerHTML = hHtml;
+            hotspotFilterEl.value = '';
+            hotspotFilterEl.style.display = '';
+        }
+        const warn = document.getElementById('geHotspotBiasWarning');
+        if (warn) warn.style.display = 'none';
+
+        // Populate and show fusion filter
+        const fusionFilterEl = document.getElementById('geFusionFilter');
+        if (fusionFilterEl && this._fusionGeneCounts?.length > 0) {
+            let fHtml = '<option value="">No fusion filter</option>';
+            for (const { gene, nFused } of this._fusionGeneCounts) {
+                fHtml += `<option value="${gene}">${gene} (${nFused} fused)</option>`;
+            }
+            fusionFilterEl.innerHTML = fHtml;
+            fusionFilterEl.value = '';
+            fusionFilterEl.style.display = '';
+        }
 
         // Restore view buttons (may have been hidden by mutation inspect)
         document.getElementById('geViewTissue').style.display = '';
@@ -10077,11 +10135,22 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
 
     getGETissueFilteredData() {
         if (!this.currentGeneEffect) return [];
+        let data = this.currentGeneEffect.data;
         const tissueFilter = document.getElementById('geTissueFilter')?.value;
         if (tissueFilter) {
-            return this.currentGeneEffect.data.filter(d => d.lineage === tissueFilter);
+            data = data.filter(d => d.lineage === tissueFilter);
         }
-        return this.currentGeneEffect.data;
+        const hotspotGene = document.getElementById('geHotspotFilter')?.value;
+        if (hotspotGene && this.mutations?.geneData?.[hotspotGene]) {
+            const mutData = this.mutations.geneData[hotspotGene].mutations || {};
+            data = data.filter(d => (mutData[d.cellLineId] || 0) >= 1);
+        }
+        const fusionGene = document.getElementById('geFusionFilter')?.value;
+        if (fusionGene && this.translocations?.geneData?.[fusionGene]) {
+            const transData = this.translocations.geneData[fusionGene].translocations || {};
+            data = data.filter(d => (transData[d.cellLineId] || 0) >= 1);
+        }
+        return data;
     }
 
     renderGeneEffectByTissue() {
@@ -10187,6 +10256,32 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
         };
 
         Plotly.newPlot('geneEffectPlot', traces, layout, { responsive: true });
+
+        // Highlight cell line if requested (from CLB gene link or cell line search)
+        const highlightCl = this._geHighlightCellLine;
+        const searchCl = document.getElementById('geCellLineSearch')?.value?.trim().toUpperCase();
+        if (highlightCl || searchCl) {
+            const annotations = [];
+            for (let i = 0; i < stats.length; i++) {
+                const s = stats[i];
+                for (const c of s.cellData) {
+                    const nameUpper = (c.cellLineName || '').toUpperCase();
+                    const idUpper = (c.cellLineId || '').toUpperCase();
+                    const isHighlight = (highlightCl && (c.cellLineId === highlightCl));
+                    const isSearch = (searchCl && searchCl.length >= 2 && (nameUpper.includes(searchCl) || idUpper.includes(searchCl)));
+                    if (isHighlight || isSearch) {
+                        annotations.push({
+                            x: c.geneEffect, y: `${s.group} (n=${s.n})`,
+                            text: c.cellLineName, showarrow: true, arrowhead: 2, arrowsize: 1,
+                            arrowcolor: '#dc2626', ax: 40, ay: -25,
+                            font: { size: 10, color: '#dc2626', weight: 'bold' },
+                            bgcolor: 'rgba(255,255,255,0.85)', borderpad: 2
+                        });
+                    }
+                }
+            }
+            if (annotations.length > 0) Plotly.relayout('geneEffectPlot', { annotations });
+        }
 
         // Render table (remove cellData from stats for table)
         const tableStats = stats.map(s => ({
@@ -12262,6 +12357,537 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
             this.showGeneEffectDistribution(gene, '', hotspot);
         } else {
             this.showGeneEffectDistribution(gene);
+        }
+    }
+
+    // ===== Cell Line Browser =====
+
+    setupCellLineBrowserEvents() {
+        document.getElementById('showCellLineBrowser').addEventListener('click', (e) => {
+            e.preventDefault();
+            this.openCellLineBrowser();
+        });
+        document.getElementById('clbCloseBtn').addEventListener('click', () => this.closeCellLineBrowser());
+        document.getElementById('cellLineBrowserModal').addEventListener('click', (e) => {
+            if (e.target.id === 'cellLineBrowserModal') this.closeCellLineBrowser();
+        });
+
+        let clbSearchTimer;
+        document.getElementById('clbSearch').addEventListener('input', () => {
+            clearTimeout(clbSearchTimer);
+            clbSearchTimer = setTimeout(() => this.renderCellLineList(), 150);
+        });
+        document.getElementById('clbTissueFilter').addEventListener('change', () => {
+            this.updateClbSubtypeFilter();
+            this.renderCellLineList();
+        });
+        document.getElementById('clbSubtypeFilter').addEventListener('change', () => this.renderCellLineList());
+        document.getElementById('clbHotspotFilter').addEventListener('change', () => this.renderCellLineList());
+        document.getElementById('clbTranslocationFilter').addEventListener('change', () => this.renderCellLineList());
+
+        let clbGeneTimer;
+        document.getElementById('clbSortGene').addEventListener('input', () => {
+            clearTimeout(clbGeneTimer);
+            clbGeneTimer = setTimeout(() => this.renderCellLineList(), 200);
+        });
+
+        document.getElementById('clbResetFilters').addEventListener('click', () => {
+            document.getElementById('clbSearch').value = '';
+            document.getElementById('clbTissueFilter').value = '';
+            document.getElementById('clbSubtypeFilter').style.display = 'none';
+            document.getElementById('clbSubtypeFilter').innerHTML = '<option value="">All subtypes</option>';
+            document.getElementById('clbHotspotFilter').value = '';
+            document.getElementById('clbTranslocationFilter').value = '';
+            document.getElementById('clbSortGene').value = '';
+            this.renderCellLineList();
+        });
+
+        document.getElementById('clbTopN').addEventListener('change', () => {
+            if (this._clbInspectedCellLine) this.showCellLineDetail(this._clbInspectedCellLine);
+        });
+
+        document.getElementById('clbListContainer').addEventListener('click', (e) => {
+            const entry = e.target.closest('.clb-entry');
+            if (!entry) return;
+            const clId = entry.dataset.clid;
+            if (e.target.type === 'checkbox') {
+                if (e.target.checked) this._clbSelectedCellLines.add(clId);
+                else this._clbSelectedCellLines.delete(clId);
+                entry.classList.toggle('clb-selected', e.target.checked);
+                this.updateClbSelectionCount();
+            } else {
+                this.showCellLineDetail(clId);
+            }
+        });
+
+        document.getElementById('clbSelectVisible').addEventListener('click', () => {
+            this._clbVisibleCellLines.forEach(cl => this._clbSelectedCellLines.add(cl));
+            this.renderCellLineList();
+            this.updateClbSelectionCount();
+        });
+        document.getElementById('clbDeselectAll').addEventListener('click', () => {
+            this._clbSelectedCellLines.clear();
+            this.renderCellLineList();
+            this.updateClbSelectionCount();
+        });
+        document.getElementById('clbDetailGeneLists').addEventListener('click', (e) => {
+            const link = e.target.closest('.clb-gene-link');
+            if (link) {
+                e.preventDefault();
+                this._geHighlightCellLine = this._clbInspectedCellLine;
+                this.openGeneEffectModal(link.dataset.gene, 'tissue');
+                return;
+            }
+            const enrichrBtn = e.target.closest('.clb-enrichr-btn');
+            if (enrichrBtn) {
+                const genes = this._clbGeneLists?.[enrichrBtn.dataset.list];
+                if (genes && genes.length >= 2) {
+                    const modal = document.getElementById('enrichrModal');
+                    const content = document.getElementById('enrichrContent');
+                    document.getElementById('enrichrTitle').textContent = `Enrichr — ${genes.length} genes`;
+                    content.innerHTML = '<div style="text-align:center; padding:60px; color:#aaa;"><div style="font-size:24px; margin-bottom:12px;">⏳</div>Submitting to Enrichr...</div>';
+                    modal.style.display = 'block';
+                    this.submitToEnrichr(genes).catch(err => {
+                        content.innerHTML = `<div style="text-align:center; padding:60px; color:#ef4444;">Failed to connect to Enrichr.<br><small style="color:#888;">${err.message}</small></div>`;
+                    });
+                } else {
+                    this.showCopyNotification('Need at least 2 genes for Enrichr analysis');
+                }
+                return;
+            }
+        });
+
+        document.getElementById('clbExportMinimal').addEventListener('click', () => this.exportCellLineBrowserCSV('minimal'));
+        document.getElementById('clbExportFull').addEventListener('click', () => this.exportCellLineBrowserCSV('full'));
+    }
+
+    openCellLineBrowser() {
+        const tissueSelect = document.getElementById('clbTissueFilter');
+        const total = this.metadata.cellLines.length;
+        tissueSelect.innerHTML = `<option value="">All tissues (n=${total})</option>`;
+        Object.keys(this.lineageCounts).sort().forEach(lineage => {
+            const opt = document.createElement('option');
+            opt.value = lineage;
+            opt.textContent = `${lineage} (n=${this.lineageCounts[lineage]})`;
+            tissueSelect.appendChild(opt);
+        });
+
+        document.getElementById('clbSubtypeFilter').style.display = 'none';
+        document.getElementById('clbSubtypeFilter').innerHTML = '<option value="">All subtypes</option>';
+
+        const hotspotSelect = document.getElementById('clbHotspotFilter');
+        hotspotSelect.innerHTML = '<option value="">Hotspot mutation</option>';
+        if (this.mutations?.geneData) {
+            Object.keys(this.mutations.geneData).sort().forEach(gene => {
+                const muts = this.mutations.geneData[gene].mutations;
+                let n = 0;
+                for (const v of Object.values(muts)) { if (v > 0) n++; }
+                const opt = document.createElement('option');
+                opt.value = gene;
+                opt.textContent = `${gene} (n=${n})`;
+                hotspotSelect.appendChild(opt);
+            });
+        }
+
+        const transSelect = document.getElementById('clbTranslocationFilter');
+        transSelect.innerHTML = '<option value="">Translocation</option>';
+        if (this._fusionGeneCounts) {
+            this._fusionGeneCounts.forEach(({ gene, nFused }) => {
+                const opt = document.createElement('option');
+                opt.value = gene;
+                opt.textContent = `${gene} (n=${nFused})`;
+                transSelect.appendChild(opt);
+            });
+        }
+
+        document.getElementById('clbSearch').value = '';
+        document.getElementById('clbSortGene').value = '';
+        document.getElementById('clbDetailPanel').classList.remove('active');
+        document.getElementById('clbDetailContent').style.display = 'none';
+        document.getElementById('clbDetailPlaceholder').style.display = '';
+        this._clbInspectedCellLine = null;
+
+        this.renderCellLineList();
+        this.updateClbSelectionCount();
+        document.getElementById('cellLineBrowserModal').style.display = 'flex';
+    }
+
+    closeCellLineBrowser() {
+        document.getElementById('cellLineBrowserModal').style.display = 'none';
+        document.querySelectorAll('.nav-link').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        document.querySelector('[data-tab="network"]').classList.add('active');
+        document.getElementById('tab-network').classList.add('active');
+    }
+
+    renderCellLineList() {
+        const search = document.getElementById('clbSearch').value.trim().toLowerCase();
+        const tissue = document.getElementById('clbTissueFilter').value;
+        const subtype = document.getElementById('clbSubtypeFilter').value;
+        const hotspotGene = document.getElementById('clbHotspotFilter').value;
+        const transGene = document.getElementById('clbTranslocationFilter').value;
+
+        const hotspotMuts = hotspotGene && this.mutations?.geneData?.[hotspotGene]?.mutations;
+        const transMuts = transGene && this.translocations?.geneData?.[transGene]?.translocations;
+
+        let filtered = this.metadata.cellLines.filter(cl => {
+            if (tissue && this.getCellLineLineage(cl) !== tissue) return false;
+            if (subtype && this.getCellLineSublineage(cl) !== subtype) return false;
+            if (hotspotMuts && !(hotspotMuts[cl] >= 1)) return false;
+            if (transMuts && !(transMuts[cl] >= 1)) return false;
+            if (search) {
+                const name = this.getCellLineName(cl).toLowerCase();
+                const lin = this.getCellLineLineage(cl).toLowerCase();
+                if (!name.includes(search) && !lin.includes(search) && !cl.toLowerCase().includes(search)) return false;
+            }
+            return true;
+        });
+
+        const sortGene = document.getElementById('clbSortGene').value.trim().toUpperCase();
+        const sortGeneIdx = sortGene ? this.geneIndex.get(sortGene) : undefined;
+        let geMap = null;
+        if (sortGeneIdx !== undefined) {
+            geMap = new Map();
+            for (const cl of filtered) {
+                const clIdx = this.metadata.cellLines.indexOf(cl);
+                if (clIdx >= 0) {
+                    const val = this.geneEffects[sortGeneIdx * this.nCellLines + clIdx];
+                    geMap.set(cl, (!isNaN(val) && val !== -999) ? val : NaN);
+                }
+            }
+            filtered.sort((a, b) => {
+                const va = geMap.get(a), vb = geMap.get(b);
+                if (isNaN(va) && isNaN(vb)) return 0;
+                if (isNaN(va)) return 1;
+                if (isNaN(vb)) return -1;
+                return va - vb;
+            });
+        } else {
+            filtered.sort((a, b) => this.getCellLineName(a).localeCompare(this.getCellLineName(b)));
+        }
+        this._clbVisibleCellLines = filtered;
+
+        const container = document.getElementById('clbList');
+        if (filtered.length === 0) {
+            container.innerHTML = '<div class="clb-no-results">No cell lines match your filters</div>';
+            return;
+        }
+
+        const html = filtered.map(cl => {
+            const name = this.getCellLineName(cl);
+            const lin = this.getCellLineLineage(cl);
+            const selected = this._clbSelectedCellLines.has(cl);
+            const inspected = this._clbInspectedCellLine === cl;
+            const cls = ['clb-entry'];
+            if (selected) cls.push('clb-selected');
+            if (inspected) cls.push('clb-inspected');
+            const geVal = geMap ? geMap.get(cl) : null;
+            const geStr = geVal !== null && !isNaN(geVal) ? `<span style="font-size:10px; color:#666; margin-left:auto; flex-shrink:0;">${geVal.toFixed(2)}</span>` : '';
+            return `<div class="${cls.join(' ')}" data-clid="${cl}">` +
+                `<input type="checkbox"${selected ? ' checked' : ''}>` +
+                `<span class="clb-entry-name" title="${name}">${name}</span>` +
+                `<span class="clb-entry-tissue">${lin}</span>${geStr}</div>`;
+        }).join('');
+        container.innerHTML = html;
+    }
+
+    updateClbSubtypeFilter() {
+        const tissue = document.getElementById('clbTissueFilter').value;
+        const subSelect = document.getElementById('clbSubtypeFilter');
+
+        if (!tissue) {
+            subSelect.style.display = 'none';
+            subSelect.innerHTML = '<option value="">All subtypes</option>';
+            return;
+        }
+
+        const prefix = `${tissue}|`;
+        const subtypes = Object.keys(this.subLineageCounts)
+            .filter(k => k.startsWith(prefix))
+            .map(k => ({ name: k.slice(prefix.length), count: this.subLineageCounts[k] }))
+            .sort((a, b) => a.name.localeCompare(b.name));
+
+        if (subtypes.length === 0) {
+            subSelect.style.display = 'none';
+            subSelect.innerHTML = '<option value="">All subtypes</option>';
+            return;
+        }
+
+        subSelect.innerHTML = '<option value="">All subtypes</option>';
+        subtypes.forEach(s => {
+            const opt = document.createElement('option');
+            opt.value = s.name;
+            opt.textContent = `${s.name} (n=${s.count})`;
+            subSelect.appendChild(opt);
+        });
+        subSelect.style.display = '';
+    }
+
+    showCellLineDetail(cellLineId) {
+        this._clbInspectedCellLine = cellLineId;
+        document.querySelectorAll('#clbList .clb-entry').forEach(el => {
+            el.classList.toggle('clb-inspected', el.dataset.clid === cellLineId);
+        });
+
+        const panel = document.getElementById('clbDetailPanel');
+        const content = document.getElementById('clbDetailContent');
+        const placeholder = document.getElementById('clbDetailPlaceholder');
+        panel.classList.add('active');
+        placeholder.style.display = 'none';
+        content.style.display = '';
+
+        const name = this.getCellLineName(cellLineId);
+        const lineage = this.getCellLineLineage(cellLineId);
+        const sublineage = this.getCellLineSublineage(cellLineId);
+        const N = parseInt(document.getElementById('clbTopN').value) || 10;
+
+        const mutGenes = [];
+        if (this.mutations?.geneData) {
+            for (const gene of Object.keys(this.mutations.geneData)) {
+                if (this.mutations.geneData[gene].mutations?.[cellLineId] >= 1) mutGenes.push(gene);
+            }
+        }
+
+        const fusionGenes = [];
+        if (this.translocations?.geneData) {
+            for (const gene of Object.keys(this.translocations.geneData)) {
+                if (this.translocations.geneData[gene].translocations?.[cellLineId] >= 1) fusionGenes.push(gene);
+            }
+        }
+
+        const clIdx = this.metadata.cellLines.indexOf(cellLineId);
+        let sum = 0, count = 0, min = Infinity, max = -Infinity;
+        const geneVals = [];
+        if (clIdx >= 0) {
+            for (let g = 0; g < this.nGenes; g++) {
+                const val = this.geneEffects[g * this.nCellLines + clIdx];
+                if (!isNaN(val) && val !== -999) {
+                    sum += val; count++;
+                    if (val < min) min = val;
+                    if (val > max) max = val;
+                    geneVals.push({ gene: this.geneNames[g], val });
+                }
+            }
+        }
+        const mean = count > 0 ? sum / count : NaN;
+        geneVals.sort((a, b) => a.val - b.val);
+
+        let top = `<h4>${name}</h4>`;
+        top += `<div class="clb-detail-id">${cellLineId}</div>`;
+        top += `<div class="clb-detail-section">`;
+        top += `<div class="clb-stat-row"><span class="clb-stat-label">Tissue</span><span class="clb-stat-value">${lineage || '-'}</span></div>`;
+        top += `<div class="clb-stat-row"><span class="clb-stat-label">Subtype</span><span class="clb-stat-value">${sublineage || '-'}</span></div>`;
+        top += `</div>`;
+
+        top += `<div class="clb-detail-section"><strong>Hotspot Mutations (${mutGenes.length})</strong>`;
+        top += `<div style="color:var(--gray-500); font-size:11px;">${mutGenes.length > 0 ? mutGenes.join(', ') : 'None'}</div></div>`;
+
+        top += `<div class="clb-detail-section"><strong>Fusions (${fusionGenes.length})</strong>`;
+        top += `<div style="color:var(--gray-500); font-size:11px;">${fusionGenes.length > 0 ? fusionGenes.join(', ') : 'None'}</div></div>`;
+
+        top += `<div class="clb-detail-section"><strong>Gene Effect Stats</strong>`;
+        top += `<div class="clb-stat-row"><span class="clb-stat-label">Genes</span><span class="clb-stat-value">${count.toLocaleString()}</span></div>`;
+        top += `<div class="clb-stat-row"><span class="clb-stat-label">Mean GE</span><span class="clb-stat-value">${this.formatNum(mean)}</span></div>`;
+        top += `<div class="clb-stat-row"><span class="clb-stat-label">Range</span><span class="clb-stat-value">${count > 0 ? this.formatNum(min) + ' to ' + this.formatNum(max) : '-'}</span></div>`;
+        top += `</div>`;
+        document.getElementById('clbDetailTop').innerHTML = top;
+
+        const bottomN = geneVals.slice(0, N);
+        const topN = geneVals.slice(-N).reverse();
+
+        this._clbGeneLists = {
+            bottom: bottomN.map(g => g.gene),
+            top: topN.map(g => g.gene)
+        };
+
+        let gl = `<div class="clb-detail-section"><strong>Most Depleted (Bottom ${N})</strong> <button class="clb-enrichr-btn" data-list="bottom">Enrichr</button>`;
+        gl += `<div style="font-size:11px;">`;
+        bottomN.forEach(({ gene, val }) => {
+            gl += `<div class="clb-stat-row"><span class="clb-stat-label"><a class="clb-gene-link" data-gene="${gene}" href="#">${gene}</a></span><span class="clb-stat-value">${this.formatNum(val)}</span></div>`;
+        });
+        gl += `</div></div>`;
+
+        gl += `<div class="clb-detail-section"><strong>Least Depleted (Top ${N})</strong> <button class="clb-enrichr-btn" data-list="top">Enrichr</button>`;
+        gl += `<div style="font-size:11px;">`;
+        topN.forEach(({ gene, val }) => {
+            gl += `<div class="clb-stat-row"><span class="clb-stat-label"><a class="clb-gene-link" data-gene="${gene}" href="#">${gene}</a></span><span class="clb-stat-value">${this.formatNum(val)}</span></div>`;
+        });
+        gl += `</div></div>`;
+
+        const filteredCls = this._clbVisibleCellLines;
+        const filteredIndices = filteredCls.map(cl => this.metadata.cellLines.indexOf(cl)).filter(i => i >= 0);
+        if (filteredIndices.length >= 3 && clIdx >= 0) {
+            const zScores = [];
+            for (let g = 0; g < this.nGenes; g++) {
+                const offset = g * this.nCellLines;
+                let s = 0, s2 = 0, n = 0;
+                for (const ci of filteredIndices) {
+                    const v = this.geneEffects[offset + ci];
+                    if (!isNaN(v) && v !== -999) { s += v; s2 += v * v; n++; }
+                }
+                if (n < 3) continue;
+                const mu = s / n;
+                const sd = Math.sqrt(s2 / n - mu * mu);
+                if (sd < 1e-6) continue;
+                const val = this.geneEffects[offset + clIdx];
+                if (isNaN(val) || val === -999) continue;
+                zScores.push({ gene: this.geneNames[g], z: (val - mu) / sd, val });
+            }
+            zScores.sort((a, b) => a.z - b.z);
+
+            const filterParts = [];
+            const tissueVal = document.getElementById('clbTissueFilter').value;
+            const subtypeVal = document.getElementById('clbSubtypeFilter').value;
+            const hotspotVal = document.getElementById('clbHotspotFilter').value;
+            const transVal = document.getElementById('clbTranslocationFilter').value;
+            if (tissueVal) filterParts.push(tissueVal);
+            if (subtypeVal) filterParts.push(subtypeVal);
+            if (hotspotVal) filterParts.push(hotspotVal + ' mut');
+            if (transVal) filterParts.push(transVal + ' fus');
+            const filterLabel = filterParts.length > 0 ? filterParts.join(' / ') : `all (n=${filteredIndices.length})`;
+
+            const extremeLow = zScores.slice(0, N);
+            const extremeHigh = zScores.slice(-N).reverse();
+
+            this._clbGeneLists.uniqueLow = extremeLow.map(g => g.gene);
+            this._clbGeneLists.uniqueHigh = extremeHigh.map(g => g.gene);
+
+            gl += `<div class="clb-detail-section"><strong>Uniquely Depleted vs ${filterLabel}</strong> <button class="clb-enrichr-btn" data-list="uniqueLow">Enrichr</button>`;
+            gl += `<div style="font-size:10px; color:var(--gray-500); margin-bottom:3px;">Lowest z-score vs visible cell lines (n=${filteredIndices.length})</div>`;
+            gl += `<div style="font-size:11px;">`;
+            extremeLow.forEach(({ gene, z, val }) => {
+                gl += `<div class="clb-stat-row"><span class="clb-stat-label"><a class="clb-gene-link" data-gene="${gene}" href="#">${gene}</a></span><span class="clb-stat-value">${this.formatNum(val)} <span style="color:#888;">(z=${this.formatNum(z, 1)})</span></span></div>`;
+            });
+            gl += `</div></div>`;
+
+            gl += `<div class="clb-detail-section"><strong>Uniquely Resistant vs ${filterLabel}</strong> <button class="clb-enrichr-btn" data-list="uniqueHigh">Enrichr</button>`;
+            gl += `<div style="font-size:10px; color:var(--gray-500); margin-bottom:3px;">Highest z-score vs visible cell lines (n=${filteredIndices.length})</div>`;
+            gl += `<div style="font-size:11px;">`;
+            extremeHigh.forEach(({ gene, z, val }) => {
+                gl += `<div class="clb-stat-row"><span class="clb-stat-label"><a class="clb-gene-link" data-gene="${gene}" href="#">${gene}</a></span><span class="clb-stat-value">${this.formatNum(val)} <span style="color:#888;">(z=${this.formatNum(z, 1)})</span></span></div>`;
+            });
+            gl += `</div></div>`;
+        }
+
+        document.getElementById('clbDetailGeneLists').innerHTML = gl;
+    }
+
+    updateClbSelectionCount() {
+        document.getElementById('clbSelectionCount').textContent = `${this._clbSelectedCellLines.size} selected`;
+    }
+
+    exportCellLineBrowserCSV(mode) {
+        if (this._clbSelectedCellLines.size === 0) {
+            alert('Select at least one cell line to export.');
+            return;
+        }
+
+        const selectedIds = [...this._clbSelectedCellLines];
+        const clIndices = selectedIds.map(cl => this.metadata.cellLines.indexOf(cl)).filter(i => i >= 0);
+        const clNames = clIndices.map(i => this.getCellLineName(this.metadata.cellLines[i]));
+        const namePart = clNames.length <= 4
+            ? '_' + clNames.map(n => n.replace(/[^A-Za-z0-9]/g, '')).join('_')
+            : `_${clNames.length}cl`;
+
+        if (mode === 'minimal') {
+            const headerParts = ['Gene'];
+            clNames.forEach(n => headerParts.push(n.replace(/,/g, '')));
+            const lines = [headerParts.join(',')];
+            for (let g = 0; g < this.nGenes; g++) {
+                const row = [this.geneNames[g]];
+                for (let c = 0; c < clIndices.length; c++) {
+                    const val = this.geneEffects[g * this.nCellLines + clIndices[c]];
+                    row.push((!isNaN(val) && val !== -999) ? val.toFixed(4) : '');
+                }
+                lines.push(row.join(','));
+            }
+            this.downloadFile(lines.join('\n'), `correlate${namePart}.csv`, 'text/csv');
+        } else {
+            const N = parseInt(document.getElementById('clbTopN').value) || 10;
+            const filteredCls = this._clbVisibleCellLines;
+            const filteredIndices = filteredCls.map(cl => this.metadata.cellLines.indexOf(cl)).filter(i => i >= 0);
+
+            const filterParts = [];
+            const tissueVal = document.getElementById('clbTissueFilter').value;
+            const subtypeVal = document.getElementById('clbSubtypeFilter').value;
+            const hotspotVal = document.getElementById('clbHotspotFilter').value;
+            const transVal = document.getElementById('clbTranslocationFilter').value;
+            if (tissueVal) filterParts.push(tissueVal);
+            if (subtypeVal) filterParts.push(subtypeVal);
+            if (hotspotVal) filterParts.push(hotspotVal + ' mut');
+            if (transVal) filterParts.push(transVal + ' fus');
+            const filterLabel = filterParts.length > 0 ? filterParts.join(' / ') : `all (n=${filteredIndices.length})`;
+
+            const lines = ['CellLine,CellLineID,Tissue,Subtype,Category,Rank,Gene,GE,ZScore'];
+
+            for (let c = 0; c < clIndices.length; c++) {
+                const clId = this.metadata.cellLines[clIndices[c]];
+                const clName = clNames[c].replace(/,/g, '');
+                const tissue = this.getCellLineLineage(clId);
+                const subtype = this.getCellLineSublineage(clId);
+                const ci = clIndices[c];
+
+                if (this.mutations?.geneData) {
+                    for (const gene of Object.keys(this.mutations.geneData)) {
+                        if (this.mutations.geneData[gene].mutations?.[clId] >= 1) {
+                            lines.push(`${clName},${clId},${tissue},${subtype},Hotspot Mutation,,${gene},,`);
+                        }
+                    }
+                }
+
+                if (this.translocations?.geneData) {
+                    for (const gene of Object.keys(this.translocations.geneData)) {
+                        if (this.translocations.geneData[gene].translocations?.[clId] >= 1) {
+                            lines.push(`${clName},${clId},${tissue},${subtype},Fusion,,${gene},,`);
+                        }
+                    }
+                }
+
+                const geneVals = [];
+                for (let g = 0; g < this.nGenes; g++) {
+                    const val = this.geneEffects[g * this.nCellLines + ci];
+                    if (!isNaN(val) && val !== -999) geneVals.push({ gene: this.geneNames[g], val, idx: g });
+                }
+                geneVals.sort((a, b) => a.val - b.val);
+
+                geneVals.slice(0, N).forEach(({ gene, val }, i) => {
+                    lines.push(`${clName},${clId},${tissue},${subtype},Most Depleted,${i + 1},${gene},${val.toFixed(4)},`);
+                });
+
+                geneVals.slice(-N).reverse().forEach(({ gene, val }, i) => {
+                    lines.push(`${clName},${clId},${tissue},${subtype},Least Depleted,${i + 1},${gene},${val.toFixed(4)},`);
+                });
+
+                if (filteredIndices.length >= 3) {
+                    const zScores = [];
+                    for (let g = 0; g < this.nGenes; g++) {
+                        const offset = g * this.nCellLines;
+                        let s = 0, s2 = 0, n = 0;
+                        for (const fi of filteredIndices) {
+                            const v = this.geneEffects[offset + fi];
+                            if (!isNaN(v) && v !== -999) { s += v; s2 += v * v; n++; }
+                        }
+                        if (n < 3) continue;
+                        const mu = s / n;
+                        const sd = Math.sqrt(s2 / n - mu * mu);
+                        if (sd < 1e-6) continue;
+                        const val = this.geneEffects[offset + ci];
+                        if (isNaN(val) || val === -999) continue;
+                        zScores.push({ gene: this.geneNames[g], z: (val - mu) / sd, val });
+                    }
+                    zScores.sort((a, b) => a.z - b.z);
+
+                    zScores.slice(0, N).forEach(({ gene, val, z }, i) => {
+                        lines.push(`${clName},${clId},${tissue},${subtype},Uniquely Depleted vs ${filterLabel},${i + 1},${gene},${val.toFixed(4)},${z.toFixed(2)}`);
+                    });
+
+                    zScores.slice(-N).reverse().forEach(({ gene, val, z }, i) => {
+                        lines.push(`${clName},${clId},${tissue},${subtype},Uniquely Resistant vs ${filterLabel},${i + 1},${gene},${val.toFixed(4)},${z.toFixed(2)}`);
+                    });
+                }
+            }
+
+            this.downloadFile(lines.join('\n'), `correlate_report${namePart}.csv`, 'text/csv');
         }
     }
 }
