@@ -22,7 +22,6 @@
 <text x="168" y="113" class="label" style="font-size: 9px; fill: #e53e3e;">inhibit</text>
 
 <!-- TSC1/TSC2 complex - highlighted and prominent -->
-<text x="140" y="122" text-anchor="middle" class="label" style="font-size: 9px; fill: #888;">tumour suppressor complex</text>
 <rect x="55" y="126" width="170" height="44" rx="8" fill="#2d5a27" stroke="#1a3a15" stroke-width="2.5"/>
 <text x="105" y="153" text-anchor="middle" class="node" style="font-size: 16px;">TSC1</text>
 <line x1="140" y1="132" x2="140" y2="164" stroke="#4a8c3f" stroke-width="1.2" opacity="0.5"/>
