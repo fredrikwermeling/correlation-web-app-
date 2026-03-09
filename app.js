@@ -12181,7 +12181,7 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
     async submitToEnrichr(genes) {
         const formData = new FormData();
         formData.append('list', genes.join('\n'));
-        formData.append('description', 'Correlate V2');
+        formData.append('description', 'Correlate');
 
         const addRes = await fetch('https://maayanlab.cloud/Enrichr/addList', {
             method: 'POST',
