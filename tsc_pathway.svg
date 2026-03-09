@@ -4,6 +4,14 @@
   .node { font-family: Arial, sans-serif; font-weight: bold; fill: white; }
   .label { font-family: Arial, sans-serif; font-size: 11px; fill: #555; }
 </style>
+<defs>
+  <marker id="arrowBlue" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+    <path d="M0,1 L7,4 L0,7" fill="none" stroke="#3182ce" stroke-width="1.2"/>
+  </marker>
+  <marker id="flatRed" markerWidth="2" markerHeight="14" refX="1" refY="7" orient="auto">
+    <line x1="1" y1="0" x2="1" y2="14" stroke="#e53e3e" stroke-width="2.5" stroke-linecap="round"/>
+  </marker>
+</defs>
 <rect width="100%" height="100%" fill="white" rx="8"/>
 
 <!-- Growth Signals -->
@@ -17,19 +25,19 @@
 <rect x="50" y="68" width="180" height="28" rx="14" fill="#5a9f4a"/>
 <text x="140" y="87" text-anchor="middle" class="node" style="font-size: 12px;">PI3K / Akt / ERK</text>
 
-<!-- Inhibitory arrow down -->
-<line x1="140" y1="96" x2="140" y2="126" stroke="#e53e3e" stroke-width="2" marker-end="url(#flatRed)"/>
+<!-- Inhibitory arrow down: line stops short, flat bar at end -->
+<line x1="140" y1="96" x2="140" y2="120" stroke="#e53e3e" stroke-width="1.8" marker-end="url(#flatRed)"/>
 <text x="168" y="113" class="label" style="font-size: 9px; fill: #e53e3e;">inhibit</text>
 
-<!-- TSC1/TSC2 complex - highlighted and prominent -->
+<!-- TSC1/TSC2 complex -->
 <rect x="55" y="126" width="170" height="44" rx="8" fill="#2d5a27" stroke="#1a3a15" stroke-width="2.5"/>
 <text x="105" y="153" text-anchor="middle" class="node" style="font-size: 16px;">TSC1</text>
 <line x1="140" y1="132" x2="140" y2="164" stroke="#4a8c3f" stroke-width="1.2" opacity="0.5"/>
 <text x="175" y="153" text-anchor="middle" class="node" style="font-size: 16px;">TSC2</text>
 
-<!-- Inhibitory arrow down -->
-<line x1="140" y1="170" x2="140" y2="200" stroke="#e53e3e" stroke-width="2" marker-end="url(#flatRed)"/>
-<text x="168" y="189" class="label" style="font-size: 9px; fill: #e53e3e;">inhibit</text>
+<!-- Inhibitory arrow down: line stops short, flat bar at end -->
+<line x1="140" y1="170" x2="140" y2="194" stroke="#e53e3e" stroke-width="1.8" marker-end="url(#flatRed)"/>
+<text x="168" y="187" class="label" style="font-size: 9px; fill: #e53e3e;">inhibit</text>
 
 <!-- mTORC1 -->
 <rect x="75" y="200" width="130" height="32" rx="16" fill="#d45d5d"/>
@@ -42,14 +50,4 @@
 <rect x="30" y="258" width="220" height="36" rx="18" fill="#f0f9ef" stroke="#c5e8bc" stroke-width="1.5"/>
 <text x="140" y="275" text-anchor="middle" style="font-family: Arial, sans-serif; font-size: 11px; fill: #2d5a27; font-weight: bold;">Cell proliferation</text>
 <text x="140" y="289" text-anchor="middle" style="font-family: Arial, sans-serif; font-size: 11px; fill: #2d5a27; font-weight: bold;">Survival &amp; growth</text>
-
-<!-- Arrowhead markers -->
-<defs>
-  <marker id="arrowBlue" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-    <path d="M0,1 L7,4 L0,7" fill="none" stroke="#3182ce" stroke-width="1.2"/>
-  </marker>
-  <marker id="flatRed" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
-    <line x1="0" y1="0" x2="0" y2="8" stroke="#e53e3e" stroke-width="2.5"/>
-  </marker>
-</defs>
 </svg>

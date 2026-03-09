@@ -2247,15 +2247,15 @@
                         </div>
                     </div>
                     <!-- Scatter + Pathway side by side -->
-                    <div style="margin-top: 20px; display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; align-items: center;">
-                        <div style="background: white; border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px; flex: 1; min-width: 280px; max-width: 420px;">
-                            <img src="scatter_example.svg" alt="TSC1 vs TSC2 scatter plot showing strong positive correlation (r=0.90)" style="max-width: 100%; height: auto; border-radius: 6px;">
+                    <div style="margin-top: 20px; display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; align-items: stretch;">
+                        <div style="background: white; border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px; flex: 1; min-width: 280px; max-width: 420px; display: flex; flex-direction: column;">
+                            <img src="scatter_example.svg" alt="TSC1 vs TSC2 scatter plot showing strong positive correlation (r=0.90)" style="max-width: 100%; height: auto; border-radius: 6px; flex-shrink: 0;">
                             <p style="margin: 8px 0 0; font-size: 12px; color: #666; line-height: 1.4;">
                                 <strong>Example:</strong> TSC1 vs TSC2 gene effect across 1,186 cell lines (r = 0.90). Knockout of either gene produces nearly identical fitness effects &mdash; consistent with their role as obligate partners in the TSC complex.
                             </p>
                         </div>
-                        <div style="background: white; border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px; flex: 0 0 auto; max-width: 280px;">
-                            <img src="tsc_pathway.svg" alt="TSC1/TSC2 signalling pathway" style="max-width: 100%; height: auto; border-radius: 6px;">
+                        <div style="background: white; border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px; flex: 0 0 auto; max-width: 280px; display: flex; flex-direction: column; justify-content: center;">
+                            <img src="tsc_pathway.svg" alt="TSC1/TSC2 signalling pathway" style="max-width: 100%; height: auto; border-radius: 6px; flex-shrink: 0;">
                             <p style="margin: 8px 0 0; font-size: 12px; color: #666; line-height: 1.4;">
                                 TSC1 and TSC2 form an obligate complex that inhibits mTORC1 signalling, a central regulator of cell proliferation and survival.
                             </p>
