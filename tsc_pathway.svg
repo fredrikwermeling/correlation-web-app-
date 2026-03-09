@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="420" viewBox="0 0 320 420">
+<style>
+  .node { font-family: Arial, sans-serif; font-size: 12px; font-weight: bold; fill: white; }
+  .label { font-family: Arial, sans-serif; font-size: 10px; fill: #555; }
+  .title { font-family: Arial, sans-serif; font-size: 11px; fill: #333; font-weight: bold; }
+  .cite { font-family: Arial, sans-serif; font-size: 8.5px; fill: #999; font-style: italic; }
+  .arrow { fill: none; stroke-width: 1.8; }
+  .act { stroke: #3182ce; }
+  .inh { stroke: #e53e3e; }
+</style>
+<rect width="100%" height="100%" fill="white" rx="8"/>
+
+<!-- Title -->
+<text x="160" y="20" text-anchor="middle" class="title" style="font-size: 12px;">TSC1/TSC2 Pathway</text>
+
+<!-- Growth Factors -->
+<rect x="110" y="32" width="100" height="24" rx="12" fill="#78909c"/>
+<text x="160" y="48" text-anchor="middle" class="node" style="font-size: 11px;">Growth Factors</text>
+
+<!-- Arrow down splits to PI3K and Ras -->
+<line x1="140" y1="56" x2="90" y2="80" class="arrow act" marker-end="url(#arrowBlue)"/>
+<line x1="180" y1="56" x2="230" y2="80" class="arrow act" marker-end="url(#arrowBlue)"/>
+
+<!-- PI3K -->
+<rect x="50" y="80" width="80" height="24" rx="12" fill="#5a9f4a"/>
+<text x="90" y="96" text-anchor="middle" class="node">PI3K</text>
+
+<!-- Ras -->
+<rect x="190" y="80" width="80" height="24" rx="12" fill="#5a9f4a"/>
+<text x="230" y="96" text-anchor="middle" class="node">Ras</text>
+
+<!-- Arrow PI3K -> Akt -->
+<line x1="90" y1="104" x2="90" y2="128" class="arrow act" marker-end="url(#arrowBlue)"/>
+<!-- Arrow Ras -> ERK -->
+<line x1="230" y1="104" x2="230" y2="128" class="arrow act" marker-end="url(#arrowBlue)"/>
+
+<!-- Akt -->
+<rect x="50" y="128" width="80" height="24" rx="12" fill="#3182ce"/>
+<text x="90" y="144" text-anchor="middle" class="node">Akt</text>
+
+<!-- ERK -->
+<rect x="190" y="128" width="80" height="24" rx="12" fill="#3182ce"/>
+<text x="230" y="144" text-anchor="middle" class="node">ERK1/2</text>
+
+<!-- Phosphorylation labels -->
+<text x="118" y="170" text-anchor="middle" class="label" style="font-size: 9px;">S939, T1462</text>
+<text x="202" y="170" text-anchor="middle" class="label" style="font-size: 9px;">S664</text>
+
+<!-- Inhibitory arrows to TSC1/TSC2 -->
+<line x1="90" y1="152" x2="130" y2="185" class="arrow inh" marker-end="url(#arrowRed)"/>
+<line x1="230" y1="152" x2="190" y2="185" class="arrow inh" marker-end="url(#arrowRed)"/>
+
+<!-- AMPK on left -->
+<rect x="10" y="178" width="60" height="24" rx="12" fill="#7b5ea7"/>
+<text x="40" y="194" text-anchor="middle" class="node" style="font-size: 10px;">AMPK</text>
+<!-- Activating arrow AMPK -> TSC -->
+<line x1="70" y1="190" x2="105" y2="198" class="arrow act" marker-end="url(#arrowBlue)"/>
+<text x="40" y="212" text-anchor="middle" class="label" style="font-size: 9px;">S1345</text>
+
+<!-- TSC1/TSC2 complex - highlighted -->
+<rect x="105" y="182" width="110" height="34" rx="6" fill="#2d5a27" stroke="#1a3a15" stroke-width="2"/>
+<text x="137" y="202" text-anchor="middle" class="node" style="font-size: 13px;">TSC1</text>
+<text x="137" y="202" text-anchor="middle" class="node" style="font-size: 13px; opacity: 0;">TSC1</text>
+<line x1="160" y1="186" x2="160" y2="212" stroke="#4a8c3f" stroke-width="1" opacity="0.5"/>
+<text x="183" y="202" text-anchor="middle" class="node" style="font-size: 13px;">TSC2</text>
+<text x="160" y="178" text-anchor="middle" class="label" style="font-size: 8px; fill: #e53e3e;">⊣ inactivating P</text>
+
+<!-- GAP label -->
+<text x="160" y="230" text-anchor="middle" class="label" style="font-size: 9px;">GAP activity</text>
+
+<!-- Arrow TSC -> Rheb (inhibitory) -->
+<line x1="160" y1="216" x2="160" y2="248" class="arrow inh" marker-end="url(#flatRed)"/>
+
+<!-- Rheb -->
+<rect x="120" y="248" width="80" height="24" rx="12" fill="#e8a838"/>
+<text x="145" y="264" text-anchor="middle" class="node" style="font-size: 11px;">Rheb</text>
+<text x="185" y="264" text-anchor="middle" class="label" style="font-size: 9px; fill: white;">GTP</text>
+
+<!-- Arrow Rheb -> mTORC1 -->
+<line x1="160" y1="272" x2="160" y2="296" class="arrow act" marker-end="url(#arrowBlue)"/>
+
+<!-- mTORC1 -->
+<rect x="110" y="296" width="100" height="28" rx="14" fill="#d45d5d"/>
+<text x="160" y="314" text-anchor="middle" class="node" style="font-size: 13px;">mTORC1</text>
+
+<!-- Arrows to S6K and 4E-BP1 -->
+<line x1="140" y1="324" x2="90" y2="348" class="arrow act" marker-end="url(#arrowBlue)"/>
+<line x1="180" y1="324" x2="230" y2="348" class="arrow act" marker-end="url(#arrowBlue)"/>
+
+<!-- S6K -->
+<rect x="50" y="348" width="80" height="22" rx="11" fill="#6a9fd8"/>
+<text x="90" y="363" text-anchor="middle" class="node" style="font-size: 10px;">p70 S6K</text>
+
+<!-- 4E-BP1 -->
+<rect x="190" y="348" width="80" height="22" rx="11" fill="#6a9fd8"/>
+<text x="230" y="363" text-anchor="middle" class="node" style="font-size: 10px;">4E-BP1</text>
+
+<!-- Downstream label -->
+<text x="160" y="388" text-anchor="middle" class="label" style="font-size: 10px;">↓ Protein synthesis &amp; cell growth</text>
+
+<!-- Citation -->
+<text x="160" y="410" text-anchor="middle" class="cite">Adapted from Huang &amp; Manning, Cell Res (2008) 18:62–69</text>
+
+<!-- Arrowhead markers -->
+<defs>
+  <marker id="arrowBlue" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+    <path d="M0,1 L7,4 L0,7" fill="none" stroke="#3182ce" stroke-width="1.2"/>
+  </marker>
+  <marker id="arrowRed" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+    <path d="M0,1 L7,4 L0,7" fill="none" stroke="#e53e3e" stroke-width="1.2"/>
+  </marker>
+  <marker id="flatRed" markerWidth="8" markerHeight="8" refX="4" refY="4" orient="auto">
+    <line x1="0" y1="0" x2="0" y2="8" stroke="#e53e3e" stroke-width="2.5"/>
+  </marker>
+</defs>
+</svg>
