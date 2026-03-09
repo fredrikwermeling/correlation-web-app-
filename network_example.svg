@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="874" height="598" viewBox="0 0 874 598">
+<defs>
+    <linearGradient id="signedGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" style="stop-color:#b2182b;stop-opacity:1" />
+        <stop offset="50%" style="stop-color:#f7f7f7;stop-opacity:1" />
+        <stop offset="100%" style="stop-color:#2166ac;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="absGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" style="stop-color:#f5f5f5;stop-opacity:1" />
+        <stop offset="50%" style="stop-color:#fdae61;stop-opacity:1" />
+        <stop offset="100%" style="stop-color:#d7191c;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="fdrGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" style="stop-color:#d7191c;stop-opacity:1" />
+        <stop offset="50%" style="stop-color:#fdae61;stop-opacity:1" />
+        <stop offset="100%" style="stop-color:#f5f5f5;stop-opacity:1" />
+    </linearGradient>
+</defs>
+<style>
+  .node-label { font-family: Arial, sans-serif; font-size: 14px; fill: #333; }
+  .legend-title { font-family: Arial, sans-serif; font-size: 16px; font-weight: bold; fill: #333; }
+  .legend-text { font-family: Arial, sans-serif; font-size: 14px; fill: #333; }
+  .legend-small { font-family: Arial, sans-serif; font-size: 13px; fill: #333; }
+</style>
+<rect width="100%" height="100%" fill="white"/>
+
+  <line x1="570.4935060134594" y1="354.53162686626933" x2="510.67259047937875" y2="229.3678651334236" stroke="#3182ce" stroke-width="3.890331627809774" opacity="0.8"/>
+  <line x1="570.4935060134594" y1="354.53162686626933" x2="440.72813539337676" y2="351.7706615339271" stroke="#e53e3e" stroke-width="6.2450406326787515" opacity="0.8"/>
+  <line x1="400.2339771856914" y1="255.13687490195065" x2="287.95472033710917" y2="175.9892020414747" stroke="#3182ce" stroke-width="1.0978124059551069" opacity="0.8"/>
+  <line x1="420.4810562895341" y1="163.10469715721118" x2="339.4927398741633" y2="59.10833630565557" stroke="#3182ce" stroke-width="2.2337524284044625" opacity="0.8"/>
+  <line x1="420.4810562895341" y1="163.10469715721118" x2="476.62068471382514" y2="42.542544311602455" stroke="#3182ce" stroke-width="2.04442909132957" opacity="0.8"/>
+  <line x1="260.34506701368736" y1="279.0652411155829" x2="351.45692298097947" y2="380.3006366347964" stroke="#3182ce" stroke-width="1.1688086573581917" opacity="0.8"/>
+  <line x1="510.67259047937875" y1="229.3678651334236" x2="440.72813539337676" y2="351.7706615339271" stroke="#e53e3e" stroke-width="3.192201822346107" opacity="0.8"/>
+  <line x1="339.4927398741633" y1="59.10833630565557" x2="476.62068471382514" y2="42.542544311602455" stroke="#3182ce" stroke-width="8.067277752024594" opacity="0.8"/>
+  <line x1="613.748629553487" y1="248.6946224598189" x2="576.9357584555912" y2="117.08860828484144" stroke="#3182ce" stroke-width="3.2868634908835532" opacity="0.8"/>
+  <circle cx="570.4935060134594" cy="354.53162686626933" r="23.00804443618487" fill="#5a9f4a" stroke="white" stroke-width="1.8406435548947897"/>
+  <text x="570.4935060134594" y="390.4241761867178" text-anchor="middle" style="font-family: Arial; font-size: 14.725148439158318px; fill: #333;">TP53</text>
+  <circle cx="510.67259047937875" cy="229.3678651334236" r="23.00804443618487" fill="#5a9f4a" stroke="white" stroke-width="1.8406435548947897"/>
+  <text x="510.67259047937875" y="265.260414453872" text-anchor="middle" style="font-family: Arial; font-size: 14.725148439158318px; fill: #333;">ATM</text>
+  <circle cx="440.72813539337676" cy="351.7706615339271" r="23.00804443618487" fill="#5a9f4a" stroke="white" stroke-width="1.8406435548947897"/>
+  <text x="440.72813539337676" y="387.66321085437556" text-anchor="middle" style="font-family: Arial; font-size: 14.725148439158318px; fill: #333;">MDM2</text>
+  <circle cx="400.2339771856914" cy="255.13687490195065" r="23.00804443618487" fill="#5a9f4a" stroke="white" stroke-width="1.8406435548947897"/>
+  <text x="400.2339771856914" y="291.0294242223991" text-anchor="middle" style="font-family: Arial; font-size: 14.725148439158318px; fill: #333;">BRCA1</text>
+  <circle cx="287.95472033710917" cy="175.9892020414747" r="23.00804443618487" fill="#5a9f4a" stroke="white" stroke-width="1.8406435548947897"/>
+  <text x="287.95472033710917" y="211.88175136192308" text-anchor="middle" style="font-family: Arial; font-size: 14.725148439158318px; fill: #333;">BRCA2</text>
+  <circle cx="420.4810562895341" cy="163.10469715721118" r="23.00804443618487" fill="#5a9f4a" stroke="white" stroke-width="1.8406435548947897"/>
+  <text x="420.4810562895341" y="198.99724647765956" text-anchor="middle" style="font-family: Arial; font-size: 14.725148439158318px; fill: #333;">PTEN</text>
+  <circle cx="339.4927398741633" cy="59.10833630565557" r="23.00804443618487" fill="#5a9f4a" stroke="white" stroke-width="1.8406435548947897"/>
+  <text x="339.4927398741633" y="95.00088562610398" text-anchor="middle" style="font-family: Arial; font-size: 14.725148439158318px; fill: #333;">TSC1</text>
+  <circle cx="476.62068471382514" cy="42.542544311602455" r="23.00804443618487" fill="#5a9f4a" stroke="white" stroke-width="1.8406435548947897"/>
+  <text x="476.62068471382514" y="78.43509363205087" text-anchor="middle" style="font-family: Arial; font-size: 14.725148439158318px; fill: #333;">TSC2</text>
+  <circle cx="260.34506701368736" cy="279.0652411155829" r="23.00804443618487" fill="#5a9f4a" stroke="white" stroke-width="1.8406435548947897"/>
+  <text x="260.34506701368736" y="314.95779043603136" text-anchor="middle" style="font-family: Arial; font-size: 14.725148439158318px; fill: #333;">PIK3CA</text>
+  <circle cx="351.45692298097947" cy="380.3006366347964" r="23.00804443618487" fill="#5a9f4a" stroke="white" stroke-width="1.8406435548947897"/>
+  <text x="351.45692298097947" y="416.1931859552448" text-anchor="middle" style="font-family: Arial; font-size: 14.725148439158318px; fill: #333;">ERBB2</text>
+  <circle cx="613.748629553487" cy="248.6946224598189" r="23.00804443618487" fill="#5a9f4a" stroke="white" stroke-width="1.8406435548947897"/>
+  <text x="613.748629553487" y="284.58717178026734" text-anchor="middle" style="font-family: Arial; font-size: 14.725148439158318px; fill: #333;">BCR</text>
+  <circle cx="576.9357584555912" cy="117.08860828484144" r="23.00804443618487" fill="#5a9f4a" stroke="white" stroke-width="1.8406435548947897"/>
+  <text x="576.9357584555912" y="152.98115760528984" text-anchor="middle" style="font-family: Arial; font-size: 14.725148439158318px; fill: #333;">ABL1</text>
+  <rect x="15" y="448" width="844" height="145" fill="#f9fafb" stroke="#e5e7eb" rx="4"/>
+  <text x="277" y="473" class="legend-title">Correlation:</text>
+  <line x1="277" y1="495" x2="312" y2="495" stroke="#3182ce" stroke-width="4"/>
+  <text x="319" y="500" class="legend-text">Positive</text>
+  <line x1="277" y1="521" x2="312" y2="521" stroke="#e53e3e" stroke-width="4"/>
+  <text x="319" y="526" class="legend-text">Negative</text>
+  <text x="437" y="473" class="legend-title">Edge Thickness:</text>
+  <line x1="437" y1="495" x2="472" y2="495" stroke="#666" stroke-width="2"/>
+  <text x="479" y="500" class="legend-text">r = 0.30</text>
+  <line x1="437" y1="521" x2="472" y2="521" stroke="#666" stroke-width="8.000000000000002"/>
+  <text x="479" y="526" class="legend-text">r = 0.65</text>
+  <line x1="437" y1="547" x2="472" y2="547" stroke="#666" stroke-width="14"/>
+  <text x="479" y="552" class="legend-text">r = 1.00</text>
+</svg>

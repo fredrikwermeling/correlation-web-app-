@@ -2195,13 +2195,131 @@
 
     <!-- Infographic Modal -->
     <div class="modal-overlay" id="infographicModal" style="display: none;">
-        <div class="modal" style="max-width: 90vw; max-height: 90vh; overflow: auto;">
-            <div class="modal-header">
-                <h3>Gene Correlation Explorer - Infographic</h3>
-                <button class="modal-close" id="closeInfoGraphic">&times;</button>
+        <div class="modal" style="max-width: 860px; max-height: 90vh; overflow: auto; border-radius: 16px;">
+            <div class="modal-header" style="background: linear-gradient(135deg, #2d5a27, #4a8c3f); color: white; border-radius: 16px 16px 0 0; padding: 24px 28px;">
+                <div>
+                    <h3 style="margin: 0; font-size: 22px; font-weight: 700;">How Correlate Works</h3>
+                    <p style="margin: 6px 0 0; font-size: 13px; opacity: 0.85; font-weight: 400;">Discovering functional gene relationships from CRISPR screen data</p>
+                </div>
+                <button class="modal-close" id="closeInfoGraphic" style="color: white; opacity: 0.8;">&times;</button>
             </div>
-            <div class="modal-body" style="padding: 10px; text-align: center;">
-                <img src="https://raw.githubusercontent.com/fredrikwermeling/correlation-app/main/infographic.png" alt="Gene Correlation Explorer Infographic" style="max-width: 100%; height: auto;">
+            <div class="modal-body" style="padding: 0; font-family: system-ui, -apple-system, sans-serif;">
+
+                <!-- Section 1: What is Correlate -->
+                <div style="padding: 24px 28px; background: #f0f9ef; border-bottom: 1px solid #c5e8bc;">
+                    <h4 style="margin: 0 0 10px; color: #2d5a27; font-size: 16px;">What is Correlate?</h4>
+                    <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #333;">
+                        Correlate analyses <strong>gene effect scores</strong> (CRISPR knockout fitness) across <strong>1,100+ cancer cell lines</strong> from the DepMap project.
+                        Genes whose knockout produces correlated fitness effects across cell lines are likely to share <strong>functional relationships</strong> &mdash; shared pathways, protein complexes, or regulatory dependencies.
+                    </p>
+                </div>
+
+                <!-- Section 2: Understanding Correlations -->
+                <div style="padding: 24px 28px; border-bottom: 1px solid #e5e7eb;">
+                    <h4 style="margin: 0 0 14px; color: #2d5a27; font-size: 16px;">Understanding Gene&ndash;Gene Correlation</h4>
+                    <p style="margin: 0 0 16px; font-size: 14px; line-height: 1.6; color: #333;">
+                        Each gene pair is compared by their gene effect scores across all cell lines. The <strong>Pearson correlation (r)</strong> measures how similarly two gene knockouts affect cell fitness:
+                    </p>
+                    <div style="display: flex; gap: 16px; flex-wrap: wrap; justify-content: center;">
+                        <!-- Positive -->
+                        <div style="flex: 1; min-width: 160px; max-width: 220px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px; text-align: center;">
+                            <div style="font-size: 32px; margin-bottom: 4px;">↗</div>
+                            <div style="font-weight: 700; color: #3182ce; font-size: 15px;">Positive (r &gt; 0)</div>
+                            <p style="font-size: 12px; color: #555; margin: 6px 0 0; line-height: 1.5;">
+                                Knockout of both genes affects the <strong>same</strong> cell lines &mdash; suggesting shared pathway or complex membership.
+                            </p>
+                        </div>
+                        <!-- No correlation -->
+                        <div style="flex: 1; min-width: 160px; max-width: 220px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px; text-align: center;">
+                            <div style="font-size: 32px; margin-bottom: 4px;">⟷</div>
+                            <div style="font-weight: 700; color: #888; font-size: 15px;">No correlation (r ≈ 0)</div>
+                            <p style="font-size: 12px; color: #555; margin: 6px 0 0; line-height: 1.5;">
+                                Gene knockouts have unrelated fitness effects across cell lines.
+                            </p>
+                        </div>
+                        <!-- Negative -->
+                        <div style="flex: 1; min-width: 160px; max-width: 220px; background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px; padding: 14px; text-align: center;">
+                            <div style="font-size: 32px; margin-bottom: 4px;">↘</div>
+                            <div style="font-weight: 700; color: #e53e3e; font-size: 15px;">Negative (r &lt; 0)</div>
+                            <p style="font-size: 12px; color: #555; margin: 6px 0 0; line-height: 1.5;">
+                                When one knockout is lethal, the other is not &mdash; suggesting synthetic rescue, redundancy, or opposing roles.
+                            </p>
+                        </div>
+                    </div>
+                    <!-- Scatter example -->
+                    <div style="margin-top: 20px; text-align: center;">
+                        <div style="background: white; border: 1px solid #e5e7eb; border-radius: 10px; display: inline-block; padding: 10px; max-width: 420px;">
+                            <img src="scatter_example.svg" alt="TSC1 vs TSC2 scatter plot showing strong positive correlation (r=0.90)" style="max-width: 100%; height: auto; border-radius: 6px;">
+                            <p style="margin: 8px 0 0; font-size: 12px; color: #666; line-height: 1.4;">
+                                <strong>Example:</strong> TSC1 vs TSC2 gene effect across 1,186 cell lines (r = 0.90). These genes form the TSC complex &mdash; knockout of either produces nearly identical fitness effects.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 3: Network -->
+                <div style="padding: 24px 28px; border-bottom: 1px solid #e5e7eb;">
+                    <h4 style="margin: 0 0 10px; color: #2d5a27; font-size: 16px;">The Correlation Network</h4>
+                    <p style="margin: 0 0 16px; font-size: 14px; line-height: 1.6; color: #333;">
+                        All pairwise correlations between your genes are combined into an interactive <strong>network graph</strong>. Each node is a gene; edges connect correlated pairs. Edge color and thickness encode the correlation:
+                    </p>
+                    <div style="text-align: center;">
+                        <div style="background: white; border: 1px solid #e5e7eb; border-radius: 10px; display: inline-block; padding: 10px; max-width: 520px;">
+                            <img src="network_example.svg" alt="Correlation network showing gene relationships" style="max-width: 100%; height: auto; border-radius: 6px;">
+                            <p style="margin: 8px 0 0; font-size: 12px; color: #666; line-height: 1.4;">
+                                <strong>Example network:</strong> Genes cluster by functional relationships. TSC1&ndash;TSC2 (thick blue edge) share a complex; TP53&ndash;MDM2 (red edge) show opposing fitness effects.
+                                <br>Double-click a <strong>node</strong> to see its gene effect profile, or an <strong>edge</strong> to view the scatter plot.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 4: Analysis & Hypothesis Generation -->
+                <div style="padding: 24px 28px; background: #f0f9ef; border-bottom: 1px solid #c5e8bc;">
+                    <h4 style="margin: 0 0 10px; color: #2d5a27; font-size: 16px;">From Screen Data to Hypotheses</h4>
+                    <p style="margin: 0 0 14px; font-size: 14px; line-height: 1.6; color: #333;">
+                        Correlate is designed for two complementary purposes: <strong>analysing screen data</strong> (e.g. CRISPR hits, gene lists) and <strong>generating new hypotheses</strong> using its built-in tools:
+                    </p>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px;">
+                        <!-- Design Mode -->
+                        <div style="background: white; border: 1px solid #c5e8bc; border-radius: 10px; padding: 14px;">
+                            <div style="font-weight: 700; color: #3a7333; font-size: 14px; margin-bottom: 6px;">🔍 Design Mode</div>
+                            <p style="font-size: 12px; color: #555; margin: 0; line-height: 1.5;">
+                                Enter seed genes and discover what <em>correlates</em> with them. Expand beyond your input list to find unexpected functional partners.
+                            </p>
+                        </div>
+                        <!-- Mutation Analysis -->
+                        <div style="background: white; border: 1px solid #c5e8bc; border-radius: 10px; padding: 14px;">
+                            <div style="font-weight: 700; color: #3a7333; font-size: 14px; margin-bottom: 6px;">🧬 Mutation Analysis</div>
+                            <p style="font-size: 12px; color: #555; margin: 0; line-height: 1.5;">
+                                Compare gene effect in cells with specific <em>hotspot mutations</em> or <em>translocations</em> vs wild-type. Identify genes with differential dependency in mutant backgrounds.
+                            </p>
+                        </div>
+                        <!-- Cell Line Browser -->
+                        <div style="background: white; border: 1px solid #c5e8bc; border-radius: 10px; padding: 14px;">
+                            <div style="font-weight: 700; color: #3a7333; font-size: 14px; margin-bottom: 6px;">📊 Cell Line Browser</div>
+                            <p style="font-size: 12px; color: #555; margin: 0; line-height: 1.5;">
+                                Explore individual cell lines &mdash; filter by tissue, mutation, or gene effect. View top dependencies and select cell line subsets for focused analyses.
+                            </p>
+                        </div>
+                        <!-- Enrichr -->
+                        <div style="background: white; border: 1px solid #c5e8bc; border-radius: 10px; padding: 14px;">
+                            <div style="font-weight: 700; color: #3a7333; font-size: 14px; margin-bottom: 6px;">🧪 Enrichr Integration</div>
+                            <p style="font-size: 12px; color: #555; margin: 0; line-height: 1.5;">
+                                Send any gene list to <em>Enrichr</em> for pathway enrichment analysis. Available from correlations, clusters, mutation results, and cell line views.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 5: Quick start -->
+                <div style="padding: 20px 28px 24px; text-align: center;">
+                    <p style="margin: 0; font-size: 14px; color: #555; line-height: 1.6;">
+                        <strong style="color: #2d5a27;">Quick start:</strong> Click <strong>Test Genes</strong>, then <strong>Run ▶</strong> to see an example analysis.
+                        <br>Lower the correlation cutoff and re-run to reveal weaker interactions.
+                    </p>
+                </div>
+
             </div>
         </div>
     </div>
