@@ -4466,17 +4466,17 @@ class CorrelationExplorer {
         // Reset network settings to defaults
         this.resetNetworkSettings();
 
+        // Switch to network tab FIRST so vis.js can calculate layout in visible container
+        document.querySelectorAll('.nav-link').forEach(link => link.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+        document.querySelector('[data-tab="network"]').classList.add('active');
+        document.getElementById('tab-network').classList.add('active');
+
         // Display all results
         this.displayNetwork();
         this.displayCorrelationsTable();
         this.displayClustersTable();
         this.displaySummary();
-
-        // Switch to network tab
-        document.querySelectorAll('.nav-link').forEach(link => link.classList.remove('active'));
-        document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
-        document.querySelector('[data-tab="network"]').classList.add('active');
-        document.getElementById('tab-network').classList.add('active');
     }
 
     resetNetworkSettings() {
@@ -7588,6 +7588,8 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
 
         // Make sure controls are visible (may have been hidden by By tissue view)
         document.querySelector('.inspect-controls').style.display = '';
+        document.querySelector('.inspect-layout').style.display = '';
+        document.getElementById('byTissueContainer').style.display = 'none';
         document.getElementById('downloadScatterPNG').style.display = '';
         document.getElementById('downloadScatterSVG').style.display = '';
         document.getElementById('downloadScatterCSV').style.display = '';
