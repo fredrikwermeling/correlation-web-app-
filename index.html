@@ -1285,10 +1285,10 @@
                     <div style="font-size: 10px; color: #666; margin-top: 8px; line-height: 1.4;">
                         <p style="margin: 0;">Data from <a href="https://depmap.org/portal/data_page/?tab=currentRelease" target="_blank" style="color: #0066cc;">DepMap 25Q3</a>:</p>
                         <ul style="margin: 4px 0 0 0; padding-left: 16px;">
-                            <li>CRISPRGeneEffect.csv</li>
-                            <li>Model.csv</li>
-                            <li>OmicsSomaticMutationsMatrixHotspot.csv</li>
-                            <li>OmicsFusionFiltered.csv</li>
+                            <li>CRISPRGeneEffect.csv (gene effects)</li>
+                            <li>Model.csv (cell line metadata)</li>
+                            <li>OmicsSomaticMutationsMatrixHotspot.csv (hotspot mutations)</li>
+                            <li>OmicsFusionFiltered.csv (translocations/fusions)</li>
                         </ul>
                         <p style="margin: 6px 0 0 0; font-style: italic;"><a href="https://depmap.org/portal/data_page/?tab=overview#how-to-cite" target="_blank" style="color: #0066cc;">Please acknowledge DepMap</a> if you use this data.</p>
                     </div>
@@ -1899,22 +1899,44 @@
                             <div class="axis-inputs" style="gap: 4px;">
                                 <div>
                                     <label>X min</label>
-                                    <input type="text" inputmode="decimal" id="scatterXmin" step="0.1">
+                                    <div style="display:flex; gap:2px;">
+                                        <button onclick="app.adjustAxis('scatterXmin',-0.5)" style="font-size:10px;padding:0 4px;border:1px solid #ddd;border-radius:3px;background:#f9f9f9;cursor:pointer;">&minus;</button>
+                                        <input type="text" id="scatterXmin" style="flex:1; min-width:0;">
+                                        <button onclick="app.adjustAxis('scatterXmin',0.5)" style="font-size:10px;padding:0 4px;border:1px solid #ddd;border-radius:3px;background:#f9f9f9;cursor:pointer;">+</button>
+                                    </div>
                                 </div>
                                 <div>
                                     <label>X max</label>
-                                    <input type="text" inputmode="decimal" id="scatterXmax" step="0.1">
+                                    <div style="display:flex; gap:2px;">
+                                        <button onclick="app.adjustAxis('scatterXmax',-0.5)" style="font-size:10px;padding:0 4px;border:1px solid #ddd;border-radius:3px;background:#f9f9f9;cursor:pointer;">&minus;</button>
+                                        <input type="text" id="scatterXmax" style="flex:1; min-width:0;">
+                                        <button onclick="app.adjustAxis('scatterXmax',0.5)" style="font-size:10px;padding:0 4px;border:1px solid #ddd;border-radius:3px;background:#f9f9f9;cursor:pointer;">+</button>
+                                    </div>
                                 </div>
                                 <div>
                                     <label>Y min</label>
-                                    <input type="text" inputmode="decimal" id="scatterYmin" step="0.1">
+                                    <div style="display:flex; gap:2px;">
+                                        <button onclick="app.adjustAxis('scatterYmin',-0.5)" style="font-size:10px;padding:0 4px;border:1px solid #ddd;border-radius:3px;background:#f9f9f9;cursor:pointer;">&minus;</button>
+                                        <input type="text" id="scatterYmin" style="flex:1; min-width:0;">
+                                        <button onclick="app.adjustAxis('scatterYmin',0.5)" style="font-size:10px;padding:0 4px;border:1px solid #ddd;border-radius:3px;background:#f9f9f9;cursor:pointer;">+</button>
+                                    </div>
                                 </div>
                                 <div>
                                     <label>Y max</label>
-                                    <input type="text" inputmode="decimal" id="scatterYmax" step="0.1">
+                                    <div style="display:flex; gap:2px;">
+                                        <button onclick="app.adjustAxis('scatterYmax',-0.5)" style="font-size:10px;padding:0 4px;border:1px solid #ddd;border-radius:3px;background:#f9f9f9;cursor:pointer;">&minus;</button>
+                                        <input type="text" id="scatterYmax" style="flex:1; min-width:0;">
+                                        <button onclick="app.adjustAxis('scatterYmax',0.5)" style="font-size:10px;padding:0 4px;border:1px solid #ddd;border-radius:3px;background:#f9f9f9;cursor:pointer;">+</button>
+                                    </div>
                                 </div>
-                                <div style="display: flex; align-items: flex-end;">
-                                    <button class="btn btn-outline btn-sm" id="resetAxes" style="font-size: 10px; padding: 2px 6px; width: 100%;">Reset</button>
+                                <div style="grid-column: span 2; display:flex; flex-direction:row; align-items:center; gap:8px; flex-wrap:nowrap;">
+                                    <button class="btn btn-outline btn-sm" id="resetAxes" style="font-size:10px; padding:2px 6px; flex-shrink:0;">Reset</button>
+                                    <label style="font-size:9px; display:flex; align-items:center; gap:2px; cursor:pointer; white-space:nowrap; color:#6b7280; flex-shrink:0;">
+                                        <input type="checkbox" id="showCorrelationLine" checked style="margin:0; width:12px; height:12px;"> Reg. line
+                                    </label>
+                                    <label style="font-size:9px; display:flex; align-items:center; gap:2px; cursor:pointer; white-space:nowrap; color:#6b7280; flex-shrink:0;">
+                                        <input type="checkbox" id="showZeroLines" checked style="margin:0; width:12px; height:12px;"> Zero lines
+                                    </label>
                                 </div>
                             </div>
                         </div>
@@ -2388,6 +2410,7 @@
           <select id="clbHotspotFilter"><option value="">Hotspot mutation</option></select>
           <select id="clbTranslocationFilter"><option value="">Translocation</option></select>
           <input type="text" id="clbSortGene" placeholder="Sort by gene..." style="width:120px;">
+          <button id="clbSortDir" class="btn btn-outline btn-sm" title="Toggle sort direction" style="padding:4px 6px; font-size:10px; display:none;">&#x25B2;</button>
           <button id="clbResetFilters" class="btn btn-outline btn-sm" title="Reset all filters">Reset</button>
           <span id="clbSelectionCount" class="clb-selection-count">0 selected</span>
           <div style="margin-left:auto; display:flex; gap:6px;">

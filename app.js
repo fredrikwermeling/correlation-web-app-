@@ -24,6 +24,8 @@ class CorrelationExplorer {
     constructor() {
         // Cell Line Browser state
         this._clbSelectedCellLines = new Set();
+        // CLB sort direction (true = ascending, false = descending)
+        this._clbSortAsc = true;
 
         // Data storage
         this.metadata = null;
@@ -345,6 +347,85 @@ class CorrelationExplorer {
                 el.style.fontWeight = '';
             }
         });
+    }
+
+    updateScatterHotspotFilterCounts() {
+        if (!this.currentInspect?.data) return;
+
+        const cancerFilter = document.getElementById('scatterCancerFilter').value;
+        const subtypeFilter = document.getElementById('scatterSubtypeFilter').value;
+
+        // Get the cell lines visible in the scatter plot (respecting tissue/subtype filter)
+        let filteredData = this.currentInspect.data;
+        if (cancerFilter) {
+            filteredData = filteredData.filter(d => d.lineage === cancerFilter);
+        }
+        if (subtypeFilter && this.cellLineMetadata?.primaryDisease) {
+            filteredData = filteredData.filter(d =>
+                this.cellLineMetadata.primaryDisease[d.cellLineId] === subtypeFilter);
+        }
+        const filteredCellLines = new Set(filteredData.map(d => d.cellLineId));
+
+        // Update hotspot gene selector and mutation filter gene selector
+        const hotspotSelect = document.getElementById('hotspotGene');
+        const mutFilterGeneSelect = document.getElementById('mutationFilterGene');
+
+        if (hotspotSelect && this.mutations?.genes?.length > 0) {
+            const hotspotVal = hotspotSelect.value;
+            const mutFilterVal = mutFilterGeneSelect?.value || '';
+            hotspotSelect.innerHTML = '<option value="">Select gene...</option>';
+            if (mutFilterGeneSelect) mutFilterGeneSelect.innerHTML = '<option value="">No filter</option>';
+
+            this.mutations.genes.forEach(g => {
+                const mutData = this.mutations.geneData?.[g]?.mutations || {};
+                let count = 0;
+                filteredCellLines.forEach(cl => { if (mutData[cl] > 0) count++; });
+                hotspotSelect.innerHTML += `<option value="${g}"${g === hotspotVal ? ' selected' : ''}>${g} (${count} mut)</option>`;
+                if (mutFilterGeneSelect) {
+                    mutFilterGeneSelect.innerHTML += `<option value="${g}"${g === mutFilterVal ? ' selected' : ''}>${g} (${count} mut)</option>`;
+                }
+            });
+        }
+
+        // Update translocation/fusion datalists
+        const transGeneDatalist = document.getElementById('translocationGeneList');
+        const transFilterGeneDatalist = document.getElementById('translocationFilterGeneList');
+
+        if (transGeneDatalist && this.translocations?.genes?.length > 0) {
+            const geneCounts = [];
+            for (const g of this.translocations.genes) {
+                const transData = this.translocations.geneData?.[g]?.translocations || {};
+                let count = 0;
+                for (const cl of filteredCellLines) {
+                    if (transData[cl] && transData[cl] > 0) count++;
+                }
+                if (count > 0) geneCounts.push({ gene: g, count });
+            }
+            geneCounts.sort((a, b) => {
+                const aPri = CorrelationExplorer.PRIORITY_FUSION_GENES.has(a.gene) ? 1 : 0;
+                const bPri = CorrelationExplorer.PRIORITY_FUSION_GENES.has(b.gene) ? 1 : 0;
+                if (aPri !== bPri) return bPri - aPri;
+                return b.count - a.count;
+            });
+
+            let transHtml = '';
+            geneCounts.forEach(({ gene, count }) => {
+                transHtml += `<option value="${gene}">${gene} (${count} fused)</option>`;
+            });
+            transGeneDatalist.innerHTML = transHtml;
+            if (transFilterGeneDatalist) transFilterGeneDatalist.innerHTML = transHtml;
+        }
+    }
+
+    adjustAxis(id, delta) {
+        const el = document.getElementById(id);
+        const current = parseFloat(el.value.replace(',', '.'));
+        if (isNaN(current)) {
+            el.value = delta.toFixed(1);
+        } else {
+            el.value = (current + delta).toFixed(1);
+        }
+        this.updateInspectPlot();
     }
 
     updateGeSubtypeFilter() {
@@ -1517,9 +1598,16 @@ class CorrelationExplorer {
 
         ['scatterXmin', 'scatterXmax', 'scatterYmin', 'scatterYmax'].forEach(id => {
             const el = document.getElementById(id);
-            el.addEventListener('change', () => this.updateInspectPlot());
+            el.addEventListener('change', () => {
+                const val = el.value.trim();
+                if (val === '' || val === '-' || val === '.' || val === '-.') return;
+                this.updateInspectPlot();
+            });
             el.addEventListener('keydown', (e) => { if (e.key === 'Enter') this.updateInspectPlot(); });
         });
+
+        document.getElementById('showCorrelationLine').addEventListener('change', () => this.updateInspectPlot());
+        document.getElementById('showZeroLines')?.addEventListener('change', () => this.updateInspectPlot());
 
         document.getElementById('scatterCellSearch').addEventListener('input', () => this.updateInspectPlot());
         document.getElementById('colorByCategory').addEventListener('change', () => {
@@ -1538,10 +1626,12 @@ class CorrelationExplorer {
                 }
             }
             this._styleActiveFilters();
+            this.updateScatterHotspotFilterCounts();
             this.updateInspectPlot();
         });
         document.getElementById('scatterSubtypeFilter').addEventListener('change', () => {
             this._styleActiveFilters();
+            this.updateScatterHotspotFilterCounts();
             this.updateInspectPlot();
         });
         document.getElementById('mutationFilterGene').addEventListener('change', () => this.updateInspectPlot());
@@ -4079,12 +4169,14 @@ class CorrelationExplorer {
 
         const filename = `gene_effect_${this.currentGeneEffectGene}_${this.mutationResults.hotspotGene}`;
 
-        // Always export as SVG first so we can post-process (fix Y-axis title overlap),
-        // then convert to PNG via canvas if needed.
+        // Export at on-screen size, then post-process SVG to expand viewBox to fit all content
+        const exportWidth = plotEl.offsetWidth;
+        const exportHeight = plotEl.offsetHeight;
+
         Plotly.toImage(plotEl, {
             format: 'svg',
-            width: plotEl.offsetWidth,
-            height: plotEl.offsetHeight
+            width: exportWidth,
+            height: exportHeight
         }).then(svgDataUrl => {
             // Decode SVG
             let svgString;
@@ -4096,30 +4188,40 @@ class CorrelationExplorer {
 
             const parser = new DOMParser();
             const svgDoc = parser.parseFromString(svgString, 'image/svg+xml');
+            const svgEl = svgDoc.documentElement;
 
-            // Fix Y-axis title: Plotly underestimates Open Sans tick label width,
-            // causing the rotated Y-axis title to overlap with tick labels.
-            // Measure tick labels with canvas and reposition the title to their left.
-            const ytitleGroup = svgDoc.querySelector('.g-ytitle');
-            const ytitle = ytitleGroup?.querySelector('text.ytitle');
-            const yticks = svgDoc.querySelectorAll('.ytick text');
-            if (ytitle && yticks.length && ytitleGroup) {
-                const measureCanvas = document.createElement('canvas');
-                const mctx = measureCanvas.getContext('2d');
-                let maxTickWidth = 0;
-                yticks.forEach(t => {
-                    mctx.font = '12px "Open Sans", verdana, arial, sans-serif';
-                    maxTickWidth = Math.max(maxTickWidth, mctx.measureText(t.textContent).width * 1.3);
-                });
-                const tickX = parseFloat(yticks[0].getAttribute('x')) || 0;
-                const tickLeftEdge = tickX - maxTickWidth;
-                const titleX = parseFloat(ytitle.getAttribute('x')) || 0;
-                const newTitleX = tickLeftEdge - 15;
-                const shift = newTitleX - titleX;
-                ytitleGroup.setAttribute('transform', `translate(${shift},0)`);
+            // Expand viewBox to fit all content:
+            // 1. Insert into DOM so getBBox works
+            // 2. Remove all clipPaths that might restrict measurement
+            // 3. Measure, then restore clipPaths for final output
+            const measurer = document.createElement('div');
+            measurer.style.cssText = 'position:absolute; left:-99999px; top:-99999px;';
+            document.body.appendChild(measurer);
+            const measureSvg = svgEl.cloneNode(true);
+            measureSvg.style.overflow = 'visible';
+            // Temporarily strip all clip-path attributes so getBBox sees full extent
+            measureSvg.querySelectorAll('[clip-path]').forEach(el => {
+                el.removeAttribute('clip-path');
+            });
+            measurer.appendChild(measureSvg);
+
+            try {
+                const bbox = measureSvg.getBBox();
+                const pad = 10;
+                const vbX = Math.min(0, Math.floor(bbox.x - pad));
+                const vbY = Math.min(0, Math.floor(bbox.y - pad));
+                const vbW = Math.max(exportWidth, Math.ceil(bbox.x + bbox.width + pad)) - vbX;
+                const vbH = Math.max(exportHeight, Math.ceil(bbox.y + bbox.height + pad)) - vbY;
+
+                svgEl.setAttribute('viewBox', `${vbX} ${vbY} ${vbW} ${vbH}`);
+                svgEl.setAttribute('width', String(vbW));
+                svgEl.setAttribute('height', String(vbH));
+            } catch (e) {
+                console.warn('getBBox failed, keeping original dimensions', e);
             }
+            document.body.removeChild(measurer);
 
-            svgString = new XMLSerializer().serializeToString(svgDoc.documentElement);
+            svgString = new XMLSerializer().serializeToString(svgEl);
 
             const a = document.createElement('a');
             if (format === 'svg') {
@@ -8000,7 +8102,7 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
         });
 
         // Add regression line
-        if (!isNaN(allStats.slope)) {
+        if (!isNaN(allStats.slope) && document.getElementById('showCorrelationLine')?.checked !== false) {
             const meanX = filteredData.reduce((a, d) => a + d.x, 0) / filteredData.length;
             const meanY = filteredData.reduce((a, d) => a + d.y, 0) / filteredData.length;
             const intercept = meanY - allStats.slope * meanX;
@@ -8058,18 +8160,22 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
         // Calculate margin based on title lines
         const topMargin = 80 + (titleLines.length * 18);
 
+        const showZero = document.getElementById('showZeroLines')?.checked !== false;
+
         const layout = {
             xaxis: {
                 title: `${gene1} Gene Effect`,
                 range: xRange,
-                zeroline: true,
-                zerolinecolor: '#ddd'
+                zeroline: showZero,
+                zerolinecolor: showZero ? '#000' : '#ddd',
+                zerolinewidth: showZero ? 2 : 0
             },
             yaxis: {
                 title: `${gene2} Gene Effect`,
                 range: yRange,
-                zeroline: true,
-                zerolinecolor: '#ddd'
+                zeroline: showZero,
+                zerolinecolor: showZero ? '#000' : '#ddd',
+                zerolinewidth: showZero ? 2 : 0
             },
             hovermode: 'closest',
             margin: { t: topMargin, r: ((hotspotMode === 'color' && hotspotGene) || (transOverlayMode === 'color' && transOverlayGene)) ? 240 : 30, b: colorByCategory ? 100 : 60, l: 60, autoexpand: false },
@@ -8310,9 +8416,11 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
             }
         };
 
-        addRegressionLine(wt, wtStats, 'x', 'y', '#5a9f4a');
-        addRegressionLine(mut1, mut1Stats, 'x2', 'y2', '#5a9f4a');
-        addRegressionLine(mut2, mut2Stats, 'x3', 'y3', '#5a9f4a');
+        if (document.getElementById('showCorrelationLine')?.checked !== false) {
+            addRegressionLine(wt, wtStats, 'x', 'y', '#5a9f4a');
+            addRegressionLine(mut1, mut1Stats, 'x2', 'y2', '#5a9f4a');
+            addRegressionLine(mut2, mut2Stats, 'x3', 'y3', '#5a9f4a');
+        }
 
         // Add highlighted cells for each panel
         const threePanelHighlightAnnotations = [];
@@ -12407,7 +12515,17 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
         let clbGeneTimer;
         document.getElementById('clbSortGene').addEventListener('input', () => {
             clearTimeout(clbGeneTimer);
-            clbGeneTimer = setTimeout(() => this.renderCellLineList(), 200);
+            clbGeneTimer = setTimeout(() => {
+                const hasGene = document.getElementById('clbSortGene').value.trim() !== '';
+                document.getElementById('clbSortDir').style.display = hasGene ? '' : 'none';
+                this.renderCellLineList();
+            }, 200);
+        });
+
+        document.getElementById('clbSortDir').addEventListener('click', () => {
+            this._clbSortAsc = !this._clbSortAsc;
+            document.getElementById('clbSortDir').innerHTML = this._clbSortAsc ? '&#x25B2;' : '&#x25BC;';
+            this.renderCellLineList();
         });
 
         document.getElementById('clbResetFilters').addEventListener('click', () => {
@@ -12582,12 +12700,13 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
                     geMap.set(cl, (!isNaN(val) && val !== -999) ? val : NaN);
                 }
             }
+            const dir = this._clbSortAsc ? 1 : -1;
             filtered.sort((a, b) => {
                 const va = geMap.get(a), vb = geMap.get(b);
                 if (isNaN(va) && isNaN(vb)) return 0;
                 if (isNaN(va)) return 1;
                 if (isNaN(vb)) return -1;
-                return va - vb;
+                return (va - vb) * dir;
             });
         } else {
             filtered.sort((a, b) => this.getCellLineName(a).localeCompare(this.getCellLineName(b)));
