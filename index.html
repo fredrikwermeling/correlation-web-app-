@@ -11,6 +11,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
     <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/opentype.js@1.3.4/dist/opentype.min.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;600;700&family=Roboto+Mono:wght@400;500&display=swap');
 
@@ -1295,6 +1296,9 @@
                     <div style="display:flex; gap:6px; margin-top:10px;">
                         <button class="btn btn-secondary btn-sm" id="resetAppBtn" style="flex:1;">Reset App</button>
                         <button class="btn btn-outline btn-sm" id="showCellLineBrowser" style="flex:1; color:var(--green-700); border-color:var(--green-400);">Cell Lines</button>
+                        <label class="btn btn-outline btn-sm" style="flex:0; cursor:pointer; font-size:11px; color:var(--green-700); border-color:var(--green-400); white-space:nowrap;" title="Open a Correlate export (SVG/PNG) to restore settings">
+                            Open <input type="file" id="restoreFromExportInput" accept=".svg,.png" style="display:none;">
+                        </label>
                     </div>
                 </div>
             </div>
@@ -1661,6 +1665,9 @@
                             <label style="font-weight: 600; margin-bottom: 4px; display: block;">Export:</label>
                             <label style="font-size: 11px; margin-bottom: 4px; cursor: pointer;">
                                 <input type="checkbox" id="exportNetworkTransparentBg"> Transparent background
+                            </label>
+                            <label style="font-size:11px; cursor:pointer; color:#666;" title="Convert text to paths for Illustrator/Inkscape compatibility">
+                                <input type="checkbox" class="outlineTextCheckbox" onchange="document.querySelectorAll('.outlineTextCheckbox').forEach(c=>c.checked=this.checked)"> Outline text
                             </label>
                             <div class="button-group-horizontal">
                                 <button class="btn btn-secondary" id="downloadNetworkPNG">PNG</button>
@@ -2054,8 +2061,12 @@
                 <span style="font-size: 11px; margin-left: 8px; display: inline-flex; gap: 10px; align-items: center; color: #666;">
                     <label style="cursor: pointer;"><input type="checkbox" id="exportWhitePlotBg" checked> White plot area</label>
                     <label style="cursor: pointer;"><input type="checkbox" id="exportTransparentBg"> Transparent bg</label>
+                    <label style="cursor: pointer;" title="Convert text to paths for Illustrator/Inkscape compatibility"><input type="checkbox" class="outlineTextCheckbox" onchange="document.querySelectorAll('.outlineTextCheckbox').forEach(c=>c.checked=this.checked)"> Outline text</label>
                 </span>
                 <button class="btn btn-outline" id="downloadScatterCSV">Download CSV</button>
+                <label class="btn btn-outline" style="cursor:pointer; font-size:12px;" title="Open a Correlate export (SVG/PNG) to restore settings">
+                    Open <input type="file" id="restoreFromSvgInput" accept=".svg,.png" style="display:none;">
+                </label>
                 <button class="btn btn-outline" id="downloadTissuePNG" style="display: none;">Download Chart PNG</button>
                 <button class="btn btn-outline" id="downloadTissueSVG" style="display: none;">Download Chart SVG</button>
                 <button class="btn btn-outline" id="downloadTissueCSV" style="display: none;">Download Table CSV</button>

@@ -6,6 +6,17 @@
  * Based on: https://github.com/fredrikwermeling/correlation-app
  */
 
+// Override Plotly default font: use Arial (universally available in Inkscape/Illustrator)
+(function() {
+    const _origNewPlot = Plotly.newPlot;
+    Plotly.newPlot = function(div, data, layout, config) {
+        layout = layout || {};
+        if (!layout.font) layout.font = {};
+        if (!layout.font.family) layout.font.family = 'Arial, Helvetica, sans-serif';
+        return _origNewPlot.call(this, div, data, layout, config);
+    };
+})();
+
 class CorrelationExplorer {
     static CATEGORY_COLORS = [
         '#e6194b', '#3cb44b', '#4363d8', '#f58231', '#911eb4',
@@ -1652,6 +1663,14 @@ class CorrelationExplorer {
         document.getElementById('downloadScatterPNG').addEventListener('click', () => this.downloadScatterPNG());
         document.getElementById('downloadScatterSVG').addEventListener('click', () => this.downloadScatterSVG());
         document.getElementById('downloadScatterCSV').addEventListener('click', () => this.downloadScatterCSV());
+        document.getElementById('restoreFromSvgInput')?.addEventListener('change', (e) => {
+            if (e.target.files[0]) this.restoreFromExport(e.target.files[0]);
+            e.target.value = '';
+        });
+        document.getElementById('restoreFromExportInput')?.addEventListener('change', (e) => {
+            if (e.target.files[0]) this.restoreFromExport(e.target.files[0]);
+            e.target.value = '';
+        });
         document.getElementById('downloadTissuePNG').addEventListener('click', () => this.downloadTissueChartPNG());
         document.getElementById('downloadTissueSVG').addEventListener('click', () => this.downloadTissueChartSVG());
         document.getElementById('downloadTissueCSV').addEventListener('click', () => this.downloadTissueTableCSV());
@@ -4177,7 +4196,7 @@ class CorrelationExplorer {
             format: 'svg',
             width: exportWidth,
             height: exportHeight
-        }).then(svgDataUrl => {
+        }).then(async svgDataUrl => {
             // Decode SVG
             let svgString;
             if (svgDataUrl.indexOf('base64,') > -1) {
@@ -4223,8 +4242,17 @@ class CorrelationExplorer {
 
             svgString = new XMLSerializer().serializeToString(svgEl);
 
+            const meta = this._buildExportMetadata('mutation_inspect', {
+                gene: this.currentGeneEffectGene,
+                hotspotGene: this.mutationResults?.hotspotGene,
+                isTranslocation: this.mutationResults?.isTranslocation || false
+            });
+            const metaJson = JSON.stringify(meta);
+
             const a = document.createElement('a');
             if (format === 'svg') {
+                svgString = svgString.replace('</svg>', `<metadata><correlate-meta>${metaJson}</correlate-meta></metadata></svg>`);
+                svgString = await this._finalizeSvgForExport(svgString);
                 const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
                 a.href = URL.createObjectURL(blob);
                 a.download = `${filename}.svg`;
@@ -4236,7 +4264,7 @@ class CorrelationExplorer {
                 const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
                 const svgUrl = URL.createObjectURL(svgBlob);
                 const img = new Image();
-                img.onload = () => {
+                img.onload = async () => {
                     const scale = 4;
                     const canvas = document.createElement('canvas');
                     canvas.width = img.naturalWidth * scale;
@@ -4247,11 +4275,17 @@ class CorrelationExplorer {
                     ctx.fillRect(0, 0, img.naturalWidth, img.naturalHeight);
                     ctx.drawImage(img, 0, 0);
                     URL.revokeObjectURL(svgUrl);
-                    a.href = canvas.toDataURL('image/png');
+                    const pngDataUrl = canvas.toDataURL('image/png');
+                    const pngResp = await fetch(pngDataUrl);
+                    const pngBuf = await pngResp.arrayBuffer();
+                    const pngWithMeta = this._addPngTextChunk(pngBuf, 'correlate-meta', metaJson);
+                    const blob = new Blob([pngWithMeta], { type: 'image/png' });
+                    a.href = URL.createObjectURL(blob);
                     a.download = `${filename}.png`;
                     document.body.appendChild(a);
                     a.click();
                     document.body.removeChild(a);
+                    URL.revokeObjectURL(a.href);
                 };
                 img.src = svgUrl;
             }
@@ -5913,15 +5947,28 @@ Results:
             ctx.fillText('* = synonym/orthologue used', legendX, legendY + 25);
         }
 
-        // Create download link
+        // Embed metadata and create download link
+        const meta = this._buildExportMetadata('network', {
+            geneList: this.getGeneList(),
+            mode: this.results?.mode,
+            cutoff: this.results?.cutoff,
+            nCellLines: this.results?.nCellLines
+        });
         const dataURL = canvas.toDataURL('image/png');
-        const a = document.createElement('a');
-        a.href = dataURL;
-        a.download = 'correlation_network.png';
-        a.click();
+        fetch(dataURL).then(r => r.arrayBuffer()).then(buf => {
+            const pngWithMeta = this._addPngTextChunk(buf, 'correlate-meta', JSON.stringify(meta));
+            const blob = new Blob([pngWithMeta], { type: 'image/png' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'correlation_network.png';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(a.href);
+        });
     }
 
-    downloadNetworkSVG() {
+    async downloadNetworkSVG() {
         if (!this.network || !this.networkData) return;
 
         const transparentBg = document.getElementById('exportNetworkTransparentBg')?.checked;
@@ -6154,7 +6201,18 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
             svg += `  <text x="${legendX}" y="${legendY + 25}" class="legend-text">* = synonym/orthologue used</text>\n`;
         }
 
+        // Embed metadata
+        const meta = this._buildExportMetadata('network', {
+            geneList: this.getGeneList(),
+            mode: this.results?.mode,
+            cutoff: this.results?.cutoff,
+            nCellLines: this.results?.nCellLines
+        });
+        svg += `<metadata><correlate-meta>${JSON.stringify(meta)}</correlate-meta></metadata>`;
         svg += '</svg>';
+
+        // Sanitize for Illustrator compatibility + optional text outlining
+        svg = await this._finalizeSvgForExport(svg);
 
         // Download
         const blob = new Blob([svg], { type: 'image/svg+xml' });
@@ -9546,20 +9604,20 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
         const legendBg = svgDoc.querySelector('.legend rect.bg');
         const legendTexts = svgDoc.querySelectorAll('.legend .legendtext, .legend .legendtitletext');
         if (legendBg && legendTexts.length) {
-            // Use canvas.measureText with Open Sans (loaded on page) for accurate width
+            // Use canvas.measureText with Arial for accurate width
             const measureCanvas = document.createElement('canvas');
             const mctx = measureCanvas.getContext('2d');
             let maxRight = 0;
             legendTexts.forEach(t => {
                 const fs = t.style.fontSize || '11px';
                 const x = parseFloat(t.getAttribute('x')) || 0;
-                mctx.font = `${fs} "Open Sans", verdana, arial, sans-serif`;
+                mctx.font = `${fs} "Arial", "Helvetica", sans-serif`;
                 const right = x + mctx.measureText(t.textContent).width;
                 if (right > maxRight) maxRight = right;
             });
             if (maxRight > 0) {
                 // Scale up by 1.3x — canvas.measureText uses a fallback font that's
-                // narrower than the actual Open Sans rendered in the SVG
+                // narrower than the actual font rendered in the SVG
                 const newWidth = Math.ceil(maxRight * 1.3);
                 const oldWidth = parseFloat(legendBg.getAttribute('width'));
                 if (newWidth > oldWidth) {
@@ -9588,8 +9646,16 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
         }
         svgString = new XMLSerializer().serializeToString(svgDoc.documentElement);
 
+        const state = this.captureAppState();
+        const stateJson = JSON.stringify(state);
+        const meta = this._buildExportMetadata('scatter', { gene1: this.currentInspect?.gene1, gene2: this.currentInspect?.gene2 });
+        const metaJson = JSON.stringify(meta);
+
         const a = document.createElement('a');
         if (format === 'svg') {
+            // Embed app state + metadata for re-opening
+            svgString = svgString.replace('</svg>', `<metadata><correlate-state>${stateJson}</correlate-state><correlate-meta>${metaJson}</correlate-meta></metadata></svg>`);
+            svgString = await this._finalizeSvgForExport(svgString);
             const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
             a.href = URL.createObjectURL(blob);
             a.download = filename + '.svg';
@@ -9601,7 +9667,7 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
             const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
             const svgUrl = URL.createObjectURL(svgBlob);
             const img = new Image();
-            img.onload = () => {
+            img.onload = async () => {
                 const scale = 4;
                 const canvas = document.createElement('canvas');
                 canvas.width = img.naturalWidth * scale;
@@ -9614,11 +9680,17 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
                 }
                 ctx.drawImage(img, 0, 0);
                 URL.revokeObjectURL(svgUrl);
-                a.href = canvas.toDataURL('image/png');
+                const pngDataUrl = canvas.toDataURL('image/png');
+                const pngResp = await fetch(pngDataUrl);
+                const pngBuf = await pngResp.arrayBuffer();
+                const pngWithMeta = this._addPngTextChunk(pngBuf, 'correlate-state', stateJson);
+                const blob = new Blob([pngWithMeta], { type: 'image/png' });
+                a.href = URL.createObjectURL(blob);
                 a.download = filename + '.png';
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
+                URL.revokeObjectURL(a.href);
             };
             img.src = svgUrl;
         }
@@ -10022,29 +10094,71 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
     }
 
     downloadTissueChartPNG() {
-        if (!this.currentInspect) return;
-        const chartEl = document.getElementById('byTissueChart');
-        if (!chartEl) return;
-
-        Plotly.downloadImage(chartEl, {
-            format: 'png',
-            width: 800,
-            height: Math.max(400, (this.currentTissueStats?.length || 10) * 25 + 100),
-            filename: `by_tissue_${this.currentInspect.gene1}_vs_${this.currentInspect.gene2}`
-        });
+        this._exportTissueChart('png');
     }
 
     downloadTissueChartSVG() {
+        this._exportTissueChart('svg');
+    }
+
+    async _exportTissueChart(format) {
         if (!this.currentInspect) return;
         const chartEl = document.getElementById('byTissueChart');
         if (!chartEl) return;
 
-        Plotly.downloadImage(chartEl, {
-            format: 'svg',
-            width: 800,
-            height: Math.max(400, (this.currentTissueStats?.length || 10) * 25 + 100),
-            filename: `by_tissue_${this.currentInspect.gene1}_vs_${this.currentInspect.gene2}`
+        const filename = `by_tissue_${this.currentInspect.gene1}_vs_${this.currentInspect.gene2}`;
+        const w = 800;
+        const h = Math.max(400, (this.currentTissueStats?.length || 10) * 25 + 100);
+        const meta = this._buildExportMetadata('tissue_chart', {
+            gene1: this.currentInspect.gene1,
+            gene2: this.currentInspect.gene2
         });
+        const metaJson = JSON.stringify(meta);
+
+        const svgDataUrl = await Plotly.toImage(chartEl, { format: 'svg', width: w, height: h });
+        let svgStr;
+        if (svgDataUrl.indexOf('base64,') > -1) svgStr = atob(svgDataUrl.split('base64,')[1]);
+        else svgStr = decodeURIComponent(svgDataUrl.split(',').slice(1).join(','));
+
+        const a = document.createElement('a');
+        if (format === 'svg') {
+            svgStr = svgStr.replace('</svg>', `<metadata><correlate-meta>${metaJson}</correlate-meta></metadata></svg>`);
+            svgStr = await this._finalizeSvgForExport(svgStr);
+            const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+            a.href = URL.createObjectURL(blob);
+            a.download = `${filename}.svg`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        } else {
+            const svgBlob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+            const svgUrl = URL.createObjectURL(svgBlob);
+            const img = new Image();
+            img.onload = async () => {
+                const scale = 4;
+                const canvas = document.createElement('canvas');
+                canvas.width = img.naturalWidth * scale;
+                canvas.height = img.naturalHeight * scale;
+                const ctx = canvas.getContext('2d');
+                ctx.scale(scale, scale);
+                ctx.fillStyle = 'white';
+                ctx.fillRect(0, 0, img.naturalWidth, img.naturalHeight);
+                ctx.drawImage(img, 0, 0);
+                URL.revokeObjectURL(svgUrl);
+                const pngDataUrl = canvas.toDataURL('image/png');
+                const pngResp = await fetch(pngDataUrl);
+                const pngBuf = await pngResp.arrayBuffer();
+                const pngWithMeta = this._addPngTextChunk(pngBuf, 'correlate-meta', metaJson);
+                const blob = new Blob([pngWithMeta], { type: 'image/png' });
+                a.href = URL.createObjectURL(blob);
+                a.download = `${filename}.png`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(a.href);
+            };
+            img.src = svgUrl;
+        }
     }
 
     downloadTissueTableCSV() {
@@ -11046,20 +11160,53 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
         });
     }
 
-    downloadGeneEffectChartPNG() {
+    async downloadGeneEffectChartPNG() {
         // Mutation inspect mode handled by downloadGeneEffectPNG
         if (this.geneEffectViewMode === 'mutation') return;
         if (!this.currentGeneEffect) return;
         const plotId = this.currentGEView === 'tissue' ? 'geneEffectPlot' : 'geneEffectHotspotPlot';
         const plotEl = document.getElementById(plotId);
         const chartWidth = plotEl?._fullLayout?.width || 800;
-        const chartHeight = plotEl?._fullLayout?.height || (this.geDetailedView ? 650 : 550);
-        Plotly.downloadImage(plotId, {
-            format: 'png',
-            width: chartWidth,
-            height: chartHeight,
-            filename: `gene_effect_${this.currentGeneEffect.gene}_by_${this.currentGEView}`
+        const chartHeight = Math.max(plotEl?.scrollHeight || 0, plotEl?._fullLayout?.height || 0, this.geDetailedView ? 650 : 550) + 40;
+        const filename = `gene_effect_${this.currentGeneEffect.gene}_by_${this.currentGEView}`;
+        const meta = this._buildExportMetadata('gene_effect', {
+            gene: this.currentGeneEffect.gene, view: this.currentGEView
         });
+        const metaJson = JSON.stringify(meta);
+
+        const svgDataUrl = await Plotly.toImage(plotEl, { format: 'svg', width: chartWidth, height: chartHeight });
+        let svgStr;
+        if (svgDataUrl.indexOf('base64,') > -1) svgStr = atob(svgDataUrl.split('base64,')[1]);
+        else svgStr = decodeURIComponent(svgDataUrl.split(',').slice(1).join(','));
+
+        const svgBlob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+        const svgUrl = URL.createObjectURL(svgBlob);
+        const img = new Image();
+        img.onload = async () => {
+            const scale = 4;
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth * scale;
+            canvas.height = img.naturalHeight * scale;
+            const ctx = canvas.getContext('2d');
+            ctx.scale(scale, scale);
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, img.naturalWidth, img.naturalHeight);
+            ctx.drawImage(img, 0, 0);
+            URL.revokeObjectURL(svgUrl);
+            const pngDataUrl = canvas.toDataURL('image/png');
+            const pngResp = await fetch(pngDataUrl);
+            const pngBuf = await pngResp.arrayBuffer();
+            const pngWithMeta = this._addPngTextChunk(pngBuf, 'correlate-meta', metaJson);
+            const blob = new Blob([pngWithMeta], { type: 'image/png' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `${filename}.png`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(a.href);
+        };
+        img.src = svgUrl;
     }
 
     downloadGeneEffectChartSVG() {
@@ -11069,12 +11216,74 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
         const plotId = this.currentGEView === 'tissue' ? 'geneEffectPlot' : 'geneEffectHotspotPlot';
         const plotEl = document.getElementById(plotId);
         const chartWidth = plotEl?._fullLayout?.width || 800;
-        const chartHeight = plotEl?._fullLayout?.height || (this.geDetailedView ? 650 : 550);
-        Plotly.downloadImage(plotId, {
+        const chartHeight = Math.max(plotEl?.scrollHeight || 0, plotEl?._fullLayout?.height || 0, this.geDetailedView ? 650 : 550) + 40;
+        const filename = `gene_effect_${this.currentGeneEffect.gene}_by_${this.currentGEView}`;
+
+        // Use toImage + post-process to expand viewBox and remove clipPaths that crop content
+        Plotly.toImage(plotEl, {
             format: 'svg',
             width: chartWidth,
-            height: chartHeight,
-            filename: `gene_effect_${this.currentGeneEffect.gene}_by_${this.currentGEView}`
+            height: chartHeight
+        }).then(async svgDataUrl => {
+            let svgString;
+            if (svgDataUrl.indexOf('base64,') > -1) {
+                svgString = atob(svgDataUrl.split('base64,')[1]);
+            } else {
+                svgString = decodeURIComponent(svgDataUrl.split(',').slice(1).join(','));
+            }
+
+            const parser = new DOMParser();
+            const svgDoc = parser.parseFromString(svgString, 'image/svg+xml');
+            const svgEl = svgDoc.documentElement;
+
+            // Measure true bounding box by temporarily removing clipPaths
+            const measurer = document.createElement('div');
+            measurer.style.cssText = 'position:absolute;left:-99999px;top:-99999px;';
+            document.body.appendChild(measurer);
+            const measureSvg = svgEl.cloneNode(true);
+            measureSvg.style.overflow = 'visible';
+            measureSvg.querySelectorAll('[clip-path]').forEach(el => el.removeAttribute('clip-path'));
+            measurer.appendChild(measureSvg);
+
+            try {
+                const bbox = measureSvg.getBBox();
+                const pad = 10;
+                const newX = Math.min(0, bbox.x - pad);
+                const newY = Math.min(0, bbox.y - pad);
+                const newW = Math.max(chartWidth, bbox.x + bbox.width + pad) - newX;
+                const newH = Math.max(chartHeight, bbox.y + bbox.height + pad) - newY;
+                svgEl.setAttribute('viewBox', `${newX} ${newY} ${newW} ${newH}`);
+                svgEl.setAttribute('width', newW);
+                svgEl.setAttribute('height', newH);
+            } catch (e) {
+                // fallback: just use original dimensions
+            }
+            document.body.removeChild(measurer);
+
+            // Remove clipPaths on the plot area that crop y-axis labels
+            svgEl.querySelectorAll('clipPath').forEach(cp => {
+                const rect = cp.querySelector('rect');
+                if (rect && parseFloat(rect.getAttribute('x') || 0) === 0 && parseFloat(rect.getAttribute('y') || 0) === 0) {
+                    rect.setAttribute('x', -500);
+                    rect.setAttribute('width', parseFloat(rect.getAttribute('width') || 0) + 600);
+                    rect.setAttribute('y', -50);
+                    rect.setAttribute('height', parseFloat(rect.getAttribute('height') || 0) + 100);
+                }
+            });
+
+            let finalSvg = new XMLSerializer().serializeToString(svgEl);
+            const meta = this._buildExportMetadata('gene_effect', {
+                gene: this.currentGeneEffect?.gene, view: this.currentGEView
+            });
+            finalSvg = finalSvg.replace('</svg>', `<metadata><correlate-meta>${JSON.stringify(meta)}</correlate-meta></metadata></svg>`);
+            finalSvg = await this._finalizeSvgForExport(finalSvg);
+            const blob = new Blob([finalSvg], { type: 'image/svg+xml' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename + '.svg';
+            a.click();
+            URL.revokeObjectURL(url);
         });
     }
 
@@ -13147,6 +13356,802 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
 
             this.downloadFile(lines.join('\n'), `correlate_report${namePart}.csv`, 'text/csv');
         }
+    }
+
+    // ============================================================
+    // SVG Export Sanitization & Text Outlining
+    // ============================================================
+
+    _flattenTspan(tspan) {
+        // Recursively flatten nested tspans: collapse style attributes upward
+        // If a tspan has exactly one child tspan (and no text siblings), merge them
+        while (true) {
+            const children = [...tspan.childNodes];
+            const childTspans = children.filter(c => c.nodeType === 1 && c.tagName === 'tspan');
+            const textNodes = children.filter(c => c.nodeType === 3 && c.textContent.trim());
+            // Only flatten if there's exactly one child tspan and no direct text
+            if (childTspans.length === 1 && textNodes.length === 0) {
+                const child = childTspans[0];
+                // Merge child's style into parent
+                const childStyle = child.getAttribute('style') || '';
+                if (childStyle) {
+                    const parentStyle = tspan.getAttribute('style') || '';
+                    tspan.setAttribute('style', parentStyle ? parentStyle.replace(/;?\s*$/, '; ') + childStyle : childStyle);
+                }
+                // Copy child's attributes (except style which we merged)
+                for (const attr of child.attributes) {
+                    if (attr.name !== 'style' && !tspan.hasAttribute(attr.name)) {
+                        tspan.setAttribute(attr.name, attr.value);
+                    }
+                }
+                // Replace child tspan with its contents
+                while (child.firstChild) {
+                    tspan.insertBefore(child.firstChild, child);
+                }
+                child.remove();
+                // Continue loop to flatten further nested levels
+            } else {
+                break;
+            }
+        }
+    }
+
+    sanitizeSvgForIllustrator(svgStr) {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(svgStr, 'image/svg+xml');
+        const svgEl = doc.documentElement;
+
+        // Remove <style> blocks — inline all styles instead
+        doc.querySelectorAll('style').forEach(styleEl => {
+            const rules = [];
+            try {
+                const sheet = new CSSStyleSheet();
+                sheet.replaceSync(styleEl.textContent);
+                for (const rule of sheet.cssRules) {
+                    if (rule.selectorText) rules.push(rule);
+                }
+            } catch (e) {
+                // Fallback: just remove the style block
+            }
+            for (const rule of rules) {
+                try {
+                    const els = doc.querySelectorAll(rule.selectorText);
+                    els.forEach(el => {
+                        for (let i = 0; i < rule.style.length; i++) {
+                            const prop = rule.style[i];
+                            if (!el.style.getPropertyValue(prop)) {
+                                el.style.setProperty(prop, rule.style.getPropertyValue(prop));
+                            }
+                        }
+                    });
+                } catch (e) { /* skip invalid selectors */ }
+            }
+            styleEl.remove();
+        });
+
+        // Clean all elements: convert colors, fix fonts, strip Plotly artifacts
+        const allEls = doc.querySelectorAll('*');
+        const rgbToHex = (r, g, b) => '#' + [r, g, b].map(x => parseInt(x).toString(16).padStart(2, '0')).join('');
+        const rgbRe = /rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/g;
+
+        allEls.forEach(el => {
+            // Convert rgb in style attributes to hex
+            let style = el.getAttribute('style');
+            if (style) {
+                style = style.replace(rgbRe, (_, r, g, b) => rgbToHex(r, g, b));
+                style = style.replace(/white-space:\s*pre;?\s*/gi, '');
+                style = style.replace(/cursor:\s*[^;]+;?\s*/gi, '');
+                style = style.replace(/pointer-events:\s*[^;]+;?\s*/gi, '');
+                style = style.replace(/;\s*;/g, ';').replace(/^\s*;\s*/, '').replace(/;\s*$/, '');
+                if (style.trim()) {
+                    el.setAttribute('style', style);
+                } else {
+                    el.removeAttribute('style');
+                }
+            }
+            // Convert rgb in fill/stroke attributes
+            ['fill', 'stroke', 'color', 'stop-color'].forEach(attr => {
+                const val = el.getAttribute(attr);
+                if (val) {
+                    const replaced = val.replace(rgbRe, (_, r, g, b) => rgbToHex(r, g, b));
+                    if (replaced !== val) el.setAttribute(attr, replaced);
+                }
+            });
+
+            // font-size: remove "px" suffix for Illustrator compatibility
+            const fs = el.style?.fontSize;
+            if (fs && fs.endsWith('px')) {
+                el.style.fontSize = parseFloat(fs).toString();
+            }
+            const fsAttr = el.getAttribute('font-size');
+            if (fsAttr && fsAttr.endsWith('px')) {
+                el.setAttribute('font-size', parseFloat(fsAttr).toString());
+            }
+
+            // Strip Plotly-specific class and data- attributes
+            el.removeAttribute('class');
+            [...el.attributes].forEach(attr => {
+                if (attr.name.startsWith('data-')) el.removeAttribute(attr.name);
+            });
+        });
+
+        // Remove all clip-paths
+        doc.querySelectorAll('[clip-path]').forEach(el => el.removeAttribute('clip-path'));
+        doc.querySelectorAll('clipPath').forEach(el => el.remove());
+
+        // Remove empty <defs> and empty <g> groups
+        doc.querySelectorAll('defs').forEach(d => { if (!d.children.length) d.remove(); });
+        let removed = true;
+        while (removed) {
+            removed = false;
+            doc.querySelectorAll('g').forEach(g => {
+                if (!g.children.length && !g.textContent.trim()) { g.remove(); removed = true; }
+            });
+        }
+
+        // Flatten deeply nested Plotly tspans
+        doc.querySelectorAll('text').forEach(textEl => {
+            const topTspans = textEl.querySelectorAll(':scope > tspan');
+            topTspans.forEach(topTs => {
+                this._flattenTspan(topTs);
+            });
+        });
+
+        // Fix SVG root element for Inkscape/Illustrator compatibility
+        const vb = svgEl.getAttribute('viewBox');
+        if (vb) {
+            const parts = vb.trim().split(/\s+/).map(Number);
+            if (parts.length === 4) {
+                const vbW = parts[2];
+                const vbH = parts[3];
+                const maxMm = 280;
+                const ptW = vbW;
+                const ptH = vbH;
+                const mmW = ptW / 72 * 25.4;
+                if (mmW > maxMm) {
+                    const scale = maxMm / mmW;
+                    svgEl.setAttribute('width', (ptW * scale).toFixed(1) + 'pt');
+                    svgEl.setAttribute('height', (ptH * scale).toFixed(1) + 'pt');
+                } else {
+                    svgEl.setAttribute('width', ptW + 'pt');
+                    svgEl.setAttribute('height', ptH + 'pt');
+                }
+            }
+        }
+        svgEl.removeAttribute('class');
+        const rootStyle = svgEl.getAttribute('style');
+        if (!rootStyle || rootStyle.trim() === '') svgEl.removeAttribute('style');
+
+        let result = new XMLSerializer().serializeToString(svgEl);
+        result = '<?xml version="1.0" encoding="UTF-8"?>\n' + result;
+        return result;
+    }
+
+    // --- Text-to-path outlining for SVG exports ---
+
+    _fontUrlMap = {
+        'open sans': {
+            300: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/opensans/static/OpenSans-Light.ttf',
+            400: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/opensans/static/OpenSans-Regular.ttf',
+            600: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/opensans/static/OpenSans-SemiBold.ttf',
+            700: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/opensans/static/OpenSans-Bold.ttf',
+        },
+        'arial': {
+            400: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/arimo/static/Arimo-Regular.ttf',
+            700: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/arimo/static/Arimo-Bold.ttf',
+        },
+        'helvetica': {
+            400: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/arimo/static/Arimo-Regular.ttf',
+            700: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/arimo/static/Arimo-Bold.ttf',
+        },
+        'georgia': {
+            400: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/tinos/static/Tinos-Regular.ttf',
+            700: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/tinos/static/Tinos-Bold.ttf',
+        },
+        'times new roman': {
+            400: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/tinos/static/Tinos-Regular.ttf',
+            700: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/tinos/static/Tinos-Bold.ttf',
+        },
+        'roboto mono': {
+            400: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/robotomono/static/RobotoMono-Regular.ttf',
+            500: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/robotomono/static/RobotoMono-Medium.ttf',
+            700: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/robotomono/static/RobotoMono-Bold.ttf',
+        },
+        'courier new': {
+            400: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/courierprime/static/CourierPrime-Regular.ttf',
+            700: 'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/courierprime/static/CourierPrime-Bold.ttf',
+        },
+    };
+    _fontCache = new Map();
+
+    async _loadFont(family, weight) {
+        const familyLower = (family || 'arial').split(',')[0].trim().replace(/['"]/g, '').toLowerCase();
+        const w = this._normalizeWeight(weight);
+        const cacheKey = `${familyLower}|${w}`;
+        if (this._fontCache.has(cacheKey)) return this._fontCache.get(cacheKey);
+
+        const familyMap = this._fontUrlMap[familyLower];
+        if (!familyMap) return null;
+
+        const available = Object.keys(familyMap).map(Number).sort((a, b) => a - b);
+        let bestWeight = available.reduce((best, cur) =>
+            Math.abs(cur - w) < Math.abs(best - w) ? cur : best, available[0]);
+        const url = familyMap[bestWeight];
+        if (!url) return null;
+
+        try {
+            const font = await new Promise((resolve, reject) => {
+                opentype.load(url, (err, font) => err ? reject(err) : resolve(font));
+            });
+            this._fontCache.set(cacheKey, font);
+            return font;
+        } catch (e) {
+            console.warn(`Failed to load font ${familyLower} ${w}:`, e);
+            return null;
+        }
+    }
+
+    _normalizeWeight(weight) {
+        if (!weight) return 400;
+        const w = typeof weight === 'string' ? weight.trim().toLowerCase() : weight;
+        const map = { normal: 400, bold: 700, lighter: 300, bolder: 700 };
+        return map[w] || parseInt(w) || 400;
+    }
+
+    _parseFontFamily(style) {
+        const match = style?.match(/font-family:\s*([^;]+)/i);
+        if (!match) return 'arial';
+        return match[1].split(',')[0].trim().replace(/['"]/g, '');
+    }
+
+    _parseFontWeight(style) {
+        const match = style?.match(/font-weight:\s*([^;]+)/i);
+        return match ? match[1].trim() : 'normal';
+    }
+
+    _parseFontSize(style, attr) {
+        const styleMatch = style?.match(/font-size:\s*([\d.]+)/i);
+        if (styleMatch) return parseFloat(styleMatch[1]);
+        if (attr) return parseFloat(attr);
+        return 12;
+    }
+
+    async _outlineSvgText(svgStr) {
+        if (typeof opentype === 'undefined') {
+            console.warn('opentype.js not loaded, skipping text outlining');
+            return svgStr;
+        }
+
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(svgStr, 'image/svg+xml');
+        const svgEl = doc.documentElement;
+        const ns = 'http://www.w3.org/2000/svg';
+
+        const textEls = [...svgEl.querySelectorAll('text')];
+        if (textEls.length === 0) return svgStr;
+
+        // Pre-load all needed fonts
+        const fontKeys = new Set();
+        for (const textEl of textEls) {
+            const style = textEl.getAttribute('style') || '';
+            this._collectFontKeys(textEl, style, fontKeys);
+        }
+        await Promise.all([...fontKeys].map(k => {
+            const [fam, w] = k.split('|');
+            return this._loadFont(fam, parseInt(w));
+        }));
+
+        // Convert each text element
+        for (const textEl of textEls) {
+            const g = doc.createElementNS(ns, 'g');
+
+            const transform = textEl.getAttribute('transform');
+            if (transform) g.setAttribute('transform', transform);
+
+            const cls = textEl.getAttribute('class');
+            if (cls) g.setAttribute('class', cls);
+
+            const tspans = textEl.querySelectorAll('tspan');
+            if (tspans.length > 0) {
+                await this._convertTspans(doc, g, textEl, tspans);
+            } else {
+                await this._convertSimpleText(doc, g, textEl);
+            }
+
+            textEl.parentNode.replaceChild(g, textEl);
+        }
+
+        return new XMLSerializer().serializeToString(svgEl);
+    }
+
+    _collectFontKeys(textEl, style, fontKeys) {
+        const family = this._parseFontFamily(style);
+        const weight = this._normalizeWeight(this._parseFontWeight(style));
+        fontKeys.add(`${family.toLowerCase()}|${weight}`);
+        const walkForKeys = (el, inhFamily, inhWeight) => {
+            const s = el.getAttribute('style') || '';
+            const fam = this._parseFontFamily(s) || inhFamily;
+            const wRaw = this._parseFontWeight(s);
+            const w = (wRaw && wRaw !== 'normal') ? this._normalizeWeight(wRaw) : inhWeight;
+            fontKeys.add(`${fam.toLowerCase()}|${w}`);
+            el.querySelectorAll(':scope > tspan').forEach(child => walkForKeys(child, fam, w));
+        };
+        textEl.querySelectorAll(':scope > tspan').forEach(ts => walkForKeys(ts, family, weight));
+    }
+
+    async _convertSimpleText(doc, g, textEl) {
+        const ns = 'http://www.w3.org/2000/svg';
+        const style = textEl.getAttribute('style') || '';
+        const text = textEl.textContent;
+        if (!text.trim()) return;
+
+        const family = this._parseFontFamily(style);
+        const weight = this._parseFontWeight(style);
+        const fontSize = this._parseFontSize(style, textEl.getAttribute('font-size'));
+        const fill = this._extractFill(textEl, style);
+        const opacity = this._extractOpacity(style);
+        const textAnchor = textEl.getAttribute('text-anchor') || 'start';
+        const x = parseFloat(textEl.getAttribute('x')) || 0;
+        const y = parseFloat(textEl.getAttribute('y')) || 0;
+
+        const font = await this._loadFont(family, weight);
+        if (!font) {
+            const clone = textEl.cloneNode(true);
+            clone.removeAttribute('transform');
+            g.appendChild(clone);
+            return;
+        }
+
+        const path = font.getPath(text, 0, 0, fontSize);
+        const bb = path.getBoundingBox();
+        const textWidth = bb.x2 - bb.x1;
+
+        let dx = x;
+        if (textAnchor === 'middle') dx = x - textWidth / 2 - bb.x1;
+        else if (textAnchor === 'end') dx = x - textWidth - bb.x1;
+        else dx = x - bb.x1;
+
+        const pathEl = doc.createElementNS(ns, 'path');
+        pathEl.setAttribute('d', path.toPathData(4));
+        pathEl.setAttribute('transform', `translate(${dx},${y})`);
+        if (fill) pathEl.setAttribute('fill', fill);
+        if (opacity && opacity !== '1') pathEl.setAttribute('opacity', opacity);
+        g.appendChild(pathEl);
+    }
+
+    async _convertTspans(doc, g, textEl, tspans) {
+        const ns = 'http://www.w3.org/2000/svg';
+        const parentStyle = textEl.getAttribute('style') || '';
+        const parentFamily = this._parseFontFamily(parentStyle);
+        const parentWeight = this._parseFontWeight(parentStyle);
+        const parentFontSize = this._parseFontSize(parentStyle, textEl.getAttribute('font-size'));
+        const parentFill = this._extractFill(textEl, parentStyle);
+        const parentAnchor = textEl.getAttribute('text-anchor') || 'start';
+
+        const leaves = this._getLeafTspansWithInheritedStyles(textEl, parentFamily, parentWeight, parentFontSize, parentFill);
+
+        for (const leaf of leaves) {
+            const { el: ts, family, weight, fontSize, fill, x, y, dyPx } = leaf;
+            const text = ts.textContent;
+            if (!text.trim()) continue;
+
+            const font = await this._loadFont(family, weight);
+            if (!font) {
+                const fallback = doc.createElementNS(ns, 'text');
+                fallback.textContent = text;
+                fallback.setAttribute('x', x);
+                fallback.setAttribute('y', y + dyPx);
+                fallback.setAttribute('style', `font-family:${family};font-size:${fontSize}px;font-weight:${weight}`);
+                if (fill) fallback.setAttribute('fill', fill);
+                if (parentAnchor) fallback.setAttribute('text-anchor', parentAnchor);
+                g.appendChild(fallback);
+                continue;
+            }
+
+            const path = font.getPath(text, 0, 0, fontSize);
+            const bb = path.getBoundingBox();
+            const textWidth = bb.x2 - bb.x1;
+
+            let dx = x;
+            if (parentAnchor === 'middle') dx = x - textWidth / 2 - bb.x1;
+            else if (parentAnchor === 'end') dx = x - textWidth - bb.x1;
+            else dx = x - bb.x1;
+
+            const finalY = y + dyPx;
+            const pathEl = doc.createElementNS(ns, 'path');
+            pathEl.setAttribute('d', path.toPathData(4));
+            pathEl.setAttribute('transform', `translate(${dx},${finalY})`);
+            if (fill) pathEl.setAttribute('fill', fill);
+            g.appendChild(pathEl);
+        }
+    }
+
+    _getLeafTspansWithInheritedStyles(textEl, defFamily, defWeight, defFontSize, defFill) {
+        const results = [];
+        const baseX = parseFloat(textEl.getAttribute('x')) || 0;
+        const baseY = parseFloat(textEl.getAttribute('y')) || 0;
+
+        const walk = (el, inheritedFamily, inheritedWeight, inheritedFontSize, inheritedFill, accDyPx) => {
+            const style = el.getAttribute('style') || '';
+            const family = this._parseFontFamily(style) || inheritedFamily;
+            const weightRaw = this._parseFontWeight(style);
+            const weight = (weightRaw && weightRaw !== 'normal') ? weightRaw : inheritedWeight;
+            const fsMatch = style.match(/font-size:\s*([\d.]+)/i);
+            const fontSize = fsMatch ? parseFloat(fsMatch[1]) : inheritedFontSize;
+            const fill = this._extractFill(el, style) || inheritedFill;
+
+            const dyAttr = el.getAttribute('dy');
+            let dyPx = accDyPx;
+            if (dyAttr) {
+                if (dyAttr.endsWith('em')) {
+                    dyPx += parseFloat(dyAttr) * fontSize;
+                } else {
+                    dyPx += parseFloat(dyAttr) || 0;
+                }
+            }
+
+            const x = el.hasAttribute('x') ? parseFloat(el.getAttribute('x')) : baseX;
+            const y = el.hasAttribute('y') ? parseFloat(el.getAttribute('y')) : baseY;
+
+            const childTspans = el.querySelectorAll(':scope > tspan');
+            if (childTspans.length === 0 && el.textContent.trim()) {
+                results.push({ el, family, weight, fontSize, fill, x, y, dyPx });
+            } else {
+                childTspans.forEach(child => walk(child, family, weight, fontSize, fill, dyPx));
+            }
+        };
+
+        const topTspans = textEl.querySelectorAll(':scope > tspan');
+        topTspans.forEach(ts => walk(ts, defFamily, defWeight, defFontSize, defFill, 0));
+        return results;
+    }
+
+    _extractFill(el, style) {
+        const styleMatch = style?.match(/(?:^|;\s*)fill:\s*([^;]+)/i);
+        if (styleMatch) return styleMatch[1].trim();
+        return el.getAttribute('fill') || null;
+    }
+
+    _extractOpacity(style) {
+        const match = style?.match(/opacity:\s*([^;]+)/i);
+        return match ? match[1].trim() : null;
+    }
+
+    _shouldOutlineText() {
+        return document.querySelector('.outlineTextCheckbox')?.checked || false;
+    }
+
+    async _finalizeSvgForExport(svgStr) {
+        svgStr = this.sanitizeSvgForIllustrator(svgStr);
+        if (this._shouldOutlineText()) svgStr = await this._outlineSvgText(svgStr);
+        return svgStr;
+    }
+
+    // ============================================================
+    // Export Metadata & State Restore
+    // ============================================================
+
+    captureAppState() {
+        const plotEl = document.getElementById('scatterPlot');
+        const lay = plotEl?.layout;
+        const anns = lay?.annotations || [];
+        const titleAnn = anns.find(a => a._tsRole === 'title');
+        const xAnn = anns.find(a => a._tsRole === 'xlabel');
+        const yAnn = anns.find(a => a._tsRole === 'ylabel');
+
+        return {
+            version: 1,
+            gene1: this.currentInspect?.gene1,
+            gene2: this.currentInspect?.gene2,
+            xRange: [document.getElementById('scatterXmin')?.value, document.getElementById('scatterXmax')?.value],
+            yRange: [document.getElementById('scatterYmin')?.value, document.getElementById('scatterYmax')?.value],
+            plotWidth: document.getElementById('plotWidth')?.value,
+            plotHeight: document.getElementById('plotHeight')?.value,
+            hotspotGene: document.getElementById('hotspotGene')?.value,
+            hotspotMode: document.getElementById('hotspotMode')?.value,
+            transGene: document.getElementById('translocationGene')?.value,
+            transMode: document.getElementById('translocationMode')?.value,
+            cancerFilter: document.getElementById('scatterCancerFilter')?.value,
+            searchTerms: document.getElementById('cellLineSearch')?.value,
+            mutFilterGene: document.getElementById('mutationFilterGene')?.value,
+            mutFilterLevel: document.getElementById('mutationFilterLevel')?.value,
+            colorBy: document.getElementById('colorBySelect')?.value,
+            textSettings: (() => {
+                const annText = titleAnn?.text || '';
+                const titleSizeMatch = annText.match(/^<span style="font-size:(\d+)px">/);
+                const subSizeMatch = annText.match(/<br><span style="font-size:(\d+)px/);
+                return {
+                    titleFontSize: titleSizeMatch ? parseInt(titleSizeMatch[1]) : (titleAnn?.font?.size || 25),
+                    subtitleSize: subSizeMatch ? parseInt(subSizeMatch[1]) : 15,
+                    xLabelFontSize: xAnn?.font?.size,
+                    yLabelFontSize: yAnn?.font?.size,
+                    xTickSize: lay?.xaxis?.tickfont?.size,
+                    yTickSize: lay?.yaxis?.tickfont?.size,
+                    legendSize: lay?.legend?.font?.size,
+                    markerSize: plotEl?.data?.[0]?.marker?.size,
+                    fontFamily: lay?.font?.family
+                };
+            })(),
+            showZeroLines: document.getElementById('showZeroLines')?.checked,
+            showCorrelationLine: document.getElementById('showCorrelationLine')?.checked
+        };
+    }
+
+    async restoreFromExport(file) {
+        if (file.name.toLowerCase().endsWith('.png')) {
+            return this.restoreFromPng(file);
+        }
+        return this.restoreFromSvg(file);
+    }
+
+    async restoreFromPng(file) {
+        const buf = await file.arrayBuffer();
+        const stateJson = this._readPngTextChunk(buf, 'correlate-state');
+        if (stateJson) {
+            let state;
+            try { state = JSON.parse(stateJson); } catch (e) { alert('Invalid state data in PNG.'); return; }
+            return this._restoreFromState(state);
+        }
+        const metaJson = this._readPngTextChunk(buf, 'correlate-meta');
+        if (metaJson) {
+            let meta;
+            try { meta = JSON.parse(metaJson); } catch (e) { alert('Invalid metadata in PNG.'); return; }
+            return this._handleExportMeta(meta);
+        }
+        alert('No Correlate data found in this PNG file.');
+    }
+
+    async restoreFromSvg(file) {
+        const text = await file.text();
+        const stateMatch = text.match(/<correlate-state>([\s\S]*?)<\/correlate-state>/);
+        if (stateMatch) {
+            let state;
+            try { state = JSON.parse(stateMatch[1]); } catch (e) { alert('Invalid state data in SVG.'); return; }
+            return this._restoreFromState(state);
+        }
+        const metaMatch = text.match(/<correlate-meta>([\s\S]*?)<\/correlate-meta>/);
+        if (metaMatch) {
+            let meta;
+            try { meta = JSON.parse(metaMatch[1]); } catch (e) { alert('Invalid metadata in SVG.'); return; }
+            return this._handleExportMeta(meta);
+        }
+        alert('No Correlate data found in this file.');
+    }
+
+    _resetForRestore() {
+        const resetEl = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+        resetEl('lineageFilter', '');
+        resetEl('subLineageFilter', '');
+        resetEl('paramHotspotGene', '');
+        resetEl('paramHotspotLevel', 'all');
+        resetEl('paramTranslocationGene', '');
+        resetEl('paramTranslocationLevel', 'all');
+        resetEl('scatterCancerFilter', '');
+        resetEl('cellLineSearch', '');
+        resetEl('hotspotGene', '');
+        resetEl('hotspotMode', 'none');
+        resetEl('translocationGene', '');
+        resetEl('translocationMode', 'none');
+        resetEl('mutationFilterGene', '');
+        resetEl('mutationFilterLevel', 'all');
+        resetEl('colorBySelect', '');
+        const zeroCb = document.getElementById('showZeroLines');
+        if (zeroCb) zeroCb.checked = true;
+        const corrCb = document.getElementById('showCorrelationLine');
+        if (corrCb) corrCb.checked = true;
+    }
+
+    _handleExportMeta(meta) {
+        this._resetForRestore();
+
+        // Scatter-like exports with gene pair
+        if (meta.gene1 && meta.gene2) {
+            return this._restoreFromState(meta);
+        }
+
+        // Network exports
+        if (meta.graphType === 'network' && meta.geneList && meta.geneList.length > 0) {
+            document.getElementById('geneTextarea').value = meta.geneList.join('\n');
+            if (meta.mode) {
+                const radio = document.querySelector(`input[name="analysisMode"][value="${meta.mode}"]`);
+                if (radio) radio.checked = true;
+            }
+            if (meta.cutoff != null) {
+                document.getElementById('correlationCutoff').value = meta.cutoff;
+                const label = document.getElementById('correlationCutoff')?.nextElementSibling;
+                if (label) label.textContent = meta.cutoff;
+            }
+            this.runAnalysis();
+            return;
+        }
+
+        // Mutation inspect exports
+        if (meta.graphType === 'mutation_inspect' && meta.gene && meta.hotspotGene) {
+            const mutRadio = document.querySelector('input[name="analysisMode"][value="mutation"]');
+            if (mutRadio) mutRadio.checked = true;
+            if (meta.isTranslocation) {
+                const radio = document.querySelector('input[name="mutAnalysisType"][value="translocation"]');
+                if (radio) radio.checked = true;
+                const sel = document.getElementById('translocationHotspotSelect');
+                if (sel) sel.value = meta.hotspotGene;
+            } else {
+                const radio = document.querySelector('input[name="mutAnalysisType"][value="hotspot"]');
+                if (radio) radio.checked = true;
+                const sel = document.getElementById('mutationHotspotSelect');
+                if (sel) sel.value = meta.hotspotGene;
+            }
+            // Switch to mutation tab
+            document.querySelectorAll('.nav-link').forEach(link => link.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
+            const mutTab = document.querySelector('[data-tab="mutation"]');
+            if (mutTab) mutTab.classList.add('active');
+            const mutContent = document.getElementById('tab-mutation');
+            if (mutContent) mutContent.classList.add('active');
+            this.runAnalysis();
+            const waitForResults = () => {
+                if (this.mutationResults && this.mutationResults.hotspotGene === meta.hotspotGene) {
+                    this.showGeneEffectDistribution(meta.gene);
+                } else {
+                    setTimeout(waitForResults, 200);
+                }
+            };
+            setTimeout(waitForResults, 300);
+            return;
+        }
+
+        // Gene effect exports
+        if (meta.graphType === 'gene_effect' && meta.gene) {
+            this.openGeneEffectModal(meta.gene, meta.view || 'tissue');
+            return;
+        }
+
+        // Fallback
+        const graphLabels = {
+            'network': 'Correlation Network',
+            'tissue_chart': 'By-Tissue Chart',
+            'gene_effect': 'Gene Effect Chart',
+            'mutation_inspect': 'Mutation Inspect',
+            'scatter': 'Scatter Plot'
+        };
+        const label = graphLabels[meta.graphType] || meta.graphType || 'Unknown';
+        const details = [];
+        if (meta.gene) details.push(`Gene: ${meta.gene}`);
+        if (meta.hotspotGene) details.push(`Hotspot: ${meta.hotspotGene}`);
+        if (meta.view) details.push(`View: ${meta.view}`);
+        if (meta.geneList) details.push(`Genes: ${meta.geneList.join(', ')}`);
+        if (meta.cutoff) details.push(`Cutoff: ${meta.cutoff}`);
+        if (meta.date) details.push(`Exported: ${meta.date.slice(0, 10)}`);
+        const info = details.length ? '\n' + details.join('\n') : '';
+        alert(`Correlate export: ${label}${info}\n\nRestore not yet supported for this graph type.`);
+    }
+
+    async _restoreFromState(state) {
+        if (!state.gene1 || !state.gene2) { alert('Missing gene information in state.'); return; }
+        this._resetForRestore();
+
+        // Open inspect with the genes
+        this.openInspect({ gene1: state.gene1, gene2: state.gene2, correlation: null });
+
+        // Restore settings after a short delay to let the plot render
+        setTimeout(() => {
+            if (state.xRange) {
+                document.getElementById('scatterXmin').value = state.xRange[0];
+                document.getElementById('scatterXmax').value = state.xRange[1];
+            }
+            if (state.yRange) {
+                document.getElementById('scatterYmin').value = state.yRange[0];
+                document.getElementById('scatterYmax').value = state.yRange[1];
+            }
+            if (state.plotWidth) document.getElementById('plotWidth').value = state.plotWidth;
+            if (state.plotHeight) document.getElementById('plotHeight').value = state.plotHeight;
+            if (state.hotspotGene) document.getElementById('hotspotGene').value = state.hotspotGene;
+            if (state.hotspotMode) document.getElementById('hotspotMode').value = state.hotspotMode;
+            if (state.transGene) document.getElementById('translocationGene').value = state.transGene;
+            if (state.transMode) document.getElementById('translocationMode').value = state.transMode;
+            if (state.cancerFilter) document.getElementById('scatterCancerFilter').value = state.cancerFilter;
+            if (state.searchTerms) document.getElementById('cellLineSearch').value = state.searchTerms;
+            if (state.mutFilterGene) document.getElementById('mutationFilterGene').value = state.mutFilterGene;
+            if (state.mutFilterLevel) document.getElementById('mutationFilterLevel').value = state.mutFilterLevel;
+            if (state.colorBy) {
+                const colorByEl = document.getElementById('colorBySelect');
+                if (colorByEl) colorByEl.value = state.colorBy;
+            }
+            if (state.showZeroLines != null) document.getElementById('showZeroLines').checked = state.showZeroLines;
+            if (state.showCorrelationLine != null) document.getElementById('showCorrelationLine').checked = state.showCorrelationLine;
+
+            if (state.textSettings) {
+                if (state.textSettings.titleFontSize && state.textSettings.titleFontSize < 20 && !state.textSettings.subtitleSize) {
+                    state.textSettings.titleFontSize = 25;
+                    state.textSettings.subtitleSize = 15;
+                }
+                this._savedScatterTextSettings = state.textSettings;
+            }
+
+            this.updateInspectPlot();
+        }, 300);
+    }
+
+    // --- PNG metadata: read/write tEXt chunks ---
+
+    _readPngTextChunk(arrayBuffer, keyword) {
+        const view = new DataView(arrayBuffer);
+        let offset = 8;
+        while (offset < view.byteLength) {
+            const length = view.getUint32(offset);
+            const typeBytes = new Uint8Array(arrayBuffer, offset + 4, 4);
+            const type = String.fromCharCode(...typeBytes);
+            if (type === 'tEXt') {
+                const data = new Uint8Array(arrayBuffer, offset + 8, length);
+                const nullIdx = data.indexOf(0);
+                if (nullIdx > 0) {
+                    const key = new TextDecoder().decode(data.slice(0, nullIdx));
+                    if (key === keyword) {
+                        return new TextDecoder().decode(data.slice(nullIdx + 1));
+                    }
+                }
+            }
+            if (type === 'IEND') break;
+            offset += 12 + length;
+        }
+        return null;
+    }
+
+    _addPngTextChunk(pngArrayBuffer, keyword, text) {
+        const keyBytes = new TextEncoder().encode(keyword);
+        const textBytes = new TextEncoder().encode(text);
+        const chunkDataLen = keyBytes.length + 1 + textBytes.length;
+        const chunkData = new Uint8Array(chunkDataLen);
+        chunkData.set(keyBytes, 0);
+        chunkData[keyBytes.length] = 0;
+        chunkData.set(textBytes, keyBytes.length + 1);
+
+        const typeBytes = new Uint8Array([0x74, 0x45, 0x58, 0x74]); // tEXt
+        const crcInput = new Uint8Array(4 + chunkDataLen);
+        crcInput.set(typeBytes, 0);
+        crcInput.set(chunkData, 4);
+        const crc = this._crc32(crcInput);
+
+        const chunk = new Uint8Array(12 + chunkDataLen);
+        new DataView(chunk.buffer).setUint32(0, chunkDataLen);
+        chunk.set(typeBytes, 4);
+        chunk.set(chunkData, 8);
+        new DataView(chunk.buffer).setUint32(8 + chunkDataLen, crc);
+
+        const src = new Uint8Array(pngArrayBuffer);
+        const result = new Uint8Array(src.length + chunk.length);
+        result.set(src.slice(0, src.length - 12), 0);
+        result.set(chunk, src.length - 12);
+        result.set(src.slice(src.length - 12), src.length - 12 + chunk.length);
+        return result.buffer;
+    }
+
+    _crc32(data) {
+        if (!this._crc32Table) {
+            const table = new Uint32Array(256);
+            for (let n = 0; n < 256; n++) {
+                let c = n;
+                for (let k = 0; k < 8; k++) {
+                    c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+                }
+                table[n] = c;
+            }
+            this._crc32Table = table;
+        }
+        let crc = 0xFFFFFFFF;
+        for (let i = 0; i < data.length; i++) {
+            crc = this._crc32Table[(crc ^ data[i]) & 0xFF] ^ (crc >>> 8);
+        }
+        return (crc ^ 0xFFFFFFFF) >>> 0;
+    }
+
+    _buildExportMetadata(graphType, extra = {}) {
+        return {
+            app: 'Correlate',
+            version: document.getElementById('versionBadge')?.textContent || '',
+            graphType,
+            date: new Date().toISOString(),
+            ...extra
+        };
     }
 }
 
