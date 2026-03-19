@@ -4251,7 +4251,9 @@ class CorrelationExplorer {
                 gene: this.currentGeneEffectGene,
                 hotspotGene: this.mutationResults?.hotspotGene,
                 isTranslocation: this.mutationResults?.isTranslocation || false,
-                lineageFilter: this.mutationResults?.lineageFilter || ''
+                lineageFilter: this.mutationResults?.lineageFilter || '',
+                textSettings: this._capturePlotTextSettings('geneEffectPlot'),
+                geChartWidthRatio: this.geChartWidthRatio || 1.0
             });
             const metaJson = JSON.stringify(meta);
 
@@ -5958,7 +5960,8 @@ Results:
             geneList: this.getGeneList(),
             mode: this.results?.mode,
             cutoff: this.results?.cutoff,
-            nCellLines: this.results?.nCellLines
+            nCellLines: this.results?.nCellLines,
+            networkSettings: this._captureNetworkSettings()
         });
         const dataURL = canvas.toDataURL('image/png');
         fetch(dataURL).then(r => r.arrayBuffer()).then(buf => {
@@ -6212,7 +6215,8 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
             geneList: this.getGeneList(),
             mode: this.results?.mode,
             cutoff: this.results?.cutoff,
-            nCellLines: this.results?.nCellLines
+            nCellLines: this.results?.nCellLines,
+            networkSettings: this._captureNetworkSettings()
         });
         svg += `<metadata><correlate-meta>${JSON.stringify(meta)}</correlate-meta></metadata>`;
         svg += '</svg>';
@@ -11176,7 +11180,8 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
         const chartHeight = Math.max(plotEl?.scrollHeight || 0, plotEl?._fullLayout?.height || 0, this.geDetailedView ? 650 : 550) + 40;
         const filename = `gene_effect_${this.currentGeneEffect.gene}_by_${this.currentGEView}`;
         const meta = this._buildExportMetadata('gene_effect', {
-            gene: this.currentGeneEffect.gene, view: this.currentGEView
+            gene: this.currentGeneEffect.gene, view: this.currentGEView,
+            textSettings: this._capturePlotTextSettings(this.currentGEView === 'tissue' ? 'geneEffectPlot' : 'geneEffectHotspotPlot')
         });
         const metaJson = JSON.stringify(meta);
 
@@ -11279,7 +11284,8 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
 
             let finalSvg = new XMLSerializer().serializeToString(svgEl);
             const meta = this._buildExportMetadata('gene_effect', {
-                gene: this.currentGeneEffect?.gene, view: this.currentGEView
+                gene: this.currentGeneEffect?.gene, view: this.currentGEView,
+                textSettings: this._capturePlotTextSettings(this.currentGEView === 'tissue' ? 'geneEffectPlot' : 'geneEffectHotspotPlot')
             });
             finalSvg = finalSvg.replace('</svg>', `<metadata><correlate-meta>${JSON.stringify(meta)}</correlate-meta></metadata></svg>`);
             finalSvg = await this._finalizeSvgForExport(finalSvg);
@@ -13671,6 +13677,38 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
                 const label = document.getElementById('correlationCutoff')?.nextElementSibling;
                 if (label) label.textContent = meta.cutoff;
             }
+            // Restore network visual settings
+            const ns = meta.networkSettings;
+            if (ns) {
+                if (ns.fontSize) document.getElementById('netFontSize').value = ns.fontSize;
+                if (ns.nodeSize) document.getElementById('netNodeSize').value = ns.nodeSize;
+                if (ns.edgeWidth) document.getElementById('netEdgeWidth').value = ns.edgeWidth;
+                if (ns.minSlope) document.getElementById('minSlope').value = ns.minSlope;
+                if (ns.minCellLines) document.getElementById('minCellLines').value = ns.minCellLines;
+                if (ns.lineageFilter) document.getElementById('lineageFilter').value = ns.lineageFilter;
+                if (ns.subLineageFilter) {
+                    const subEl = document.getElementById('subLineageFilter');
+                    if (subEl) subEl.value = ns.subLineageFilter;
+                }
+                const cbGE = document.getElementById('colorByGeneEffect');
+                if (cbGE) cbGE.checked = ns.colorByGeneEffect || false;
+                if (ns.colorGEType) {
+                    const r = document.querySelector(`input[name="colorGEType"][value="${ns.colorGEType}"]`);
+                    if (r) r.checked = true;
+                }
+                const cbStats = document.getElementById('colorByStats');
+                if (cbStats) cbStats.checked = ns.colorByStats || false;
+                if (ns.colorStatType) {
+                    const r = document.querySelector(`input[name="colorStatType"][value="${ns.colorStatType}"]`);
+                    if (r) r.checked = true;
+                }
+                if (ns.colorScale) {
+                    const r = document.querySelector(`input[name="colorScale"][value="${ns.colorScale}"]`);
+                    if (r) r.checked = true;
+                }
+                const tbg = document.getElementById('exportNetworkTransparentBg');
+                if (tbg) tbg.checked = ns.transparentBg || false;
+            }
             this.runAnalysis();
             return;
         }
@@ -13705,6 +13743,13 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
             const waitForResults = () => {
                 if (this.mutationResults && this.mutationResults.hotspotGene === meta.hotspotGene) {
                     this.showGeneEffectDistribution(meta.gene);
+                    // Apply text settings after plot renders
+                    if (meta.textSettings) {
+                        setTimeout(() => {
+                            this._savedScatterTextSettings = meta.textSettings;
+                            if (meta.geChartWidthRatio) this.geChartWidthRatio = meta.geChartWidthRatio;
+                        }, 200);
+                    }
                 } else {
                     setTimeout(waitForResults, 200);
                 }
@@ -13856,6 +13901,50 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
             crc = this._crc32Table[(crc ^ data[i]) & 0xFF] ^ (crc >>> 8);
         }
         return (crc ^ 0xFFFFFFFF) >>> 0;
+    }
+
+    _captureNetworkSettings() {
+        return {
+            fontSize: parseInt(document.getElementById('netFontSize')?.value) || 16,
+            nodeSize: parseInt(document.getElementById('netNodeSize')?.value) || 25,
+            edgeWidth: parseInt(document.getElementById('netEdgeWidth')?.value) || 3,
+            colorByGeneEffect: document.getElementById('colorByGeneEffect')?.checked || false,
+            colorGEType: document.querySelector('input[name="colorGEType"]:checked')?.value || 'signed',
+            colorByStats: document.getElementById('colorByStats')?.checked || false,
+            colorStatType: document.querySelector('input[name="colorStatType"]:checked')?.value || 'signed_lfc',
+            colorScale: document.querySelector('input[name="colorScale"]:checked')?.value || 'all',
+            lineageFilter: document.getElementById('lineageFilter')?.value || '',
+            subLineageFilter: document.getElementById('subLineageFilter')?.value || '',
+            minSlope: document.getElementById('minSlope')?.value || '0.1',
+            minCellLines: document.getElementById('minCellLines')?.value || '50',
+            transparentBg: document.getElementById('exportNetworkTransparentBg')?.checked || false
+        };
+    }
+
+    _capturePlotTextSettings(plotDivId) {
+        const plotEl = document.getElementById(plotDivId);
+        if (!plotEl?.layout) return null;
+        const lay = plotEl.layout;
+        const anns = lay.annotations || [];
+        const titleAnn = anns.find(a => a._tsRole === 'title');
+        const xAnn = anns.find(a => a._tsRole === 'xlabel');
+        const yAnn = anns.find(a => a._tsRole === 'ylabel');
+        const annText = titleAnn?.text || '';
+        const titleSizeMatch = annText.match(/font-size:(\d+)px/);
+        const subSizeMatch = annText.match(/<br><span style="font-size:(\d+)px/);
+        return {
+            titleFontSize: titleSizeMatch ? parseInt(titleSizeMatch[1]) : (titleAnn?.font?.size || 25),
+            subtitleSize: subSizeMatch ? parseInt(subSizeMatch[1]) : 15,
+            xLabelFontSize: xAnn?.font?.size,
+            yLabelFontSize: yAnn?.font?.size,
+            xTickSize: lay.xaxis?.tickfont?.size,
+            yTickSize: lay.yaxis?.tickfont?.size,
+            legendSize: lay.legend?.font?.size,
+            markerSize: plotEl.data?.[0]?.marker?.size,
+            fontFamily: lay.font?.family,
+            plotWidth: lay.width,
+            plotHeight: lay.height
+        };
     }
 
     _buildExportMetadata(graphType, extra = {}) {
