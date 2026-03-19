@@ -4245,7 +4245,8 @@ class CorrelationExplorer {
             const meta = this._buildExportMetadata('mutation_inspect', {
                 gene: this.currentGeneEffectGene,
                 hotspotGene: this.mutationResults?.hotspotGene,
-                isTranslocation: this.mutationResults?.isTranslocation || false
+                isTranslocation: this.mutationResults?.isTranslocation || false,
+                lineageFilter: this.mutationResults?.lineageFilter || ''
             });
             const metaJson = JSON.stringify(meta);
 
@@ -13673,24 +13674,28 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
         if (meta.graphType === 'mutation_inspect' && meta.gene && meta.hotspotGene) {
             const mutRadio = document.querySelector('input[name="analysisMode"][value="mutation"]');
             if (mutRadio) mutRadio.checked = true;
-            if (meta.isTranslocation) {
-                const radio = document.querySelector('input[name="mutAnalysisType"][value="translocation"]');
-                if (radio) radio.checked = true;
-                const sel = document.getElementById('translocationHotspotSelect');
-                if (sel) sel.value = meta.hotspotGene;
-            } else {
-                const radio = document.querySelector('input[name="mutAnalysisType"][value="hotspot"]');
-                if (radio) radio.checked = true;
-                const sel = document.getElementById('mutationHotspotSelect');
-                if (sel) sel.value = meta.hotspotGene;
-            }
-            // Switch to mutation tab
+            // Switch to mutation tab so UI is visible
             document.querySelectorAll('.nav-link').forEach(link => link.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(tab => tab.classList.remove('active'));
             const mutTab = document.querySelector('[data-tab="mutation"]');
             if (mutTab) mutTab.classList.add('active');
             const mutContent = document.getElementById('tab-mutation');
             if (mutContent) mutContent.classList.add('active');
+            if (meta.isTranslocation) {
+                const radio = document.querySelector('input[name="mutAnalysisType"][value="translocation"]');
+                if (radio) { radio.checked = true; this.updateMutationAnalysisType?.(); }
+                const sel = document.getElementById('translocationHotspotSelect');
+                if (sel) sel.value = meta.hotspotGene;
+            } else {
+                const radio = document.querySelector('input[name="mutAnalysisType"][value="hotspot"]');
+                if (radio) { radio.checked = true; this.updateMutationAnalysisType?.(); }
+                this.populateMutationHotspotSelector?.();
+                const sel = document.getElementById('mutationHotspotSelect');
+                if (sel) sel.value = meta.hotspotGene;
+            }
+            if (meta.lineageFilter) {
+                document.getElementById('lineageFilter').value = meta.lineageFilter;
+            }
             this.runAnalysis();
             const waitForResults = () => {
                 if (this.mutationResults && this.mutationResults.hotspotGene === meta.hotspotGene) {
