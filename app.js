@@ -60,6 +60,7 @@ class CorrelationExplorer {
         this.clickedCells = new Set();
         this._userLegendPosition = null;
         this._userTitlePosition = null;
+        this._savedScatterTextSettings = null;
         this._userLabelPositions = new Map();
 
         // Gene statistics (LFC, FDR)
@@ -1663,6 +1664,10 @@ class CorrelationExplorer {
         document.getElementById('downloadScatterPNG').addEventListener('click', () => this.downloadScatterPNG());
         document.getElementById('downloadScatterSVG').addEventListener('click', () => this.downloadScatterSVG());
         document.getElementById('downloadScatterCSV').addEventListener('click', () => this.downloadScatterCSV());
+        document.getElementById('scatterTextSettingsBtn')?.addEventListener('click', () => this.openTextSettings('scatterPlot'));
+        document.getElementById('geTextSettingsBtn')?.addEventListener('click', () => this.openTextSettings('geneEffectPlot'));
+        document.getElementById('networkAaBtn')?.addEventListener('click', () => this.openNetworkTextSettings());
+        this._initTextSettingsDrag();
         document.getElementById('restoreFromSvgInput')?.addEventListener('change', (e) => {
             if (e.target.files[0]) this.restoreFromExport(e.target.files[0]);
             e.target.value = '';
@@ -13861,6 +13866,688 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
             date: new Date().toISOString(),
             ...extra
         };
+    }
+
+    // ===== Text Settings (Aa) Panel =====
+
+    openTextSettings(plotDivId) {
+        const panel = document.getElementById('textSettingsPanel');
+        const body = document.getElementById('textSettingsBody');
+        this._textSettingsPlotId = plotDivId;
+
+        const plotEl = document.getElementById(plotDivId);
+        if (!plotEl?.layout) { body.innerHTML = '<div style="color:#6b7280;">No plot to configure.</div>'; panel.style.display = 'block'; return; }
+
+        const layout = plotEl.layout;
+
+        // Detect if title/labels are annotation-based (scatter) or layout-based (gene effect)
+        const anns = layout.annotations || [];
+        const titleAnn = anns.find(a => a._tsRole === 'title');
+        const xLabelAnn = anns.find(a => a._tsRole === 'xlabel');
+        const yLabelAnn = anns.find(a => a._tsRole === 'ylabel');
+        const ann0 = titleAnn || anns[0];
+        const usesAnnotationTitle = !!titleAnn || (ann0 && !ann0._gateAnnotation && ann0.xref === 'paper');
+        // For annotation-based titles, the real title size is in the inline span, not annotation font.size
+        let titleSize;
+        if (usesAnnotationTitle) {
+            const titleSizeMatch = (ann0?.text || '').match(/^<span style="font-size:(\d+)px">/);
+            titleSize = titleSizeMatch ? parseInt(titleSizeMatch[1]) : (ann0?.font?.size || 14);
+        } else {
+            titleSize = layout.title?.font?.size || 14;
+        }
+
+        // Extract plain text from HTML annotation text
+        const stripHtml = (html) => html ? html.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim() : '';
+
+        // Get title text — for annotations it's HTML with <b> and <br>
+        let titleText = '';
+        let subtitleText = '';
+        let subtitleSize = 15;
+        if (usesAnnotationTitle) {
+            const raw = ann0.text || '';
+            // Split on <br> — first part is title (strip <b>), rest is subtitle
+            const parts = raw.split(/<br\s*\/?>/i);
+            titleText = stripHtml(parts[0]);
+            subtitleText = parts.slice(1).map(stripHtml).join('\n');
+            // Extract subtitle font-size from subtitle parts (skip title inline span)
+            const subtitleHtml = parts.slice(1).join('<br>');
+            const sizeMatch = subtitleHtml.match(/font-size:\s*(\d+)px/);
+            if (sizeMatch) subtitleSize = parseInt(sizeMatch[1]);
+        } else {
+            titleText = typeof layout.title === 'string' ? layout.title : (layout.title?.text || '');
+        }
+
+        const xLabel = xLabelAnn ? (xLabelAnn.text || '') : (typeof layout.xaxis?.title === 'string' ? layout.xaxis.title : (layout.xaxis?.title?.text || ''));
+        const yLabel = yLabelAnn ? (yLabelAnn.text || '') : (typeof layout.yaxis?.title === 'string' ? layout.yaxis.title : (layout.yaxis?.title?.text || ''));
+        const xLabelSize = xLabelAnn ? (xLabelAnn.font?.size || 20) : (layout.xaxis?.title?.font?.size || 12);
+        const yLabelSize = yLabelAnn ? (yLabelAnn.font?.size || 20) : (layout.yaxis?.title?.font?.size || 12);
+        const xTickSize = layout.xaxis?.tickfont?.size || 17;
+        const yTickSize = layout.yaxis?.tickfont?.size || 17;
+        const legendSize = layout.legend?.font?.size || 17;
+        const markerSize = plotEl.data?.[0]?.marker?.size || 10;
+        const hasLegend = layout.showlegend !== false && plotEl.data?.some(t => t.showlegend !== false && t.name);
+
+        // Track visibility states
+        this._tsVisible = {
+            title: ann0?.visible !== false && (usesAnnotationTitle || !!titleText),
+            xLabel: !!xLabel,
+            yLabel: !!yLabel,
+            legend: hasLegend
+        };
+        // Store original texts for restore
+        this._tsOriginal = { titleText, subtitleText, subtitleSize, xLabel, yLabel, usesAnnotationTitle };
+
+        const sizeRow = (label, id, val, min, max, toggleId, visible) => `
+            <div style="display:flex; align-items:center; margin-bottom:5px; gap:4px;">
+                ${toggleId ? `<input type="checkbox" id="${toggleId}" ${visible ? 'checked' : ''} onchange="app._tsToggle('${toggleId}')" style="margin:0;">` : '<span style="width:15px;"></span>'}
+                <span style="color:#374151;flex:1;min-width:55px;font-size:11px;">${label}</span>
+                <div style="display:flex; align-items:center;">
+                    <button onclick="app._tsStep('${id}',-1)" style="width:20px;height:20px;border:1px solid #d1d5db;background:#f9fafb;border-radius:4px 0 0 4px;cursor:pointer;font-size:12px;line-height:1;">−</button>
+                    <input type="number" id="${id}" value="${val}" min="${min}" max="${max}" style="width:36px;text-align:center;border:1px solid #d1d5db;border-left:none;border-right:none;font-size:10px;padding:1px;-moz-appearance:textfield;appearance:textfield;" oninput="app._tsApply()">
+                    <button onclick="app._tsStep('${id}',1)" style="width:20px;height:20px;border:1px solid #d1d5db;background:#f9fafb;border-radius:0 4px 4px 0;cursor:pointer;font-size:12px;line-height:1;">+</button>
+                </div>
+            </div>`;
+
+        const textRow = (label, id, val, useTextarea = false) => useTextarea ? `
+            <div style="margin-bottom:5px;">
+                <label style="font-size:10px;color:#6b7280;">${label}</label>
+                <textarea id="${id}" rows="3" style="width:100%;border:1px solid #d1d5db;border-radius:4px;padding:3px 6px;font-size:11px;margin-top:1px;box-sizing:border-box;resize:vertical;" oninput="app._tsApplyText()">${this._escapeAttr(val)}</textarea>
+            </div>` : `
+            <div style="margin-bottom:5px;">
+                <label style="font-size:10px;color:#6b7280;">${label}</label>
+                <input type="text" id="${id}" value="${this._escapeAttr(val)}" style="width:100%;border:1px solid #d1d5db;border-radius:4px;padding:3px 6px;font-size:11px;margin-top:1px;box-sizing:border-box;" oninput="app._tsApplyText()">
+            </div>`;
+
+        // Detect current font from layout
+        const currentFont = layout.font?.family || layout.title?.font?.family || 'Arial, Helvetica, sans-serif';
+
+        body.innerHTML = `
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                <span style="font-weight:600;color:#1f2937;font-size:11px;">Scale All</span>
+                <div style="display:flex;align-items:center;gap:2px;">
+                    <button onclick="app._tsScaleAll(-1)" style="width:24px;height:22px;border:1px solid #d1d5db;background:#f0fdf4;border-radius:4px 0 0 4px;cursor:pointer;font-size:13px;font-weight:bold;">−</button>
+                    <button onclick="app._tsScaleAll(1)" style="width:24px;height:22px;border:1px solid #d1d5db;background:#f0fdf4;border-radius:0 4px 4px 0;cursor:pointer;font-size:13px;font-weight:bold;">+</button>
+                </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+                <span style="font-weight:600;color:#1f2937;font-size:11px;">Font</span>
+                <select id="ts_fontFamily" onchange="app._tsApplyFont()" style="flex:1;font-size:11px;padding:2px 4px;border:1px solid #d1d5db;border-radius:4px;">
+                    <option value="Arial, Helvetica, sans-serif" ${currentFont.includes('Arial') ? 'selected' : ''} style="font-family:Arial,sans-serif;">Arial</option>
+                    <option value="Open Sans, sans-serif" ${currentFont.includes('Open Sans') ? 'selected' : ''} style="font-family:'Open Sans',sans-serif;">Open Sans</option>
+                    <option value="Helvetica, Arial, sans-serif" ${currentFont.includes('Helvetica') && !currentFont.includes('Arial,') ? 'selected' : ''} style="font-family:Helvetica,sans-serif;">Helvetica</option>
+                    <option value="Georgia, serif" ${currentFont.includes('Georgia') ? 'selected' : ''} style="font-family:Georgia,serif;">Georgia</option>
+                    <option value="Times New Roman, serif" ${currentFont.includes('Times') ? 'selected' : ''} style="font-family:'Times New Roman',serif;">Times New Roman</option>
+                    <option value="Roboto Mono, monospace" ${currentFont.includes('Roboto Mono') ? 'selected' : ''} style="font-family:'Roboto Mono',monospace;">Roboto Mono</option>
+                    <option value="Courier New, monospace" ${currentFont.includes('Courier') ? 'selected' : ''} style="font-family:'Courier New',monospace;">Courier New</option>
+                </select>
+            </div>
+            <div style="border-top:1px solid #e5e7eb;margin:6px 0;"></div>
+            <div style="font-weight:600;margin-bottom:4px;color:#1f2937;font-size:11px;">Text Content</div>
+            ${textRow('Title', 'ts_titleText', titleText)}
+            ${subtitleText ? textRow('Subtitle', 'ts_subtitleText', subtitleText, true) : ''}
+            ${textRow('X Axis', 'ts_xLabelText', xLabel)}
+            ${textRow('Y Axis', 'ts_yLabelText', yLabel)}
+            <div style="border-top:1px solid #e5e7eb;margin:6px 0;"></div>
+            <div style="font-weight:600;margin-bottom:4px;color:#1f2937;font-size:11px;">Font Sizes &amp; Visibility</div>
+            ${sizeRow('Title', 'ts_title', titleSize, 6, 48, 'ts_titleVis', this._tsVisible.title)}
+            ${subtitleText ? sizeRow('Subtitle', 'ts_subtitle', subtitleSize, 6, 30, null, true) : ''}
+            ${sizeRow('X Label', 'ts_xlabel', xLabelSize, 6, 36, 'ts_xLabelVis', this._tsVisible.xLabel)}
+            ${sizeRow('Y Label', 'ts_ylabel', yLabelSize, 6, 36, 'ts_yLabelVis', this._tsVisible.yLabel)}
+            ${sizeRow('X Tick', 'ts_xtick', xTickSize, 6, 30, null, true)}
+            ${sizeRow('Y Tick', 'ts_ytick', yTickSize, 6, 30, null, true)}
+            ${sizeRow('Legend', 'ts_legend', legendSize, 6, 30, 'ts_legendVis', this._tsVisible.legend)}
+            <div style="border-top:1px solid #e5e7eb;margin:6px 0;"></div>
+            <div style="font-weight:600;margin-bottom:4px;color:#1f2937;font-size:11px;">Markers</div>
+            ${sizeRow('Size', 'ts_marker', markerSize, 1, 40, null, true)}
+            ${this._tsHasBoxTraces(plotEl) ? `
+            <div style="border-top:1px solid #e5e7eb;margin:6px 0;"></div>
+            <div style="font-weight:600;margin-bottom:4px;color:#1f2937;font-size:11px;">Box Color Scheme</div>
+            <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                <button onclick="app._tsColorScheme('essential')" class="ts-color-btn" title="Red/Gray/Green by mean GE" style="font-size:10px;padding:3px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:linear-gradient(90deg,#dc2626 33%,#9ca3af 33%,#9ca3af 66%,#22c55e 66%);">Essential</button>
+                <button onclick="app._tsColorScheme('bw')" class="ts-color-btn" title="Black & white" style="font-size:10px;padding:3px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:#e5e7eb;">B&W</button>
+                <button onclick="app._tsColorScheme('blue')" class="ts-color-btn" title="Blue gradient by mean GE" style="font-size:10px;padding:3px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:linear-gradient(90deg,#1e40af,#93c5fd);">Blue</button>
+                <button onclick="app._tsColorScheme('redblue')" class="ts-color-btn" title="Red-Blue diverging" style="font-size:10px;padding:3px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:linear-gradient(90deg,#dc2626,#f5f5f5 50%,#2563eb);">Red-Blue</button>
+                <button onclick="app._tsColorScheme('viridis')" class="ts-color-btn" title="Viridis continuous" style="font-size:10px;padding:3px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:linear-gradient(90deg,#440154,#31688e,#35b779,#fde725);">Viridis</button>
+                <button onclick="app._tsColorScheme('steelblue')" class="ts-color-btn" title="Uniform steelblue" style="font-size:10px;padding:3px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:#4682b4;color:white;">Uniform</button>
+            </div>
+            ` : ''}
+            <div style="border-top:1px solid #e5e7eb;margin:6px 0;"></div>
+            <div style="font-size:10px;color:#9ca3af;">Drag title, axis labels, and annotations on plot to reposition.<br>Click an annotation, then use arrow keys to nudge (Shift = larger steps).</div>
+        `;
+        panel.style.display = 'block';
+
+        // Setup arrow key listener for selected annotation
+        this._tsSetupArrowKeys(plotEl);
+    }
+
+    openNetworkTextSettings() {
+        const panel = document.getElementById('textSettingsPanel');
+        const body = document.getElementById('textSettingsBody');
+        this._textSettingsPlotId = '__network__';
+
+        const sizeRow = (label, id, val, min, max) => `
+            <div style="display:flex; align-items:center; margin-bottom:5px; gap:4px;">
+                <span style="width:15px;"></span>
+                <span style="color:#374151;flex:1;min-width:55px;font-size:11px;">${label}</span>
+                <div style="display:flex; align-items:center;">
+                    <button onclick="app._netTsStep('${id}',-1)" style="width:20px;height:20px;border:1px solid #d1d5db;background:#f9fafb;border-radius:4px 0 0 4px;cursor:pointer;font-size:12px;line-height:1;">−</button>
+                    <input type="number" id="${id}" value="${val}" min="${min}" max="${max}" style="width:36px;text-align:center;border:1px solid #d1d5db;border-left:none;border-right:none;font-size:10px;padding:1px;-moz-appearance:textfield;appearance:textfield;" oninput="app._netTsApply()">
+                    <button onclick="app._netTsStep('${id}',1)" style="width:20px;height:20px;border:1px solid #d1d5db;background:#f9fafb;border-radius:0 4px 4px 0;cursor:pointer;font-size:12px;line-height:1;">+</button>
+                </div>
+            </div>`;
+
+        const colorRow = (label, id, val) => `
+            <div style="display:flex; align-items:center; margin-bottom:5px; gap:4px;">
+                <span style="width:15px;"></span>
+                <span style="color:#374151;flex:1;min-width:55px;font-size:11px;">${label}</span>
+                <input type="color" id="${id}" value="${val}" style="width:28px;height:22px;border:1px solid #d1d5db;border-radius:4px;padding:0;cursor:pointer;" oninput="app._netTsApply()">
+            </div>`;
+
+        // Current values
+        const legendEl = document.getElementById('networkLegend');
+        const currentFont = this._netFontFamily || 'Arial, sans-serif';
+        const legendFontSize = this._netLegendFontSize || 11;
+        const legendColor = this._netLegendColor || '#374151';
+        const bannerFontSize = this._netBannerFontSize || 10;
+        const bannerColor = this._netBannerColor || '#374151';
+        const labelColor = this._netLabelColor || '#333333';
+        const nodeColor = this._netNodeColor || '#5a9f4a';
+
+        // Read current legend text from DOM
+        const legendSections = legendEl?.querySelectorAll('.legend-section') || [];
+        let legendTexts = [];
+        legendSections.forEach(sec => {
+            const strong = sec.querySelector('strong');
+            if (strong) legendTexts.push(strong.textContent.replace(/:$/, ''));
+        });
+
+        // Read filter banner text
+        const banner = document.querySelector('.network-filter-banner');
+        const bannerText = banner?.textContent || '';
+
+        body.innerHTML = `
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+                <span style="font-weight:600;color:#1f2937;font-size:11px;">Font</span>
+                <select id="net_ts_font" onchange="app._netTsApply()" style="flex:1;font-size:11px;padding:2px 4px;border:1px solid #d1d5db;border-radius:4px;">
+                    <option value="Arial, sans-serif" ${currentFont.includes('Arial') ? 'selected' : ''}>Arial</option>
+                    <option value="Helvetica, Arial, sans-serif" ${currentFont.includes('Helvetica') && !currentFont.startsWith('Arial') ? 'selected' : ''}>Helvetica</option>
+                    <option value="Open Sans, sans-serif" ${currentFont.includes('Open Sans') ? 'selected' : ''}>Open Sans</option>
+                    <option value="Georgia, serif" ${currentFont.includes('Georgia') ? 'selected' : ''}>Georgia</option>
+                    <option value="Times New Roman, serif" ${currentFont.includes('Times') ? 'selected' : ''}>Times New Roman</option>
+                    <option value="Courier New, monospace" ${currentFont.includes('Courier') ? 'selected' : ''}>Courier New</option>
+                </select>
+            </div>
+            <div style="border-top:1px solid #e5e7eb;margin:6px 0;"></div>
+            <div style="font-weight:600;margin-bottom:4px;color:#1f2937;font-size:11px;">Legend</div>
+            ${sizeRow('Font Size', 'net_ts_legendSize', legendFontSize, 6, 30)}
+            ${colorRow('Text Color', 'net_ts_legendColor', legendColor)}
+            <div style="border-top:1px solid #e5e7eb;margin:6px 0;"></div>
+            <div style="font-weight:600;margin-bottom:4px;color:#1f2937;font-size:11px;">Filter Banner</div>
+            ${sizeRow('Font Size', 'net_ts_bannerSize', bannerFontSize, 6, 24)}
+            ${colorRow('Text Color', 'net_ts_bannerColor', bannerColor)}
+            ${bannerText ? `<div style="margin-bottom:5px;">
+                <label style="font-size:10px;color:#6b7280;">Banner Text</label>
+                <input type="text" id="net_ts_bannerText" value="${this._escapeAttr(bannerText)}" style="width:100%;border:1px solid #d1d5db;border-radius:4px;padding:3px 6px;font-size:11px;margin-top:1px;box-sizing:border-box;" oninput="app._netTsApply()">
+            </div>` : ''}
+            <div style="border-top:1px solid #e5e7eb;margin:6px 0;"></div>
+            <div style="font-weight:600;margin-bottom:4px;color:#1f2937;font-size:11px;">Colors</div>
+            ${colorRow('Node Label', 'net_ts_labelColor', labelColor)}
+            ${colorRow('Node Fill', 'net_ts_nodeColor', nodeColor)}
+        `;
+
+        panel.style.display = 'block';
+    }
+
+    _netTsStep(id, dir) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.value = Math.max(parseInt(el.min) || 1, Math.min(parseInt(el.max) || 99, (parseInt(el.value) || 0) + dir));
+        this._netTsApply();
+    }
+
+    _netTsApply() {
+        if (!this.network || !this.networkData) return;
+
+        // Font family
+        const fontFamily = document.getElementById('net_ts_font')?.value || 'Arial, sans-serif';
+        this._netFontFamily = fontFamily;
+
+        // Node label color
+        const labelColor = document.getElementById('net_ts_labelColor')?.value || '#333333';
+        const nodeColor = document.getElementById('net_ts_nodeColor')?.value || '#5a9f4a';
+        this._netLabelColor = labelColor;
+        this._netNodeColor = nodeColor;
+
+        // Sync node font from slider (slider still controls node label size)
+        const fontSize = parseInt(document.getElementById('netFontSize').value) || 16;
+
+        // Update all nodes
+        const nodeUpdates = [];
+        this.networkData.nodes.forEach(node => {
+            const update = {
+                id: node.id,
+                font: { size: fontSize, color: labelColor, face: fontFamily }
+            };
+            if (node.color?.background !== '#d1d5db') {
+                update.color = { ...node.color, background: nodeColor };
+            }
+            nodeUpdates.push(update);
+        });
+        this.networkData.nodes.update(nodeUpdates);
+
+        // Legend styling
+        const legendFontSize = parseInt(document.getElementById('net_ts_legendSize')?.value) || 11;
+        const legendColor = document.getElementById('net_ts_legendColor')?.value || '#374151';
+        this._netLegendFontSize = legendFontSize;
+        this._netLegendColor = legendColor;
+
+        const legendEl = document.getElementById('networkLegend');
+        if (legendEl) {
+            legendEl.style.fontSize = legendFontSize + 'px';
+            legendEl.style.color = legendColor;
+            legendEl.style.fontFamily = fontFamily;
+            // Apply to all text within legend
+            legendEl.querySelectorAll('strong, div, span').forEach(el => {
+                el.style.fontSize = legendFontSize + 'px';
+                el.style.color = legendColor;
+                el.style.fontFamily = fontFamily;
+            });
+        }
+
+        // Filter banner styling
+        const bannerFontSize = parseInt(document.getElementById('net_ts_bannerSize')?.value) || 10;
+        const bannerColor = document.getElementById('net_ts_bannerColor')?.value || '#374151';
+        this._netBannerFontSize = bannerFontSize;
+        this._netBannerColor = bannerColor;
+
+        const banner = document.querySelector('.network-filter-banner');
+        if (banner) {
+            banner.style.fontSize = bannerFontSize + 'px';
+            banner.style.color = bannerColor;
+            banner.style.fontFamily = fontFamily;
+            const bannerText = document.getElementById('net_ts_bannerText')?.value;
+            if (bannerText !== undefined) banner.textContent = bannerText;
+        }
+    }
+
+    _escapeAttr(s) {
+        return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    _tsHasBoxTraces(plotEl) {
+        return plotEl.data?.some(t => t.type === 'box');
+    }
+
+    _tsColorScheme(scheme) {
+        const plotEl = document.getElementById(this._textSettingsPlotId);
+        if (!plotEl?.data) return;
+
+        // Get stats for mean-based schemes
+        const stats = this.currentGEStats || [];
+        const means = plotEl.data.map((t, i) => stats[i]?.mean ?? 0);
+        const minMean = Math.min(...means);
+        const maxMean = Math.max(...means);
+        const range = Math.max(Math.abs(minMean), Math.abs(maxMean)) || 1;
+
+        const markerColors = [];
+        const fillColors = [];
+        const lineColors = [];
+
+        for (let i = 0; i < plotEl.data.length; i++) {
+            if (plotEl.data[i].type !== 'box') continue;
+            const mean = means[i];
+            const t = (mean - minMean) / (maxMean - minMean || 1); // 0..1 normalized
+
+            let mc, fc, lc;
+            switch (scheme) {
+                case 'essential':
+                    mc = mean < -0.5 ? 'rgba(220,38,38,0.6)' : mean > 0 ? 'rgba(34,197,94,0.5)' : 'rgba(107,114,128,0.5)';
+                    fc = mean < -0.5 ? 'rgba(220,38,38,0.2)' : mean > 0 ? 'rgba(34,197,94,0.15)' : 'rgba(156,163,175,0.2)';
+                    lc = (stats[i]?.pValue ?? 1) < 0.05 ? '#1f2937' : '#9ca3af';
+                    break;
+                case 'bw':
+                    mc = 'rgba(80,80,80,0.5)';
+                    fc = 'rgba(200,200,200,0.3)';
+                    lc = '#374151';
+                    break;
+                case 'blue': {
+                    // Darker blue = more negative (essential)
+                    const bInt = Math.round(255 - (1 - t) * 200);
+                    mc = `rgba(30,64,${bInt},0.6)`;
+                    fc = `rgba(30,64,${bInt},0.2)`;
+                    lc = '#1e3a5f';
+                    break;
+                }
+                case 'redblue': {
+                    // Red for negative, blue for positive, white at zero
+                    const frac = (mean + range) / (2 * range); // 0=most negative, 1=most positive
+                    const r = Math.round(220 * (1 - frac));
+                    const b = Math.round(220 * frac);
+                    const g = Math.round(80 * (1 - Math.abs(frac - 0.5) * 2));
+                    mc = `rgba(${r},${g},${b},0.6)`;
+                    fc = `rgba(${r},${g},${b},0.2)`;
+                    lc = '#374151';
+                    break;
+                }
+                case 'viridis': {
+                    // Approximate viridis: purple → teal → yellow
+                    const vColors = [
+                        [68,1,84], [59,82,139], [33,145,140], [94,201,98], [253,231,37]
+                    ];
+                    const idx = Math.min(Math.floor(t * 4), 3);
+                    const frac = (t * 4) - idx;
+                    const c0 = vColors[idx], c1 = vColors[idx + 1];
+                    const r = Math.round(c0[0] + (c1[0] - c0[0]) * frac);
+                    const g = Math.round(c0[1] + (c1[1] - c0[1]) * frac);
+                    const b = Math.round(c0[2] + (c1[2] - c0[2]) * frac);
+                    mc = `rgba(${r},${g},${b},0.7)`;
+                    fc = `rgba(${r},${g},${b},0.25)`;
+                    lc = `rgb(${r},${g},${b})`;
+                    break;
+                }
+                case 'steelblue':
+                    mc = 'rgba(70,130,180,0.6)';
+                    fc = 'rgba(70,130,180,0.2)';
+                    lc = '#2c5f8a';
+                    break;
+            }
+            markerColors.push(mc);
+            fillColors.push(fc);
+            lineColors.push(lc);
+        }
+
+        // Apply via restyle
+        const boxIndices = [];
+        for (let i = 0; i < plotEl.data.length; i++) {
+            if (plotEl.data[i].type === 'box') boxIndices.push(i);
+        }
+        for (let j = 0; j < boxIndices.length; j++) {
+            Plotly.restyle(plotEl, {
+                'marker.color': markerColors[j],
+                fillcolor: fillColors[j],
+                'line.color': lineColors[j]
+            }, [boxIndices[j]]);
+        }
+    }
+
+    _tsStep(inputId, direction) {
+        const inp = document.getElementById(inputId);
+        if (!inp) return;
+        const cur = parseInt(inp.value) || 10;
+        inp.value = Math.max(parseInt(inp.min) || 1, Math.min(parseInt(inp.max) || 48, cur + direction));
+        this._tsApply();
+    }
+
+    _tsScaleAll(direction) {
+        const ids = ['ts_title', 'ts_subtitle', 'ts_xlabel', 'ts_ylabel', 'ts_xtick', 'ts_ytick', 'ts_legend', 'ts_marker'];
+        ids.forEach(id => {
+            const inp = document.getElementById(id);
+            if (!inp) return;
+            const cur = parseInt(inp.value) || 10;
+            inp.value = Math.max(parseInt(inp.min) || 1, Math.min(parseInt(inp.max) || 48, cur + direction));
+        });
+        this._tsApply();
+    }
+
+    _tsApplyFont() {
+        const plotEl = document.getElementById(this._textSettingsPlotId);
+        if (!plotEl?.layout) return;
+        const family = document.getElementById('ts_fontFamily')?.value || 'Arial, Helvetica, sans-serif';
+
+        const updates = {
+            'font.family': family,
+            'title.font.family': family,
+            'xaxis.title.font.family': family,
+            'yaxis.title.font.family': family,
+            'xaxis.tickfont.family': family,
+            'yaxis.tickfont.family': family,
+            'legend.font.family': family
+        };
+
+        // Also apply to annotations
+        const anns = plotEl.layout.annotations || [];
+        for (let i = 0; i < anns.length; i++) {
+            updates[`annotations[${i}].font.family`] = family;
+        }
+
+        Plotly.relayout(plotEl, updates);
+    }
+
+    _tsFindAnn(plotEl, role) {
+        const anns = plotEl.layout?.annotations || [];
+        return anns.findIndex(a => a._tsRole === role);
+    }
+
+    _tsToggle(checkboxId) {
+        const plotEl = document.getElementById(this._textSettingsPlotId);
+        if (!plotEl?.layout) return;
+        const checked = document.getElementById(checkboxId)?.checked;
+
+        if (checkboxId === 'ts_titleVis') {
+            const idx = this._tsFindAnn(plotEl, 'title');
+            if (idx >= 0) {
+                Plotly.relayout(plotEl, { [`annotations[${idx}].visible`]: checked });
+            } else if (this._tsOriginal.usesAnnotationTitle && plotEl.layout.annotations?.length > 0) {
+                Plotly.relayout(plotEl, { 'annotations[0].visible': checked });
+            } else {
+                Plotly.relayout(plotEl, { 'title.text': checked ? (this._tsOriginal.titleText || ' ') : '' });
+            }
+        } else if (checkboxId === 'ts_xLabelVis') {
+            const idx = this._tsFindAnn(plotEl, 'xlabel');
+            if (idx >= 0) {
+                Plotly.relayout(plotEl, { [`annotations[${idx}].visible`]: checked });
+            } else {
+                Plotly.relayout(plotEl, { 'xaxis.title.text': checked ? this._tsOriginal.xLabel : '' });
+            }
+        } else if (checkboxId === 'ts_yLabelVis') {
+            const idx = this._tsFindAnn(plotEl, 'ylabel');
+            if (idx >= 0) {
+                Plotly.relayout(plotEl, { [`annotations[${idx}].visible`]: checked });
+            } else {
+                Plotly.relayout(plotEl, { 'yaxis.title.text': checked ? this._tsOriginal.yLabel : '' });
+            }
+        } else if (checkboxId === 'ts_legendVis') {
+            Plotly.relayout(plotEl, { showlegend: checked });
+        }
+    }
+
+    _tsApplyText() {
+        const plotEl = document.getElementById(this._textSettingsPlotId);
+        if (!plotEl?.layout) return;
+
+        const titleText = document.getElementById('ts_titleText')?.value || '';
+        const subtitleEl = document.getElementById('ts_subtitleText');
+        const xLabel = document.getElementById('ts_xLabelText')?.value || '';
+        const yLabel = document.getElementById('ts_yLabelText')?.value || '';
+
+        const updates = {};
+
+        // Title — wrap in inline font-size span; annotation font.size controls line spacing
+        const titleIdx = this._tsFindAnn(plotEl, 'title');
+        const titleSizeVal = parseInt(document.getElementById('ts_title')?.value) || 14;
+        if (titleIdx >= 0) {
+            const subSize = parseInt(document.getElementById('ts_subtitle')?.value) || this._tsOriginal.subtitleSize || 10;
+            let html = `<span style="font-size:${titleSizeVal}px"><b>${titleText}</b></span>`;
+            if (subtitleEl) {
+                const lines = subtitleEl.value.split('\n').filter(l => l.trim());
+                lines.forEach(line => { html += `<br><span style="font-size:${subSize}px;color:#666">${line}</span>`; });
+            }
+            updates[`annotations[${titleIdx}].text`] = html;
+            updates[`annotations[${titleIdx}].font.size`] = Math.round(subSize * 0.85);
+        } else if (this._tsOriginal.usesAnnotationTitle && plotEl.layout.annotations?.length > 0) {
+            const subSize = parseInt(document.getElementById('ts_subtitle')?.value) || this._tsOriginal.subtitleSize || 10;
+            let html = `<span style="font-size:${titleSizeVal}px"><b>${titleText}</b></span>`;
+            if (subtitleEl) {
+                const lines = subtitleEl.value.split('\n').filter(l => l.trim());
+                lines.forEach(line => { html += `<br><span style="font-size:${subSize}px;color:#666">${line}</span>`; });
+            }
+            updates['annotations[0].text'] = html;
+            updates['annotations[0].font.size'] = Math.round(subSize * 0.85);
+        } else {
+            updates['title.text'] = titleText;
+        }
+
+        // X/Y axis labels — annotation-based or native
+        const xIdx = this._tsFindAnn(plotEl, 'xlabel');
+        if (xIdx >= 0) {
+            updates[`annotations[${xIdx}].text`] = xLabel;
+        } else {
+            updates['xaxis.title.text'] = xLabel;
+        }
+        const yIdx = this._tsFindAnn(plotEl, 'ylabel');
+        if (yIdx >= 0) {
+            updates[`annotations[${yIdx}].text`] = yLabel;
+        } else {
+            updates['yaxis.title.text'] = yLabel;
+        }
+
+        Plotly.relayout(plotEl, updates);
+    }
+
+    _tsApply() {
+        const plotEl = document.getElementById(this._textSettingsPlotId);
+        if (!plotEl?.layout) return;
+
+        const getVal = (id) => { const v = parseInt(document.getElementById(id)?.value); return isNaN(v) ? null : v; };
+
+        const xStandoff = getVal('ts_xStandoff');
+        const yStandoff = getVal('ts_yStandoff');
+        const updates = {
+            'xaxis.tickfont.size': getVal('ts_xtick'),
+            'yaxis.tickfont.size': getVal('ts_ytick'),
+            'legend.font.size': getVal('ts_legend')
+        };
+
+        // Find annotation indices by role
+        const anns = plotEl.layout.annotations || [];
+        const titleIdx = anns.findIndex(a => a._tsRole === 'title');
+        const xLabelIdx = anns.findIndex(a => a._tsRole === 'xlabel');
+        const yLabelIdx = anns.findIndex(a => a._tsRole === 'ylabel');
+
+        const titleSize = getVal('ts_title');
+        const subtitleSize = getVal('ts_subtitle');
+        if (titleIdx >= 0) {
+            // Annotation font.size controls <br> line spacing — set to subtitle-based
+            if (subtitleSize) updates[`annotations[${titleIdx}].font.size`] = Math.round(subtitleSize * 0.85);
+            // Update inline font sizes: first match = title, rest = subtitle
+            const raw = anns[titleIdx].text || '';
+            let isFirst = true;
+            const updatedText = raw.replace(/font-size:\s*\d+px/g, (match) => {
+                if (isFirst) { isFirst = false; return `font-size:${titleSize}px`; }
+                return subtitleSize ? `font-size:${subtitleSize}px` : match;
+            });
+            if (updatedText !== raw) updates[`annotations[${titleIdx}].text`] = updatedText;
+        } else if (this._tsOriginal?.usesAnnotationTitle && anns.length > 0) {
+            if (subtitleSize) updates['annotations[0].font.size'] = Math.round(subtitleSize * 0.85);
+            const raw = anns[0].text || '';
+            let isFirst = true;
+            const updatedText = raw.replace(/font-size:\s*\d+px/g, (match) => {
+                if (isFirst) { isFirst = false; return `font-size:${titleSize}px`; }
+                return subtitleSize ? `font-size:${subtitleSize}px` : match;
+            });
+            if (updatedText !== raw) updates['annotations[0].text'] = updatedText;
+        } else {
+            updates['title.font.size'] = titleSize;
+        }
+
+        // Axis labels — annotation-based or native
+        const xLabelSize = getVal('ts_xlabel');
+        const yLabelSize = getVal('ts_ylabel');
+        if (xLabelIdx >= 0) {
+            if (xLabelSize) updates[`annotations[${xLabelIdx}].font.size`] = xLabelSize;
+        } else {
+            if (xLabelSize) updates['xaxis.title.font.size'] = xLabelSize;
+        }
+        if (yLabelIdx >= 0) {
+            if (yLabelSize) updates[`annotations[${yLabelIdx}].font.size`] = yLabelSize;
+        } else {
+            if (yLabelSize) updates['yaxis.title.font.size'] = yLabelSize;
+        }
+
+        Plotly.relayout(plotEl, updates);
+
+        const markerSize = getVal('ts_marker');
+        if (markerSize && plotEl.data) {
+            const indices = [];
+            for (let i = 0; i < plotEl.data.length; i++) {
+                if (plotEl.data[i]?.marker) indices.push(i);
+            }
+            if (indices.length > 0) Plotly.restyle(plotEl, { 'marker.size': markerSize }, indices);
+        }
+
+        // Persist settings so they survive plot re-renders
+        if (this._textSettingsPlotId === 'scatterPlot') {
+            this._savedScatterTextSettings = {
+                titleFontSize: titleSize,
+                subtitleSize: subtitleSize || this._tsOriginal?.subtitleSize || 15,
+                xLabelFontSize: getVal('ts_xlabel') || 20,
+                yLabelFontSize: getVal('ts_ylabel') || 20,
+                xTickSize: getVal('ts_xtick') || 17,
+                yTickSize: getVal('ts_ytick') || 17,
+                legendSize: getVal('ts_legend') || 17,
+                markerSize: markerSize || 10,
+                fontFamily: plotEl.layout?.font?.family || null
+            };
+        }
+    }
+
+    _tsSetupArrowKeys(plotEl) {
+        // Allow arrow keys to nudge annotations when plot is focused
+        if (this._tsArrowHandler) {
+            document.removeEventListener('keydown', this._tsArrowHandler);
+        }
+        this._tsSelectedAnnotation = null;
+
+        // Listen for annotation clicks to select one
+        plotEl.removeAllListeners?.('plotly_clickannotation');
+        plotEl.on('plotly_clickannotation', (ev) => {
+            this._tsSelectedAnnotation = ev.index;
+            // Brief visual feedback
+            const el = plotEl.querySelector('.annotation[data-index="' + ev.index + '"]');
+            if (el) { el.style.outline = '2px solid #3b82f6'; setTimeout(() => el.style.outline = '', 1500); }
+        });
+
+        this._tsArrowHandler = (e) => {
+            if (this._tsSelectedAnnotation == null) return;
+            const idx = this._tsSelectedAnnotation;
+            const ann = plotEl.layout.annotations?.[idx];
+            if (!ann || ann.xref !== 'paper') return;
+
+            const step = e.shiftKey ? 0.01 : 0.005;
+            let dx = 0, dy = 0;
+            if (e.key === 'ArrowLeft') dx = -step;
+            else if (e.key === 'ArrowRight') dx = step;
+            else if (e.key === 'ArrowUp') dy = step;
+            else if (e.key === 'ArrowDown') dy = -step;
+            else return;
+
+            e.preventDefault();
+            const upd = {};
+            upd[`annotations[${idx}].x`] = (ann.x || 0.5) + dx;
+            upd[`annotations[${idx}].y`] = (ann.y || 1.0) + dy;
+            Plotly.relayout(plotEl, upd);
+        };
+        document.addEventListener('keydown', this._tsArrowHandler);
+    }
+
+    _initTextSettingsDrag() {
+        const panel = document.getElementById('textSettingsPanel');
+        const handle = document.getElementById('textSettingsDragHandle');
+        if (!panel || !handle) return;
+        let dragging = false, ox, oy;
+        handle.addEventListener('mousedown', (e) => {
+            dragging = true;
+            ox = e.clientX - panel.getBoundingClientRect().left;
+            oy = e.clientY - panel.getBoundingClientRect().top;
+            e.preventDefault();
+        });
+        document.addEventListener('mousemove', (e) => {
+            if (!dragging) return;
+            panel.style.left = (e.clientX - ox) + 'px';
+            panel.style.top = (e.clientY - oy) + 'px';
+            panel.style.right = 'auto';
+        });
+        document.addEventListener('mouseup', () => { dragging = false; });
     }
 }
 

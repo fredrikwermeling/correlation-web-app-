@@ -1652,6 +1652,9 @@
                                 <button class="btn btn-secondary" id="togglePhysics">Lock</button>
                                 <button class="btn btn-secondary" id="changeLayout">Layout</button>
                             </div>
+                            <div class="button-group-horizontal" style="margin-bottom: 4px;">
+                                <button class="btn btn-secondary" id="networkAaBtn" style="font-weight:700;">Aa</button>
+                            </div>
                             <p class="help-text" id="networkHelpText" style="font-size: 9px; margin-bottom: 6px;">Double-click node for Gene Effect, edge for Correlation</p>
                             <div id="selectedNodesList" style="display: none; font-size: 9px; margin-bottom: 6px; padding: 4px; background: #dbeafe; border-radius: 3px;">
                                 <span style="font-weight: 600;">Selected:</span> <span id="selectedNodesText"></span>
@@ -2052,6 +2055,7 @@
                 <div id="byTissueContainer" style="display: none;"></div>
             </div>
             <div class="modal-footer">
+                <button class="btn btn-outline" id="scatterTextSettingsBtn" style="font-weight:700;padding:4px 10px;" title="Text & Font Settings">Aa</button>
                 <button class="btn btn-outline" id="downloadScatterPNG">Download PNG</button>
                 <button class="btn btn-outline" id="downloadScatterSVG">Download SVG</button>
                 <span style="font-size: 11px; margin-left: 8px; display: inline-flex; gap: 10px; align-items: center; color: #666;">
@@ -2209,6 +2213,7 @@
 
                 <!-- Download buttons -->
                 <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap; padding-top: 15px; border-top: 1px solid #e5e7eb;">
+                    <button class="btn btn-outline btn-sm" id="geTextSettingsBtn" style="font-weight:700;" title="Text & Font Settings">Aa</button>
                     <span style="font-size: 12px; color: #6b7280; margin-right: 5px;">Export Chart:</span>
                     <button class="btn btn-outline btn-sm" id="downloadGeneEffectPNG">PNG</button>
                     <button class="btn btn-outline btn-sm" id="downloadGeneEffectSVG">SVG</button>
@@ -2452,6 +2457,15 @@
           Data from <a href="https://depmap.org/" target="_blank" rel="noopener" style="color: var(--green-700);">DepMap</a> (Broad Institute). Please acknowledge DepMap when using this data in publications.
         </div>
       </div>
+    </div>
+
+    <!-- Text Settings Panel (floating, reusable) -->
+    <div id="textSettingsPanel" style="display:none; position:fixed; top:80px; right:20px; width:340px; background:white; border:1px solid #d1d5db; border-radius:8px; box-shadow:0 4px 12px rgba(0,0,0,0.15); z-index:10001; font-size:11px;">
+        <div id="textSettingsDragHandle" style="display:flex; justify-content:space-between; align-items:center; padding:6px 12px; background:#f0fdf4; border-radius:8px 8px 0 0; cursor:move; user-select:none;">
+            <span style="font-weight:700; color:var(--green-700);">Aa Text Settings</span>
+            <button onclick="document.getElementById('textSettingsPanel').style.display='none'" style="background:none; border:none; font-size:16px; cursor:pointer; color:#999;">&times;</button>
+        </div>
+        <div id="textSettingsBody" style="padding:8px 12px; max-height:70vh; overflow-y:auto;"></div>
     </div>
 
     <script src="app.js?v=20260224v1"></script>
