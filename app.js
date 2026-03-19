@@ -14037,15 +14037,21 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
                 </div>
             </div>`;
 
-        const textRow = (label, id, val, useTextarea = false) => useTextarea ? `
+        const textRow = (label, id, val, useTextarea = false) => {
+            const biButtons = `<span style="display:inline-flex;gap:1px;margin-left:4px;vertical-align:middle;">` +
+                `<button id="${id}_bold" onclick="app._tsToggleBold('${id}')" style="width:20px;height:20px;border:1px solid #d1d5db;border-radius:3px;cursor:pointer;font-weight:bold;font-size:11px;background:#f9fafb;line-height:1;" title="Bold">B</button>` +
+                `<button id="${id}_italic" onclick="app._tsToggleItalic('${id}')" style="width:20px;height:20px;border:1px solid #d1d5db;border-radius:3px;cursor:pointer;font-style:italic;font-size:11px;background:#f9fafb;line-height:1;" title="Italic">I</button>` +
+                `</span>`;
+            return useTextarea ? `
             <div style="margin-bottom:5px;">
-                <label style="font-size:10px;color:#6b7280;">${label}</label>
+                <label style="font-size:10px;color:#6b7280;">${label}${biButtons}</label>
                 <textarea id="${id}" rows="3" style="width:100%;border:1px solid #d1d5db;border-radius:4px;padding:3px 6px;font-size:11px;margin-top:1px;box-sizing:border-box;resize:vertical;" oninput="app._tsApplyText()">${this._escapeAttr(val)}</textarea>
             </div>` : `
             <div style="margin-bottom:5px;">
-                <label style="font-size:10px;color:#6b7280;">${label}</label>
+                <label style="font-size:10px;color:#6b7280;">${label}${biButtons}</label>
                 <input type="text" id="${id}" value="${this._escapeAttr(val)}" style="width:100%;border:1px solid #d1d5db;border-radius:4px;padding:3px 6px;font-size:11px;margin-top:1px;box-sizing:border-box;" oninput="app._tsApplyText()">
             </div>`;
+        };
 
         // Detect current font from layout
         const currentFont = layout.font?.family || layout.title?.font?.family || 'Arial, Helvetica, sans-serif';
@@ -14104,6 +14110,9 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
             <div style="font-size:10px;color:#9ca3af;">Drag title, axis labels, and annotations on plot to reposition.<br>Click an annotation, then use arrow keys to nudge (Shift = larger steps).</div>
         `;
         panel.style.display = 'block';
+
+        // Initialize B/I button states from current formatting
+        this._tsInitBoldItalic(plotEl, usesAnnotationTitle, ann0, xLabelAnn, yLabelAnn);
 
         // Setup arrow key listener for selected annotation
         this._tsSetupArrowKeys(plotEl);
@@ -14261,6 +14270,53 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
 
     _escapeAttr(s) {
         return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    _tsInitBoldItalic(plotEl, usesAnn, titleAnn, xAnn, yAnn) {
+        const setActive = (btnId, active) => {
+            const btn = document.getElementById(btnId);
+            if (btn) {
+                btn.style.background = active ? '#dbeafe' : '#f9fafb';
+                btn.style.borderColor = active ? '#3b82f6' : '#d1d5db';
+            }
+        };
+        // Title bold/italic
+        if (usesAnn && titleAnn) {
+            const text = titleAnn.text || '';
+            setActive('ts_titleText_bold', /<b>/i.test(text));
+            setActive('ts_titleText_italic', /<i>/i.test(text));
+        }
+        // X/Y label bold/italic (check annotation font or layout font)
+        const checkAnnStyle = (ann, prefix) => {
+            if (ann) {
+                const t = ann.text || '';
+                setActive(`${prefix}_bold`, /<b>/i.test(t) || ann.font?.weight === 'bold');
+                setActive(`${prefix}_italic`, /<i>/i.test(t) || ann.font?.style === 'italic');
+            }
+        };
+        checkAnnStyle(xAnn, 'ts_xLabelText');
+        checkAnnStyle(yAnn, 'ts_yLabelText');
+    }
+
+    _tsToggleBold(inputId) {
+        const btn = document.getElementById(inputId + '_bold');
+        const isActive = btn.style.borderColor === 'rgb(59, 130, 246)';
+        btn.style.background = isActive ? '#f9fafb' : '#dbeafe';
+        btn.style.borderColor = isActive ? '#d1d5db' : '#3b82f6';
+        this._tsApplyText();
+    }
+
+    _tsToggleItalic(inputId) {
+        const btn = document.getElementById(inputId + '_italic');
+        const isActive = btn.style.borderColor === 'rgb(59, 130, 246)';
+        btn.style.background = isActive ? '#f9fafb' : '#dbeafe';
+        btn.style.borderColor = isActive ? '#d1d5db' : '#3b82f6';
+        this._tsApplyText();
+    }
+
+    _tsBtnActive(btnId) {
+        const btn = document.getElementById(btnId);
+        return btn && btn.style.borderColor === 'rgb(59, 130, 246)';
     }
 
     _tsHasBoxTraces(plotEl) {
@@ -14449,6 +14505,22 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
         const xLabel = document.getElementById('ts_xLabelText')?.value || '';
         const yLabel = document.getElementById('ts_yLabelText')?.value || '';
 
+        const titleBold = this._tsBtnActive('ts_titleText_bold');
+        const titleItalic = this._tsBtnActive('ts_titleText_italic');
+        const subBold = this._tsBtnActive('ts_subtitleText_bold');
+        const subItalic = this._tsBtnActive('ts_subtitleText_italic');
+        const xBold = this._tsBtnActive('ts_xLabelText_bold');
+        const xItalic = this._tsBtnActive('ts_xLabelText_italic');
+        const yBold = this._tsBtnActive('ts_yLabelText_bold');
+        const yItalic = this._tsBtnActive('ts_yLabelText_italic');
+
+        const wrapBI = (text, bold, italic) => {
+            let s = text;
+            if (bold) s = `<b>${s}</b>`;
+            if (italic) s = `<i>${s}</i>`;
+            return s;
+        };
+
         const updates = {};
 
         // Title — wrap in inline font-size span; annotation font.size controls line spacing
@@ -14456,38 +14528,38 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
         const titleSizeVal = parseInt(document.getElementById('ts_title')?.value) || 14;
         if (titleIdx >= 0) {
             const subSize = parseInt(document.getElementById('ts_subtitle')?.value) || this._tsOriginal.subtitleSize || 10;
-            let html = `<span style="font-size:${titleSizeVal}px"><b>${titleText}</b></span>`;
+            let html = `<span style="font-size:${titleSizeVal}px">${wrapBI(titleText, titleBold, titleItalic)}</span>`;
             if (subtitleEl) {
                 const lines = subtitleEl.value.split('\n').filter(l => l.trim());
-                lines.forEach(line => { html += `<br><span style="font-size:${subSize}px;color:#666">${line}</span>`; });
+                lines.forEach(line => { html += `<br><span style="font-size:${subSize}px;color:#666">${wrapBI(line, subBold, subItalic)}</span>`; });
             }
             updates[`annotations[${titleIdx}].text`] = html;
             updates[`annotations[${titleIdx}].font.size`] = Math.round(subSize * 0.85);
         } else if (this._tsOriginal.usesAnnotationTitle && plotEl.layout.annotations?.length > 0) {
             const subSize = parseInt(document.getElementById('ts_subtitle')?.value) || this._tsOriginal.subtitleSize || 10;
-            let html = `<span style="font-size:${titleSizeVal}px"><b>${titleText}</b></span>`;
+            let html = `<span style="font-size:${titleSizeVal}px">${wrapBI(titleText, titleBold, titleItalic)}</span>`;
             if (subtitleEl) {
                 const lines = subtitleEl.value.split('\n').filter(l => l.trim());
-                lines.forEach(line => { html += `<br><span style="font-size:${subSize}px;color:#666">${line}</span>`; });
+                lines.forEach(line => { html += `<br><span style="font-size:${subSize}px;color:#666">${wrapBI(line, subBold, subItalic)}</span>`; });
             }
             updates['annotations[0].text'] = html;
             updates['annotations[0].font.size'] = Math.round(subSize * 0.85);
         } else {
-            updates['title.text'] = titleText;
+            updates['title.text'] = wrapBI(titleText, titleBold, titleItalic);
         }
 
         // X/Y axis labels — annotation-based or native
         const xIdx = this._tsFindAnn(plotEl, 'xlabel');
         if (xIdx >= 0) {
-            updates[`annotations[${xIdx}].text`] = xLabel;
+            updates[`annotations[${xIdx}].text`] = wrapBI(xLabel, xBold, xItalic);
         } else {
-            updates['xaxis.title.text'] = xLabel;
+            updates['xaxis.title.text'] = wrapBI(xLabel, xBold, xItalic);
         }
         const yIdx = this._tsFindAnn(plotEl, 'ylabel');
         if (yIdx >= 0) {
-            updates[`annotations[${yIdx}].text`] = yLabel;
+            updates[`annotations[${yIdx}].text`] = wrapBI(yLabel, yBold, yItalic);
         } else {
-            updates['yaxis.title.text'] = yLabel;
+            updates['yaxis.title.text'] = wrapBI(yLabel, yBold, yItalic);
         }
 
         Plotly.relayout(plotEl, updates);
