@@ -771,12 +771,12 @@ class CorrelationExplorer {
         // Set default min cell lines based on mode
         const minCellLinesInput = document.getElementById('minCellLines');
         if (isMutationMode) {
-            minCellLinesInput.value = '10';
+            minCellLinesInput.value = '5';
             this.populateMutationHotspotSelector();
             this.populateTranslocationHotspotSelector();
             this.updateMutAnalysisTypeUI();
         } else {
-            minCellLinesInput.value = '50';
+            minCellLinesInput.value = '25';
         }
     }
 
