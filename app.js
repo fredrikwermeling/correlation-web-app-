@@ -2810,8 +2810,17 @@ class CorrelationExplorer {
                 document.getElementById('tab-mutation').classList.add('active');
 
                 const analysisLabel = isTranslocation ? 'Fusion' : 'Mutation';
-                this.showStatus('success',
-                    `&#10003; ${analysisLabel} analysis complete: ${significantResults.length} genes with p < ${pThreshold}`);
+                const nSkipped = analysisResult.nSkippedMinN || 0;
+                let statusMsg = `&#10003; ${analysisLabel} analysis complete: ${significantResults.length} genes with p < ${pThreshold}`;
+                if (significantResults.length === 0 && nSkipped > 0) {
+                    statusMsg = `&#9888; ${analysisLabel} analysis: no significant genes found. ${nSkipped} genes were skipped because WT group had fewer than ${minN} cell lines. Try lowering "Min Cell Lines" (currently ${minN}).`;
+                    this.showStatus('warning', statusMsg);
+                } else if (nSkipped > 0 && nSkipped > analysisResult.results.length) {
+                    statusMsg += ` (${nSkipped} genes skipped — WT < ${minN} cells)`;
+                    this.showStatus('success', statusMsg);
+                } else {
+                    this.showStatus('success', statusMsg);
+                }
             } catch (error) {
                 console.error('Mutation analysis error:', error);
                 this.showStatus('error', 'Mutation analysis failed: ' + error.message);
@@ -3123,6 +3132,7 @@ class CorrelationExplorer {
         const hasFusionData = fusedCellIndices && fusedCellIndices.length >= 3 && wtFusionCellIndices.length >= 3;
 
         // Analyze each gene
+        let nSkippedMinN = 0;
         for (let geneIdx = 0; geneIdx < this.nGenes; geneIdx++) {
             const gene = this.geneNames[geneIdx];
 
@@ -3132,7 +3142,7 @@ class CorrelationExplorer {
             const mut2Effects = this.getGeneEffectsForCells(geneIdx, mut2CellIndices);
 
             // Skip if not enough valid values
-            if (wtEffects.length < minN || mutAllEffects.length < 3) continue;
+            if (wtEffects.length < minN || mutAllEffects.length < 3) { nSkippedMinN++; continue; }
 
             // Calculate statistics for WT vs 1+2
             const wtMean = this.mean(wtEffects);
@@ -3195,7 +3205,8 @@ class CorrelationExplorer {
             n2: mut2CellIndices.length,
             hasFusionData,
             nFused: fusedCellIndices?.length || 0,
-            nWTFusion: wtFusionCellIndices?.length || 0
+            nWTFusion: wtFusionCellIndices?.length || 0,
+            nSkippedMinN
         };
     }
 
@@ -3256,6 +3267,7 @@ class CorrelationExplorer {
             throw new Error(`Not enough cell lines: WT=${wtCellIndices.length}, Fused=${mutAllCellIndices.length}`);
         }
 
+        let nSkippedMinN = 0;
         for (let geneIdx = 0; geneIdx < this.nGenes; geneIdx++) {
             const gene = this.geneNames[geneIdx];
 
@@ -3263,7 +3275,7 @@ class CorrelationExplorer {
             const mutAllEffects = this.getGeneEffectsForCells(geneIdx, mutAllCellIndices);
             const mut2Effects = this.getGeneEffectsForCells(geneIdx, mut2CellIndices);
 
-            if (wtEffects.length < minN || mutAllEffects.length < 3) continue;
+            if (wtEffects.length < minN || mutAllEffects.length < 3) { nSkippedMinN++; continue; }
 
             const wtMean = this.mean(wtEffects);
             const mutMean = this.mean(mutAllEffects);
@@ -3302,7 +3314,8 @@ class CorrelationExplorer {
             nWT: wtCellIndices.length,
             nMut: mutAllCellIndices.length,
             n2: mut2CellIndices.length,
-            hasFusionData: false
+            hasFusionData: false,
+            nSkippedMinN
         };
     }
 
