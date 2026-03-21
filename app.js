@@ -13888,6 +13888,7 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
             filtered.sort((a, b) => this.getCellLineName(a).localeCompare(this.getCellLineName(b)));
         }
         this._clbVisibleCellLines = filtered;
+        this._updateClbActiveFilterLabel();
 
         const container = document.getElementById('clbList');
         if (filtered.length === 0) {
@@ -13945,6 +13946,37 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
             subSelect.appendChild(opt);
         });
         subSelect.style.display = '';
+    }
+
+    _updateClbActiveFilterLabel() {
+        const el = document.getElementById('clbActiveFilters');
+        if (!el) return;
+        const parts = [];
+        const tissue = document.getElementById('clbTissueFilter')?.value;
+        const subtype = document.getElementById('clbSubtypeFilter')?.value;
+        const hotspot = document.getElementById('clbHotspotFilter')?.value;
+        const trans = document.getElementById('clbTranslocationFilter')?.value;
+        if (tissue) parts.push(`<span style="background:#dbeafe;color:#1e40af;padding:1px 6px;border-radius:10px;">${tissue}${subtype ? ' · ' + subtype : ''}</span>`);
+        if (hotspot) parts.push(`<span style="background:#dcfce7;color:#16a34a;padding:1px 6px;border-radius:10px;">${hotspot} mutated</span>`);
+        if (trans) parts.push(`<span style="background:#fae8ff;color:#7c3aed;padding:1px 6px;border-radius:10px;">${trans} fused</span>`);
+        if (this._activeOncoprintFilters) {
+            const shown = new Set([hotspot, trans].filter(Boolean));
+            for (const f of this._activeOncoprintFilters) {
+                if (!shown.has(f.gene)) {
+                    const bg = f.state === 'mut' ? '#dcfce7' : '#fef2f2';
+                    const color = f.state === 'mut' ? '#16a34a' : '#dc2626';
+                    parts.push(`<span style="background:${bg};color:${color};padding:1px 6px;border-radius:10px;">${f.gene} ${f.state === 'mut' ? 'Mut' : 'WT'}</span>`);
+                }
+            }
+        }
+        if (parts.length > 0) {
+            const n = this._clbVisibleCellLines?.length || 0;
+            const total = this.metadata?.cellLines?.length || 0;
+            el.innerHTML = `<span style="color:#6b7280;">Showing ${n} of ${total}:</span> ${parts.join(' ')}`;
+            el.style.display = 'flex';
+        } else {
+            el.style.display = 'none';
+        }
     }
 
     updateClbFilterCounts() {
