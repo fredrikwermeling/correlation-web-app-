@@ -1434,6 +1434,7 @@ class CorrelationExplorer {
 
         if (this._oncoprintContext === 'clb') {
             this.renderCellLineList();
+            this.updateClbFilterCounts();
         }
     }
 
@@ -13962,6 +13963,7 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
                 if (excludeFilter !== 'subtype' && subtype && this.getCellLineSublineage(cl) !== subtype) return false;
                 if (excludeFilter !== 'hotspot' && hotspotMuts && !(hotspotMuts[cl] >= 1)) return false;
                 if (excludeFilter !== 'translocation' && transMuts && !(transMuts[cl] >= 1)) return false;
+                if (excludeFilter !== 'oncoprint' && !this._cellLinePassesOncoprintFilters(cl)) return false;
                 return true;
             });
         };
