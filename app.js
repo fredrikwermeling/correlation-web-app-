@@ -1163,6 +1163,12 @@ class CorrelationExplorer {
         } else {
             const lineageFilter = document.getElementById('lineageFilter')?.value || '';
             const subLineageFilter = document.getElementById('subLineageFilter')?.value || '';
+            const paramHotspot = document.getElementById('paramHotspotGene')?.value || '';
+            const paramHotspotLevel = document.getElementById('paramHotspotLevel')?.value || 'all';
+            const paramTrans = document.getElementById('paramTranslocationGene')?.value || '';
+            const paramTransLevel = document.getElementById('paramTranslocationLevel')?.value || 'all';
+            const paramHotspotMuts = paramHotspot && paramHotspotLevel !== 'all' ? this.mutations?.geneData?.[paramHotspot]?.mutations : null;
+            const paramTransMuts = paramTrans && paramTransLevel !== 'all' ? this.translocations?.geneData?.[paramTrans]?.translocations : null;
             filteredCLs = this.metadata.cellLines.filter(cl => {
                 if (lineageFilter && this.cellLineMetadata?.lineage?.[cl] !== lineageFilter) return false;
                 if (subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cl] !== subLineageFilter) return false;
@@ -1170,10 +1176,25 @@ class CorrelationExplorer {
                     const lin = this.cellLineMetadata?.lineage?.[cl];
                     if (lin && this.excludedTissues.has(lin)) return false;
                 }
+                if (paramHotspotMuts) {
+                    const level = paramHotspotMuts[cl] || 0;
+                    if (paramHotspotLevel === '0' && level !== 0) return false;
+                    if (paramHotspotLevel === '1+2' && level < 1) return false;
+                    if (paramHotspotLevel === '1' && level !== 1) return false;
+                    if (paramHotspotLevel === '2' && level < 2) return false;
+                }
+                if (paramTransMuts) {
+                    const level = paramTransMuts[cl] || 0;
+                    if (paramTransLevel === '0' && level !== 0) return false;
+                    if (paramTransLevel === '1+2' && level < 1) return false;
+                }
                 return true;
             });
-            if (lineageFilter) filterLabel = lineageFilter;
-            else if (this.excludedTissues && this.excludedTissues.size > 0) filterLabel = 'filtered tissues';
+            const filterParts = [];
+            if (lineageFilter) filterParts.push(lineageFilter);
+            if (paramHotspot && paramHotspotLevel !== 'all') filterParts.push(`${paramHotspot} ${paramHotspotLevel === '0' ? 'WT' : 'Mut'}`);
+            filterLabel = filterParts.join(' · ');
+            if (!filterLabel && this.excludedTissues && this.excludedTissues.size > 0) filterLabel = 'filtered tissues';
         }
 
         const maxCLs = 200;
