@@ -5163,7 +5163,8 @@ class CorrelationExplorer {
                 isTranslocation: this.mutationResults?.isTranslocation || false,
                 lineageFilter: this.mutationResults?.lineageFilter || '',
                 textSettings: this._capturePlotTextSettings('geneEffectPlot'),
-                geChartWidthRatio: this.geChartWidthRatio || 1.0
+                geChartWidthRatio: this.geChartWidthRatio || 1.0,
+                oncoprintFilters: this._activeOncoprintFilters || null
             });
             const metaJson = JSON.stringify(meta);
 
@@ -6897,7 +6898,8 @@ Results:
             mode: this.results?.mode,
             cutoff: this.results?.cutoff,
             nCellLines: this.results?.nCellLines,
-            networkSettings: this._captureNetworkSettings()
+            networkSettings: this._captureNetworkSettings(),
+            oncoprintFilters: this._activeOncoprintFilters || null
         });
         const dataURL = canvas.toDataURL('image/png');
         fetch(dataURL).then(r => r.arrayBuffer()).then(buf => {
@@ -7152,7 +7154,8 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
             mode: this.results?.mode,
             cutoff: this.results?.cutoff,
             nCellLines: this.results?.nCellLines,
-            networkSettings: this._captureNetworkSettings()
+            networkSettings: this._captureNetworkSettings(),
+            oncoprintFilters: this._activeOncoprintFilters || null
         });
         svg += `<metadata><correlate-meta>${JSON.stringify(meta)}</correlate-meta></metadata>`;
         svg += '</svg>';
@@ -14399,9 +14402,9 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
             : `_${clNames.length}cl`;
 
         if (mode === 'minimal') {
-            const headerParts = ['Gene'];
+            const headerParts = ['Gene_Effect'];
             clNames.forEach(n => headerParts.push(n.replace(/,/g, '')));
-            const lines = [headerParts.join(',')];
+            const lines = [`# Gene Effect (CRISPR DepMap) matrix for ${clNames.length} selected cell lines`, `# Source: DepMap 25Q3 CRISPRGeneEffect`, `# Date: ${new Date().toISOString().slice(0, 10)}`, headerParts.join(',')];
             for (let g = 0; g < this.nGenes; g++) {
                 const row = [this.geneNames[g]];
                 for (let c = 0; c < clIndices.length; c++) {
@@ -14719,7 +14722,8 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
                 };
             })(),
             showZeroLines: document.getElementById('showZeroLines')?.checked,
-            showCorrelationLine: document.getElementById('showCorrelationLine')?.checked
+            showCorrelationLine: document.getElementById('showCorrelationLine')?.checked,
+            oncoprintFilters: this._activeOncoprintFilters || null
         };
     }
 
@@ -14839,6 +14843,13 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
                 const tbg = document.getElementById('exportNetworkTransparentBg');
                 if (tbg) tbg.checked = ns.transparentBg || false;
             }
+            // Restore oncoprint filters
+            if (meta.oncoprintFilters && meta.oncoprintFilters.length > 0) {
+                this._activeOncoprintFilters = meta.oncoprintFilters;
+                this._oncoprintFilters = {};
+                for (const f of meta.oncoprintFilters) this._oncoprintFilters[f.gene] = f.state;
+                this._oncoprintSyncFilters?.();
+            }
             this.runAnalysis();
             return;
         }
@@ -14917,6 +14928,16 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
     async _restoreFromState(state) {
         if (!state.gene1 || !state.gene2) { alert('Missing gene information in state.'); return; }
         this._resetForRestore();
+
+        // Restore oncoprint multi-gene filters if saved
+        if (state.oncoprintFilters && state.oncoprintFilters.length > 0) {
+            this._activeOncoprintFilters = state.oncoprintFilters;
+            this._oncoprintFilters = {};
+            for (const f of state.oncoprintFilters) {
+                this._oncoprintFilters[f.gene] = f.state;
+            }
+            this._oncoprintSyncFilters?.();
+        }
 
         // Open inspect with the genes
         this.openInspect({ gene1: state.gene1, gene2: state.gene2, correlation: null });
