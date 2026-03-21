@@ -4901,10 +4901,21 @@ class CorrelationExplorer {
             filterInfo.push(`Tissues: ${included.join(', ')}`);
         }
         if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
-            filterInfo.push(`${mr.additionalHotspot}: ${mr.additionalHotspotLevel}`);
+            const ll = { '0': 'WT', '1': 'Mut', '2': 'Mut', '1+2': 'Mut' };
+            filterInfo.push(`${mr.additionalHotspot} ${ll[mr.additionalHotspotLevel] || mr.additionalHotspotLevel}`);
         }
         if (mr.additionalTransGene && mr.additionalTransLevel !== 'all') {
-            filterInfo.push(`Fusion ${mr.additionalTransGene}: ${mr.additionalTransLevel}`);
+            const ll = { '0': 'WT', '1': 'Fused', '2': 'Fused', '1+2': 'Fused' };
+            filterInfo.push(`${mr.additionalTransGene} ${ll[mr.additionalTransLevel] || mr.additionalTransLevel}`);
+        }
+        // Include oncoprint multi-gene filters
+        if (this._activeOncoprintFilters && this._activeOncoprintFilters.length > 0) {
+            const shown = new Set([mr.hotspotGene, mr.additionalHotspot, mr.additionalTransGene].filter(Boolean));
+            for (const f of this._activeOncoprintFilters) {
+                if (!shown.has(f.gene)) {
+                    filterInfo.push(`${f.gene} ${f.state === 'mut' ? 'Mut' : 'WT'}`);
+                }
+            }
         }
         if (inspectHotspot) {
             filterInfo.push(`Also ${inspectHotspot}-mutated`);
