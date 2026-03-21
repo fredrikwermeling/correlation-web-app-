@@ -6497,6 +6497,18 @@ Results:
             const levelLabel = translocLevel === '1+2' ? 'fused' : translocLevel === '0' ? 'not fused' : `level ${translocLevel}`;
             parts.push(`${translocGene} ${levelLabel}`);
         }
+        // Include oncoprint multi-gene filters
+        if (this._activeOncoprintFilters && this._activeOncoprintFilters.length > 0) {
+            const shown = new Set();
+            if (hotspotGene) shown.add(hotspotGene);
+            if (translocGene) shown.add(translocGene);
+            for (const f of this._activeOncoprintFilters) {
+                if (!shown.has(f.gene)) {
+                    parts.push(`${f.gene} ${f.state === 'mut' ? 'Mut' : 'WT'}`);
+                    shown.add(f.gene);
+                }
+            }
+        }
         if (parts.length === 0) return null;
         return `Filters: ${parts.join('  \u00b7  ')}  \u00b7  n=${this.results.nCellLines}`;
     }
