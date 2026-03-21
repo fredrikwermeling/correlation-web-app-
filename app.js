@@ -1452,7 +1452,36 @@ class CorrelationExplorer {
         if (this._oncoprintContext === 'clb') {
             this.renderCellLineList();
             this.updateClbFilterCounts();
+        } else {
+            this._updateLineageFilterCounts();
         }
+    }
+
+    _updateLineageFilterCounts() {
+        const select = document.getElementById('lineageFilter');
+        if (!select || !this.cellLineMetadata?.lineage) return;
+        const currentVal = select.value;
+        const cellLines = this.metadata.cellLines;
+        const counts = {};
+        let total = 0;
+        for (const cl of cellLines) {
+            if (!this._cellLinePassesOncoprintFilters(cl)) continue;
+            if (this.excludedTissues && this.excludedTissues.size > 0) {
+                const lin = this.cellLineMetadata.lineage[cl];
+                if (lin && this.excludedTissues.has(lin)) continue;
+            }
+            const lin = this.cellLineMetadata.lineage[cl];
+            if (lin) counts[lin] = (counts[lin] || 0) + 1;
+            total++;
+        }
+        select.innerHTML = `<option value="">All lineages (n=${total})</option>`;
+        Object.keys(counts).sort((a, b) => counts[b] - counts[a]).forEach(lin => {
+            const opt = document.createElement('option');
+            opt.value = lin;
+            opt.textContent = `${lin} (n=${counts[lin]})`;
+            select.appendChild(opt);
+        });
+        if (currentVal) select.value = currentVal;
     }
 
     _oncoprintClearGene(gene) {
@@ -5634,7 +5663,7 @@ class CorrelationExplorer {
                 color: {
                     background: this.results.mode === 'design' ?
                         (isInput ? '#5a9f4a' : '#a8d89a') : '#5a9f4a',
-                    border: '#ffffff'
+                    border: '#000000'
                 },
                 borderWidth: document.getElementById('networkNodeBorder')?.checked === false ? 0 : 2,
                 title: titleLines.join('\n'),
@@ -5881,7 +5910,7 @@ class CorrelationExplorer {
                             color: {
                                 background: this.results.mode === 'design' ?
                                     (isInput ? '#5a9f4a' : '#a8d89a') : '#5a9f4a',
-                                border: '#ffffff'
+                                border: '#000000'
                             }
                         });
                     } else {
@@ -7334,7 +7363,7 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
 
                     updates.push({
                         id: node.id,
-                        color: { background: bgColor, border: '#ffffff' }
+                        color: { background: bgColor, border: '#000000' }
                     });
                 });
 
@@ -7361,7 +7390,7 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
 
                     updates.push({
                         id: node.id,
-                        color: { background: bgColor, border: '#ffffff' }
+                        color: { background: bgColor, border: '#000000' }
                     });
                 });
 
@@ -7388,7 +7417,7 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
                     color: {
                         background: this.results?.mode === 'design' ?
                             (isInput ? '#5a9f4a' : '#a8d89a') : '#5a9f4a',
-                        border: '#ffffff'
+                        border: '#000000'
                     }
                 });
             });
@@ -7431,7 +7460,7 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
 
                     updates.push({
                         id: node.id,
-                        color: { background: bgColor, border: '#ffffff' }
+                        color: { background: bgColor, border: '#000000' }
                     });
                 });
 
@@ -7458,7 +7487,7 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
 
                     updates.push({
                         id: node.id,
-                        color: { background: bgColor, border: '#ffffff' }
+                        color: { background: bgColor, border: '#000000' }
                     });
                 });
 
@@ -7488,7 +7517,7 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
 
                     updates.push({
                         id: node.id,
-                        color: { background: bgColor, border: '#ffffff' }
+                        color: { background: bgColor, border: '#000000' }
                     });
                 });
 
@@ -7620,7 +7649,7 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
                 color: {
                     background: this.results?.mode === 'design' ?
                         (isInput ? '#5a9f4a' : '#a8d89a') : '#5a9f4a',
-                    border: '#ffffff'
+                    border: '#000000'
                 }
             });
         });
