@@ -11491,7 +11491,7 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
             plot_bgcolor: 'white'
         };
 
-        Plotly.newPlot('geneEffectPlot', traces, layout, { responsive: true });
+        Plotly.newPlot('geneEffectPlot', traces, layout, { responsive: true, edits: { annotationPosition: true } });
 
         // Highlight cell line if requested (from CLB gene link or cell line search)
         const highlightCl = this._geHighlightCellLine;
@@ -11731,7 +11731,7 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
             plot_bgcolor: 'white'
         };
 
-        Plotly.newPlot('geneEffectHotspotPlot', traces, layout, { responsive: true });
+        Plotly.newPlot('geneEffectHotspotPlot', traces, layout, { responsive: true, edits: { annotationPosition: true } });
 
         // Store stats for table (without cell data)
         const tableStats = hotspotStats.map(s => ({
