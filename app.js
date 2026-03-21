@@ -11217,13 +11217,13 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
 
     _applyParamFiltersToGEModal() {
         // Carry active filters (from parameter section OR cell line browser) into the GE modal
-        const lineage = document.getElementById('lineageFilter')?.value;
+        const lineage = document.getElementById('lineageFilter')?.value || document.getElementById('clbTissueFilter')?.value;
         if (lineage) {
             const geTissue = document.getElementById('geTissueFilter');
             if (geTissue) {
                 geTissue.value = lineage;
                 this.updateGeSubtypeFilter?.();
-                const subLineage = document.getElementById('subLineageFilter')?.value;
+                const subLineage = document.getElementById('subLineageFilter')?.value || document.getElementById('clbSubtypeFilter')?.value;
                 if (subLineage) {
                     const geSub = document.getElementById('geSubtypeFilter');
                     if (geSub) geSub.value = subLineage;
@@ -11296,7 +11296,7 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
 
         // Lower min group size when mutation/fusion filters are active (small groups expected)
         const hasActiveFilter = document.getElementById('geHotspotFilter')?.value || document.getElementById('geFusionFilter')?.value;
-        const minGroupSize = hasActiveFilter ? 1 : 3;
+        const minGroupSize = parseInt(document.getElementById('geMinGroupSize')?.value) || 1;
 
         // Calculate stats for each group including p-value vs all cells
         const stats = [];
