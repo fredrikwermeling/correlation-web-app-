@@ -2466,6 +2466,7 @@ class CorrelationExplorer {
         document.getElementById('scatterTextSettingsBtn')?.addEventListener('click', () => this.openTextSettings('scatterPlot'));
         document.getElementById('geTextSettingsBtn')?.addEventListener('click', () => this.openTextSettings('geneEffectPlot'));
         document.getElementById('networkAaBtn')?.addEventListener('click', () => this.openNetworkTextSettings());
+        document.getElementById('networkNodeBorder')?.addEventListener('change', (e) => this.toggleNetworkBorder(e.target.checked));
         this._initTextSettingsDrag();
         document.getElementById('restoreFromSvgInput')?.addEventListener('change', (e) => {
             if (e.target.files[0]) this.restoreFromExport(e.target.files[0]);
@@ -5634,7 +5635,7 @@ class CorrelationExplorer {
                         (isInput ? '#5a9f4a' : '#a8d89a') : '#5a9f4a',
                     border: '#ffffff'
                 },
-                borderWidth: 2,
+                borderWidth: document.getElementById('networkNodeBorder')?.checked === false ? 0 : 2,
                 title: titleLines.join('\n'),
                 isSynonym: isSynonym,
                 originalName: originalName
@@ -5668,7 +5669,7 @@ class CorrelationExplorer {
                         size: nodeSize,
                         font: { size: fontSize, color: '#999' },
                         color: { background: '#d1d5db', border: '#9ca3af' },
-                        borderWidth: 2,
+                        borderWidth: document.getElementById('networkNodeBorder')?.checked === false ? 0 : 2,
                         borderWidthSelected: 3,
                         title: titleLines.join('\n'),
                         isSynonym: isSynonym,
@@ -6040,6 +6041,17 @@ class CorrelationExplorer {
 
         // Update legend for edge thickness
         this.updateEdgeLegend(edgeWidthBase, cutoff);
+    }
+
+    toggleNetworkBorder(showBorder) {
+        if (!this.network || !this.networkData) return;
+        const borderWidth = showBorder ? 2 : 0;
+        const nodeUpdates = [];
+        this.networkData.nodes.forEach(node => {
+            nodeUpdates.push({ id: node.id, borderWidth: borderWidth });
+        });
+        this.networkData.nodes.update(nodeUpdates);
+        this.network.setOptions({ nodes: { borderWidth: borderWidth } });
     }
 
     updateEdgeLegend(edgeWidthBase, cutoff) {
