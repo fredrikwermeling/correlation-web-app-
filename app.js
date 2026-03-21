@@ -13708,6 +13708,10 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
             document.getElementById('clbHotspotFilter').value = '';
             document.getElementById('clbTranslocationFilter').value = '';
             document.getElementById('clbSortGene').value = '';
+            document.getElementById('clbSortDir').style.display = 'none';
+            this._oncoprintFilters = {};
+            this._activeOncoprintFilters = null;
+            this._oncoprintSyncFilters?.();
             this.renderCellLineList();
         });
 
