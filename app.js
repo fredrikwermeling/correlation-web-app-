@@ -1904,8 +1904,43 @@ class CorrelationExplorer {
             }
         }
 
+        // Handle sub-tissue selection
+        if (selectedSubtypes.length > 0) {
+            const parents = [...new Set(selectedSubtypes.map(s => s.parent))];
+            if (parents.length === 1 && (selectedTissues.length === 0 || (selectedTissues.length === 1 && selectedTissues[0] === parents[0]))) {
+                lineageSelect.value = parents[0];
+                lineageSelect.disabled = false;
+                lineageSelect.style.opacity = '';
+                this.excludedTissues = new Set();
+                this._pendingSubtypeSelection = selectedSubtypes.map(s => s.subtype);
+            }
+            const subtypeNames = selectedSubtypes.map(s => s.subtype);
+            let overrideLabel = lineageGroup?.querySelector('.tb-override-label');
+            if (!overrideLabel && lineageGroup) {
+                overrideLabel = document.createElement('div');
+                overrideLabel.className = 'tb-override-label';
+                overrideLabel.style.cssText = 'font-size: 11px; color: #5a9f4a; margin-top: 2px; cursor: pointer;';
+                overrideLabel.title = 'Click to clear tissue selection';
+                overrideLabel.addEventListener('click', () => { this.applyTissueBreakdownSelection([]); });
+                lineageGroup.appendChild(overrideLabel);
+            }
+            if (overrideLabel) {
+                overrideLabel.textContent = `Subtype: ${subtypeNames.join(', ')} (click to clear)`;
+            }
+        }
+
         // Trigger UI updates
         this.updateSubLineageFilter();
+
+        // Apply pending subtype selection after dropdown is populated
+        if (this._pendingSubtypeSelection) {
+            const subSelect = document.getElementById('subLineageFilter');
+            if (subSelect && this._pendingSubtypeSelection.length === 1) {
+                subSelect.value = this._pendingSubtypeSelection[0];
+            }
+            this._pendingSubtypeSelection = null;
+        }
+
         this.updateHotspotCountsForCurrentFilters();
     }
 
