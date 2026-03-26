@@ -928,8 +928,9 @@ class CorrelationExplorer {
                 const hg = data.topGenes.find(g => g.gene === hotspotGene);
                 if (hg) { upsetGenes.push(hg); used.add(hotspotGene); }
             }
+            const nGenesSel = parseInt(document.getElementById('upsetGeneCount')?.value) || 5;
             for (const g of data.topGenes) {
-                if (upsetGenes.length >= 5) break;
+                if (upsetGenes.length >= nGenesSel) break;
                 if (!used.has(g.gene)) { upsetGenes.push(g); used.add(g.gene); }
             }
             upsetLabel = hotspotGene ? `${hotspotGene} + Top ${upsetGenes.length - 1}` : `Top ${upsetGenes.length} most mutated`;
@@ -1092,13 +1093,38 @@ class CorrelationExplorer {
             yaxis2: {
                 domain: [0, 0.35], anchor: 'x',
                 tickvals: upsetGenes.map((_, i) => -(i + 1)),
-                ticktext: upsetGenes.map(g => g.gene),
+                ticktext: upsetGenes.map(g => `${g.gene} (${g.n})`),
                 showgrid: false, zeroline: false, range: [-(nGenes + 0.5), -0.5]
             },
             bargap: 0.3, plot_bgcolor: '#fafafa', paper_bgcolor: 'white'
         };
 
-        Plotly.newPlot('upsetPlotDiv', traces, layout, { responsive: false, displayModeBar: false });
+        Plotly.newPlot('upsetPlotDiv', traces, layout, {
+            responsive: false, displayModeBar: false
+        }).then(plotEl => {
+            // Click bar to apply equivalent oncoprint filters
+            plotEl.on('plotly_click', (eventData) => {
+                if (!eventData.points || eventData.points.length === 0) return;
+                const pt = eventData.points[0];
+                if (pt.curveNumber !== 0) return; // only bar trace
+                const idx = pt.pointIndex;
+                if (idx >= 0 && idx < sorted.length) {
+                    const bits = sorted[idx].key.split('');
+                    // Apply as oncoprint filters
+                    this._oncoprintFilters = {};
+                    bits.forEach((b, i) => {
+                        this._oncoprintFilters[upsetGenes[i].gene] = b === '1' ? 'mut' : 'wt';
+                    });
+                    this._oncoprintSyncFilters();
+                    // Re-render oncoprint if open
+                    if (document.getElementById('oncoprintPopup')) {
+                        this.showOncoprint(this._oncoprintContext);
+                    }
+                    // Re-draw UpSet to update highlighting
+                    this._showUpsetPlot();
+                }
+            });
+        });
 
         const esc = (e) => { if (e.key === 'Escape') { e.stopImmediatePropagation(); popup.remove(); document.removeEventListener('keydown', esc); } };
         document.addEventListener('keydown', esc);
@@ -1262,6 +1288,7 @@ class CorrelationExplorer {
         html += `<button onclick="app._oncoprintExport('png')" style="font-size:10px;padding:2px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:#f9fafb;">PNG</button>`;
         html += `<button onclick="app._oncoprintExport('csv')" style="font-size:10px;padding:2px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:#f9fafb;">CSV</button>`;
         html += `<span style="border-left:1px solid #d1d5db;height:16px;margin:0 2px;"></span>`;
+        html += `<select id="upsetGeneCount" style="font-size:10px;padding:1px 2px;border:1px solid #d1d5db;border-radius:4px;width:36px;" title="Number of top genes for UpSet"><option value="3">3</option><option value="5" selected>5</option><option value="7">7</option><option value="10">10</option></select>`;
         html += `<button onclick="app._showUpsetPlot()" style="font-size:10px;padding:2px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:#f0fdf4;color:#16a34a;font-weight:500;">UpSet</button>`;
         html += `</div>`;
         popup.innerHTML = html;
