@@ -3483,6 +3483,9 @@ class CorrelationExplorer {
                 if (transLevel === '1+2' && tLevel < 1) return;
             }
 
+            // Check oncoprint multi-gene filters
+            if (!this._cellLinePassesOncoprintFilters(cellLine)) return;
+
             indices.push(idx);
         });
 
