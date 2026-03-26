@@ -15525,7 +15525,7 @@ ${filterText ? `<text x="${width / 2}" y="${svgBannerFs + 4}" text-anchor="middl
                 id: node.id,
                 font: { size: fontSize, color: labelColor, face: fontFamily }
             };
-            if (node.color?.background !== '#d1d5db') {
+            if (nodeColor !== '#5a9f4a' && node.color?.background !== '#d1d5db') {
                 update.color = { ...node.color, background: nodeColor };
             }
             nodeUpdates.push(update);
