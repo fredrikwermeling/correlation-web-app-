@@ -60,6 +60,8 @@ class CorrelationExplorer {
         this.clickedCells = new Set();
         this._userLegendPosition = null;
         this._userTitlePosition = null;
+        this._userXLabelPos = null;
+        this._userYLabelPos = null;
         this._savedScatterTextSettings = null;
         this._userLabelPositions = new Map();
 
@@ -8705,6 +8707,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Set up currentInspect with the data needed for By tissue
         this._userLegendPosition = null;
         this._userTitlePosition = null;
+        this._userXLabelPos = null;
+        this._userYLabelPos = null;
         this.currentInspect = {
             gene1: c.gene1,
             gene2: c.gene2,
@@ -8770,6 +8774,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // c is now the correlation object directly
         this._userLegendPosition = null;
         this._userTitlePosition = null;
+        this._userXLabelPos = null;
+        this._userYLabelPos = null;
         this._userLabelPositions = new Map();
         this.currentInspect = {
             gene1: c.gene1,
@@ -9198,7 +9204,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 type: 'scatter',
                 text: wt.map(d => `${d.cellLineName}<br>${d.lineage}<br>WT`),
                 hovertemplate: '%{text}<br>x: %{x:.3f}<br>y: %{y:.3f}<extra></extra>',
-                marker: { color: '#9ca3af', size: 8, opacity: 0.6 },
+                marker: { color: '#9ca3af', size: 10, opacity: 0.6 },
                 name: `WT (n=${wt.length}, ${wtPct}%)`
             });
 
@@ -9222,7 +9228,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 type: 'scatter',
                 text: mut2.map(d => `${d.cellLineName}<br>${d.lineage}<br>2 mutations`),
                 hovertemplate: '%{text}<br>x: %{x:.3f}<br>y: %{y:.3f}<extra></extra>',
-                marker: { color: '#dc2626', size: 11, opacity: 0.8 },
+                marker: { color: '#dc2626', size: 10, opacity: 0.8 },
                 name: `2 mut (n=${mut2.length}, ${mut2Pct}%)`
             });
         } else if (transOverlayMode === 'color' && transOverlayGene) {
@@ -9247,7 +9253,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 mode: 'markers', type: 'scatter',
                 text: tWT.map(d => makeTransHover(d, 'No fusion')),
                 hovertemplate: '%{text}<br>x: %{x:.3f}<br>y: %{y:.3f}<extra></extra>',
-                marker: { color: '#9ca3af', size: 8, opacity: 0.6 },
+                marker: { color: '#9ca3af', size: 10, opacity: 0.6 },
                 name: `No fusion (n=${tWT.length}, ${tWTPct}%)`
             });
             traces.push({
@@ -9263,7 +9269,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 mode: 'markers', type: 'scatter',
                 text: t2.map(d => makeTransHover(d, '2+ fusion partners')),
                 hovertemplate: '%{text}<br>x: %{x:.3f}<br>y: %{y:.3f}<extra></extra>',
-                marker: { color: '#dc2626', size: 11, opacity: 0.8 },
+                marker: { color: '#dc2626', size: 10, opacity: 0.8 },
                 name: `2+ partners (n=${t2.length}, ${t2Pct}%)`
             });
         } else if (colorByCategory === 'tissue' || colorByCategory === 'subtype') {
@@ -9293,7 +9299,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     type: 'scatter',
                     text: catData.map(d => `${d.cellLineName}<br>${cat}`),
                     hovertemplate: '%{text}<br>x: %{x:.3f}<br>y: %{y:.3f}<extra></extra>',
-                    marker: { color: color, size: 8, opacity: 0.8 },
+                    marker: { color: color, size: 10, opacity: 0.8 },
                     name: `${cat} (${catData.length})`,
                     legendgroup: cat,
                     showlegend: true
@@ -9308,7 +9314,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 type: 'scatter',
                 text: filteredData.map(d => `${d.cellLineName}<br>${d.lineage}`),
                 hovertemplate: '%{text}<br>x: %{x:.3f}<br>y: %{y:.3f}<extra></extra>',
-                marker: { color: '#3b82f6', size: 8, opacity: 0.7 },
+                marker: { color: '#3b82f6', size: 10, opacity: 0.7 },
                 name: 'Cell lines',
                 showlegend: false
             });
@@ -9384,20 +9390,24 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const medianY = this.median(filteredData.map(d => d.y));
 
         // Build title - condensed to avoid overlapping with data
-        let titleLines = [`<b>${gene1} vs ${gene2}</b>`];
+        const sts = this._savedScatterTextSettings;
+        const titleFontSize = sts?.titleFontSize || 25;
+        const subSize = sts?.subtitleSize || 15;
+        let titleLines = [`<span style="font-size:${titleFontSize}px"><b>${gene1} vs ${gene2}</b></span>`];
         if (filterDesc) {
-            titleLines.push(`<span style="font-size:10px;color:#666;">${filterDesc}</span>`);
+            titleLines.push(`<span style="font-size:${subSize}px;color:#666;">${filterDesc}</span>`);
         }
-        titleLines.push(`<span style="font-size:10px;">n=${filteredData.length}, r=${allStats.correlation.toFixed(3)}, slope=${allStats.slope.toFixed(3)} | mean(${meanX.toFixed(2)}, ${meanY.toFixed(2)}) med(${medianX.toFixed(2)}, ${medianY.toFixed(2)})</span>`);
+        titleLines.push(`<span style="font-size:${subSize}px;">n=${filteredData.length}, r=${allStats.correlation.toFixed(3)}, slope=${allStats.slope.toFixed(3)}</span>`);
+        titleLines.push(`<span style="font-size:${subSize}px;">mean (X: ${meanX.toFixed(2)}, Y: ${meanY.toFixed(2)}) median (X: ${medianX.toFixed(2)}, Y: ${medianY.toFixed(2)})</span>`);
 
         if (hotspotMode === 'color' && hotspotGene) {
-            titleLines.push(`<span style="font-size:10px;"><b>${hotspotGene}:</b> WT n=${wt.length} r=${wtStats.correlation.toFixed(3)} | 1mut n=${mut1.length} r=${mut1Stats.correlation.toFixed(3)} | 2mut n=${mut2.length} r=${mut2Stats.correlation.toFixed(3)}</span>`);
+            titleLines.push(`<span style="font-size:${subSize}px;"><b>${hotspotGene}:</b> WT n=${wt.length} r=${wtStats.correlation.toFixed(3)} | 1mut n=${mut1.length} r=${mut1Stats.correlation.toFixed(3)} | 2mut n=${mut2.length} r=${mut2Stats.correlation.toFixed(3)}</span>`);
         } else if (transOverlayMode === 'color' && transOverlayGene) {
             const tWT = filteredData.filter(d => d.translocationLevel === 0);
             const tFused = filteredData.filter(d => d.translocationLevel >= 1);
             const tWTStats = this.pearsonWithSlope(tWT.map(d => d.x), tWT.map(d => d.y));
             const tFusedStats = this.pearsonWithSlope(tFused.map(d => d.x), tFused.map(d => d.y));
-            titleLines.push(`<span style="font-size:10px;">${transOverlayGene}: No fusion n=${tWT.length} r=${tWTStats.correlation.toFixed(3)} | Fused n=${tFused.length} r=${tFusedStats.correlation.toFixed(3)}</span>`);
+            titleLines.push(`<span style="font-size:${subSize}px;">${transOverlayGene}: No fusion n=${tWT.length} r=${tWTStats.correlation.toFixed(3)} | Fused n=${tFused.length} r=${tFusedStats.correlation.toFixed(3)}</span>`);
         }
 
         const titleText = titleLines.join('<br>');
@@ -9411,32 +9421,61 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             yanchor: this._userTitlePosition ? 'auto' : 'bottom',
             text: titleText,
             showarrow: false,
-            font: { size: 14 }
+            font: { size: Math.round(subSize * 0.85) },
+            _tsRole: 'title'
         };
-        const annotations = [titleAnnotation, ...highlightAnnotations];
 
-        // Calculate margin based on title lines
-        const topMargin = 80 + (titleLines.length * 18);
+        // Axis labels as draggable annotations instead of axis titles
+        const xLabelText = `${gene1} Gene Effect`;
+        const yLabelText = `${gene2} Gene Effect`;
+        const xLabelAnnotation = {
+            x: this._userXLabelPos ? this._userXLabelPos.x : 0.5,
+            y: this._userXLabelPos ? this._userXLabelPos.y : -0.08,
+            xref: 'paper', yref: 'paper',
+            xanchor: this._userXLabelPos ? 'auto' : 'center',
+            yanchor: this._userXLabelPos ? 'auto' : 'top',
+            text: xLabelText,
+            showarrow: false,
+            font: { size: sts?.xLabelFontSize || 20 },
+            _tsRole: 'xlabel'
+        };
+        const yLabelAnnotation = {
+            x: this._userYLabelPos ? this._userYLabelPos.x : -0.12,
+            y: this._userYLabelPos ? this._userYLabelPos.y : 0.5,
+            xref: 'paper', yref: 'paper',
+            xanchor: this._userYLabelPos ? 'auto' : 'center',
+            yanchor: this._userYLabelPos ? 'auto' : 'middle',
+            text: yLabelText,
+            showarrow: false,
+            font: { size: sts?.yLabelFontSize || 20 },
+            textangle: -90,
+            _tsRole: 'ylabel'
+        };
+
+        const annotations = [titleAnnotation, xLabelAnnotation, yLabelAnnotation, ...highlightAnnotations];
+
+        // Calculate margin based on title lines — spacing scales with subtitle font size
+        const topMargin = 80 + (titleLines.length * Math.max(subSize * 1.2, 14));
 
         const showZero = document.getElementById('showZeroLines')?.checked !== false;
 
         const layout = {
             xaxis: {
-                title: `${gene1} Gene Effect`,
                 range: xRange,
                 zeroline: showZero,
                 zerolinecolor: showZero ? '#000' : '#ddd',
-                zerolinewidth: showZero ? 2 : 0
+                zerolinewidth: showZero ? 2 : 0,
+                tickfont: { size: sts?.xTickSize || 17 }
             },
             yaxis: {
-                title: `${gene2} Gene Effect`,
                 range: yRange,
                 zeroline: showZero,
                 zerolinecolor: showZero ? '#000' : '#ddd',
-                zerolinewidth: showZero ? 2 : 0
+                zerolinewidth: showZero ? 2 : 0,
+                tickfont: { size: sts?.yTickSize || 17 }
             },
             hovermode: 'closest',
-            margin: { t: topMargin, r: ((hotspotMode === 'color' && hotspotGene) || (transOverlayMode === 'color' && transOverlayGene)) ? 240 : 30, b: colorByCategory ? 100 : 60, l: 60, autoexpand: false },
+            margin: { t: topMargin, r: ((hotspotMode === 'color' && hotspotGene) || (transOverlayMode === 'color' && transOverlayGene)) ? 240 : 30, b: colorByCategory ? 100 : 60, l: 80, autoexpand: false },
             showlegend: (hotspotMode === 'color' && hotspotGene) || (transOverlayMode === 'color' && transOverlayGene) || !!colorByCategory,
             legend: colorByCategory ? {
                 orientation: 'h',
@@ -9447,7 +9486,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 bgcolor: 'rgba(255,255,255,0.85)',
                 bordercolor: '#ddd',
                 borderwidth: 1,
-                font: { size: 10 },
+                font: { size: 17 },
                 tracegroupgap: 0,
                 entrywidth: 120,
                 entrywidthmode: 'pixels'
@@ -9459,8 +9498,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 bgcolor: 'rgba(255,255,255,0.85)',
                 bordercolor: '#ddd',
                 borderwidth: 1,
-                title: { text: (transOverlayMode === 'color' && transOverlayGene) ? `${transOverlayGene} (fusion)` : hotspotGene, font: { size: 11 } },
-                font: { size: 11 }
+                title: { text: (transOverlayMode === 'color' && transOverlayGene) ? `${transOverlayGene} (fusion)` : hotspotGene, font: { size: 17 } },
+                font: { size: 17 }
             },
             annotations: annotations,
             plot_bgcolor: '#fafafa'
@@ -9510,15 +9549,21 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                         y: relayoutData['legend.y']
                     };
                 }
-                if (relayoutData['annotations[0].x'] !== undefined && relayoutData['annotations[0].y'] !== undefined) {
-                    this._userTitlePosition = {
-                        x: relayoutData['annotations[0].x'],
-                        y: relayoutData['annotations[0].y']
-                    };
+                // Save dragged annotation positions by role
+                const plotAnns = plotEl.layout.annotations || [];
+                for (let ai = 0; ai < plotAnns.length; ai++) {
+                    const xKey = `annotations[${ai}].x`, yKey = `annotations[${ai}].y`;
+                    if (relayoutData[xKey] !== undefined && relayoutData[yKey] !== undefined) {
+                        const role = plotAnns[ai]._tsRole;
+                        if (role === 'title') this._userTitlePosition = { x: relayoutData[xKey], y: relayoutData[yKey] };
+                        else if (role === 'xlabel') this._userXLabelPos = { x: relayoutData[xKey], y: relayoutData[yKey] };
+                        else if (role === 'ylabel') this._userYLabelPos = { x: relayoutData[xKey], y: relayoutData[yKey] };
+                    }
                 }
-                // Capture dragged cell label positions (annotations[1+])
+                // Capture dragged cell label positions (highlight annotations after title/xlabel/ylabel)
+                const hlOffset = plotAnns.filter(a => a._tsRole).length;
                 for (let i = 0; i < highlightData.length; i++) {
-                    const idx = i + 1; // offset by 1 for title annotation
+                    const idx = i + hlOffset;
                     const axKey = `annotations[${idx}].ax`;
                     const ayKey = `annotations[${idx}].ay`;
                     if (relayoutData[axKey] !== undefined || relayoutData[ayKey] !== undefined) {
