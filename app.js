@@ -1517,23 +1517,8 @@ class CorrelationExplorer {
         const filters = Object.entries(this._oncoprintFilters || {}).filter(([, v]) => v !== 'none');
         if (filters.length === 0) return;
 
+        // Store filters — applied via _cellLinePassesOncoprintFilters, don't touch hotspot selector
         this._activeOncoprintFilters = filters.map(([gene, state]) => ({ gene, state }));
-
-        const mutGenes = filters.filter(([, v]) => v === 'mut');
-        const wtGenes = filters.filter(([, v]) => v === 'wt');
-
-        if (mutGenes.length > 0) {
-            document.getElementById('mutationHotspotSelect').value = mutGenes[0][0];
-            document.getElementById('tissueBreakdownBtn').style.display = 'inline-block';
-        }
-
-        if (wtGenes.length > 0) {
-            document.getElementById('paramHotspotGene').value = wtGenes[0][0];
-            document.getElementById('paramHotspotLevel').value = '0';
-        } else if (mutGenes.length > 1) {
-            document.getElementById('paramHotspotGene').value = mutGenes[1][0];
-            document.getElementById('paramHotspotLevel').value = '1+2';
-        }
 
         const mode = document.querySelector('input[name="analysisMode"]:checked')?.value;
         if (mode === 'mutation') {
