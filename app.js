@@ -5742,7 +5742,7 @@ class CorrelationExplorer {
         document.getElementById('netFontSize').value = 16;
         document.getElementById('fontSizeBubble').textContent = '16';
         document.getElementById('netNodeSize').value = 20;
-        document.getElementById('nodeSizeBubble').textContent = '25';
+        document.getElementById('nodeSizeBubble').textContent = '20';
         document.getElementById('netEdgeWidth').value = 3;
         document.getElementById('edgeWidthBubble').textContent = '3';
 
