@@ -1097,7 +1097,7 @@ class CorrelationExplorer {
             font: { family: 'Arial, Helvetica, sans-serif' },
             annotations: countAnnotations,
             width: plotW, height: plotH,
-            margin: { t: 20, b: 10, l: 60, r: 20 },
+            margin: { t: 20, b: 10, l: 100, r: 20 },
             xaxis: { showticklabels: false, showgrid: false, zeroline: false, range: [-0.5, nBars - 0.5] },
             yaxis: { title: 'Cell lines', domain: [0.4, 1], anchor: 'x' },
             yaxis2: {
