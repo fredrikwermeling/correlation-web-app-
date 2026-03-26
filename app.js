@@ -1991,79 +1991,149 @@ class CorrelationExplorer {
     }
 
     showGeneralTissueBreakdownPopup() {
+        // Reuse the mutation-style tissue breakdown with checkboxes, subtypes, and Apply
         this.hideTissueBreakdownPopup();
         if (!this.cellLineMetadata?.lineage) return;
 
-        // Count cell lines per tissue
-        const tissueCounts = {};
         const cellLines = this.metadata?.cellLines || [];
-        cellLines.forEach(cellLine => {
-            const lineage = this.cellLineMetadata.lineage[cellLine] || 'Unknown';
-            if (!tissueCounts[lineage]) tissueCounts[lineage] = 0;
-            tissueCounts[lineage]++;
-        });
+        const currentLineage = document.getElementById('lineageFilter').value;
 
+        // Build breakdown: nMut=count (total), nWT=0 (not applicable for general view)
+        const tissueCounts = {};
+        cellLines.forEach(cl => {
+            const lineage = this.cellLineMetadata.lineage[cl] || 'Unknown';
+            tissueCounts[lineage] = (tissueCounts[lineage] || 0) + 1;
+        });
         const breakdown = Object.entries(tissueCounts)
-            .map(([lineage, count]) => ({ lineage, count }))
-            .sort((a, b) => b.count - a.count);
+            .map(([lineage, count]) => ({ lineage, nMut: count, nWT: 0 }))
+            .sort((a, b) => b.nMut - a.nMut);
 
         if (breakdown.length === 0) return;
+        const maxMut = Math.max(...breakdown.map(t => t.nMut));
 
-        const currentLineage = document.getElementById('lineageFilter').value;
-        const maxCount = Math.max(...breakdown.map(t => t.count));
+        // Build sub-tissue breakdown
+        const subBreakdowns = {};
+        if (this.cellLineMetadata?.primaryDisease) {
+            cellLines.forEach(cl => {
+                const lin = this.cellLineMetadata.lineage?.[cl];
+                const sub = this.cellLineMetadata.primaryDisease?.[cl];
+                if (!lin || !sub) return;
+                if (!subBreakdowns[lin]) subBreakdowns[lin] = {};
+                subBreakdowns[lin][sub] = (subBreakdowns[lin][sub] || 0) + 1;
+            });
+        }
 
         const popup = document.createElement('div');
         popup.id = 'tissueBreakdownPopup';
-        popup.style.cssText = 'position: fixed; z-index: 10000; background: white; border: 1px solid #d1d5db; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); padding: 0; min-width: 300px; max-width: 380px; display: flex; flex-direction: column;';
+        popup.style.cssText = 'position: fixed; z-index: 10000; background: white; border: 1px solid #d1d5db; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); padding: 0; min-width: 340px; max-width: 420px; display: flex; flex-direction: column;';
 
         const btn = document.getElementById('generalTissueBreakdownBtn');
         const rect = btn.getBoundingClientRect();
-        const vw = window.innerWidth;
-        const vh = window.innerHeight;
-        const margin = 10;
+        const vw = window.innerWidth, vh = window.innerHeight, margin = 10;
         let top = rect.bottom + 6;
         let maxH = vh - top - margin;
         if (maxH < 200) { maxH = rect.top - 6 - margin; top = rect.top - 6 - Math.min(480, maxH); maxH = Math.min(480, maxH); } else { maxH = Math.min(480, maxH); }
         popup.style.top = Math.max(margin, top) + 'px';
-        popup.style.left = Math.max(margin, Math.min(rect.left - 50, vw - 380 - margin)) + 'px';
+        popup.style.left = Math.max(margin, Math.min(rect.left - 100, vw - 420 - margin)) + 'px';
         popup.style.maxHeight = maxH + 'px';
 
         let html = `<div style="padding: 10px 14px 8px; border-bottom: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-weight: 600; font-size: 13px; color: #1f2937;">Cell Lines per Tissue (${cellLines.length} total)</span>
+            <span style="font-weight: 600; font-size: 13px; color: #1f2937;">Tissue Selection (${cellLines.length} total)</span>
             <button id="tbCloseBtn" style="background: none; border: none; cursor: pointer; font-size: 18px; color: #6b7280; line-height: 1; padding: 0 2px;">&times;</button>
         </div>`;
         html += `<div style="overflow-y: auto; flex: 1; padding: 4px 0;">
             <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
             <thead><tr style="position: sticky; top: 0; background: #f9fafb; z-index: 1;">
-                <th style="padding: 4px 8px; text-align: left;">Tissue</th>
+                <th style="padding: 4px 8px; text-align: left; width: 28px;"><input type="checkbox" id="tbSelectAll" title="Select all"></th>
+                <th style="padding: 4px 4px; text-align: left;">Tissue</th>
                 <th style="padding: 4px 6px; text-align: right;">N</th>
                 <th style="padding: 4px 8px; text-align: left; width: 90px;"></th>
             </tr></thead><tbody>`;
 
         breakdown.forEach(t => {
-            const barWidth = maxCount > 0 ? (t.count / maxCount * 100) : 0;
+            const barWidth = maxMut > 0 ? (t.nMut / maxMut * 100) : 0;
             const isCurrentFilter = (currentLineage && t.lineage === currentLineage);
-            const rowBg = isCurrentFilter ? 'background: #ecfdf5;' : '';
-            html += `<tr style="cursor: pointer; ${rowBg}" data-tissue="${t.lineage}" onmouseenter="this.style.background=this.style.background||'#f3f4f6'" onmouseleave="this.style.background='${isCurrentFilter ? '#ecfdf5' : ''}'">
-                <td style="padding: 3px 8px; font-weight: 500;">${t.lineage}</td>
-                <td style="padding: 3px 6px; text-align: right; font-weight: 600;">${t.count}</td>
+            const checked = isCurrentFilter ? ' checked' : '';
+            const hasSubs = subBreakdowns[t.lineage] && Object.keys(subBreakdowns[t.lineage]).length > 1;
+
+            html += `<tr class="tb-row" data-tissue="${t.lineage}" style="cursor: pointer; ${isCurrentFilter ? 'background:#ecfdf5;' : ''}">
+                <td style="padding: 3px 8px;"><input type="checkbox" class="tb-check" value="${t.lineage}"${checked}></td>
+                <td style="padding: 3px 4px; font-weight: 500;">${hasSubs ? '<span class="tb-expand" style="font-size:9px;color:#9ca3af;margin-right:2px;">&#9654;</span>' : ''}${t.lineage}</td>
+                <td style="padding: 3px 6px; text-align: right; font-weight: 600;">${t.nMut}</td>
                 <td style="padding: 3px 8px;"><div style="background: #e2f4de; border-radius: 2px; height: 10px; width: 100%;"><div style="background: #5a9f4a; border-radius: 2px; height: 10px; width: ${barWidth}%;"></div></div></td>
             </tr>`;
+
+            if (hasSubs) {
+                const subs = Object.entries(subBreakdowns[t.lineage]).sort((a, b) => b[1] - a[1]);
+                subs.forEach(([sub, count]) => {
+                    const subBarW = maxMut > 0 ? (count / maxMut * 100) : 0;
+                    html += `<tr class="tb-sub-row" data-parent="${t.lineage}" style="display:none; cursor:pointer; background:#fafafa;">
+                        <td style="padding: 2px 8px 2px 16px;"><input type="checkbox" class="tb-sub-check" value="${sub}" data-parent="${t.lineage}"></td>
+                        <td style="padding: 2px 4px 2px 8px; font-size:11px; color:#6b7280;">${sub}</td>
+                        <td style="padding: 2px 6px; text-align: right; font-size:11px;">${count}</td>
+                        <td style="padding: 2px 8px;"><div style="background: #e2f4de; border-radius: 2px; height: 8px; width: 100%;"><div style="background: #86efac; border-radius: 2px; height: 8px; width: ${subBarW}%;"></div></div></td>
+                    </tr>`;
+                });
+            }
         });
 
         html += `</tbody></table></div>`;
+        html += `<div style="padding: 8px 14px; border-top: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center;">
+            <span id="tbSelectionCount" style="font-size: 11px; color: #6b7280;">0 selected</span>
+            <div style="display: flex; gap: 6px;">
+                <button id="tbClearBtn" style="padding: 4px 12px; font-size: 12px; background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; border-radius: 4px; cursor: pointer;">Clear</button>
+                <button id="tbApplyBtn" style="padding: 4px 12px; font-size: 12px; background: #5a9f4a; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500;">Apply Filter</button>
+            </div>
+        </div>`;
         popup.innerHTML = html;
         document.body.appendChild(popup);
 
-        // Click row to set lineage filter
-        popup.querySelectorAll('tr[data-tissue]').forEach(row => {
-            row.addEventListener('click', () => {
+        // Row click: toggle checkbox or expand subtypes
+        popup.querySelectorAll('.tb-row').forEach(row => {
+            row.addEventListener('click', (e) => {
+                if (e.target.type === 'checkbox') return;
                 const tissue = row.dataset.tissue;
-                const lineageSelect = document.getElementById('lineageFilter');
-                lineageSelect.value = lineageSelect.value === tissue ? '' : tissue;
-                this.updateSubLineageFilter();
-                this.hideTissueBreakdownPopup();
+                const expandArrow = row.querySelector('.tb-expand');
+                if (expandArrow && (e.target.closest('td') === row.cells[1])) {
+                    const subRows = popup.querySelectorAll(`.tb-sub-row[data-parent="${tissue}"]`);
+                    const isExpanded = subRows[0]?.style.display !== 'none';
+                    subRows.forEach(sr => sr.style.display = isExpanded ? 'none' : '');
+                    expandArrow.textContent = isExpanded ? '\u25B6' : '\u25BC';
+                    return;
+                }
+                const cb = row.querySelector('.tb-check');
+                cb.checked = !cb.checked;
+                this.updateTBSelectionCount();
             });
+        });
+        popup.querySelectorAll('.tb-sub-row').forEach(row => {
+            row.addEventListener('click', (e) => {
+                if (e.target.type === 'checkbox') return;
+                const cb = row.querySelector('.tb-sub-check');
+                cb.checked = !cb.checked;
+                this.updateTBSelectionCount();
+            });
+        });
+        popup.querySelectorAll('.tb-check, .tb-sub-check').forEach(cb => {
+            cb.addEventListener('change', () => this.updateTBSelectionCount());
+        });
+        document.getElementById('tbSelectAll').addEventListener('change', (e) => {
+            popup.querySelectorAll('.tb-check').forEach(cb => { cb.checked = e.target.checked; });
+            popup.querySelectorAll('.tb-sub-check').forEach(cb => { cb.checked = false; });
+            this.updateTBSelectionCount();
+        });
+        document.getElementById('tbClearBtn').addEventListener('click', () => {
+            popup.querySelectorAll('.tb-check, .tb-sub-check').forEach(cb => { cb.checked = false; });
+            document.getElementById('tbSelectAll').checked = false;
+            this.updateTBSelectionCount();
+        });
+        document.getElementById('tbApplyBtn').addEventListener('click', () => {
+            const selectedTissues = [...popup.querySelectorAll('.tb-check:checked')].map(cb => cb.value);
+            const selectedSubtypes = [...popup.querySelectorAll('.tb-sub-check:checked')].map(cb => ({
+                subtype: cb.value, parent: cb.dataset.parent
+            }));
+            this.applyTissueBreakdownSelection(selectedTissues, selectedSubtypes);
+            this.hideTissueBreakdownPopup();
         });
 
         document.getElementById('tbCloseBtn').addEventListener('click', () => this.hideTissueBreakdownPopup());
