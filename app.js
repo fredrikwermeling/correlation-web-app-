@@ -8657,16 +8657,38 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
     // Inspect Modal
     openInspectByGenes(gene1, gene2) {
-        // Find the correlation entry by gene names
         const c = this.results.correlations.find(corr =>
             (corr.gene1 === gene1 && corr.gene2 === gene2) ||
             (corr.gene1 === gene2 && corr.gene2 === gene1)
         );
-        if (!c) {
-            console.error('Correlation not found for', gene1, gene2);
-            return;
-        }
+        if (!c) { console.error('Correlation not found for', gene1, gene2); return; }
         this.openInspect(c);
+        this._applyNetworkFiltersToInspect();
+    }
+
+    _applyNetworkFiltersToInspect() {
+        const lineage = document.getElementById('lineageFilter')?.value;
+        if (lineage) {
+            const sf = document.getElementById('scatterCancerFilter');
+            if (sf) sf.value = lineage;
+        }
+        const paramHotspot = document.getElementById('paramHotspotGene')?.value;
+        const paramLevel = document.getElementById('paramHotspotLevel')?.value;
+        if (paramHotspot && paramLevel !== 'all') {
+            const hs = document.getElementById('hotspotGene');
+            const hm = document.getElementById('hotspotMode');
+            if (hs) hs.value = paramHotspot;
+            if (hm) hm.value = 'color';
+        }
+        const paramTrans = document.getElementById('paramTranslocationGene')?.value;
+        const paramTransLevel = document.getElementById('paramTranslocationLevel')?.value;
+        if (paramTrans && paramTransLevel !== 'all') {
+            const ts = document.getElementById('translocationGene');
+            const tm = document.getElementById('translocationMode');
+            if (ts) ts.value = paramTrans;
+            if (tm) tm.value = 'color';
+        }
+        setTimeout(() => this.updateInspectPlot(), 100);
     }
 
     openByTissueByGenes(gene1, gene2) {
