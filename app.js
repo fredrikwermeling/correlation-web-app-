@@ -5875,6 +5875,29 @@ class CorrelationExplorer {
             banner.className = 'network-filter-banner';
             banner.textContent = filterText;
             container.appendChild(banner);
+
+            // Make banner draggable
+            let bDragX = 0, bDragY = 0, bDragging = false;
+            banner.addEventListener('mousedown', (e) => {
+                bDragging = true;
+                const rect = banner.getBoundingClientRect();
+                bDragX = e.clientX - rect.left;
+                bDragY = e.clientY - rect.top;
+                banner.style.transform = 'none';
+                banner.style.left = rect.left - container.getBoundingClientRect().left + 'px';
+                banner.style.top = rect.top - container.getBoundingClientRect().top + 'px';
+                e.preventDefault();
+            });
+            document.addEventListener('mousemove', (e) => {
+                if (!bDragging) return;
+                const cr = container.getBoundingClientRect();
+                const newLeft = e.clientX - cr.left - bDragX;
+                const newTop = e.clientY - cr.top - bDragY;
+                banner.style.left = newLeft + 'px';
+                banner.style.top = newTop + 'px';
+                this._netBannerPos = { x: newLeft, y: newTop };
+            });
+            document.addEventListener('mouseup', () => { bDragging = false; });
         }
 
         this.hiddenNodes = [];
@@ -6745,8 +6768,13 @@ Results:
         if (filterText) {
             ctx.font = `${bannerFs}px Arial`;
             ctx.fillStyle = '#374151';
-            ctx.textAlign = 'center';
-            ctx.fillText(filterText, totalWidth / 2, bannerFs + 4);
+            if (this._netBannerPos) {
+                ctx.textAlign = 'left';
+                ctx.fillText(filterText, this._netBannerPos.x, this._netBannerPos.y + bannerFs);
+            } else {
+                ctx.textAlign = 'center';
+                ctx.fillText(filterText, totalWidth / 2, bannerFs + 4);
+            }
             ctx.textAlign = 'left';
         }
 
@@ -7098,7 +7126,7 @@ Results:
   .legend-small { font-family: Arial, sans-serif; font-size: 13px; fill: #333; }
 </style>
 ${transparentBg ? '' : '<rect width="100%" height="100%" fill="white"/>'}
-${filterText ? `<text x="${width / 2}" y="${svgBannerFs + 4}" text-anchor="middle" style="font-family: Arial, sans-serif; font-size: ${svgBannerFs}px; fill: #374151;">${this.escapeXml(filterText)}</text>` : ''}
+${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2}" y="${this._netBannerPos ? this._netBannerPos.y + svgBannerFs : svgBannerFs + 4}" text-anchor="${this._netBannerPos ? 'start' : 'middle'}" style="font-family: Arial, sans-serif; font-size: ${svgBannerFs}px; fill: #374151;">${this.escapeXml(filterText)}</text>` : ''}
 `;
 
         // Get current scale for sizing elements
@@ -8374,7 +8402,7 @@ Results:
   .legend-small { font-family: Arial, sans-serif; font-size: 13px; fill: #333; }
 </style>
 <rect width="100%" height="100%" fill="white"/>
-${filterText ? `<text x="${width / 2}" y="${svgBannerFs + 4}" text-anchor="middle" style="font-family: Arial, sans-serif; font-size: ${svgBannerFs}px; fill: #374151;">${this.escapeXml(filterText)}</text>` : ''}
+${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2}" y="${this._netBannerPos ? this._netBannerPos.y + svgBannerFs : svgBannerFs + 4}" text-anchor="${this._netBannerPos ? 'start' : 'middle'}" style="font-family: Arial, sans-serif; font-size: ${svgBannerFs}px; fill: #374151;">${this.escapeXml(filterText)}</text>` : ''}
 `;
 
         // Get current scale for sizing elements
