@@ -2280,6 +2280,8 @@ class CorrelationExplorer {
         document.getElementById('downloadMutationResults').addEventListener('click', () => {
             this.downloadMutationResults();
         });
+        document.getElementById('exportMutTablePNG')?.addEventListener('click', () => this._exportMutationTable('png'));
+        document.getElementById('exportMutTableSVG')?.addEventListener('click', () => this._exportMutationTable('svg'));
 
         // Synonyms search
         document.getElementById('synonymsSearch').addEventListener('input', (e) => {
@@ -4394,7 +4396,7 @@ class CorrelationExplorer {
             { col: 'mean_wt', label: `Mean GE (${wtLabel})`, style: '' },
             { col: 'n_mut', label: `N (${mutLbl} 1+2)`, style: 'border-left: 2px solid #f97316;' },
             { col: 'mean_mut', label: `Mean GE (${mutLbl} 1+2)`, style: '' },
-            { col: 'diff_mut', label: 'Δ GE', style: 'border-left: 2px solid #d1d5db;' },
+            { col: 'diff_mut', label: 'Δ GE (1+2v0)', style: 'border-left: 2px solid #d1d5db;' },
             { col: 'p_mut', label: 'p-value', style: '' },
             { col: 'n_2', label: `N (${mutLbl} 2${isT ? '+' : ''})`, style: 'border-left: 2px solid #dc2626;', cls: 'mut2-col' },
             { col: 'mean_2', label: `Mean GE (${mutLbl} 2${isT ? '+' : ''})`, style: '', cls: 'mut2-col' },
@@ -4583,6 +4585,55 @@ class CorrelationExplorer {
 
         // Re-render table
         this.displayMutationResults();
+    }
+
+    async _exportMutationTable(format) {
+        const table = document.getElementById('mutationTable');
+        const settings = document.getElementById('mutationResultsCount');
+        if (!table) return;
+
+        // Create a temporary container with the table and settings
+        const container = document.createElement('div');
+        container.style.cssText = 'position:absolute;left:-9999px;top:0;background:white;padding:16px;font-family:Arial,sans-serif;font-size:12px;';
+        if (settings) {
+            const settingsClone = settings.cloneNode(true);
+            settingsClone.style.cssText = 'margin-bottom:10px;font-size:11px;color:#374151;';
+            container.appendChild(settingsClone);
+        }
+        const tableClone = table.cloneNode(true);
+        // Remove hidden columns
+        tableClone.querySelectorAll('[style*="display: none"], [style*="display:none"]').forEach(el => el.remove());
+        container.appendChild(tableClone);
+        document.body.appendChild(container);
+
+        const filename = `mutation_analysis_${this.mutationResults?.hotspotGene || 'table'}`;
+
+        if (format === 'png') {
+            try {
+                const canvas = await html2canvas(container, { scale: 2, backgroundColor: '#ffffff' });
+                const a = document.createElement('a');
+                a.href = canvas.toDataURL('image/png');
+                a.download = `${filename}.png`;
+                a.click();
+            } catch (e) {
+                console.error('Table PNG export failed:', e);
+            }
+        } else {
+            // SVG via foreignObject
+            const w = container.offsetWidth;
+            const h = container.offsetHeight;
+            const html = container.outerHTML.replace(/&/g, '&amp;');
+            let svg = `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">`;
+            svg += `<foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml">${container.innerHTML}</div></foreignObject>`;
+            svg += '</svg>';
+            const blob = new Blob([svg], { type: 'image/svg+xml' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `${filename}.svg`;
+            a.click();
+            URL.revokeObjectURL(a.href);
+        }
+        document.body.removeChild(container);
     }
 
     downloadMutationResults() {
@@ -14672,9 +14723,17 @@ ${filterText ? `<text x="${width / 2}" y="16" text-anchor="middle" style="font-f
             });
         });
 
-        // Remove all clip-paths
-        doc.querySelectorAll('[clip-path]').forEach(el => el.removeAttribute('clip-path'));
-        doc.querySelectorAll('clipPath').forEach(el => el.remove());
+        // Remove legend/scrollbox clip-paths only
+        doc.querySelectorAll('[clip-path]').forEach(el => {
+            const cp = el.getAttribute('clip-path');
+            if (cp && (cp.includes('legend') || cp.includes('scrollbox'))) {
+                el.removeAttribute('clip-path');
+            }
+        });
+        doc.querySelectorAll('clipPath').forEach(cp => {
+            const id = cp.getAttribute('id') || '';
+            if (id.includes('legend') || id.includes('scrollbox')) cp.remove();
+        });
 
         // Remove empty <defs> and empty <g> groups
         doc.querySelectorAll('defs').forEach(d => { if (!d.children.length) d.remove(); });
