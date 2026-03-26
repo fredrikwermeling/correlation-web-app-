@@ -5739,10 +5739,10 @@ class CorrelationExplorer {
 
     resetNetworkSettings() {
         // Reset sliders to default values
-        document.getElementById('netFontSize').value = 16;
-        document.getElementById('fontSizeBubble').textContent = '16';
-        document.getElementById('netNodeSize').value = 20;
-        document.getElementById('nodeSizeBubble').textContent = '20';
+        document.getElementById('netFontSize').value = 20;
+        document.getElementById('fontSizeBubble').textContent = '20';
+        document.getElementById('netNodeSize').value = 25;
+        document.getElementById('nodeSizeBubble').textContent = '25';
         document.getElementById('netEdgeWidth').value = 3;
         document.getElementById('edgeWidthBubble').textContent = '3';
 
@@ -15369,7 +15369,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     _captureNetworkSettings() {
         return {
             fontSize: parseInt(document.getElementById('netFontSize')?.value) || 16,
-            nodeSize: parseInt(document.getElementById('netNodeSize')?.value) || 20,
+            nodeSize: parseInt(document.getElementById('netNodeSize')?.value) || 25,
             edgeWidth: parseInt(document.getElementById('netEdgeWidth')?.value) || 3,
             colorByGeneEffect: document.getElementById('colorByGeneEffect')?.checked || false,
             colorGEType: document.querySelector('input[name="colorGEType"]:checked')?.value || 'signed',
