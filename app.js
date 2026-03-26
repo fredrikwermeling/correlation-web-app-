@@ -4589,51 +4589,85 @@ class CorrelationExplorer {
 
     async _exportMutationTable(format) {
         const table = document.getElementById('mutationTable');
-        const settings = document.getElementById('mutationResultsCount');
+        const settingsEl = document.getElementById('mutationResultsCount');
         if (!table) return;
-
-        // Create a temporary container with the table and settings
-        const container = document.createElement('div');
-        container.style.cssText = 'position:absolute;left:-9999px;top:0;background:white;padding:16px;font-family:Arial,sans-serif;font-size:12px;';
-        if (settings) {
-            const settingsClone = settings.cloneNode(true);
-            settingsClone.style.cssText = 'margin-bottom:10px;font-size:11px;color:#374151;';
-            container.appendChild(settingsClone);
-        }
-        const tableClone = table.cloneNode(true);
-        // Remove hidden columns
-        tableClone.querySelectorAll('[style*="display: none"], [style*="display:none"]').forEach(el => el.remove());
-        container.appendChild(tableClone);
-        document.body.appendChild(container);
 
         const filename = `mutation_analysis_${this.mutationResults?.hotspotGene || 'table'}`;
 
+        const headers = [];
+        table.querySelectorAll('thead th').forEach(th => {
+            if (th.offsetParent !== null || th.offsetWidth > 0) headers.push(th.textContent.trim());
+        });
+        const rows = [];
+        table.querySelectorAll('tbody tr').forEach(tr => {
+            if (tr.style.display === 'none') return;
+            const cells = [];
+            tr.querySelectorAll('td').forEach(td => {
+                if (td.offsetParent !== null || td.offsetWidth > 0) cells.push(td.textContent.trim());
+            });
+            if (cells.length > 0) rows.push(cells);
+        });
+        const settingsText = settingsEl ? settingsEl.textContent.trim() : '';
+
         if (format === 'png') {
+            const tableContainer = table.closest('.table-container') || table.parentElement;
             try {
-                const canvas = await html2canvas(container, { scale: 2, backgroundColor: '#ffffff' });
+                const origMaxH = tableContainer.style.maxHeight;
+                const origOverflow = tableContainer.style.overflow;
+                tableContainer.style.maxHeight = 'none';
+                tableContainer.style.overflow = 'visible';
+                const canvas = await html2canvas(tableContainer, { scale: 2, backgroundColor: '#ffffff', scrollY: -window.scrollY });
+                tableContainer.style.maxHeight = origMaxH;
+                tableContainer.style.overflow = origOverflow;
                 const a = document.createElement('a');
                 a.href = canvas.toDataURL('image/png');
                 a.download = `${filename}.png`;
+                document.body.appendChild(a);
                 a.click();
+                document.body.removeChild(a);
             } catch (e) {
                 console.error('Table PNG export failed:', e);
+                alert('PNG export failed. Try SVG instead.');
             }
         } else {
-            // SVG via foreignObject
-            const w = container.offsetWidth;
-            const h = container.offsetHeight;
-            const html = container.outerHTML.replace(/&/g, '&amp;');
-            let svg = `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">`;
-            svg += `<foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml">${container.innerHTML}</div></foreignObject>`;
+            const cellW = 70, cellH = 20, headerH = 28, pad = 10, titleH = settingsText ? 20 : 0;
+            const nCols = headers.length;
+            const nRows = rows.length;
+            const firstColW = 90;
+            const totalW = firstColW + (nCols - 1) * cellW + pad * 2;
+            const totalH = titleH + headerH + nRows * cellH + pad * 2;
+
+            let svg = `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${totalW}" height="${totalH}" viewBox="0 0 ${totalW} ${totalH}">\n`;
+            svg += `<rect width="${totalW}" height="${totalH}" fill="white"/>\n`;
+            if (settingsText) {
+                svg += `<text x="${pad}" y="${pad + 12}" font-family="Arial" font-size="10" fill="#374151">${this.escapeXml(settingsText)}</text>\n`;
+            }
+            const startY = pad + titleH;
+            svg += `<rect x="${pad}" y="${startY}" width="${totalW - pad * 2}" height="${headerH}" fill="#f0fdf4"/>\n`;
+            headers.forEach((h, i) => {
+                const x = pad + (i === 0 ? firstColW / 2 : firstColW + (i - 1) * cellW + cellW / 2);
+                svg += `<text x="${x}" y="${startY + headerH / 2 + 4}" font-family="Arial" font-size="9" font-weight="bold" fill="#1a4a1a" text-anchor="middle">${this.escapeXml(h)}</text>\n`;
+            });
+            rows.forEach((row, ri) => {
+                const y = startY + headerH + ri * cellH;
+                if (ri % 2 === 1) svg += `<rect x="${pad}" y="${y}" width="${totalW - pad * 2}" height="${cellH}" fill="#f9fafb"/>\n`;
+                row.forEach((cell, ci) => {
+                    const x = pad + (ci === 0 ? firstColW / 2 : firstColW + (ci - 1) * cellW + cellW / 2);
+                    const color = cell.match(/^-?\d/) && parseFloat(cell) < 0 ? '#dc2626' : parseFloat(cell) > 0 && ci > 0 ? '#16a34a' : '#374151';
+                    svg += `<text x="${x}" y="${y + cellH / 2 + 4}" font-family="Arial" font-size="9" fill="${color}" text-anchor="middle">${this.escapeXml(cell)}</text>\n`;
+                });
+                svg += `<line x1="${pad}" y1="${y + cellH}" x2="${totalW - pad}" y2="${y + cellH}" stroke="#e5e7eb" stroke-width="0.5"/>\n`;
+            });
             svg += '</svg>';
             const blob = new Blob([svg], { type: 'image/svg+xml' });
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
             a.download = `${filename}.svg`;
+            document.body.appendChild(a);
             a.click();
+            document.body.removeChild(a);
             URL.revokeObjectURL(a.href);
         }
-        document.body.removeChild(container);
     }
 
     downloadMutationResults() {
