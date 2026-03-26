@@ -5129,17 +5129,17 @@ class CorrelationExplorer {
         }
         const lineageText = filterInfo.length > 0 ? filterInfo.join(' | ') : 'All lineages';
 
-        // Build stats text for subtitle - condensed to one line
+        // Build stats text for subtitle - split into two lines to avoid cropping
         const formatP = (p) => isNaN(p) ? '-' : (p < 0.001 ? p.toExponential(1) : p.toFixed(3));
         const fusedLabel = isTranslocation ? 'Fused' : 'Mut';
-        let statsLine = `WT: n=${wtStats.n}, mean=${wtStats.mean.toFixed(2)}, med=${wtStats.median.toFixed(2)}  ·  ${fusedLabel}: n=${mutAllStats.n}, mean=${mutAllStats.mean.toFixed(2)}, med=${mutAllStats.median.toFixed(2)}`;
-        statsLine += `  ·  p(WT vs ${fusedLabel}): ${formatP(pWTvsMut)}`;
+        const statsLine1 = `WT: n=${wtStats.n}, mean=${wtStats.mean.toFixed(2)}, med=${wtStats.median.toFixed(2)}  ·  ${fusedLabel}: n=${mutAllStats.n}, mean=${mutAllStats.mean.toFixed(2)}, med=${mutAllStats.median.toFixed(2)}`;
+        let statsLine2 = `p(WT vs ${fusedLabel}): ${formatP(pWTvsMut)}`;
         if (mut2Stats.n >= 3) {
-            statsLine += `  ·  p(WT vs 2${isTranslocation ? '+' : ''}): ${formatP(pWTvs2)}`;
+            statsLine2 += `  ·  p(WT vs 2${isTranslocation ? '+' : ''}): ${formatP(pWTvs2)}`;
         }
 
         // Combine lineage info and stats in subtitle
-        const subtitle = `${lineageText}<br>${statsLine}`;
+        const subtitle = `${lineageText}<br>${statsLine1}<br>${statsLine2}`;
 
         const statusLabel = isTranslocation ? 'Fusion Status' : 'Mutation Status';
         const yAxisTitle = isTranslocation ? `${hotspotGene} Fusions` : `${hotspotGene} Mutations`;
@@ -5214,7 +5214,7 @@ class CorrelationExplorer {
         // Populate inspect-level hotspot filter dropdown
         const hotspotFilterEl = document.getElementById('geHotspotFilter');
         if (hotspotFilterEl && this.mutations?.genes) {
-            let hHtml = '<option value="">No hotspot filter</option>';
+            let hHtml = '<option value="">No hotspot mutation</option>';
             for (const g of this.mutations.genes) {
                 if (g === hotspotGene) continue;
                 const sel = g === inspectHotspot ? ' selected' : '';
@@ -5741,7 +5741,7 @@ class CorrelationExplorer {
         // Reset sliders to default values
         document.getElementById('netFontSize').value = 16;
         document.getElementById('fontSizeBubble').textContent = '16';
-        document.getElementById('netNodeSize').value = 25;
+        document.getElementById('netNodeSize').value = 20;
         document.getElementById('nodeSizeBubble').textContent = '25';
         document.getElementById('netEdgeWidth').value = 3;
         document.getElementById('edgeWidthBubble').textContent = '3';
@@ -11505,7 +11505,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Populate and show hotspot filter
         const hotspotFilterEl = document.getElementById('geHotspotFilter');
         if (hotspotFilterEl && this.mutations?.genes) {
-            let hHtml = '<option value="">No hotspot filter</option>';
+            let hHtml = '<option value="">No hotspot mutation</option>';
             for (const g of this.mutations.genes) {
                 hHtml += `<option value="${g}">${g}</option>`;
             }
@@ -11768,25 +11768,25 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             boxpoints: 'all',
             jitter: 0.3,
             pointpos: 0,
-            marker: {
-                color: s.mean < -0.5 ? 'rgba(220, 38, 38, 0.6)' : s.mean > 0 ? 'rgba(34, 197, 94, 0.5)' : 'rgba(107, 114, 128, 0.5)',
-                size: 4
-            },
-            line: { color: s.pValue < 0.05 ? '#1f2937' : '#9ca3af' },
-            fillcolor: s.mean < -0.5 ? 'rgba(220, 38, 38, 0.2)' : s.mean > 0 ? 'rgba(34, 197, 94, 0.15)' : 'rgba(156, 163, 175, 0.2)',
+            marker: { color: 'rgba(80,80,80,0.5)', size: 5 },
+            line: { color: '#374151' },
+            fillcolor: 'rgba(200,200,200,0.3)',
             hovertemplate: '<b>%{text}</b><br>Gene Effect: %{x:.3f}<extra></extra>'
         }));
 
         // Calculate dynamic sizing
         const numEntries = stats.length;
-        const tickFontSize = numEntries > 25 ? 7 : numEntries > 15 ? 8 : 9;
-        const boxHeight = numEntries > 25 ? 18 : numEntries > 15 ? 22 : 28;
-        const chartHeight = Math.max(350, numEntries * boxHeight + 80);
+        const tickFontSize = numEntries > 25 ? 12 : numEntries > 15 ? 13 : 14;
+        const boxHeight = numEntries > 25 ? 22 : numEntries > 15 ? 26 : 32;
+        const chartHeight = Math.max(400, numEntries * boxHeight + 100);
 
+        const geTissueTitle = `${gene} by ${groupBySubtype ? 'Disease Subtype' : 'Cancer Type'}`;
         const layout = {
-            title: { text: `${gene} by ${groupBySubtype ? 'Disease Subtype' : 'Cancer Type'}`, font: { size: 13 } },
+            annotations: [
+                { text: `<b>${geTissueTitle}</b>`, xref: 'paper', yref: 'paper', x: 0.5, y: 1.02, xanchor: 'center', yanchor: 'bottom', showarrow: false, font: { size: 19 }, _tsRole: 'title' },
+                { text: `${gene} Gene Effect`, xref: 'paper', yref: 'paper', x: 0.5, y: -0.04, xanchor: 'center', yanchor: 'top', showarrow: false, font: { size: 17 }, _tsRole: 'xlabel' }
+            ],
             xaxis: {
-                title: `${gene} Gene Effect`,
                 zeroline: true,
                 zerolinecolor: '#374151',
                 zerolinewidth: 2
@@ -11795,7 +11795,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 automargin: true,
                 tickfont: { size: tickFontSize }
             },
-            margin: { t: 40, b: 50, l: 10, r: 30 },
+            margin: { t: 50, b: 60, l: 10, r: 30 },
             height: chartHeight,
             showlegend: false,
             paper_bgcolor: 'white',
@@ -12013,14 +12013,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         // Calculate dynamic sizing
         const numEntries = topStats.length;
-        const tickFontSize = numEntries > 15 ? 8 : 9;
+        const tickFontSize = numEntries > 15 ? 12 : 13;
         const boxHeight = numEntries > 15 ? 35 : 45;
         const chartHeight = Math.max(400, numEntries * boxHeight + 100);
 
         const layout = {
-            title: { text: `${gene} Gene Effect by Hotspot Mutation`, font: { size: 13 } },
+            annotations: [
+                { text: `<b>${gene} Gene Effect by Hotspot Mutation</b>`, xref: 'paper', yref: 'paper', x: 0.5, y: 1.02, xanchor: 'center', yanchor: 'bottom', showarrow: false, font: { size: 19 }, _tsRole: 'title' },
+                { text: `${gene} Gene Effect`, xref: 'paper', yref: 'paper', x: 0.5, y: -0.04, xanchor: 'center', yanchor: 'top', showarrow: false, font: { size: 17 }, _tsRole: 'xlabel' }
+            ],
             xaxis: {
-                title: `${gene} Gene Effect`,
                 zeroline: true,
                 zerolinecolor: '#374151',
                 zerolinewidth: 2
@@ -15367,7 +15369,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     _captureNetworkSettings() {
         return {
             fontSize: parseInt(document.getElementById('netFontSize')?.value) || 16,
-            nodeSize: parseInt(document.getElementById('netNodeSize')?.value) || 25,
+            nodeSize: parseInt(document.getElementById('netNodeSize')?.value) || 20,
             edgeWidth: parseInt(document.getElementById('netEdgeWidth')?.value) || 3,
             colorByGeneEffect: document.getElementById('colorByGeneEffect')?.checked || false,
             colorGEType: document.querySelector('input[name="colorGEType"]:checked')?.value || 'signed',

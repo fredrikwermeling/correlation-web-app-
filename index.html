@@ -1570,7 +1570,7 @@
                                     <span class="slider-bubble" id="fontSizeBubble">16</span>
                                     <span class="slider-max">40</span>
                                 </div>
-                                <input type="range" id="netFontSize" min="10" max="40" value="16">
+                                <input type="range" id="netFontSize" min="10" max="40" value="16" step="1">
                                 <div class="slider-ticks">
                                     <span>10</span><span>14</span><span>18</span><span>22</span><span>26</span><span>30</span><span>34</span><span>38</span><span>40</span>
                                 </div>
@@ -1582,7 +1582,7 @@
                                     <span class="slider-bubble" id="nodeSizeBubble">25</span>
                                     <span class="slider-max">60</span>
                                 </div>
-                                <input type="range" id="netNodeSize" min="10" max="60" value="25">
+                                <input type="range" id="netNodeSize" min="10" max="60" value="20" step="1">
                                 <div class="slider-ticks">
                                     <span>10</span><span>20</span><span>30</span><span>40</span><span>50</span><span>60</span>
                                 </div>
@@ -1594,7 +1594,7 @@
                                     <span class="slider-bubble" id="edgeWidthBubble">3</span>
                                     <span class="slider-max">10</span>
                                 </div>
-                                <input type="range" id="netEdgeWidth" min="1" max="10" value="3">
+                                <input type="range" id="netEdgeWidth" min="1" max="10" value="3" step="1">
                                 <div class="slider-ticks">
                                     <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span><span>7</span><span>8</span><span>9</span><span>10</span>
                                 </div>
@@ -2150,7 +2150,7 @@
                             <option value="">All subtypes</option>
                         </select>
                         <select id="geHotspotFilter" class="form-control" style="width: 140px; font-size: 11px; padding: 3px 6px; display: none;" title="Additional hotspot filter — only show cell lines mutated in this gene">
-                            <option value="">No hotspot filter</option>
+                            <option value="">No hotspot mutation</option>
                         </select>
                         <span id="geHotspotBiasWarning" style="display: none; font-size: 9px; color: #92400e;" title="Selecting for mutations may introduce bias — mutations are often enriched in specific cancer types.">&#9888;</span>
                         <select id="geFusionFilter" class="form-control" style="width: 140px; font-size: 11px; padding: 3px 6px; display: none;" title="Fusion filter — only show cell lines with this fusion">
