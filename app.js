@@ -1409,10 +1409,6 @@ class CorrelationExplorer {
                 else this._oncoprintFilters[gene] = 'wt';
                 this._oncoprintSyncFilters();
                 drawOncoprint();
-            } else if (x < boxAreaW + labelW) {
-                document.getElementById('mutationHotspotSelect').value = gene;
-                document.getElementById('tissueBreakdownBtn').style.display = 'inline-block';
-                this.showOncoprint(this._oncoprintContext);
             }
         });
 
@@ -2408,6 +2404,11 @@ class CorrelationExplorer {
                 document.getElementById('colorStatsOptions').style.display = 'none';
             }
             document.getElementById('colorGEOptions').style.display = e.target.checked ? 'block' : 'none';
+            // Hide/show Node Type legend
+            const nt = document.getElementById('legendNodeType');
+            if (nt && this.results?.mode === 'design') {
+                nt.style.display = (e.target.checked || document.getElementById('colorByStats')?.checked) ? 'none' : 'block';
+            }
             this.updateNetworkColors();
         });
         document.querySelectorAll('input[name="colorGEType"]').forEach(radio => {
@@ -2427,6 +2428,11 @@ class CorrelationExplorer {
             }
             document.getElementById('colorStatsOptions').style.display = e.target.checked ? 'block' : 'none';
             document.getElementById('legendNodeColor').style.display = e.target.checked ? 'block' : 'none';
+            // Hide/show Node Type legend
+            const nt = document.getElementById('legendNodeType');
+            if (nt && this.results?.mode === 'design') {
+                nt.style.display = (e.target.checked || document.getElementById('colorByGeneEffect')?.checked) ? 'none' : 'block';
+            }
             this.updateNetworkColors();
         });
 
@@ -6002,6 +6008,7 @@ class CorrelationExplorer {
 
         // After stabilization: resolve edge crossings, then lock large networks
         this.network.once('stabilizationIterationsDone', () => {
+            this.network.fit({ animation: false });
             this.resolveEdgeCrossings();
             if (nodeCount > 30) {
                 this.network.setOptions({ physics: { enabled: false } });
@@ -7735,6 +7742,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
 
         this.networkData.nodes.update(updates);
+
+        // Hide/show Node Type legend based on color mode
+        const ntLegend = document.getElementById('legendNodeType');
+        if (ntLegend) {
+            if ((colorByGeneEffect || colorByStats) && this.results?.mode === 'design') {
+                ntLegend.style.display = 'none';
+            } else if (this.results?.mode === 'design') {
+                ntLegend.style.display = 'block';
+            }
+        }
     }
 
     interpolateColor(color1, color2, color3, t) {
@@ -9483,7 +9500,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 y: -0.15,
                 xanchor: 'center',
                 yanchor: 'top',
-                bgcolor: 'rgba(255,255,255,0.85)',
+                bgcolor: 'white',
                 bordercolor: '#ddd',
                 borderwidth: 1,
                 font: { size: 17 },
@@ -9491,11 +9508,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 entrywidth: 120,
                 entrywidthmode: 'pixels'
             } : {
-                x: 1.02,
-                y: 1,
+                x: 0.02,
+                y: 0.98,
                 xanchor: 'left',
                 yanchor: 'top',
-                bgcolor: 'rgba(255,255,255,0.85)',
+                bgcolor: 'white',
                 bordercolor: '#ddd',
                 borderwidth: 1,
                 title: { text: (transOverlayMode === 'color' && transOverlayGene) ? `${transOverlayGene} (fusion)` : hotspotGene, font: { size: 17 } },
@@ -9575,23 +9592,6 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     }
                 }
             });
-
-            // Auto-reposition vertical legend outside the actual plot domain
-            if (!this._userLegendPosition && layout.showlegend && layout.legend?.orientation !== 'h') {
-                const fl = plotEl._fullLayout;
-                if (fl && fl.xaxis && fl.yaxis) {
-                    const xDomain = fl.xaxis.domain;
-                    const yDomain = fl.yaxis.domain;
-                    // Place legend just outside the plot to the right
-                    isProgrammaticRelayout = true;
-                    Plotly.relayout('scatterPlot', {
-                        'legend.x': xDomain[1] + 0.02,
-                        'legend.y': yDomain[1],
-                        'legend.xanchor': 'left',
-                        'legend.yanchor': 'top'
-                    }).then(() => { isProgrammaticRelayout = false; });
-                }
-            }
 
             // Add click handler
             this.setupScatterClickHandler(filteredData);
@@ -9830,7 +9830,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 y: -0.15,
                 xanchor: 'center',
                 yanchor: 'top',
-                bgcolor: 'rgba(255,255,255,0.85)',
+                bgcolor: 'white',
                 bordercolor: '#ddd',
                 borderwidth: 1,
                 font: { size: 10 },
@@ -11822,7 +11822,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                             text: c.cellLineName, showarrow: true, arrowhead: 2, arrowsize: 1,
                             arrowcolor: '#dc2626', ax: 40, ay: -25,
                             font: { size: 10, color: '#dc2626', weight: 'bold' },
-                            bgcolor: 'rgba(255,255,255,0.85)', borderpad: 2
+                            bgcolor: 'white', borderpad: 2
                         });
                     }
                 }
@@ -12039,7 +12039,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             margin: { t: 50, b: 50, l: 10, r: 30 },
             height: chartHeight,
             showlegend: true,
-            legend: { x: 0.5, y: 1.0, xanchor: 'center', yanchor: 'bottom', orientation: 'h', font: { size: 10 }, bgcolor: 'rgba(255,255,255,0.8)', traceorder: 'reversed' },
+            legend: { x: 0.5, y: 1.0, xanchor: 'center', yanchor: 'bottom', orientation: 'h', font: { size: 10 }, bgcolor: 'white', traceorder: 'reversed' },
             paper_bgcolor: 'white',
             plot_bgcolor: 'white'
         };
@@ -14091,6 +14091,36 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             e.preventDefault();
             this.openCellLineBrowser();
         });
+
+        // Direct Gene Effect button
+        document.getElementById('showGeneEffectDirect')?.addEventListener('click', () => {
+            this.geneEffectViewMode = 'geneEffect';
+            this.currentGeneEffect = null;
+            document.getElementById('geneEffectModal').style.display = 'flex';
+            document.getElementById('geneEffectTitle').textContent = 'Gene Effect Analysis';
+            document.getElementById('geneEffectSearch').value = '';
+            document.getElementById('geneEffectCurrentGene').textContent = '';
+            document.getElementById('geneEffectSummary').style.display = 'none';
+            document.getElementById('geByTissueView').style.display = 'block';
+            document.getElementById('geByHotspotView').style.display = 'none';
+            document.getElementById('geneEffectPlot').innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:300px;color:#6b7280;font-size:14px;text-align:center;padding:40px;"><div>Type a gene name above and click <b>Analyze</b>.<br><br><span style="font-size:12px;">Shows gene effect (CRISPR knockout impact) across all cell lines,<br>broken down by cancer type or hotspot mutation.<br><br><span style="color:#9ca3af;">Try: <b>BRAF</b>, <b>TP53</b>, <b>MYC</b>, <b>KRAS</b>, <b>TSC1</b>, <b>CDK4</b></span></span></div></div>';
+            document.getElementById('geneEffectTableBody').innerHTML = '';
+        });
+
+        // Direct Correlation button
+        document.getElementById('showCorrelationDirect')?.addEventListener('click', () => {
+            document.getElementById('inspectModal').classList.add('active');
+            // Set default plot size if empty
+            const wEl = document.getElementById('plotWidth');
+            const hEl = document.getElementById('plotHeight');
+            if (wEl && !wEl.value) wEl.value = 400;
+            if (hEl && !hEl.value) hEl.value = 400;
+            const plotEl = document.getElementById('scatterPlot');
+            if (!this.currentInspect) {
+                plotEl.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:400px;color:#6b7280;font-size:14px;text-align:center;padding:40px;"><div>Enter two gene names in the <b>Genes (X/Y)</b> fields above<br>and click <b>Update</b>.<br><br><span style="font-size:12px;">Shows the correlation between two genes\' effects across cell lines.<br>Use tissue and mutation filters to explore subgroups.<br><br><span style="color:#9ca3af;">Try: <b>TP53</b> vs <b>MDM2</b>, <b>BRAF</b> vs <b>MAP2K1</b>, <b>BRCA1</b> vs <b>BRCA2</b></span></span></div></div>';
+            }
+        });
+
         document.getElementById('clbCloseBtn').addEventListener('click', () => this.closeCellLineBrowser());
         document.getElementById('cellLineBrowserModal').addEventListener('click', (e) => {
             if (e.target.id === 'cellLineBrowserModal') this.closeCellLineBrowser();
@@ -15607,9 +15637,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Current values
         const legendEl = document.getElementById('networkLegend');
         const currentFont = this._netFontFamily || 'Arial, sans-serif';
-        const legendFontSize = this._netLegendFontSize || 11;
+        const legendFontSize = this._netLegendFontSize || 15;
         const legendColor = this._netLegendColor || '#374151';
-        const bannerFontSize = this._netBannerFontSize || 10;
+        const bannerFontSize = this._netBannerFontSize || 20;
         const bannerColor = this._netBannerColor || '#374151';
         const labelColor = this._netLabelColor || '#333333';
         const nodeColor = this._netNodeColor || '#5a9f4a';
@@ -15697,7 +15727,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         this.networkData.nodes.update(nodeUpdates);
 
         // Legend styling
-        const legendFontSize = parseInt(document.getElementById('net_ts_legendSize')?.value) || 11;
+        const legendFontSize = parseInt(document.getElementById('net_ts_legendSize')?.value) || 15;
         const legendColor = document.getElementById('net_ts_legendColor')?.value || '#374151';
         this._netLegendFontSize = legendFontSize;
         this._netLegendColor = legendColor;
@@ -15716,7 +15746,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
 
         // Filter banner styling
-        const bannerFontSize = parseInt(document.getElementById('net_ts_bannerSize')?.value) || 10;
+        const bannerFontSize = parseInt(document.getElementById('net_ts_bannerSize')?.value) || 20;
         const bannerColor = document.getElementById('net_ts_bannerColor')?.value || '#374151';
         this._netBannerFontSize = bannerFontSize;
         this._netBannerColor = bannerColor;

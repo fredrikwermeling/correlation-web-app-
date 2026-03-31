@@ -1293,11 +1293,13 @@
                         <p style="margin: 6px 0 0 0; font-style: italic;"><a href="https://depmap.org/portal/data_page/?tab=overview#how-to-cite" target="_blank" style="color: #0066cc;">Please acknowledge DepMap</a> if you use this data.</p>
                     </div>
                     <div style="display:flex; gap:6px; margin-top:10px;">
-                        <button class="btn btn-secondary btn-sm" id="resetAppBtn" style="flex:1;">Reset App</button>
                         <button class="btn btn-outline btn-sm" id="showCellLineBrowser" style="flex:1; color:var(--green-700); border-color:var(--green-400);">Cell Lines</button>
-                        <label class="btn btn-outline btn-sm" style="flex:0; cursor:pointer; font-size:11px; color:var(--green-700); border-color:var(--green-400); white-space:nowrap;" title="Open a Correlate export (SVG/PNG) to restore settings">
+                        <button class="btn btn-outline btn-sm" id="showGeneEffectDirect" style="flex:1; color:var(--green-700); border-color:var(--green-400);">Gene Effect</button>
+                        <button class="btn btn-outline btn-sm" id="showCorrelationDirect" style="flex:1; color:var(--green-700); border-color:var(--green-400);">Correlation</button>
+                        <label class="btn btn-outline btn-sm" style="flex:1; cursor:pointer; color:var(--green-700); border-color:var(--green-400); text-align:center; display:flex; align-items:center; justify-content:center;" title="Open a Correlate export (SVG/PNG) to restore settings">
                             Open <input type="file" id="restoreFromExportInput" accept=".svg,.png" style="display:none;">
                         </label>
+                        <button class="btn btn-secondary btn-sm" id="resetAppBtn" style="flex:1; border:1px solid #9ca3af;">Reset</button>
                     </div>
                 </div>
             </div>
