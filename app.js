@@ -12141,7 +12141,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         const layout = {
             annotations: [
-                { text: `<b>${gene} Gene Effect by Hotspot Mutation</b>`, xref: 'paper', yref: 'paper', x: 0.5, y: 1.12, xanchor: 'center', yanchor: 'bottom', showarrow: false, font: { size: 19 }, _tsRole: 'title' },
+                { text: `<b>${gene} Gene Effect by Hotspot Mutation</b>`, xref: 'paper', yref: 'paper', x: 0.5, y: 1.12, xanchor: 'center', yanchor: 'bottom', showarrow: false, font: { size: 15 }, _tsRole: 'title' },
                 { text: `${gene} Gene Effect`, xref: 'paper', yref: 'paper', x: 0.5, y: -0.04, xanchor: 'center', yanchor: 'top', showarrow: false, font: { size: 17 }, _tsRole: 'xlabel' }
             ],
             xaxis: {
@@ -12158,7 +12158,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             boxmode: 'group',
             boxgap: 0.1,
             boxgroupgap: 0.05,
-            margin: { t: 90, b: 50, l: 10, r: 30 },
+            margin: { t: 150, b: 50, l: 10, r: 30 },
             height: chartHeight,
             showlegend: true,
             legend: { x: 0.5, y: 1.06, xanchor: 'center', yanchor: 'bottom', orientation: 'h', font: { size: 10 }, bgcolor: 'white', traceorder: 'reversed' },
