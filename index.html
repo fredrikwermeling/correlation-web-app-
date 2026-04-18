@@ -1204,8 +1204,8 @@
         .clb-entry.clb-selected { border-color: var(--green-400); background: var(--green-50); }
         .clb-entry.clb-inspected { border-color: #60a5fa; background: #eff6ff; }
         .clb-entry input[type="checkbox"] { flex-shrink: 0; cursor: pointer; }
-        .clb-entry-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; min-width: 0; max-width: 75%; }
-        .clb-entry-tissue { font-size: 10px; color: var(--gray-500); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 2; min-width: 0; }
+        .clb-entry-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; min-width: 0; max-width: calc(100% - 50px); }
+        .clb-entry-tissue { font-size: 10px; color: var(--gray-500); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; min-width: 0; }
         .clb-detail {
             width: 280px; flex-shrink: 0; border-left: 1px solid var(--gray-200);
             padding: 14px 16px; overflow-y: auto; max-height: calc(100vh - 220px); font-size: 12px; display: none;
