@@ -2199,7 +2199,14 @@
                                 <span id="geHeightRatioValue" style="margin-left: 4px;">1.0</span>
                             </div>
                         </div>
-                        <div id="geByTissueView">
+                        <!-- Placeholder: single source of truth for "no plot yet". Visibility owned by _updateGEPlaceholderVisibility(). -->
+                        <div id="gePlotPlaceholder" style="display:flex; align-items:center; justify-content:center; min-height:400px; color:#6b7280; font-size:14px; text-align:center; padding:40px;">
+                            <div>Type a gene name above and click <b>Analyze</b>.<br><br>
+                            <span style="font-size:12px;">Shows gene effect (CRISPR knockout impact) across all cell lines,<br>
+                            broken down by cancer type or hotspot mutation.<br><br>
+                            <span style="color:#9ca3af;">Try: <b>BRAF</b>, <b>TP53</b>, <b>MYC</b>, <b>KRAS</b>, <b>TSC1</b>, <b>CDK4</b></span></span></div>
+                        </div>
+                        <div id="geByTissueView" style="display: none;">
                             <div id="geneEffectPlot" style="width: 100%; min-height: 400px;"></div>
                         </div>
                         <div id="geByHotspotView" style="display: none;">
@@ -2452,6 +2459,14 @@
           <input type="text" id="clbSearch" placeholder="Search cell lines...">
           <select id="clbTissueFilter"><option value="">All tissues</option></select>
           <select id="clbSubtypeFilter" style="display:none;"><option value="">All subtypes</option></select>
+          <select id="clbSexFilter" style="font-size:12px;" title="Filter by sex — annotation (from DepMap) or expression (Y-markers + XIST) are independent axes">
+            <option value="">All sexes</option>
+            <option value="ann_male">Male (by annotation)</option>
+            <option value="ann_female">Female (by annotation)</option>
+            <option value="exp_male">Male (by expression)</option>
+            <option value="exp_female">Female (by expression)</option>
+            <option value="unknown">Unknown</option>
+          </select>
           <span style="display:inline-flex; align-items:center; gap:2px; border:1px solid #d1d5db; border-radius:5px; padding:1px;">
             <input type="text" id="clbHotspotFilter" list="clbHotspotList" placeholder="Hotspot filter" autocomplete="off" style="width:120px; border:none; font-size:12px; padding:4px 6px;">
             <datalist id="clbHotspotList"></datalist>
@@ -2459,8 +2474,15 @@
           </span>
           <input type="text" id="clbTranslocationFilter" list="clbTranslocationList" placeholder="Fusion filter" autocomplete="off" style="width:120px;">
           <datalist id="clbTranslocationList"></datalist>
-          <input type="text" id="clbSortGene" placeholder="Sort by GE for gene..." style="width:140px;" title="Enter a gene name to sort cell lines by their gene effect for that gene">
-          <button id="clbSortDir" class="btn btn-outline btn-sm" title="Toggle sort direction" style="padding:4px 6px; font-size:10px; display:none;">&#x25B2;</button>
+          <select id="clbSortBy" style="font-size:12px;" title="Sort the cell line list">
+            <option value="name">Sort: Name</option>
+            <option value="tissue">Sort: Tissue + Subtype</option>
+            <option value="hotspot">Sort: Hotspot muts</option>
+            <option value="fusion">Sort: Fusions</option>
+            <option value="ge">Sort: GE for gene</option>
+          </select>
+          <input type="text" id="clbSortGene" placeholder="Gene..." style="width:100px; display:none;" title="Gene name for GE sort">
+          <button id="clbSortDir" class="btn btn-outline btn-sm" title="Toggle sort direction" style="padding:4px 6px; font-size:10px; display:none;">&#x25BC;</button>
           <button id="clbResetFilters" class="btn btn-outline btn-sm" title="Reset all filters">Reset</button>
           <span id="clbSelectionCount" class="clb-selection-count">0 selected</span>
           <div id="clbActiveFilters" style="display:none; font-size:10px; color:#374151; padding:2px 0; gap:4px; flex-wrap:wrap; align-items:center; width:100%;"></div>

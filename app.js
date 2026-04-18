@@ -35,7 +35,8 @@ class CorrelationExplorer {
     constructor() {
         // Cell Line Browser state
         this._clbSelectedCellLines = new Set();
-        // CLB sort direction (true = ascending, false = descending)
+        // CLB sort: mode ∈ {name, tissue, hotspot, fusion, ge}; direction
+        this._clbSortMode = 'name';
         this._clbSortAsc = true;
 
         // Data storage
@@ -156,6 +157,9 @@ class CorrelationExplorer {
                     });
             }
         }
+
+        // Precompute per-cell-line counts (hotspot, fusion) for fast sort
+        this._precomputeCellLineCounts();
         // synonymLookup loaded lazily when "Find Synonyms" is clicked
 
         this.nGenes = this.metadata.nGenes;
@@ -5158,7 +5162,7 @@ class CorrelationExplorer {
 
         const layout = {
             annotations: [{
-                text: `<b>${titleText}</b><br><span style="font-size:10px;color:#666">${subtitleText}</span>`,
+                text: this._computeGETitleText(titleText, `<span style="font-size:10px;color:#666">${subtitleText}</span>`, 17, 'geneEffectPlot'),
                 xref: 'paper',
                 yref: 'paper',
                 x: 0.5,
@@ -5174,6 +5178,7 @@ class CorrelationExplorer {
             },
             yaxis: {
                 title: yAxisTitle,
+                automargin: true,
                 tickmode: 'array',
                 tickvals: [0, 1, 2],
                 ticktext: [`${tick0Label} (n=${data.wt.length})`, `${tick1Label} (n=${data.mut1.length})`, `${tick2Label} (n=${data.mut2.length})`],
@@ -5270,6 +5275,7 @@ class CorrelationExplorer {
 
         // Mark this as mutation analysis view
         this.geneEffectViewMode = 'mutation';
+        this._updateGEPlaceholderVisibility();
 
         // Show mutation inspect controls, hide non-mutation view buttons
         document.getElementById('geHotspotFilter').style.display = '';
@@ -11605,6 +11611,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (statsExplanation) statsExplanation.textContent = "Shows 3 mutation levels: 0 (WT, blue), 1 (orange), 2 (red). p-value: Welch's t-test comparing 1+2 combined vs WT.";
             this.renderGeneEffectByHotspot();
         }
+        this._updateGEPlaceholderVisibility();
     }
 
     filterGETable(searchTerm) {
@@ -14086,6 +14093,176 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
     // ===== Cell Line Browser =====
 
+    _precomputeCellLineCounts() {
+        this._hotspotCountByCL = new Map();
+        this._fusionCountByCL = new Map();
+        const tally = (src, getInner, target) => {
+            if (!src?.geneData) return;
+            for (const gene of Object.keys(src.geneData)) {
+                const inner = getInner(src.geneData[gene]);
+                if (!inner) continue;
+                for (const [cl, v] of Object.entries(inner)) {
+                    if (v >= 1) target.set(cl, (target.get(cl) || 0) + 1);
+                }
+            }
+        };
+        tally(this.mutations, d => d.mutations, this._hotspotCountByCL);
+        tally(this.translocations, d => d.translocations, this._fusionCountByCL);
+    }
+
+    // Annotation and expression are two independent sex axes.
+    //   annotation:   'Male' | 'Female' | 'Unknown'
+    //   byExpression: 'male' | 'female' | 'unknown'
+    _getCellLineSex(cl) {
+        const meta = this.cellLineMetadata;
+        return {
+            annotation: meta?.sex?.[cl] || 'Unknown',
+            byExpression: meta?.sexByExpression?.[cl] || 'unknown',
+        };
+    }
+
+    _getSexExpressionDisplay(cl) {
+        const { annotation, byExpression } = this._getCellLineSex(cl);
+        if (byExpression === 'male') return 'Male';
+        if (byExpression === 'female') return 'Female';
+        if (annotation === 'Male') return 'Unknown (likely Y-chromosome loss)';
+        if (annotation === 'Female') return 'Unknown (likely XIST silencing)';
+        return 'Unknown';
+    }
+
+    _getSexSymbol(cl) {
+        const { annotation, byExpression } = this._getCellLineSex(cl);
+        if (annotation === 'Male')   return { sym: '♂', color: '#2563eb', italic: false, title: 'Male (annotation)' };
+        if (annotation === 'Female') return { sym: '♀', color: '#db2777', italic: false, title: 'Female (annotation)' };
+        if (byExpression === 'male')   return { sym: '♂', color: '#2563eb', italic: true,  title: 'Male (by expression)' };
+        if (byExpression === 'female') return { sym: '♀', color: '#db2777', italic: true,  title: 'Female (by expression)' };
+        return { sym: '?', color: '#9ca3af', italic: false, title: 'Sex unknown' };
+    }
+
+    _cellLineMatchesSexFilter(cl, filter) {
+        if (!filter) return true;
+        const { annotation, byExpression } = this._getCellLineSex(cl);
+        switch (filter) {
+            case 'ann_male':    return annotation === 'Male';
+            case 'ann_female':  return annotation === 'Female';
+            case 'exp_male':    return byExpression === 'male';
+            case 'exp_female':  return byExpression === 'female';
+            case 'unknown':     return annotation === 'Unknown';
+            default: return true;
+        }
+    }
+
+    // Title wrap: measure and insert <br> so the title fits the plot width.
+    _computeGETitleText(titleText, subtitleText, baseFontSize, plotDivId) {
+        const container = plotDivId ? document.getElementById(plotDivId) : null;
+        const containerWidth = container?.clientWidth || 600;
+        const maxTitleWidth = Math.max(200, containerWidth - 40);
+        const ctx = (this._geMeasureCtx ||= document.createElement('canvas').getContext('2d'));
+        const measure = (text, sizePx) => {
+            ctx.font = `bold ${sizePx}px Arial, Helvetica, sans-serif`;
+            return ctx.measureText(text).width;
+        };
+        let fontSize = baseFontSize;
+        let lines = [titleText];
+        if (measure(titleText, fontSize) > maxTitleWidth) {
+            lines = this._wrapTextGreedy(titleText, fontSize, maxTitleWidth, measure);
+            while (fontSize > 12 && lines.some(l => measure(l, fontSize) > maxTitleWidth)) {
+                fontSize -= 1;
+                lines = this._wrapTextGreedy(titleText, fontSize, maxTitleWidth, measure);
+            }
+        }
+        const titleHtml = `<span style="font-size:${fontSize}px"><b>${lines.join('<br>')}</b></span>`;
+        const subtitleHtml = subtitleText
+            ? `<br><span style="font-size:15px;color:#666">${subtitleText}</span>`
+            : '';
+        return titleHtml + subtitleHtml;
+    }
+
+    _wrapTextGreedy(text, fontSize, maxWidth, measure) {
+        const words = String(text).split(/\s+/);
+        const lines = [];
+        let cur = '';
+        for (const w of words) {
+            const trial = cur ? cur + ' ' + w : w;
+            if (!cur || measure(trial, fontSize) <= maxWidth) cur = trial;
+            else { lines.push(cur); cur = w; }
+        }
+        if (cur) lines.push(cur);
+        return lines;
+    }
+
+    // Dynamic left margin + y-label x so the rotated label never overlaps ticks.
+    _computeGEYAxisLayout(tickTexts, tickFontSize, labelFontSize, plotDivId) {
+        const ctx = (this._geMeasureCtx ||= document.createElement('canvas').getContext('2d'));
+        ctx.font = `${tickFontSize}px Arial, Helvetica, sans-serif`;
+        let tickPx = 0;
+        for (const t of tickTexts || []) {
+            const w = ctx.measureText(String(t)).width;
+            if (w > tickPx) tickPx = w;
+        }
+        tickPx = Math.ceil(tickPx);
+        const labelPx = Math.ceil(labelFontSize + 4);
+        const gapTickLabel = 10;
+        const gapLabelMargin = 8;
+        const marginL = Math.max(80, Math.min(320, tickPx + gapTickLabel + labelPx + gapLabelMargin));
+        const container = plotDivId ? document.getElementById(plotDivId) : null;
+        const containerWidth = container?.clientWidth || 600;
+        const marginR = 30;
+        const plotAreaWidth = Math.max(50, containerWidth - marginL - marginR);
+        const labelPxOffset = tickPx + gapTickLabel + labelPx / 2;
+        const labelX = -labelPxOffset / plotAreaWidth;
+        return { marginL, labelX };
+    }
+
+    // Placeholder visibility invariant: at most one of {placeholder, tissue view, hotspot view} shown.
+    _updateGEPlaceholderVisibility() {
+        const hasPlot = !!this.currentGeneEffect || this.geneEffectViewMode === 'mutation';
+        const ph = document.getElementById('gePlotPlaceholder');
+        const tv = document.getElementById('geByTissueView');
+        const hv = document.getElementById('geByHotspotView');
+        if (!ph || !tv || !hv) return;
+        if (!hasPlot) {
+            ph.style.display = 'flex';
+            tv.style.display = 'none';
+            hv.style.display = 'none';
+        } else {
+            ph.style.display = 'none';
+        }
+    }
+
+    // GE layout invariant check used by window._geStressTest().
+    _checkGEInvariants() {
+        const ph = document.getElementById('gePlotPlaceholder');
+        const plotEl = document.getElementById('geneEffectPlot');
+        const svg = plotEl?.querySelector('svg.main-svg');
+        if (!svg) return { A: false, B: false, C: false, note: 'no SVG' };
+        const A = (ph?.style.display === 'none') && !!plotEl.querySelector('.plot-container, g.cartesianlayer');
+        const annGroups = svg.querySelectorAll('g.annotation');
+        let titleG = null, yLabelG = null;
+        for (const g of annGroups) {
+            const t = g.textContent || '';
+            if (!titleG && t.includes('Gene Effect by')) titleG = g;
+            if (!yLabelG && /(Mutations|Fusions)\s*$/.test(t) && !t.includes('Gene Effect by')) yLabelG = g;
+        }
+        const svgRect = svg.getBoundingClientRect();
+        let B = true;
+        if (titleG) {
+            const r = titleG.getBoundingClientRect();
+            if (r.left < svgRect.left - 1 || r.right > svgRect.right + 1) B = false;
+        } else B = false;
+        let C = true;
+        if (yLabelG) {
+            const yr = yLabelG.getBoundingClientRect();
+            const ticks = svg.querySelectorAll('g.ytick text');
+            for (const t of ticks) {
+                const tr = t.getBoundingClientRect();
+                const overlap = !(yr.right < tr.left || tr.right < yr.left || yr.bottom < tr.top || tr.bottom < yr.top);
+                if (overlap) { C = false; break; }
+            }
+        }
+        return { A, B, C };
+    }
+
     setupCellLineBrowserEvents() {
         document.getElementById('showCellLineBrowser').addEventListener('click', (e) => {
             e.preventDefault();
@@ -14101,9 +14278,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             document.getElementById('geneEffectSearch').value = '';
             document.getElementById('geneEffectCurrentGene').textContent = '';
             document.getElementById('geneEffectSummary').style.display = 'none';
-            document.getElementById('geByTissueView').style.display = 'block';
-            document.getElementById('geByHotspotView').style.display = 'none';
-            document.getElementById('geneEffectPlot').innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:300px;color:#6b7280;font-size:14px;text-align:center;padding:40px;"><div>Type a gene name above and click <b>Analyze</b>.<br><br><span style="font-size:12px;">Shows gene effect (CRISPR knockout impact) across all cell lines,<br>broken down by cancer type or hotspot mutation.<br><br><span style="color:#9ca3af;">Try: <b>BRAF</b>, <b>TP53</b>, <b>MYC</b>, <b>KRAS</b>, <b>TSC1</b>, <b>CDK4</b></span></span></div></div>';
+            this._updateGEPlaceholderVisibility();
             document.getElementById('geneEffectTableBody').innerHTML = '';
         });
 
@@ -14145,19 +14320,30 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         });
         document.getElementById('clbOncoprintBtn')?.addEventListener('click', () => this.showOncoprint('clb'));
 
-        let clbGeneTimer;
-        document.getElementById('clbSortGene').addEventListener('input', () => {
-            clearTimeout(clbGeneTimer);
-            clbGeneTimer = setTimeout(() => {
-                const hasGene = document.getElementById('clbSortGene').value.trim() !== '';
-                document.getElementById('clbSortDir').style.display = hasGene ? '' : 'none';
-                this.renderCellLineList();
-            }, 200);
-        });
+        document.getElementById('clbSexFilter').addEventListener('change', () => this.renderCellLineList());
 
-        document.getElementById('clbSortDir').addEventListener('click', () => {
+        const clbSortBy = document.getElementById('clbSortBy');
+        const clbSortGene = document.getElementById('clbSortGene');
+        const clbSortDir = document.getElementById('clbSortDir');
+        const updateSortControls = () => {
+            const mode = clbSortBy.value;
+            this._clbSortMode = mode;
+            clbSortGene.style.display = (mode === 'ge') ? '' : 'none';
+            const showDir = mode !== 'name' && !(mode === 'ge' && !clbSortGene.value.trim());
+            clbSortDir.style.display = showDir ? '' : 'none';
+            if (mode === 'hotspot' || mode === 'fusion') this._clbSortAsc = false;
+            else this._clbSortAsc = true;
+            clbSortDir.innerHTML = this._clbSortAsc ? '&#x25B2;' : '&#x25BC;';
+        };
+        clbSortBy.addEventListener('change', () => { updateSortControls(); this.renderCellLineList(); });
+        let clbGeneTimer;
+        clbSortGene.addEventListener('input', () => {
+            clearTimeout(clbGeneTimer);
+            clbGeneTimer = setTimeout(() => { updateSortControls(); this.renderCellLineList(); }, 200);
+        });
+        clbSortDir.addEventListener('click', () => {
             this._clbSortAsc = !this._clbSortAsc;
-            document.getElementById('clbSortDir').innerHTML = this._clbSortAsc ? '&#x25B2;' : '&#x25BC;';
+            clbSortDir.innerHTML = this._clbSortAsc ? '&#x25B2;' : '&#x25BC;';
             this.renderCellLineList();
         });
 
@@ -14165,10 +14351,15 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             document.getElementById('clbSearch').value = '';
             document.getElementById('clbTissueFilter').value = '';
             document.getElementById('clbSubtypeFilter').value = '';
+            document.getElementById('clbSexFilter').value = '';
             document.getElementById('clbHotspotFilter').value = '';
             document.getElementById('clbTranslocationFilter').value = '';
+            document.getElementById('clbSortBy').value = 'name';
             document.getElementById('clbSortGene').value = '';
+            document.getElementById('clbSortGene').style.display = 'none';
             document.getElementById('clbSortDir').style.display = 'none';
+            this._clbSortMode = 'name';
+            this._clbSortAsc = true;
             this._oncoprintFilters = {};
             this._activeOncoprintFilters = null;
             this._oncoprintSyncFilters?.();
@@ -14314,6 +14505,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const search = document.getElementById('clbSearch').value.trim().toLowerCase();
         const tissue = document.getElementById('clbTissueFilter').value;
         const subtype = document.getElementById('clbSubtypeFilter').value;
+        const sexFilter = document.getElementById('clbSexFilter').value;
         const hotspotGene = document.getElementById('clbHotspotFilter').value;
         const transGene = document.getElementById('clbTranslocationFilter').value;
 
@@ -14323,6 +14515,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         let filtered = this.metadata.cellLines.filter(cl => {
             if (tissue && this.getCellLineLineage(cl) !== tissue) return false;
             if (subtype && this.getCellLineSublineage(cl) !== subtype) return false;
+            if (sexFilter && !this._cellLineMatchesSexFilter(cl, sexFilter)) return false;
             if (hotspotMuts && !(hotspotMuts[cl] >= 1)) return false;
             if (transMuts && !(transMuts[cl] >= 1)) return false;
             if (!this._cellLinePassesOncoprintFilters(cl)) return false;
@@ -14334,29 +14527,57 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             return true;
         });
 
-        const sortGene = document.getElementById('clbSortGene').value.trim().toUpperCase();
-        const sortGeneIdx = sortGene ? this.geneIndex.get(sortGene) : undefined;
+        const mode = this._clbSortMode || 'name';
+        const dir = this._clbSortAsc ? 1 : -1;
         let geMap = null;
-        if (sortGeneIdx !== undefined) {
-            geMap = new Map();
-            for (const cl of filtered) {
-                const clIdx = this.metadata.cellLines.indexOf(cl);
-                if (clIdx >= 0) {
-                    const val = this.geneEffects[sortGeneIdx * this.nCellLines + clIdx];
-                    geMap.set(cl, (!isNaN(val) && val !== -999) ? val : NaN);
+        let countMap = null;
+        let secondaryCmp;
+        if (mode === 'ge') {
+            const sortGene = document.getElementById('clbSortGene').value.trim().toUpperCase();
+            const sortGeneIdx = sortGene ? this.geneIndex.get(sortGene) : undefined;
+            if (sortGeneIdx !== undefined) {
+                geMap = new Map();
+                for (const cl of filtered) {
+                    const clIdx = this.metadata.cellLines.indexOf(cl);
+                    if (clIdx >= 0) {
+                        const val = this.geneEffects[sortGeneIdx * this.nCellLines + clIdx];
+                        geMap.set(cl, (!isNaN(val) && val !== -999) ? val : NaN);
+                    }
                 }
+                secondaryCmp = (a, b) => {
+                    const va = geMap.get(a), vb = geMap.get(b);
+                    if (isNaN(va) && isNaN(vb)) return 0;
+                    if (isNaN(va)) return 1;
+                    if (isNaN(vb)) return -1;
+                    return (va - vb) * dir;
+                };
+            } else {
+                secondaryCmp = (a, b) => this.getCellLineName(a).localeCompare(this.getCellLineName(b));
             }
-            const dir = this._clbSortAsc ? 1 : -1;
-            filtered.sort((a, b) => {
-                const va = geMap.get(a), vb = geMap.get(b);
-                if (isNaN(va) && isNaN(vb)) return 0;
-                if (isNaN(va)) return 1;
-                if (isNaN(vb)) return -1;
+        } else if (mode === 'hotspot' || mode === 'fusion') {
+            const source = mode === 'hotspot' ? this._hotspotCountByCL : this._fusionCountByCL;
+            countMap = source;
+            secondaryCmp = (a, b) => {
+                const va = source.get(a) || 0;
+                const vb = source.get(b) || 0;
+                if (va === vb) return this.getCellLineName(a).localeCompare(this.getCellLineName(b));
                 return (va - vb) * dir;
-            });
+            };
+        } else if (mode === 'tissue') {
+            secondaryCmp = (a, b) => {
+                const ta = this.getCellLineLineage(a) || '';
+                const tb = this.getCellLineLineage(b) || '';
+                if (ta !== tb) return ta.localeCompare(tb) * dir;
+                const sa = this.getCellLineSublineage(a) || '';
+                const sb = this.getCellLineSublineage(b) || '';
+                if (sa !== sb) return sa.localeCompare(sb) * dir;
+                return this.getCellLineName(a).localeCompare(this.getCellLineName(b));
+            };
         } else {
-            filtered.sort((a, b) => this.getCellLineName(a).localeCompare(this.getCellLineName(b)));
+            secondaryCmp = (a, b) => this.getCellLineName(a).localeCompare(this.getCellLineName(b));
         }
+        filtered.sort(secondaryCmp);
+
         this._clbVisibleCellLines = filtered;
         this._updateClbActiveFilterLabel();
 
@@ -14375,12 +14596,22 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const cls = ['clb-entry'];
             if (selected) cls.push('clb-selected');
             if (inspected) cls.push('clb-inspected');
-            const geVal = geMap ? geMap.get(cl) : null;
-            const geStr = geVal !== null && !isNaN(geVal) ? `<span style="font-size:10px; color:#666; margin-left:auto; flex-shrink:0;">${geVal.toFixed(2)}</span>` : '';
+            let sortValStr = '';
+            if (geMap) {
+                const v = geMap.get(cl);
+                if (v !== undefined && !isNaN(v)) sortValStr = `<span style="font-size:10px; color:#666; margin-left:auto; flex-shrink:0;">${v.toFixed(2)}</span>`;
+            } else if (countMap) {
+                const v = countMap.get(cl) || 0;
+                sortValStr = `<span style="font-size:10px; color:#666; margin-left:auto; flex-shrink:0;">${v}</span>`;
+            }
+            const sx = this._getSexSymbol(cl);
+            const sxStyle = `color:${sx.color}; font-weight:700; margin-right:4px;${sx.italic ? ' font-style:italic;' : ''}`;
+            const sexStr = `<span style="${sxStyle}" title="${sx.title}">${sx.sym}</span>`;
             return `<div class="${cls.join(' ')}" data-clid="${cl}">` +
                 `<input type="checkbox"${selected ? ' checked' : ''}>` +
+                sexStr +
                 `<span class="clb-entry-name" title="${name}">${name}</span>` +
-                `<span class="clb-entry-tissue">${lin}</span>${geStr}</div>`;
+                `<span class="clb-entry-tissue">${lin}</span>${sortValStr}</div>`;
         }).join('');
         container.innerHTML = html;
         this.updateClbFilterCounts();
@@ -14612,11 +14843,17 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const mean = count > 0 ? sum / count : NaN;
         geneVals.sort((a, b) => a.val - b.val);
 
+        const { annotation: sexAnn, byExpression: sexExp } = this._getCellLineSex(cellLineId);
+        const expDisplay = this._getSexExpressionDisplay(cellLineId);
+        const disagree = (sexAnn === 'Male' && sexExp === 'female') || (sexAnn === 'Female' && sexExp === 'male');
+        const expStyle = disagree ? ' style="color:#b45309;" title="Expression disagrees with annotation"' : '';
         let top = `<h4>${name}</h4>`;
         top += `<div class="clb-detail-id">${cellLineId}</div>`;
         top += `<div class="clb-detail-section">`;
         top += `<div class="clb-stat-row"><span class="clb-stat-label">Tissue</span><span class="clb-stat-value">${lineage || '-'}</span></div>`;
         top += `<div class="clb-stat-row"><span class="clb-stat-label">Subtype</span><span class="clb-stat-value">${sublineage || '-'}</span></div>`;
+        top += `<div class="clb-stat-row"><span class="clb-stat-label">Sex (annotation)</span><span class="clb-stat-value">${sexAnn}</span></div>`;
+        top += `<div class="clb-stat-row"><span class="clb-stat-label">Sex (expression)</span><span class="clb-stat-value"${expStyle}>${expDisplay}</span></div>`;
         top += `</div>`;
 
         top += `<div class="clb-detail-section"><strong>Hotspot Mutations (${mutGenes.length})</strong>`;
@@ -16207,3 +16444,39 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
 // Initialize app
 const app = new CorrelationExplorer();
+window.app = app;
+
+// Dev helper: stress-test GE modal layout invariants across slider values.
+// Usage (DevTools): await _geStressTest()
+// Prereq: a mutation-inspect plot is open.
+window._geStressTest = async function _geStressTest() {
+    const a = window.app;
+    if (!a?.mutationResults || a.geneEffectViewMode !== 'mutation') {
+        console.error('[_geStressTest] Open a mutation-inspect plot first.');
+        return;
+    }
+    const currentGene = a.currentGeneEffectGene || a.mutationResults.hotspotGene;
+    if (!currentGene) { console.error('[_geStressTest] No current gene.'); return; }
+    const savedW = a.geChartWidthRatio, savedH = a.geChartHeightRatio;
+    const widthRatios = [0.3, 0.5, 0.8, 1.0, 1.2, 1.5, 1.8];
+    const heightRatios = [0.5, 1.0, 1.5, 2.0];
+    const wait = () => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    const results = [];
+    for (const w of widthRatios) {
+        for (const h of heightRatios) {
+            a.geChartWidthRatio = w; a.geChartHeightRatio = h;
+            a.showGeneEffectDistribution(currentGene);
+            await wait(); await wait();
+            results.push({ gene: currentGene, width: w, height: h, ...a._checkGEInvariants() });
+        }
+    }
+    a.geChartWidthRatio = savedW; a.geChartHeightRatio = savedH;
+    a.showGeneEffectDistribution(currentGene);
+    console.table(results);
+    const failed = results.filter(r => !r.A || !r.B || !r.C);
+    const pass = results.length - failed.length;
+    console.log(`%c[_geStressTest] PASS: ${pass}/${results.length}, FAIL: ${failed.length}`,
+        failed.length ? 'color:#dc2626;font-weight:700;' : 'color:#16a34a;font-weight:700;');
+    if (failed.length) console.log('Failed:', failed);
+    return results;
+};
