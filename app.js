@@ -5159,33 +5159,67 @@ class CorrelationExplorer {
 
         const titleText = `${gene} Gene Effect by ${hotspotGene} ${statusLabel}`;
         const subtitleText = subtitle;
+        const xLabelText = `${gene} Gene Effect`;
+
+        const yLabelFontSize = 20;
+        const yTickFontSize = 17;
+        const yTickTexts = [
+            `${tick0Label} (n=${data.wt.length})`,
+            `${tick1Label} (n=${data.mut1.length})`,
+            `${tick2Label} (n=${data.mut2.length})`
+        ];
+        const yFit = this._computeGEYAxisLayout(yTickTexts, yTickFontSize, yLabelFontSize, 'geneEffectPlot');
+
+        const geTitleAnn = {
+            text: this._computeGETitleText(titleText, subtitleText, 25, 'geneEffectPlot'),
+            xref: 'paper', yref: 'paper',
+            x: this._geUserTitlePos ? this._geUserTitlePos.x : 0.5,
+            y: this._geUserTitlePos ? this._geUserTitlePos.y : 1.35,
+            xanchor: this._geUserTitlePos ? 'auto' : 'center',
+            yanchor: this._geUserTitlePos ? 'auto' : 'top',
+            showarrow: false,
+            font: { size: Math.round(15 * 0.85) },
+            _tsRole: 'title'
+        };
+        const geXLabelAnn = {
+            text: xLabelText,
+            xref: 'paper', yref: 'paper',
+            x: this._geUserXLabelPos ? this._geUserXLabelPos.x : 0.5,
+            y: this._geUserXLabelPos ? this._geUserXLabelPos.y : -0.08,
+            xanchor: this._geUserXLabelPos ? 'auto' : 'center',
+            yanchor: this._geUserXLabelPos ? 'auto' : 'top',
+            showarrow: false,
+            font: { size: 20 },
+            _tsRole: 'xlabel'
+        };
+        const geYLabelAnn = {
+            text: yAxisTitle,
+            xref: 'paper', yref: 'paper',
+            x: this._geUserYLabelPos ? this._geUserYLabelPos.x : yFit.labelX,
+            y: this._geUserYLabelPos ? this._geUserYLabelPos.y : 0.5,
+            xanchor: this._geUserYLabelPos ? 'auto' : 'center',
+            yanchor: this._geUserYLabelPos ? 'auto' : 'middle',
+            showarrow: false,
+            font: { size: yLabelFontSize },
+            textangle: -90,
+            _tsRole: 'ylabel'
+        };
 
         const layout = {
-            annotations: [{
-                text: this._computeGETitleText(titleText, `<span style="font-size:10px;color:#666">${subtitleText}</span>`, 17, 'geneEffectPlot'),
-                xref: 'paper',
-                yref: 'paper',
-                x: 0.5,
-                y: 1.35,
-                xanchor: 'center',
-                yanchor: 'top',
-                showarrow: false,
-                font: { size: 13 }
-            }],
+            annotations: [geTitleAnn, geXLabelAnn, geYLabelAnn],
             xaxis: {
-                title: `${gene} Gene Effect`,
-                range: [xMin, xMax]
+                range: [xMin, xMax],
+                tickfont: { size: yTickFontSize }
             },
             yaxis: {
-                title: yAxisTitle,
-                automargin: true,
                 tickmode: 'array',
                 tickvals: [0, 1, 2],
-                ticktext: [`${tick0Label} (n=${data.wt.length})`, `${tick1Label} (n=${data.mut1.length})`, `${tick2Label} (n=${data.mut2.length})`],
-                range: [-0.5, 2.5]
+                ticktext: yTickTexts,
+                range: [-0.5, 2.5],
+                tickfont: { size: yTickFontSize }
             },
             showlegend: false,
-            margin: { t: 160, r: 30, b: 55, l: 160 },
+            margin: { t: 160, r: 30, b: 55, l: yFit.marginL },
             height: Math.round(400 * (this.geChartHeightRatio || 1))
         };
 
@@ -5305,6 +5339,19 @@ class CorrelationExplorer {
         Plotly.newPlot('geneEffectPlot', traces, layout, {
             responsive: true,
             edits: { annotationPosition: true, legendPosition: true }
+        }).then(plotEl => {
+            plotEl.on('plotly_relayout', (relayoutData) => {
+                const plotAnns = plotEl.layout.annotations || [];
+                for (let ai = 0; ai < plotAnns.length; ai++) {
+                    const xKey = `annotations[${ai}].x`, yKey = `annotations[${ai}].y`;
+                    if (relayoutData[xKey] !== undefined && relayoutData[yKey] !== undefined) {
+                        const role = plotAnns[ai]._tsRole;
+                        if (role === 'title')  this._geUserTitlePos  = { x: relayoutData[xKey], y: relayoutData[yKey] };
+                        else if (role === 'xlabel') this._geUserXLabelPos = { x: relayoutData[xKey], y: relayoutData[yKey] };
+                        else if (role === 'ylabel') this._geUserYLabelPos = { x: relayoutData[xKey], y: relayoutData[yKey] };
+                    }
+                }
+            });
         });
 
         // Show chart width and Y range controls
