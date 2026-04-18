@@ -5178,7 +5178,7 @@ class CorrelationExplorer {
             text: this._computeGETitleText(titleText, subtitleText, 25, 'geneEffectPlot'),
             xref: 'paper', yref: 'paper',
             x: this._geUserTitlePos ? this._geUserTitlePos.x : 0.5,
-            y: this._geUserTitlePos ? this._geUserTitlePos.y : 1.45,
+            y: this._geUserTitlePos ? this._geUserTitlePos.y : 1.65,
             xanchor: this._geUserTitlePos ? 'auto' : 'center',
             yanchor: this._geUserTitlePos ? 'auto' : 'top',
             showarrow: false,
@@ -5189,7 +5189,7 @@ class CorrelationExplorer {
             text: xLabelText,
             xref: 'paper', yref: 'paper',
             x: this._geUserXLabelPos ? this._geUserXLabelPos.x : 0.5,
-            y: this._geUserXLabelPos ? this._geUserXLabelPos.y : -0.15,
+            y: this._geUserXLabelPos ? this._geUserXLabelPos.y : -0.20,
             xanchor: this._geUserXLabelPos ? 'auto' : 'center',
             yanchor: this._geUserXLabelPos ? 'auto' : 'top',
             showarrow: false,
@@ -5223,7 +5223,7 @@ class CorrelationExplorer {
                 tickfont: { size: yTickFontSize }
             },
             showlegend: false,
-            margin: { t: 160, r: 30, b: 55, l: yFit.marginL },
+            margin: { t: 180, r: 30, b: 75, l: yFit.marginL },
             height: Math.round(400 * (this.geChartHeightRatio || 1))
         };
 
