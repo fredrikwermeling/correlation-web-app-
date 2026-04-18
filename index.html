@@ -2449,6 +2449,53 @@
     </div>
 
     <!-- Cell Line Browser Modal -->
+    <div id="clbInfoModal" style="display:none; position:fixed; inset:0; z-index:1150; background:rgba(0,0,0,0.5); align-items:flex-start; justify-content:center; padding:40px;">
+      <div style="background:#fff; max-width:720px; width:100%; max-height:80vh; overflow-y:auto; border-radius:8px; padding:20px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+          <h3 style="margin:0; font-size:16px;">Cell Line Browser — Help</h3>
+          <button id="clbInfoCloseBtn" style="background:none; border:none; font-size:24px; cursor:pointer; line-height:1;">&times;</button>
+        </div>
+        <div style="font-size:12px; line-height:1.55; color:#374151;">
+          <p style="margin-top:0;"><strong>Filters</strong> &mdash; stack with AND. Click Reset to clear.</p>
+          <ul style="margin:4px 0 10px 20px;">
+            <li><b>Tissue / Subtype</b> &mdash; DepMap OncotreeLineage and primary disease subtype.</li>
+            <li><b>Sex</b> &mdash; annotation and expression are two independent axes (see below).</li>
+            <li><b>Hotspot filter</b> &mdash; only show cell lines mutated in this gene at a hotspot position.</li>
+            <li><b>Fusion filter</b> &mdash; only show cell lines with this gene as a fusion partner.</li>
+            <li><b>Oncoprint</b> &mdash; mutation heatmap across filtered cell lines.</li>
+          </ul>
+          <p><strong>Sex</strong> &mdash; two independent axes:</p>
+          <ul style="margin:4px 0 10px 20px;">
+            <li><b>Sex (annotation)</b> &mdash; from DepMap's Model table (patient-reported). Values: Male, Female, Unknown.</li>
+            <li><b>Sex (expression)</b> &mdash; computed from Y-chromosome markers (RPS4Y1, DDX3Y, EIF1AY, KDM5D, UTY, USP9Y) and XIST expression. Rules: Y-mean &gt; 1.0 log-TPM &rarr; male; XIST &gt; 1.0 with Y low &rarr; female; otherwise unknown. Validated on DepMap-labeled cells: ~3% false-positive on males, ~0.14% on females.</li>
+          </ul>
+          <p><b>When expression is &ldquo;Unknown&rdquo;:</b></p>
+          <ul style="margin:4px 0 10px 20px;">
+            <li>Annotation Male &rarr; <i>&ldquo;Unknown (likely Y-chromosome loss)&rdquo;</i> &mdash; Y loss is common in cancer, esp. older male patients and advanced tumors.</li>
+            <li>Annotation Female &rarr; <i>&ldquo;Unknown (likely XIST silencing)&rdquo;</i> &mdash; XIST silencing is documented in breast and other cancers.</li>
+          </ul>
+          <p><strong>Sex symbols in the list</strong></p>
+          <ul style="margin:4px 0 10px 20px;">
+            <li><span style="color:#2563eb; font-weight:700;">&#9794;</span> blue, upright: Male by annotation.</li>
+            <li><span style="color:#db2777; font-weight:700;">&#9792;</span> pink, upright: Female by annotation.</li>
+            <li><span style="color:#2563eb; font-weight:700; font-style:italic;">&#9794;</span> blue, italic: Male by expression only (annotation unknown).</li>
+            <li><span style="color:#db2777; font-weight:700; font-style:italic;">&#9792;</span> pink, italic: Female by expression only (annotation unknown).</li>
+            <li><span style="color:#9ca3af; font-weight:700;">?</span> gray: Unknown in both axes.</li>
+          </ul>
+          <p><strong>Sort options</strong></p>
+          <ul style="margin:4px 0 10px 20px;">
+            <li><b>Name</b> &mdash; alphabetical.</li>
+            <li><b>Tissue + Subtype</b> &mdash; alphabetical by tissue, then subtype within each tissue.</li>
+            <li><b>Hotspot muts</b> &mdash; number of hotspot-mutated genes per cell line (descending by default).</li>
+            <li><b>Damaging muts</b> &mdash; number of genes with damaging (deleterious / loss-of-function) somatic mutations per cell line (descending). Source: DepMap <code>OmicsSomaticMutationsMatrixDamaging</code>.</li>
+            <li><b>Fusions</b> &mdash; number of distinct fusion partner genes per cell line (descending).</li>
+            <li><b>GE for gene</b> &mdash; enter a gene; cells sorted by its CRISPR gene effect (CERES score) value.</li>
+          </ul>
+          <p style="color:#6b7280; margin-bottom:0;"><b>Data source:</b> DepMap 25Q3.</p>
+        </div>
+      </div>
+    </div>
+
     <div id="cellLineBrowserModal" style="display:none; position:fixed; inset:0; z-index:1100; background:rgba(0,0,0,0.5); justify-content:center; align-items:flex-start; padding:20px;">
       <div style="background:#fff; border-radius:8px; width:100%; max-width:1200px; max-height:calc(100vh - 40px); margin-top:20px; display:flex; flex-direction:column; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);">
         <div class="modal-header">
@@ -2485,6 +2532,7 @@
           <input type="text" id="clbSortGene" placeholder="Gene..." style="width:100px; display:none;" title="Gene name for GE sort">
           <button id="clbSortDir" class="btn btn-outline btn-sm" title="Toggle sort direction" style="padding:4px 6px; font-size:10px; display:none;">&#x25BC;</button>
           <button id="clbResetFilters" class="btn btn-outline btn-sm" title="Reset all filters">Reset</button>
+          <button id="clbInfoBtn" class="btn btn-outline btn-sm" title="What do these filters and sorts mean?" style="padding:4px 8px; font-weight:700;">?</button>
           <span id="clbSelectionCount" class="clb-selection-count">0 selected</span>
           <div id="clbActiveFilters" style="display:none; font-size:10px; color:#374151; padding:2px 0; gap:4px; flex-wrap:wrap; align-items:center; width:100%;"></div>
           <div style="margin-left:auto; display:flex; gap:6px;">
