@@ -14646,6 +14646,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const html = filtered.map(cl => {
             const name = this.getCellLineName(cl);
             const lin = this.getCellLineLineage(cl);
+            const sub = this.getCellLineSublineage(cl);
             const selected = this._clbSelectedCellLines.has(cl);
             const inspected = this._clbInspectedCellLine === cl;
             const cls = ['clb-entry'];
@@ -14666,7 +14667,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 `<input type="checkbox"${selected ? ' checked' : ''}>` +
                 sexStr +
                 `<span class="clb-entry-name" title="${name}">${name}</span>` +
-                `<span class="clb-entry-tissue">${lin}</span>${sortValStr}</div>`;
+                `<span class="clb-entry-tissue">${lin}${sub ? ' · ' + sub : ''}</span>${sortValStr}</div>`;
         }).join('');
         container.innerHTML = html;
         this.updateClbFilterCounts();
