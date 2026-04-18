@@ -3582,6 +3582,68 @@ class CorrelationExplorer {
         return indices;
     }
 
+    findBestFilter() {
+        const geneList = this.getGeneList();
+        if (geneList.length < 2) {
+            this.showStatus('error', 'Need at least 2 genes to find best filter.');
+            return;
+        }
+
+        const btn = document.getElementById('findBestFilterBtn');
+        if (btn) { btn.textContent = 'Searching...'; btn.disabled = true; }
+
+        setTimeout(() => {
+            const mode = document.querySelector('input[name="analysisMode"]:checked').value;
+            const cutoff = parseFloat(document.getElementById('correlationCutoff').value);
+            const minN = parseInt(document.getElementById('minCellLines').value);
+
+            const lineages = [...new Set(Object.values(this.cellLineMetadata?.lineage || {}))].sort();
+            const results = [];
+
+            // Test "All" (no filter)
+            const allIndices = [];
+            for (let i = 0; i < this.nCellLines; i++) allIndices.push(i);
+            const allResult = this.calculateCorrelations(geneList, mode === 'design' ? 'design' : 'analysis', cutoff, minN, 0, allIndices);
+            if (allResult.success) {
+                const genes = new Set(); allResult.correlations.forEach(c => { genes.add(c.gene1); genes.add(c.gene2); });
+                results.push({ filter: 'All tissues', n: allIndices.length, nGenes: genes.size });
+            }
+
+            for (const lineage of lineages) {
+                const indices = [];
+                for (let i = 0; i < this.nCellLines; i++) {
+                    const cl = this.metadata.cellLines[i];
+                    if (this.cellLineMetadata?.lineage?.[cl] === lineage) indices.push(i);
+                }
+                if (indices.length < minN) continue;
+
+                const result = this.calculateCorrelations(geneList, mode === 'design' ? 'design' : 'analysis', cutoff, minN, 0, indices);
+                if (result.success && result.correlations.length > 0) {
+                    const genes = new Set(); result.correlations.forEach(c => { genes.add(c.gene1); genes.add(c.gene2); });
+                    results.push({ filter: lineage, n: indices.length, nGenes: genes.size });
+                }
+            }
+
+            results.sort((a, b) => b.nGenes - a.nGenes);
+
+            let html = '<div style="margin-top:4px; font-size:10px;">';
+            html += '<select id="bestFilterSelect" class="form-control" style="font-size:10px; padding:2px 4px;" onchange="if(this.value!==\'_none\'){document.getElementById(\'lineageFilter\').value=this.value;app.updateSubLineageFilter();}">';
+            const allEntry = results.find(r => r.filter === 'All tissues');
+            const allGenes = allEntry ? allEntry.nGenes : 0;
+            html += `<option value="_none">Best filters (All: ${allGenes} genes):</option>`;
+            results.forEach(r => {
+                const filterVal = r.filter === 'All tissues' ? '' : r.filter;
+                html += `<option value="${filterVal}">${r.filter} — ${r.nGenes} genes (n=${r.n})</option>`;
+            });
+            html += '</select></div>';
+
+            const statusEl = document.getElementById('analysisStatus');
+            if (statusEl) statusEl.innerHTML = html;
+
+            if (btn) { btn.textContent = 'Best Filter'; btn.disabled = false; }
+        }, 50);
+    }
+
     runAnalysis() {
         // Reset network settings to defaults when running new analysis
         this.resetNetworkSettings();
@@ -3644,6 +3706,8 @@ class CorrelationExplorer {
                     this.displayResults();
                     this.showStatus('success',
                         `&#10003; Analysis complete: ${this.results.correlations.length} correlations, ${this.results.clusters.length} genes in network`);
+                    // Auto-run best filter and show dropdown (ported from V2)
+                    if (geneList.length >= 2) this.findBestFilter();
                 } else {
                     this.showStatus('error', this.results.error);
                 }
