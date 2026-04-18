@@ -1204,8 +1204,8 @@
         .clb-entry.clb-selected { border-color: var(--green-400); background: var(--green-50); }
         .clb-entry.clb-inspected { border-color: #60a5fa; background: #eff6ff; }
         .clb-entry input[type="checkbox"] { flex-shrink: 0; cursor: pointer; }
-        .clb-entry-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .clb-entry-tissue { font-size: 10px; color: var(--gray-500); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .clb-entry-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; min-width: 0; max-width: 75%; }
+        .clb-entry-tissue { font-size: 10px; color: var(--gray-500); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 2; min-width: 0; }
         .clb-detail {
             width: 280px; flex-shrink: 0; border-left: 1px solid var(--gray-200);
             padding: 14px 16px; overflow-y: auto; max-height: calc(100vh - 220px); font-size: 12px; display: none;
@@ -2497,7 +2497,7 @@
     </div>
 
     <div id="cellLineBrowserModal" style="display:none; position:fixed; inset:0; z-index:1100; background:rgba(0,0,0,0.5); justify-content:center; align-items:flex-start; padding:20px;">
-      <div style="background:#fff; border-radius:8px; width:100%; max-width:1200px; max-height:calc(100vh - 40px); margin-top:20px; display:flex; flex-direction:column; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);">
+      <div style="background:#fff; border-radius:8px; width:100%; max-width:min(98vw, 1600px); max-height:calc(100vh - 40px); margin-top:20px; display:flex; flex-direction:column; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);">
         <div class="modal-header">
           <h3>Cell Line Browser</h3>
           <button id="clbCloseBtn" class="modal-close">&times;</button>
