@@ -12303,8 +12303,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             });
         }
 
-        // Add click handlers for detailed view
+        // Add click handlers for detailed view (skip the pinned "All" row)
         tbody.querySelectorAll('.clickable-row').forEach(row => {
+            if (row.dataset.group === '_all') return;
             row.addEventListener('click', () => {
                 const group = row.dataset.group;
                 this.showGEDetailedView(group, mode);
@@ -12429,13 +12430,15 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             }
             const statsText = statsAnnotations.join('<br>');
 
-            // Square-ish plot area by default; sliders adjust width/height.
+            // Square-ish plot area by default; width capped at container offsetWidth.
             const widthRatio = this.geChartWidthRatio || 1.0;
             const heightRatio = this.geChartHeightRatio || 1.0;
             const baseSize = 520;
-            const chartWidth = Math.round(baseSize * widthRatio);
-            const chartHeight = Math.round(baseSize * heightRatio);
             const plotId = this.currentGEView === 'tissue' ? 'geneEffectPlot' : 'geneEffectHotspotPlot';
+            const containerEl = document.getElementById(plotId);
+            const containerW = containerEl?.offsetWidth || baseSize;
+            const chartWidth = Math.min(Math.round(baseSize * widthRatio), containerW);
+            const chartHeight = Math.round(baseSize * heightRatio);
 
             const layout = {
                 title: { text: `${gene} gene effect by ${group} mutation status`, font: { size: 14 } },
@@ -12468,7 +12471,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
 
         // For tissue mode, show comparison with all cells
-        const filteredData = data.filter(d => (d.lineage || 'Unknown') === group);
+        // Match by primaryDisease when the table is grouped by subtype, else by lineage.
+        const filteredData = this._geGroupBySubtype
+            ? data.filter(d => (this.cellLineMetadata?.primaryDisease?.[d.cellLineId] || 'Unknown') === group)
+            : data.filter(d => (d.lineage || 'Unknown') === group);
         const allEffects = data.map(d => d.geneEffect);
         const groupEffects = filteredData.map(d => d.geneEffect);
         const allStats = calcStats(allEffects);
@@ -12524,13 +12530,15 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
         const statsText = statsAnnotations.join('<br>');
 
-        // Square-ish plot area by default; sliders adjust width/height.
+        // Square-ish plot area by default; width capped at container offsetWidth.
         const widthRatio = this.geChartWidthRatio || 1.0;
         const heightRatio = this.geChartHeightRatio || 1.0;
         const baseSize = 500;
-        const chartWidth = Math.round(baseSize * widthRatio);
-        const chartHeight = Math.round(baseSize * heightRatio);
         const plotId = this.currentGEView === 'tissue' ? 'geneEffectPlot' : 'geneEffectHotspotPlot';
+        const containerEl = document.getElementById(plotId);
+        const containerW = containerEl?.offsetWidth || baseSize;
+        const chartWidth = Math.min(Math.round(baseSize * widthRatio), containerW);
+        const chartHeight = Math.round(baseSize * heightRatio);
 
         const layout = {
             title: { text: `${gene} gene effect in ${group}`, font: { size: 14 } },
