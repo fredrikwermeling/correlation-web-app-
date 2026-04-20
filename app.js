@@ -13015,19 +13015,22 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // ===== Gene Info Tooltips (#15) =====
 
     async fetchGeneInfo(gene) {
-        // Cache results
+        // Cache results. Also fetch entrezgene + HGNC so the tooltip can link
+        // out to NCBI Gene / HGNC for full-text source verification.
         if (!this.geneInfoCache) this.geneInfoCache = {};
         if (this.geneInfoCache[gene]) return this.geneInfoCache[gene];
 
         try {
-            const res = await fetch(`https://mygene.info/v3/query?q=symbol:${gene}&species=human&fields=symbol,name,summary&size=1`);
+            const res = await fetch(`https://mygene.info/v3/query?q=symbol:${gene}&species=human&fields=symbol,name,summary,entrezgene,HGNC&size=1`);
             const data = await res.json();
             if (data.hits && data.hits.length > 0) {
                 const hit = data.hits[0];
                 const info = {
                     symbol: hit.symbol || gene,
                     name: hit.name || '',
-                    summary: hit.summary || ''
+                    summary: hit.summary || '',
+                    entrezgene: hit.entrezgene || null,
+                    hgnc: hit.HGNC || null
                 };
                 this.geneInfoCache[gene] = info;
                 return info;
@@ -13039,51 +13042,101 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
 
     showGeneTooltip(event, gene) {
-        // Remove existing tooltip
-        this.hideGeneTooltip();
+        const existing = document.getElementById('geneTooltip');
+        if (existing && existing.dataset.pinned === '1' && existing.dataset.gene === gene) return;
+        this.hideGeneTooltip(true);
+
+        const pinned = !!(event && event.shiftKey);
 
         const tooltip = document.createElement('div');
         tooltip.id = 'geneTooltip';
-        tooltip.style.cssText = 'position: fixed; z-index: 10001; background: white; border: 1px solid #d1d5db; border-radius: 8px; padding: 10px 14px; max-width: 350px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); font-size: 11px; line-height: 1.4;';
+        tooltip.dataset.gene = gene;
+        tooltip.dataset.pinned = pinned ? '1' : '0';
+        const maxW = pinned ? 460 : 350;
+        tooltip.style.cssText = `position: fixed; z-index: 10001; background: white; border: 1px solid ${pinned ? '#5a9f4a' : '#d1d5db'}; border-radius: 8px; padding: 10px 14px; max-width: ${maxW}px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); font-size: 11px; line-height: 1.45; color: #374151;`;
+        if (pinned) tooltip.style.pointerEvents = 'auto';
         tooltip.innerHTML = `<div style="color: #6b7280;">Loading ${gene} info...</div>`;
 
-        // Position near the mouse
-        const x = Math.min(event.clientX + 10, window.innerWidth - 370);
+        const x = Math.min(event.clientX + 10, window.innerWidth - maxW - 20);
         const y = Math.min(event.clientY + 10, window.innerHeight - 200);
         tooltip.style.left = x + 'px';
         tooltip.style.top = y + 'px';
 
         document.body.appendChild(tooltip);
 
+        if (pinned) {
+            const dismiss = (ev) => {
+                if (tooltip.contains(ev.target)) return;
+                this.hideGeneTooltip(true);
+            };
+            const escDismiss = (ev) => { if (ev.key === 'Escape') this.hideGeneTooltip(true); };
+            setTimeout(() => document.addEventListener('click', dismiss, { once: true }), 0);
+            document.addEventListener('keydown', escDismiss);
+            tooltip._cleanup = () => { document.removeEventListener('keydown', escDismiss); };
+        } else {
+            const upgrade = (ev) => {
+                if (ev.key === 'Shift') {
+                    document.removeEventListener('keydown', upgrade);
+                    this.showGeneTooltip({ clientX: x, clientY: y, shiftKey: true }, gene);
+                }
+            };
+            document.addEventListener('keydown', upgrade);
+            tooltip._cleanup = () => document.removeEventListener('keydown', upgrade);
+        }
+
         this.fetchGeneInfo(gene).then(info => {
             const el = document.getElementById('geneTooltip');
-            if (!el) return;
+            if (!el || el.dataset.gene !== gene) return;
 
-            if (!info) {
-                el.innerHTML = `<b>${gene}</b><br><span style="color: #999;">No info available</span>`;
-                return;
+            const links = info && info.entrezgene
+                ? `<a href="https://www.ncbi.nlm.nih.gov/gene/${info.entrezgene}" target="_blank" rel="noopener" style="color:#15803d; text-decoration:none;">NCBI Gene &nbsp;&#8599;</a>`
+                : `<a href="https://www.ncbi.nlm.nih.gov/gene/?term=${encodeURIComponent(gene)}" target="_blank" rel="noopener" style="color:#15803d; text-decoration:none;">NCBI Gene &nbsp;&#8599;</a>`;
+            const hgncLink = info && info.hgnc
+                ? ` &nbsp;|&nbsp; <a href="https://www.genenames.org/data/gene-symbol-report/#!/hgnc_id/${info.hgnc}" target="_blank" rel="noopener" style="color:#15803d; text-decoration:none;">HGNC &#8599;</a>`
+                : '';
+
+            const closeBtn = el.dataset.pinned === '1'
+                ? `<button title="Close (Esc)" style="position:absolute; top:4px; right:6px; background:none; border:none; font-size:18px; line-height:1; color:#9ca3af; cursor:pointer;" onclick="app.hideGeneTooltip(true)">&times;</button>`
+                : '';
+
+            let html = closeBtn;
+            html += `<div style="margin-bottom: 4px; padding-right:${el.dataset.pinned === '1' ? '18px' : '0'};"><b style="color: #5a9f4a; font-size: 13px;">${info ? info.symbol : gene}</b>`;
+            if (info && info.name) html += ` <span style="color: #374151;">${info.name}</span>`;
+            html += `</div>`;
+
+            if (info && info.summary) {
+                const isPinned = el.dataset.pinned === '1';
+                const summary = isPinned || info.summary.length <= 260
+                    ? info.summary
+                    : info.summary.substring(0, 260) + '…';
+                html += `<div style="color: #4b5563;">${summary}</div>`;
+            } else if (info) {
+                html += `<div style="color:#9ca3af; font-style:italic;">No summary available.</div>`;
+            } else {
+                html += `<div style="color:#9ca3af;">No info available.</div>`;
             }
 
-            let html = `<div style="margin-bottom: 4px;"><b style="color: #5a9f4a; font-size: 13px;">${info.symbol}</b> <span style="color: #374151;">${info.name}</span></div>`;
+            html += `<div style="margin-top:8px; padding-top:6px; border-top:1px solid #f3f4f6; font-size:10px; color:#6b7280; display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap;">`;
+            html += `<span>${links}${hgncLink}</span>`;
+            html += `<span style="color:#9ca3af;">${el.dataset.pinned === '1' ? 'Esc to close' : 'Hold Shift for full text'}</span>`;
+            html += `</div>`;
 
-            if (info.summary) {
-                const shortSummary = info.summary.length > 200 ? info.summary.substring(0, 200) + '...' : info.summary;
-                html += `<div style="color: #4b5563;">${shortSummary}</div>`;
-            }
-
+            el.style.position = 'fixed';
             el.innerHTML = html;
 
-            // Reposition if needed
             const rect = el.getBoundingClientRect();
             if (rect.bottom > window.innerHeight) {
-                el.style.top = (window.innerHeight - rect.height - 10) + 'px';
+                el.style.top = Math.max(10, window.innerHeight - rect.height - 10) + 'px';
             }
         });
     }
 
-    hideGeneTooltip() {
+    hideGeneTooltip(force) {
         const existing = document.getElementById('geneTooltip');
-        if (existing) existing.remove();
+        if (!existing) return;
+        if (existing.dataset.pinned === '1' && !force) return;
+        if (typeof existing._cleanup === 'function') existing._cleanup();
+        existing.remove();
     }
 
     // ===== Inline Compare by Tissue/Hotspot (in inspect modal) =====
