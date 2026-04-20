@@ -2502,14 +2502,11 @@ class CorrelationExplorer {
                         return;
                     }
                 }
-                // Close cell line browser if open (Escape only)
-                if (e.key === 'Escape') {
-                    const clbModal = document.getElementById('cellLineBrowserModal');
-                    if (clbModal && clbModal.style.display !== 'none') {
-                        this.closeCellLineBrowser();
-                        return;
-                    }
-                }
+                // Cell Line Browser intentionally does NOT close on Escape —
+                // the X button in its header is the only exit path. Easy to
+                // accidentally hit Esc while typing in a custom-CL textarea or
+                // dismissing a pinned gene tooltip; losing the whole CLB state
+                // on that was too expensive.
                 // Close inspect modal if open
                 const inspectModal = document.getElementById('inspectModal');
                 if (inspectModal && inspectModal.classList.contains('active')) {
@@ -14500,9 +14497,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         });
 
         document.getElementById('clbCloseBtn').addEventListener('click', () => this.closeCellLineBrowser());
-        document.getElementById('cellLineBrowserModal').addEventListener('click', (e) => {
-            if (e.target.id === 'cellLineBrowserModal') this.closeCellLineBrowser();
-        });
+        // Cell Line Browser intentionally has no click-on-backdrop dismissal
+        // and no Escape-to-close — the X button is the only exit. A stray
+        // click or Esc keystroke was too costly given the amount of filter /
+        // selection state the browser holds.
 
         let clbSearchTimer;
         document.getElementById('clbSearch').addEventListener('input', () => {
