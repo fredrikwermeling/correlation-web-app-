@@ -13069,10 +13069,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 if (tooltip.contains(ev.target)) return;
                 this.hideGeneTooltip(true);
             };
-            const escDismiss = (ev) => { if (ev.key === 'Escape') this.hideGeneTooltip(true); };
+            const escDismiss = (ev) => {
+                if (ev.key !== 'Escape') return;
+                ev.stopPropagation();
+                if (typeof ev.stopImmediatePropagation === 'function') ev.stopImmediatePropagation();
+                ev.preventDefault();
+                this.hideGeneTooltip(true);
+            };
             setTimeout(() => document.addEventListener('click', dismiss, { once: true }), 0);
-            document.addEventListener('keydown', escDismiss);
-            tooltip._cleanup = () => { document.removeEventListener('keydown', escDismiss); };
+            document.addEventListener('keydown', escDismiss, true);
+            tooltip._cleanup = () => { document.removeEventListener('keydown', escDismiss, true); };
         } else {
             const upgrade = (ev) => {
                 if (ev.key === 'Shift') {
