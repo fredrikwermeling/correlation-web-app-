@@ -1135,27 +1135,9 @@ class CorrelationExplorer {
     async _upsetExport(format) {
         const plotEl = document.getElementById('upsetPlotDiv');
         if (!plotEl?.data) return;
-        const w = plotEl.layout?.width || 500;
-        const h = plotEl.layout?.height || 400;
-        const filename = 'upset_plot';
-
-        if (format === 'svg') {
-            const svgDataUrl = await Plotly.toImage(plotEl, { format: 'svg', width: w, height: h });
-            let svgStr = svgDataUrl.indexOf('base64,') > -1 ? atob(svgDataUrl.split('base64,')[1]) : decodeURIComponent(svgDataUrl.split(',').slice(1).join(','));
-            if (this._finalizeSvgForExport) svgStr = this._finalizeSvgForExport(svgStr);
-            const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = `${filename}.svg`;
-            a.click();
-            URL.revokeObjectURL(a.href);
-        } else {
-            const url = await Plotly.toImage(plotEl, { format: 'png', width: w * 2, height: h * 2, scale: 2 });
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `${filename}.png`;
-            a.click();
-        }
+        const w = plotEl._fullLayout?.width || plotEl.layout?.width || plotEl.offsetWidth || 500;
+        const h = plotEl._fullLayout?.height || plotEl.layout?.height || plotEl.offsetHeight || 400;
+        await this._exportPlotly(plotEl, { w, h, format, filename: 'upset_plot' });
     }
 
     updateTBSelectionCount() {
@@ -5423,68 +5405,16 @@ class CorrelationExplorer {
         this.updateShowAllButton();
     }
 
-    _exportMutationInspectChart(format) {
+    async _exportMutationInspectChart(format) {
         if (this.geneEffectViewMode !== 'mutation') return;
         const plotEl = document.getElementById('geneEffectPlot');
         if (!plotEl || !plotEl.data) return;
-
-        const filename = `gene_effect_${this.currentGeneEffectGene}_${this.mutationResults.hotspotGene}`;
-
-        // Export at on-screen size, then post-process SVG to expand viewBox to fit all content
-        const exportWidth = plotEl.offsetWidth;
-        const exportHeight = plotEl.offsetHeight;
-
-        Plotly.toImage(plotEl, {
-            format: 'svg',
-            width: exportWidth,
-            height: exportHeight
-        }).then(async svgDataUrl => {
-            // Decode SVG
-            let svgString;
-            if (svgDataUrl.indexOf('base64,') > -1) {
-                svgString = atob(svgDataUrl.split('base64,')[1]);
-            } else {
-                svgString = decodeURIComponent(svgDataUrl.split(',').slice(1).join(','));
-            }
-
-            const parser = new DOMParser();
-            const svgDoc = parser.parseFromString(svgString, 'image/svg+xml');
-            const svgEl = svgDoc.documentElement;
-
-            // Expand viewBox to fit all content:
-            // 1. Insert into DOM so getBBox works
-            // 2. Remove all clipPaths that might restrict measurement
-            // 3. Measure, then restore clipPaths for final output
-            const measurer = document.createElement('div');
-            measurer.style.cssText = 'position:absolute; left:-99999px; top:-99999px;';
-            document.body.appendChild(measurer);
-            const measureSvg = svgEl.cloneNode(true);
-            measureSvg.style.overflow = 'visible';
-            // Temporarily strip all clip-path attributes so getBBox sees full extent
-            measureSvg.querySelectorAll('[clip-path]').forEach(el => {
-                el.removeAttribute('clip-path');
-            });
-            measurer.appendChild(measureSvg);
-
-            try {
-                const bbox = measureSvg.getBBox();
-                const pad = 10;
-                const vbX = Math.min(0, Math.floor(bbox.x - pad));
-                const vbY = Math.min(0, Math.floor(bbox.y - pad));
-                const vbW = Math.max(exportWidth, Math.ceil(bbox.x + bbox.width + pad)) - vbX;
-                const vbH = Math.max(exportHeight, Math.ceil(bbox.y + bbox.height + pad)) - vbY;
-
-                svgEl.setAttribute('viewBox', `${vbX} ${vbY} ${vbW} ${vbH}`);
-                svgEl.setAttribute('width', String(vbW));
-                svgEl.setAttribute('height', String(vbH));
-            } catch (e) {
-                console.warn('getBBox failed, keeping original dimensions', e);
-            }
-            document.body.removeChild(measurer);
-
-            svgString = new XMLSerializer().serializeToString(svgEl);
-
-            const meta = this._buildExportMetadata('mutation_inspect', {
+        await this._exportPlotly(plotEl, {
+            w: plotEl._fullLayout?.width || plotEl.offsetWidth,
+            h: plotEl._fullLayout?.height || plotEl.offsetHeight,
+            format,
+            filename: `gene_effect_${this.currentGeneEffectGene}_${this.mutationResults.hotspotGene}`,
+            meta: this._buildExportMetadata('mutation_inspect', {
                 gene: this.currentGeneEffectGene,
                 hotspotGene: this.mutationResults?.hotspotGene,
                 isTranslocation: this.mutationResults?.isTranslocation || false,
@@ -5492,49 +5422,7 @@ class CorrelationExplorer {
                 textSettings: this._capturePlotTextSettings('geneEffectPlot'),
                 geChartWidthRatio: this.geChartWidthRatio || 1.0,
                 oncoprintFilters: this._activeOncoprintFilters || null
-            });
-            const metaJson = JSON.stringify(meta);
-
-            const a = document.createElement('a');
-            if (format === 'svg') {
-                svgString = svgString.replace('</svg>', `<metadata><correlate-meta>${metaJson}</correlate-meta></metadata></svg>`);
-                svgString = await this._finalizeSvgForExport(svgString);
-                const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
-                a.href = URL.createObjectURL(blob);
-                a.download = `${filename}.svg`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-            } else {
-                // Render the fixed SVG to canvas at 4x for publication quality PNG
-                const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
-                const svgUrl = URL.createObjectURL(svgBlob);
-                const img = new Image();
-                img.onload = async () => {
-                    const scale = 4;
-                    const canvas = document.createElement('canvas');
-                    canvas.width = img.naturalWidth * scale;
-                    canvas.height = img.naturalHeight * scale;
-                    const ctx = canvas.getContext('2d');
-                    ctx.scale(scale, scale);
-                    ctx.fillStyle = 'white';
-                    ctx.fillRect(0, 0, img.naturalWidth, img.naturalHeight);
-                    ctx.drawImage(img, 0, 0);
-                    URL.revokeObjectURL(svgUrl);
-                    const pngDataUrl = canvas.toDataURL('image/png');
-                    const pngResp = await fetch(pngDataUrl);
-                    const pngBuf = await pngResp.arrayBuffer();
-                    const pngWithMeta = this._addPngTextChunk(pngBuf, 'correlate-meta', metaJson);
-                    const blob = new Blob([pngWithMeta], { type: 'image/png' });
-                    a.href = URL.createObjectURL(blob);
-                    a.download = `${filename}.png`;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(a.href);
-                };
-                img.src = svgUrl;
-            }
+            })
         });
     }
 
@@ -11468,60 +11356,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (!this.currentInspect) return;
         const chartEl = document.getElementById('byTissueChart');
         if (!chartEl) return;
-
-        const filename = `by_tissue_${this.currentInspect.gene1}_vs_${this.currentInspect.gene2}`;
-        const w = 800;
-        const h = Math.max(400, (this.currentTissueStats?.length || 10) * 25 + 100);
-        const meta = this._buildExportMetadata('tissue_chart', {
-            gene1: this.currentInspect.gene1,
-            gene2: this.currentInspect.gene2
+        await this._exportPlotly(chartEl, {
+            w: chartEl._fullLayout?.width || chartEl.offsetWidth || 800,
+            h: chartEl._fullLayout?.height || chartEl.offsetHeight || Math.max(400, (this.currentTissueStats?.length || 10) * 25 + 100),
+            format,
+            filename: `by_tissue_${this.currentInspect.gene1}_vs_${this.currentInspect.gene2}`,
+            meta: this._buildExportMetadata('tissue_chart', {
+                gene1: this.currentInspect.gene1,
+                gene2: this.currentInspect.gene2
+            })
         });
-        const metaJson = JSON.stringify(meta);
-
-        const svgDataUrl = await Plotly.toImage(chartEl, { format: 'svg', width: w, height: h });
-        let svgStr;
-        if (svgDataUrl.indexOf('base64,') > -1) svgStr = atob(svgDataUrl.split('base64,')[1]);
-        else svgStr = decodeURIComponent(svgDataUrl.split(',').slice(1).join(','));
-
-        const a = document.createElement('a');
-        if (format === 'svg') {
-            svgStr = svgStr.replace('</svg>', `<metadata><correlate-meta>${metaJson}</correlate-meta></metadata></svg>`);
-            svgStr = await this._finalizeSvgForExport(svgStr);
-            const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
-            a.href = URL.createObjectURL(blob);
-            a.download = `${filename}.svg`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-        } else {
-            const svgBlob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
-            const svgUrl = URL.createObjectURL(svgBlob);
-            const img = new Image();
-            img.onload = async () => {
-                const scale = 4;
-                const canvas = document.createElement('canvas');
-                canvas.width = img.naturalWidth * scale;
-                canvas.height = img.naturalHeight * scale;
-                const ctx = canvas.getContext('2d');
-                ctx.scale(scale, scale);
-                ctx.fillStyle = 'white';
-                ctx.fillRect(0, 0, img.naturalWidth, img.naturalHeight);
-                ctx.drawImage(img, 0, 0);
-                URL.revokeObjectURL(svgUrl);
-                const pngDataUrl = canvas.toDataURL('image/png');
-                const pngResp = await fetch(pngDataUrl);
-                const pngBuf = await pngResp.arrayBuffer();
-                const pngWithMeta = this._addPngTextChunk(pngBuf, 'correlate-meta', metaJson);
-                const blob = new Blob([pngWithMeta], { type: 'image/png' });
-                a.href = URL.createObjectURL(blob);
-                a.download = `${filename}.png`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(a.href);
-            };
-            img.src = svgUrl;
-        }
     }
 
     downloadTissueTableCSV() {
@@ -12632,132 +12476,153 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         });
     }
 
-    async downloadGeneEffectChartPNG() {
-        // Mutation inspect mode handled by downloadGeneEffectPNG
-        if (this.geneEffectViewMode === 'mutation') return;
-        if (!this.currentGeneEffect) return;
-        const plotId = this.currentGEView === 'tissue' ? 'geneEffectPlot' : 'geneEffectHotspotPlot';
-        const plotEl = document.getElementById(plotId);
-        const chartWidth = plotEl?._fullLayout?.width || 800;
-        const chartHeight = Math.max(plotEl?.scrollHeight || 0, plotEl?._fullLayout?.height || 0, this.geDetailedView ? 650 : 550) + 40;
-        const filename = `gene_effect_${this.currentGeneEffect.gene}_by_${this.currentGEView}`;
-        const meta = this._buildExportMetadata('gene_effect', {
-            gene: this.currentGeneEffect.gene, view: this.currentGEView,
-            textSettings: this._capturePlotTextSettings(this.currentGEView === 'tissue' ? 'geneEffectPlot' : 'geneEffectHotspotPlot')
+    // Expand an SVG's viewBox so nothing outside the nominal w × h gets
+    // cropped. Returns { svg, width, height }. If getBBox fails we leave
+    // the original dimensions unchanged. Safe to call for any Plotly-
+    // produced SVG.
+    _expandSvgToContent(svgStr, w, h) {
+        const parser = new DOMParser();
+        const svgDoc = parser.parseFromString(svgStr, 'image/svg+xml');
+        const svgEl = svgDoc.documentElement;
+
+        const measurer = document.createElement('div');
+        measurer.style.cssText = 'position:absolute;left:-99999px;top:-99999px;';
+        document.body.appendChild(measurer);
+        const measureSvg = svgEl.cloneNode(true);
+        measureSvg.style.overflow = 'visible';
+        measureSvg.querySelectorAll('[clip-path]').forEach(el => el.removeAttribute('clip-path'));
+        measurer.appendChild(measureSvg);
+
+        let newW = w, newH = h;
+        try {
+            const bbox = measureSvg.getBBox();
+            const pad = 10;
+            const nx = Math.min(0, bbox.x - pad);
+            const ny = Math.min(0, bbox.y - pad);
+            newW = Math.max(w, bbox.x + bbox.width + pad) - nx;
+            newH = Math.max(h, bbox.y + bbox.height + pad) - ny;
+            svgEl.setAttribute('viewBox', `${nx} ${ny} ${newW} ${newH}`);
+            svgEl.setAttribute('width', newW);
+            svgEl.setAttribute('height', newH);
+        } catch (e) { /* use original dimensions */ }
+        document.body.removeChild(measurer);
+
+        svgEl.querySelectorAll('clipPath').forEach(cp => {
+            const rect = cp.querySelector('rect');
+            if (rect && parseFloat(rect.getAttribute('x') || 0) === 0 && parseFloat(rect.getAttribute('y') || 0) === 0) {
+                rect.setAttribute('x', -500);
+                rect.setAttribute('width', parseFloat(rect.getAttribute('width') || 0) + 600);
+                rect.setAttribute('y', -50);
+                rect.setAttribute('height', parseFloat(rect.getAttribute('height') || 0) + 100);
+            }
         });
-        const metaJson = JSON.stringify(meta);
 
-        const svgDataUrl = await Plotly.toImage(plotEl, { format: 'svg', width: chartWidth, height: chartHeight });
-        let svgStr;
-        if (svgDataUrl.indexOf('base64,') > -1) svgStr = atob(svgDataUrl.split('base64,')[1]);
-        else svgStr = decodeURIComponent(svgDataUrl.split(',').slice(1).join(','));
-
-        const svgBlob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
-        const svgUrl = URL.createObjectURL(svgBlob);
-        const img = new Image();
-        img.onload = async () => {
-            const scale = 4;
-            const canvas = document.createElement('canvas');
-            canvas.width = img.naturalWidth * scale;
-            canvas.height = img.naturalHeight * scale;
-            const ctx = canvas.getContext('2d');
-            ctx.scale(scale, scale);
-            ctx.fillStyle = 'white';
-            ctx.fillRect(0, 0, img.naturalWidth, img.naturalHeight);
-            ctx.drawImage(img, 0, 0);
-            URL.revokeObjectURL(svgUrl);
-            const pngDataUrl = canvas.toDataURL('image/png');
-            const pngResp = await fetch(pngDataUrl);
-            const pngBuf = await pngResp.arrayBuffer();
-            const pngWithMeta = this._addPngTextChunk(pngBuf, 'correlate-meta', metaJson);
-            const blob = new Blob([pngWithMeta], { type: 'image/png' });
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = `${filename}.png`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(a.href);
-        };
-        img.src = svgUrl;
+        return { svg: new XMLSerializer().serializeToString(svgEl), width: newW, height: newH };
     }
 
-    downloadGeneEffectChartSVG() {
-        // Mutation inspect mode handled by downloadGeneEffectSVG
+    // Shared Plotly-chart export. `plotEl` is the Plotly div, `w/h` the
+    // desired dimensions (match the screen). `format` is 'svg' or 'png'.
+    // `meta` is an optional object embedded as correlate-meta. Follows the
+    // pattern in feedback_plotly_exports.md: SVG from Plotly →
+    // _expandSvgToContent → serialise or rasterise. Caller can pass
+    // `postProcess(svgEl)` for chart-specific tweaks (e.g. legend width).
+    async _exportPlotly(plotEl, opts) {
+        const { w, h, format, filename, meta, postProcess } = opts || {};
+        const svgDataUrl = await Plotly.toImage(plotEl, { format: 'svg', width: w, height: h });
+        let svgStr = svgDataUrl.indexOf('base64,') > -1
+            ? atob(svgDataUrl.split('base64,')[1])
+            : decodeURIComponent(svgDataUrl.split(',').slice(1).join(','));
+
+        // Chart-specific post-processing runs BEFORE viewBox expansion so any
+        // rect/text the caller widens is seen by the subsequent getBBox pass.
+        if (typeof postProcess === 'function') {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(svgStr, 'image/svg+xml');
+            postProcess(doc.documentElement, doc);
+            svgStr = new XMLSerializer().serializeToString(doc.documentElement);
+        }
+
+        const expanded = this._expandSvgToContent(svgStr, w, h);
+        let outSvg = expanded.svg;
+        const metaJson = meta ? JSON.stringify(meta) : null;
+
+        if (format === 'svg') {
+            if (metaJson) outSvg = outSvg.replace('</svg>', `<metadata><correlate-meta>${metaJson}</correlate-meta></metadata></svg>`);
+            if (typeof this._finalizeSvgForExport === 'function') outSvg = await this._finalizeSvgForExport(outSvg);
+            const blob = new Blob([outSvg], { type: 'image/svg+xml;charset=utf-8' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `${filename}.svg`;
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            URL.revokeObjectURL(a.href);
+            return;
+        }
+
+        // PNG: render post-processed SVG to a canvas at 2x scale.
+        return new Promise(resolve => {
+            const svgBlob = new Blob([outSvg], { type: 'image/svg+xml;charset=utf-8' });
+            const svgUrl = URL.createObjectURL(svgBlob);
+            const img = new Image();
+            img.onload = async () => {
+                const scale = 2;
+                const canvas = document.createElement('canvas');
+                canvas.width = Math.round(expanded.width * scale);
+                canvas.height = Math.round(expanded.height * scale);
+                const ctx = canvas.getContext('2d');
+                ctx.scale(scale, scale);
+                ctx.fillStyle = 'white';
+                ctx.fillRect(0, 0, expanded.width, expanded.height);
+                ctx.drawImage(img, 0, 0, expanded.width, expanded.height);
+                URL.revokeObjectURL(svgUrl);
+                const pngDataUrl = canvas.toDataURL('image/png');
+                let pngBuf = await (await fetch(pngDataUrl)).arrayBuffer();
+                if (metaJson && typeof this._addPngTextChunk === 'function') {
+                    pngBuf = this._addPngTextChunk(pngBuf, 'correlate-meta', metaJson);
+                }
+                const blob = new Blob([pngBuf], { type: 'image/png' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `${filename}.png`;
+                document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                URL.revokeObjectURL(a.href);
+                resolve();
+            };
+            img.onerror = () => { URL.revokeObjectURL(svgUrl); resolve(); };
+            img.src = svgUrl;
+        });
+    }
+
+    async downloadGeneEffectChartPNG() {
         if (this.geneEffectViewMode === 'mutation') return;
         if (!this.currentGeneEffect) return;
         const plotId = this.currentGEView === 'tissue' ? 'geneEffectPlot' : 'geneEffectHotspotPlot';
         const plotEl = document.getElementById(plotId);
-        const chartWidth = plotEl?._fullLayout?.width || 800;
-        const chartHeight = Math.max(plotEl?.scrollHeight || 0, plotEl?._fullLayout?.height || 0, this.geDetailedView ? 650 : 550) + 40;
-        const filename = `gene_effect_${this.currentGeneEffect.gene}_by_${this.currentGEView}`;
+        await this._exportPlotly(plotEl, {
+            w: plotEl?._fullLayout?.width || plotEl?.offsetWidth || 800,
+            h: plotEl?._fullLayout?.height || plotEl?.offsetHeight || 500,
+            format: 'png',
+            filename: `gene_effect_${this.currentGeneEffect.gene}_by_${this.currentGEView}`,
+            meta: this._buildExportMetadata('gene_effect', {
+                gene: this.currentGeneEffect.gene, view: this.currentGEView,
+                textSettings: this._capturePlotTextSettings(plotId)
+            })
+        });
+    }
 
-        // Use toImage + post-process to expand viewBox and remove clipPaths that crop content
-        Plotly.toImage(plotEl, {
+    async downloadGeneEffectChartSVG() {
+        if (this.geneEffectViewMode === 'mutation') return;
+        if (!this.currentGeneEffect) return;
+        const plotId = this.currentGEView === 'tissue' ? 'geneEffectPlot' : 'geneEffectHotspotPlot';
+        const plotEl = document.getElementById(plotId);
+        await this._exportPlotly(plotEl, {
+            w: plotEl?._fullLayout?.width || plotEl?.offsetWidth || 800,
+            h: plotEl?._fullLayout?.height || plotEl?.offsetHeight || 500,
             format: 'svg',
-            width: chartWidth,
-            height: chartHeight
-        }).then(async svgDataUrl => {
-            let svgString;
-            if (svgDataUrl.indexOf('base64,') > -1) {
-                svgString = atob(svgDataUrl.split('base64,')[1]);
-            } else {
-                svgString = decodeURIComponent(svgDataUrl.split(',').slice(1).join(','));
-            }
-
-            const parser = new DOMParser();
-            const svgDoc = parser.parseFromString(svgString, 'image/svg+xml');
-            const svgEl = svgDoc.documentElement;
-
-            // Measure true bounding box by temporarily removing clipPaths
-            const measurer = document.createElement('div');
-            measurer.style.cssText = 'position:absolute;left:-99999px;top:-99999px;';
-            document.body.appendChild(measurer);
-            const measureSvg = svgEl.cloneNode(true);
-            measureSvg.style.overflow = 'visible';
-            measureSvg.querySelectorAll('[clip-path]').forEach(el => el.removeAttribute('clip-path'));
-            measurer.appendChild(measureSvg);
-
-            try {
-                const bbox = measureSvg.getBBox();
-                const pad = 10;
-                const newX = Math.min(0, bbox.x - pad);
-                const newY = Math.min(0, bbox.y - pad);
-                const newW = Math.max(chartWidth, bbox.x + bbox.width + pad) - newX;
-                const newH = Math.max(chartHeight, bbox.y + bbox.height + pad) - newY;
-                svgEl.setAttribute('viewBox', `${newX} ${newY} ${newW} ${newH}`);
-                svgEl.setAttribute('width', newW);
-                svgEl.setAttribute('height', newH);
-            } catch (e) {
-                // fallback: just use original dimensions
-            }
-            document.body.removeChild(measurer);
-
-            // Remove clipPaths on the plot area that crop y-axis labels
-            svgEl.querySelectorAll('clipPath').forEach(cp => {
-                const rect = cp.querySelector('rect');
-                if (rect && parseFloat(rect.getAttribute('x') || 0) === 0 && parseFloat(rect.getAttribute('y') || 0) === 0) {
-                    rect.setAttribute('x', -500);
-                    rect.setAttribute('width', parseFloat(rect.getAttribute('width') || 0) + 600);
-                    rect.setAttribute('y', -50);
-                    rect.setAttribute('height', parseFloat(rect.getAttribute('height') || 0) + 100);
-                }
-            });
-
-            let finalSvg = new XMLSerializer().serializeToString(svgEl);
-            const meta = this._buildExportMetadata('gene_effect', {
+            filename: `gene_effect_${this.currentGeneEffect.gene}_by_${this.currentGEView}`,
+            meta: this._buildExportMetadata('gene_effect', {
                 gene: this.currentGeneEffect?.gene, view: this.currentGEView,
-                textSettings: this._capturePlotTextSettings(this.currentGEView === 'tissue' ? 'geneEffectPlot' : 'geneEffectHotspotPlot')
-            });
-            finalSvg = finalSvg.replace('</svg>', `<metadata><correlate-meta>${JSON.stringify(meta)}</correlate-meta></metadata></svg>`);
-            finalSvg = await this._finalizeSvgForExport(finalSvg);
-            const blob = new Blob([finalSvg], { type: 'image/svg+xml' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename + '.svg';
-            a.click();
-            URL.revokeObjectURL(url);
+                textSettings: this._capturePlotTextSettings(plotId)
+            })
         });
     }
 
