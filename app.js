@@ -6811,7 +6811,7 @@ Results:
         return `Filters: ${parts.join('  \u00b7  ')}  \u00b7  n=${this.results.nCellLines}`;
     }
 
-    downloadNetworkPNG() {
+    async downloadNetworkPNG() {
         if (!this.network) return;
 
         const networkCanvas = document.querySelector('#networkPlot canvas');
@@ -6820,8 +6820,6 @@ Results:
             return;
         }
 
-        // Create a high-resolution canvas for publication quality (300 DPI)
-        const pngScale = 2;
         const container = document.getElementById('networkPlot');
         const cssWidth = container.clientWidth;
         const cssHeight = container.clientHeight;
@@ -6832,13 +6830,22 @@ Results:
         const totalWidth = cssWidth;
         const totalHeight = cssHeight + legendHeight + padding;
 
-        const transparentBg = document.getElementById('exportNetworkTransparentBg')?.checked;
+        // Publication-quality export dialog: width/height in cm, DPI, bg.
+        const dlg = await this._showExportDialog({ format: 'png', plotW: totalWidth, plotH: totalHeight });
+        if (!dlg) return;
+        const { widthCm, heightCm, dpi, background } = dlg;
+        const transparentBg = background === 'transparent';
+        const CM_TO_IN = 1 / 2.54;
+        const targetPxW = Math.round(widthCm * dpi * CM_TO_IN);
+        const targetPxH = Math.round(heightCm * dpi * CM_TO_IN);
+        const sx = targetPxW / totalWidth;
+        const sy = targetPxH / totalHeight;
 
         const canvas = document.createElement('canvas');
-        canvas.width = totalWidth * pngScale;
-        canvas.height = totalHeight * pngScale;
+        canvas.width = targetPxW;
+        canvas.height = targetPxH;
         const ctx = canvas.getContext('2d');
-        ctx.scale(pngScale, pngScale);
+        ctx.scale(sx, sy);
 
         // Draw background (skip for transparent)
         if (!transparentBg) {
@@ -7147,6 +7154,9 @@ Results:
         });
         const dataURL = canvas.toDataURL('image/png');
         fetch(dataURL).then(r => r.arrayBuffer()).then(buf => {
+            // Encode the chosen DPI in pHYs so Word / PowerPoint / LaTeX
+            // place the image at its real physical size.
+            buf = this._setPngDpi(buf, dpi);
             const pngWithMeta = this._addPngTextChunk(buf, 'correlate-meta', JSON.stringify(meta));
             const blob = new Blob([pngWithMeta], { type: 'image/png' });
             const a = document.createElement('a');
@@ -7162,8 +7172,6 @@ Results:
     async downloadNetworkSVG() {
         if (!this.network || !this.networkData) return;
 
-        const transparentBg = document.getElementById('exportNetworkTransparentBg')?.checked;
-
         // Build SVG from network data
         const container = document.getElementById('networkPlot');
         const width = container.clientWidth;
@@ -7172,6 +7180,13 @@ Results:
         const filterText = this._getNetworkFilterText();
         const svgBannerFs = this._netBannerFontSize || 12; const bannerFs = svgBannerFs; const filterBannerHeight = filterText ? bannerFs + 14 : 0;
         const totalHeight = networkHeight + legendHeight;
+
+        // Publication-quality export dialog: ask for size + background.
+        // (DPI is ignored for SVG since it's vector.)
+        const dlg = await this._showExportDialog({ format: 'svg', plotW: width, plotH: totalHeight });
+        if (!dlg) return;
+        const { widthCm, heightCm, background } = dlg;
+        const transparentBg = background === 'transparent';
 
         // Get positions from vis.js and convert to DOM coordinates
         const positions = this.network.getPositions();
@@ -7403,6 +7418,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         });
         svg += `<metadata><correlate-meta>${JSON.stringify(meta)}</correlate-meta></metadata>`;
         svg += '</svg>';
+
+        // Apply user's chosen cm dimensions to the outer svg tag so
+        // Illustrator / Inkscape open at the print size requested.
+        svg = svg.replace(/<svg([^>]*)\bwidth="[^"]*"/, `<svg$1width="${widthCm}cm"`);
+        svg = svg.replace(/<svg([^>]*)\bheight="[^"]*"/, `<svg$1height="${heightCm}cm"`);
+        if (!transparentBg && !/<rect[^>]*id="correlateExportBg"/.test(svg)) {
+            svg = svg.replace(/(<svg[^>]*>)/, `$1<rect id="correlateExportBg" x="0" y="0" width="100%" height="100%" fill="white"/>`);
+        }
 
         // Sanitize for Illustrator compatibility + optional text outlining
         svg = await this._finalizeSvgForExport(svg);
@@ -10810,141 +10833,61 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const hotspotMode = document.getElementById('hotspotMode').value;
         const transGene = document.getElementById('translocationGene').value;
         const transMode = document.getElementById('translocationMode').value;
-
         let suffix = '';
         if (hotspotGene && hotspotMode !== 'none') suffix = `_${hotspotGene}`;
         else if (transGene && transMode !== 'none') suffix = `_${transGene}`;
-        const filename = `scatter_${this.currentInspect.gene1}_vs_${this.currentInspect.gene2}${suffix}`;
 
-        // Read export settings
-        const transparentBg = document.getElementById('exportTransparentBg')?.checked;
-        const whitePlotBg = document.getElementById('exportWhitePlotBg')?.checked;
-
-        // Determine export backgrounds
-        const origPaperBg = plotEl.layout.paper_bgcolor || '#fff';
-        const origPlotBg = plotEl.layout.plot_bgcolor || '#fafafa';
-        const exportPaperBg = transparentBg ? 'rgba(0,0,0,0)' : origPaperBg;
-        const exportPlotBg = transparentBg ? 'rgba(0,0,0,0)' : (whitePlotBg ? '#fff' : origPlotBg);
-
-        // Temporarily set export backgrounds on the live plot so Plotly.toImage renders them
-        await Plotly.relayout(plotEl, { paper_bgcolor: exportPaperBg, plot_bgcolor: exportPlotBg });
-
-        // Always export as SVG first so we can post-process (remove legend clipPath),
-        // then convert to PNG via canvas if needed.
-        const svgDataUrl = await Plotly.toImage(plotEl, {
-            format: 'svg',
-            width: plotEl.layout.width,
-            height: plotEl.layout.height
-        });
-
-        // Restore original backgrounds
-        await Plotly.relayout(plotEl, { paper_bgcolor: origPaperBg, plot_bgcolor: origPlotBg });
-
-        // Decode SVG
-        let svgString;
-        if (svgDataUrl.indexOf('base64,') > -1) {
-            svgString = atob(svgDataUrl.split('base64,')[1]);
-        } else {
-            svgString = decodeURIComponent(svgDataUrl.split(',').slice(1).join(','));
-        }
-
-        // Fix legend: remove clipPath, measure text with canvas, widen rect to fit
-        svgString = svgString.replace(/clip-path="url\(#legend[^"]*\)"/g, '');
-        const parser = new DOMParser();
-        const svgDoc = parser.parseFromString(svgString, 'image/svg+xml');
-        const legendBg = svgDoc.querySelector('.legend rect.bg');
-        const legendTexts = svgDoc.querySelectorAll('.legend .legendtext, .legend .legendtitletext');
-        if (legendBg && legendTexts.length) {
-            // Use canvas.measureText with Arial for accurate width
-            const measureCanvas = document.createElement('canvas');
-            const mctx = measureCanvas.getContext('2d');
-            let maxRight = 0;
-            legendTexts.forEach(t => {
-                const fs = t.style.fontSize || '11px';
-                const x = parseFloat(t.getAttribute('x')) || 0;
-                mctx.font = `${fs} "Arial", "Helvetica", sans-serif`;
-                const right = x + mctx.measureText(t.textContent).width;
-                if (right > maxRight) maxRight = right;
-            });
-            if (maxRight > 0) {
-                // Scale up by 1.3x — canvas.measureText uses a fallback font that's
-                // narrower than the actual font rendered in the SVG
+        await this._exportPlotly(plotEl, {
+            w: plotEl._fullLayout?.width || plotEl.layout?.width || plotEl.offsetWidth,
+            h: plotEl._fullLayout?.height || plotEl.layout?.height || plotEl.offsetHeight,
+            format,
+            filename: `scatter_${this.currentInspect.gene1}_vs_${this.currentInspect.gene2}${suffix}`,
+            meta: this._buildExportMetadata('scatter', { gene1: this.currentInspect?.gene1, gene2: this.currentInspect?.gene2 }),
+            // Plotly's legend has a clipPath that crops long entries (gene
+            // symbols can exceed the assumed Open-Sans width). Remove the
+            // clipPath, remeasure widest entry with canvas.measureText
+            // (×1.3 fudge for fallback-font undersizing), widen the legend
+            // rect, and grow the outer SVG / paper rect if needed.
+            postProcess: (svgEl, doc) => {
+                svgEl.outerHTML; // keep reference fresh
+                doc.querySelectorAll('[clip-path]').forEach(el => {
+                    const cp = el.getAttribute('clip-path') || '';
+                    if (/url\(#legend/.test(cp)) el.removeAttribute('clip-path');
+                });
+                const legendBg = doc.querySelector('.legend rect.bg');
+                const legendTexts = doc.querySelectorAll('.legend .legendtext, .legend .legendtitletext');
+                if (!legendBg || !legendTexts.length) return;
+                const measureCanvas = document.createElement('canvas');
+                const mctx = measureCanvas.getContext('2d');
+                let maxRight = 0;
+                legendTexts.forEach(t => {
+                    const fs = t.style.fontSize || '11px';
+                    const x = parseFloat(t.getAttribute('x')) || 0;
+                    mctx.font = `${fs} "Arial","Helvetica",sans-serif`;
+                    const right = x + mctx.measureText(t.textContent).width;
+                    if (right > maxRight) maxRight = right;
+                });
+                if (maxRight <= 0) return;
                 const newWidth = Math.ceil(maxRight * 1.3);
                 const oldWidth = parseFloat(legendBg.getAttribute('width'));
-                if (newWidth > oldWidth) {
-                    legendBg.setAttribute('width', String(newWidth));
-                    // Expand SVG width if legend extends beyond edge
-                    const svgEl = svgDoc.documentElement;
-                    const legendTransform = svgDoc.querySelector('.legend')?.getAttribute('transform');
-                    const tMatch = legendTransform?.match(/translate\(([\d.]+)/);
-                    if (tMatch) {
-                        const legendX = parseFloat(tMatch[1]);
-                        const needed = legendX + newWidth + 5;
-                        const svgW = parseFloat(svgEl.getAttribute('width'));
-                        if (needed > svgW) {
-                            const w = Math.ceil(needed);
-                            svgEl.setAttribute('width', String(w));
-                            svgEl.setAttribute('viewBox', `0 0 ${w} ${svgEl.getAttribute('height')}`);
-                            // Expand paper background rect
-                            const paperRect = svgEl.querySelector('rect');
-                            if (paperRect) paperRect.setAttribute('width', String(w));
-                        }
-                    }
+                if (newWidth <= oldWidth) return;
+                legendBg.setAttribute('width', String(newWidth));
+                const legendTransform = doc.querySelector('.legend')?.getAttribute('transform');
+                const tMatch = legendTransform?.match(/translate\(([\d.]+)/);
+                if (!tMatch) return;
+                const legendX = parseFloat(tMatch[1]);
+                const needed = legendX + newWidth + 5;
+                const svgW = parseFloat(svgEl.getAttribute('width'));
+                if (needed > svgW) {
+                    const w = Math.ceil(needed);
+                    svgEl.setAttribute('width', String(w));
+                    svgEl.setAttribute('viewBox', `0 0 ${w} ${svgEl.getAttribute('height')}`);
+                    const paperRect = svgEl.querySelector('rect');
+                    if (paperRect) paperRect.setAttribute('width', String(w));
                 }
+                doc.querySelectorAll('clipPath[id^="legend"]').forEach(cp => cp.remove());
             }
-            // Remove clipPath definitions too
-            svgDoc.querySelectorAll('clipPath[id^="legend"]').forEach(cp => cp.remove());
-        }
-        svgString = new XMLSerializer().serializeToString(svgDoc.documentElement);
-
-        const state = this.captureAppState();
-        const stateJson = JSON.stringify(state);
-        const meta = this._buildExportMetadata('scatter', { gene1: this.currentInspect?.gene1, gene2: this.currentInspect?.gene2 });
-        const metaJson = JSON.stringify(meta);
-
-        const a = document.createElement('a');
-        if (format === 'svg') {
-            // Embed app state + metadata for re-opening
-            svgString = svgString.replace('</svg>', `<metadata><correlate-state>${stateJson}</correlate-state><correlate-meta>${metaJson}</correlate-meta></metadata></svg>`);
-            svgString = await this._finalizeSvgForExport(svgString);
-            const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
-            a.href = URL.createObjectURL(blob);
-            a.download = filename + '.svg';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-        } else {
-            // Render the fixed SVG to canvas at 4x for publication quality PNG
-            const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
-            const svgUrl = URL.createObjectURL(svgBlob);
-            const img = new Image();
-            img.onload = async () => {
-                const scale = 4;
-                const canvas = document.createElement('canvas');
-                canvas.width = img.naturalWidth * scale;
-                canvas.height = img.naturalHeight * scale;
-                const ctx = canvas.getContext('2d');
-                ctx.scale(scale, scale);
-                if (!transparentBg) {
-                    ctx.fillStyle = 'white';
-                    ctx.fillRect(0, 0, img.naturalWidth, img.naturalHeight);
-                }
-                ctx.drawImage(img, 0, 0);
-                URL.revokeObjectURL(svgUrl);
-                const pngDataUrl = canvas.toDataURL('image/png');
-                const pngResp = await fetch(pngDataUrl);
-                const pngBuf = await pngResp.arrayBuffer();
-                const pngWithMeta = this._addPngTextChunk(pngBuf, 'correlate-state', stateJson);
-                const blob = new Blob([pngWithMeta], { type: 'image/png' });
-                a.href = URL.createObjectURL(blob);
-                a.download = filename + '.png';
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(a.href);
-            };
-            img.src = svgUrl;
-        }
+        });
     }
 
     downloadScatterPNG() {
