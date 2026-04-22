@@ -12520,21 +12520,77 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         return { svg: new XMLSerializer().serializeToString(svgEl), width: newW, height: newH };
     }
 
+    // Show the publication-quality export dialog. Returns { widthCm,
+    // heightCm, dpi, background } on confirm or null on cancel. Default
+    // width = 5 cm; default height preserves the current plot aspect ratio
+    // so the figure doesn't stretch. The user's last choice is remembered
+    // for the session.
+    _showExportDialog(context) {
+        return new Promise(resolve => {
+            const modal = document.getElementById('exportOptionsModal');
+            if (!modal) { resolve(null); return; }
+            const titleEl = document.getElementById('exportOptionsTitle');
+            if (titleEl) titleEl.textContent = `Export chart — ${context.format.toUpperCase()}`;
+            const dpiRow = document.getElementById('exportOptDpiRow');
+            if (dpiRow) dpiRow.style.display = context.format === 'png' ? '' : 'none';
+            const widthEl = document.getElementById('exportOptWidth');
+            const heightEl = document.getElementById('exportOptHeight');
+            const dpiEl = document.getElementById('exportOptDpi');
+            const bgRadios = document.querySelectorAll('input[name="exportOptBg"]');
+
+            const prev = this._lastExportOpts || {};
+            const defaultW = prev.widthCm || 5;
+            const plotAspect = context.plotH > 0 ? (context.plotH / context.plotW) : 1;
+            const defaultH = prev.heightCm || Math.max(2, Math.round(defaultW * plotAspect * 10) / 10);
+            widthEl.value = defaultW;
+            heightEl.value = defaultH;
+            if (dpiEl) dpiEl.value = prev.dpi || 300;
+            bgRadios.forEach(r => { r.checked = r.value === (prev.background || 'white'); });
+
+            modal.style.display = 'flex';
+
+            const cleanup = () => {
+                modal.style.display = 'none';
+                document.getElementById('exportOptConfirm').onclick = null;
+                document.getElementById('exportOptCancel').onclick = null;
+                document.getElementById('exportOptionsClose').onclick = null;
+            };
+            document.getElementById('exportOptConfirm').onclick = () => {
+                const opts = {
+                    widthCm: parseFloat(widthEl.value) || 5,
+                    heightCm: parseFloat(heightEl.value) || 5,
+                    dpi: parseInt(dpiEl.value) || 300,
+                    background: document.querySelector('input[name="exportOptBg"]:checked')?.value || 'white'
+                };
+                this._lastExportOpts = opts;
+                cleanup();
+                resolve(opts);
+            };
+            const cancel = () => { cleanup(); resolve(null); };
+            document.getElementById('exportOptCancel').onclick = cancel;
+            document.getElementById('exportOptionsClose').onclick = cancel;
+        });
+    }
+
     // Shared Plotly-chart export. `plotEl` is the Plotly div, `w/h` the
-    // desired dimensions (match the screen). `format` is 'svg' or 'png'.
-    // `meta` is an optional object embedded as correlate-meta. Follows the
-    // pattern in feedback_plotly_exports.md: SVG from Plotly →
-    // _expandSvgToContent → serialise or rasterise. Caller can pass
-    // `postProcess(svgEl)` for chart-specific tweaks (e.g. legend width).
+    // on-screen dimensions (used for the SVG geometry — the rendered plot
+    // looks the same as on the screen). The export dialog then picks the
+    // print size and DPI for raster output. Follows feedback_plotly_exports.md:
+    // SVG from Plotly → _expandSvgToContent → rasterise at target DPI.
     async _exportPlotly(plotEl, opts) {
         const { w, h, format, filename, meta, postProcess } = opts || {};
+
+        // Ask user for publication dimensions + DPI.
+        const dlg = await this._showExportDialog({ format, plotW: w, plotH: h });
+        if (!dlg) return;
+        const { widthCm, heightCm, dpi, background } = dlg;
+        const CM_TO_IN = 1 / 2.54;
+
         const svgDataUrl = await Plotly.toImage(plotEl, { format: 'svg', width: w, height: h });
         let svgStr = svgDataUrl.indexOf('base64,') > -1
             ? atob(svgDataUrl.split('base64,')[1])
             : decodeURIComponent(svgDataUrl.split(',').slice(1).join(','));
 
-        // Chart-specific post-processing runs BEFORE viewBox expansion so any
-        // rect/text the caller widens is seen by the subsequent getBBox pass.
         if (typeof postProcess === 'function') {
             const parser = new DOMParser();
             const doc = parser.parseFromString(svgStr, 'image/svg+xml');
@@ -12547,6 +12603,17 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const metaJson = meta ? JSON.stringify(meta) : null;
 
         if (format === 'svg') {
+            // For SVG, set absolute units on the outer tag so downstream tools
+            // (Illustrator etc.) place it at the requested print size. Keep
+            // viewBox in the pixel coords from Plotly so internal geometry is
+            // unchanged.
+            outSvg = outSvg.replace(/<svg([^>]*)\bwidth="[^"]*"/, `<svg$1width="${widthCm}cm"`);
+            outSvg = outSvg.replace(/<svg([^>]*)\bheight="[^"]*"/, `<svg$1height="${heightCm}cm"`);
+            if (background === 'white' && !/<rect[^>]*id="correlateExportBg"/.test(outSvg)) {
+                // Inject a white background rect at the top of the SVG body so
+                // pasting into PDF/PPT doesn't reveal composite lines.
+                outSvg = outSvg.replace(/(<svg[^>]*>)/, `$1<rect id="correlateExportBg" x="0" y="0" width="100%" height="100%" fill="white"/>`);
+            }
             if (metaJson) outSvg = outSvg.replace('</svg>', `<metadata><correlate-meta>${metaJson}</correlate-meta></metadata></svg>`);
             if (typeof this._finalizeSvgForExport === 'function') outSvg = await this._finalizeSvgForExport(outSvg);
             const blob = new Blob([outSvg], { type: 'image/svg+xml;charset=utf-8' });
@@ -12558,24 +12625,34 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             return;
         }
 
-        // PNG: render post-processed SVG to a canvas at 2x scale.
+        // PNG: rasterise at `widthCm × dpi / 2.54` pixels so the resulting
+        // file has real DPI = user's choice. The SVG content geometry stays
+        // the same — we're just sampling at the target density.
+        const targetPxW = Math.round(widthCm * dpi * CM_TO_IN);
+        const targetPxH = Math.round(heightCm * dpi * CM_TO_IN);
+
         return new Promise(resolve => {
             const svgBlob = new Blob([outSvg], { type: 'image/svg+xml;charset=utf-8' });
             const svgUrl = URL.createObjectURL(svgBlob);
             const img = new Image();
             img.onload = async () => {
-                const scale = 2;
                 const canvas = document.createElement('canvas');
-                canvas.width = Math.round(expanded.width * scale);
-                canvas.height = Math.round(expanded.height * scale);
+                canvas.width = targetPxW;
+                canvas.height = targetPxH;
                 const ctx = canvas.getContext('2d');
-                ctx.scale(scale, scale);
-                ctx.fillStyle = 'white';
-                ctx.fillRect(0, 0, expanded.width, expanded.height);
-                ctx.drawImage(img, 0, 0, expanded.width, expanded.height);
+                if (background === 'white') {
+                    ctx.fillStyle = 'white';
+                    ctx.fillRect(0, 0, targetPxW, targetPxH);
+                }
+                // drawImage stretches the SVG to fill the canvas; because it's
+                // a vector source the result stays crisp at any density.
+                ctx.drawImage(img, 0, 0, targetPxW, targetPxH);
                 URL.revokeObjectURL(svgUrl);
                 const pngDataUrl = canvas.toDataURL('image/png');
                 let pngBuf = await (await fetch(pngDataUrl)).arrayBuffer();
+                // Embed DPI in the PNG's pHYs chunk so Word / PPT / LaTeX
+                // honour the real size on import.
+                pngBuf = this._setPngDpi(pngBuf, dpi);
                 if (metaJson && typeof this._addPngTextChunk === 'function') {
                     pngBuf = this._addPngTextChunk(pngBuf, 'correlate-meta', metaJson);
                 }
@@ -12590,6 +12667,67 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             img.onerror = () => { URL.revokeObjectURL(svgUrl); resolve(); };
             img.src = svgUrl;
         });
+    }
+
+    // Write a pHYs chunk to a PNG buffer so downstream tools see the right
+    // DPI. `dpi` is dots per inch; the chunk stores pixels-per-metre
+    // (dpi × 39.37). If a pHYs chunk already exists, it's replaced.
+    _setPngDpi(arrayBuffer, dpi) {
+        const ppm = Math.round(dpi * 39.3701);
+        const src = new Uint8Array(arrayBuffer);
+        // PNG signature is 8 bytes; chunks follow as [len(4), type(4), data, crc(4)].
+        const CRC_TABLE = (() => {
+            const t = new Uint32Array(256);
+            for (let n = 0; n < 256; n++) {
+                let c = n;
+                for (let k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+                t[n] = c >>> 0;
+            }
+            return t;
+        })();
+        const crc32 = (bytes) => {
+            let c = 0xffffffff;
+            for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xff] ^ (c >>> 8);
+            return (c ^ 0xffffffff) >>> 0;
+        };
+        // Build the new pHYs chunk.
+        const physData = new Uint8Array(9);
+        const dv = new DataView(physData.buffer);
+        dv.setUint32(0, ppm);
+        dv.setUint32(4, ppm);
+        physData[8] = 1; // unit = metre
+        const typeAndData = new Uint8Array(4 + 9);
+        typeAndData.set([0x70, 0x48, 0x59, 0x73]); // 'pHYs'
+        typeAndData.set(physData, 4);
+        const phys = new Uint8Array(4 + 4 + 9 + 4);
+        new DataView(phys.buffer).setUint32(0, 9);
+        phys.set(typeAndData, 4);
+        new DataView(phys.buffer).setUint32(17, crc32(typeAndData));
+        // Strip existing pHYs and insert new one right after IHDR.
+        let pos = 8;
+        const chunks = [];
+        while (pos < src.length) {
+            const len = new DataView(src.buffer, src.byteOffset + pos, 4).getUint32(0);
+            const type = String.fromCharCode(src[pos + 4], src[pos + 5], src[pos + 6], src[pos + 7]);
+            const chunkLen = 4 + 4 + len + 4;
+            if (type !== 'pHYs') chunks.push(src.subarray(pos, pos + chunkLen));
+            pos += chunkLen;
+        }
+        const out = [src.subarray(0, 8)];
+        let inserted = false;
+        for (const c of chunks) {
+            out.push(c);
+            if (!inserted && String.fromCharCode(c[4], c[5], c[6], c[7]) === 'IHDR') {
+                out.push(phys);
+                inserted = true;
+            }
+        }
+        let total = 0;
+        for (const c of out) total += c.length;
+        const result = new Uint8Array(total);
+        let off = 0;
+        for (const c of out) { result.set(c, off); off += c.length; }
+        return result.buffer;
     }
 
     async downloadGeneEffectChartPNG() {

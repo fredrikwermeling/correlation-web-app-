@@ -2267,6 +2267,40 @@
         </div>
     </div>
 
+    <!-- Publication-quality export options -->
+    <div class="modal-overlay" id="exportOptionsModal" style="display:none; z-index:1300;">
+        <div class="modal" style="max-width:420px;">
+            <div class="modal-header">
+                <h3 id="exportOptionsTitle" style="margin:0;">Export chart</h3>
+                <button class="modal-close" id="exportOptionsClose" style="background:none; border:none; font-size:24px; cursor:pointer; color:#6b7280;">&times;</button>
+            </div>
+            <div class="modal-body" style="padding:14px 18px; font-size:13px; color:#374151;">
+                <div style="margin-bottom:10px;">
+                    <label style="display:block; font-weight:600; margin-bottom:4px;">Width (cm)</label>
+                    <input type="number" id="exportOptWidth" value="5" min="2" max="30" step="0.5" style="width:80px; padding:4px 6px; border:1px solid #d1d5db; border-radius:4px;">
+                    <label style="font-weight:600; margin:0 4px 0 16px;">Height (cm)</label>
+                    <input type="number" id="exportOptHeight" value="5" min="2" max="30" step="0.5" style="width:80px; padding:4px 6px; border:1px solid #d1d5db; border-radius:4px;">
+                    <div style="font-size:10px; color:#9ca3af; margin-top:4px;">Default aspect matches the current on-screen plot.</div>
+                </div>
+                <div id="exportOptDpiRow" style="margin-bottom:10px;">
+                    <label style="display:block; font-weight:600; margin-bottom:4px;">DPI (PNG only)</label>
+                    <input type="number" id="exportOptDpi" value="300" min="72" max="600" step="50" style="width:80px; padding:4px 6px; border:1px solid #d1d5db; border-radius:4px;">
+                    <span style="margin-left:8px; font-size:10px; color:#9ca3af;">300 &ge; publication quality.</span>
+                </div>
+                <div style="margin-bottom:10px;">
+                    <label style="display:block; font-weight:600; margin-bottom:4px;">Background</label>
+                    <label style="margin-right:14px;"><input type="radio" name="exportOptBg" value="white" checked> White (solid)</label>
+                    <label><input type="radio" name="exportOptBg" value="transparent"> Transparent</label>
+                    <div style="font-size:10px; color:#9ca3af; margin-top:4px;">Solid white is recommended for PowerPoint / PDF &mdash; transparent PNGs can cause faint composite lines.</div>
+                </div>
+                <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px;">
+                    <button class="btn btn-outline btn-sm" id="exportOptCancel">Cancel</button>
+                    <button class="btn btn-success btn-sm" id="exportOptConfirm">Export</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Infographic Modal -->
     <div class="modal-overlay" id="infographicModal" style="display: none;">
         <div class="modal" style="max-width: 860px; max-height: 90vh; overflow: auto; border-radius: 16px;">
