@@ -6858,9 +6858,11 @@ Results:
         const totalHeight = cssHeight + legendHeight + padding;
 
         // Publication-quality export dialog: width/height in cm, DPI, bg.
-        const dlg = await this._showExportDialog({ format: 'png', plotW: totalWidth, plotH: totalHeight });
+        // Network has a legend block at the bottom — expose the optional
+        // frame toggle.
+        const dlg = await this._showExportDialog({ format: 'png', plotW: totalWidth, plotH: totalHeight, hasLegendFrame: true });
         if (!dlg) return;
-        const { widthCm, heightCm, dpi, background } = dlg;
+        const { widthCm, heightCm, dpi, background, legendFrame } = dlg;
         const transparentBg = background === 'transparent';
         const CM_TO_IN = 1 / 2.54;
         const targetPxW = Math.round(widthCm * dpi * CM_TO_IN);
@@ -6897,13 +6899,22 @@ Results:
         // Draw network scaled from canvas pixels to CSS dimensions
         ctx.drawImage(networkCanvas, 0, 0, cssWidth, cssHeight);
 
-        // Draw legend background
+        // Draw legend frame only when the user opted in via the dialog —
+        // the previous default of a gray-filled box was visually noisy on
+        // the printed page. White background still gets the white canvas
+        // fill from above; this just controls the legend block's frame.
         const legendTop = cssHeight;
-        if (!transparentBg) {
+        if (legendFrame && !transparentBg) {
             ctx.fillStyle = '#f9fafb';
             ctx.strokeStyle = '#e5e7eb';
             ctx.lineWidth = 1;
             ctx.fillRect(15, legendTop + 10, totalWidth - 30, legendHeight - 10);
+            ctx.strokeRect(15, legendTop + 10, totalWidth - 30, legendHeight - 10);
+        } else if (legendFrame && transparentBg) {
+            // Just the outline — no fill — so the frame is still visible on
+            // a transparent canvas without introducing a colored block.
+            ctx.strokeStyle = '#e5e7eb';
+            ctx.lineWidth = 1;
             ctx.strokeRect(15, legendTop + 10, totalWidth - 30, legendHeight - 10);
         }
 
@@ -7210,9 +7221,9 @@ Results:
 
         // Publication-quality export dialog: ask for size + background.
         // (DPI is ignored for SVG since it's vector.)
-        const dlg = await this._showExportDialog({ format: 'svg', plotW: width, plotH: totalHeight });
+        const dlg = await this._showExportDialog({ format: 'svg', plotW: width, plotH: totalHeight, hasLegendFrame: true });
         if (!dlg) return;
-        const { widthCm, heightCm, background } = dlg;
+        const { widthCm, heightCm, background, legendFrame } = dlg;
         const transparentBg = background === 'transparent';
 
         // Get positions from vis.js and convert to DOM coordinates
@@ -7297,9 +7308,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         let legendX = Math.max(40, (width - totalLegendWidth) / 2);
 
-        // Legend background
-        if (!transparentBg) {
+        // Legend frame: opt-in via the export dialog. Skipping by default
+        // gives a cleaner figure on the page.
+        if (legendFrame && !transparentBg) {
             svg += `  <rect x="15" y="${legendTop + 10}" width="${width - 30}" height="145" fill="#f9fafb" stroke="#e5e7eb" rx="4"/>\n`;
+        } else if (legendFrame && transparentBg) {
+            svg += `  <rect x="15" y="${legendTop + 10}" width="${width - 30}" height="145" fill="none" stroke="#e5e7eb" rx="4"/>\n`;
         }
 
         // Correlation legend
@@ -12507,6 +12521,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const heightEl = document.getElementById('exportOptHeight');
             const dpiEl = document.getElementById('exportOptDpi');
             const bgRadios = document.querySelectorAll('input[name="exportOptBg"]');
+            // Legend-frame option only relevant for charts that draw a
+            // separate legend block (currently the network export). Show it
+            // only when the caller flags `hasLegendFrame: true`.
+            const frameRow = document.getElementById('exportOptLegendFrameRow');
+            const frameEl = document.getElementById('exportOptLegendFrame');
+            if (frameRow) frameRow.style.display = context.hasLegendFrame ? '' : 'none';
 
             const prev = this._lastExportOpts || {};
             const defaultW = prev.widthCm || 5;
@@ -12514,8 +12534,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const defaultH = prev.heightCm || Math.max(2, Math.round(defaultW * plotAspect * 10) / 10);
             widthEl.value = defaultW;
             heightEl.value = defaultH;
-            if (dpiEl) dpiEl.value = prev.dpi || 300;
+            if (dpiEl) dpiEl.value = prev.dpi || 600;
             bgRadios.forEach(r => { r.checked = r.value === (prev.background || 'white'); });
+            if (frameEl) frameEl.checked = !!prev.legendFrame;
 
             modal.style.display = 'flex';
 
@@ -12529,8 +12550,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 const opts = {
                     widthCm: parseFloat(widthEl.value) || 5,
                     heightCm: parseFloat(heightEl.value) || 5,
-                    dpi: parseInt(dpiEl.value) || 300,
-                    background: document.querySelector('input[name="exportOptBg"]:checked')?.value || 'white'
+                    dpi: parseInt(dpiEl.value) || 600,
+                    background: document.querySelector('input[name="exportOptBg"]:checked')?.value || 'white',
+                    legendFrame: !!frameEl?.checked
                 };
                 this._lastExportOpts = opts;
                 cleanup();

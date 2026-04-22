@@ -2301,16 +2301,19 @@
                 <div id="exportOptDpiRow" style="margin-bottom:10px;">
                     <label style="display:block; font-weight:600; margin-bottom:4px;">DPI (PNG only)</label>
                     <span style="display:inline-flex; gap:3px; align-items:center;">
-                        <button onclick="app.adjustNumber('exportOptDpi', -50)" style="font-size:11px; padding:2px 6px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer;">−</button>
-                        <input type="number" id="exportOptDpi" value="300" min="72" max="600" step="50" style="width:60px; padding:4px 6px; border:1px solid #d1d5db; border-radius:4px; text-align:center;">
-                        <button onclick="app.adjustNumber('exportOptDpi', 50)" style="font-size:11px; padding:2px 6px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer;">+</button>
+                        <button onclick="app.adjustNumber('exportOptDpi', -100)" style="font-size:11px; padding:2px 6px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer;">−</button>
+                        <input type="number" id="exportOptDpi" value="600" min="72" max="2400" step="100" style="width:70px; padding:4px 6px; border:1px solid #d1d5db; border-radius:4px; text-align:center;">
+                        <button onclick="app.adjustNumber('exportOptDpi', 100)" style="font-size:11px; padding:2px 6px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer;">+</button>
                     </span>
-                    <span style="margin-left:8px; font-size:10px; color:#9ca3af;">300 &ge; publication quality.</span>
+                    <span style="margin-left:8px; font-size:10px; color:#9ca3af;">300 = screen / draft; 600 = print; 1200+ = high-quality print.</span>
                 </div>
                 <div style="margin-bottom:10px;">
                     <label style="display:block; font-weight:600; margin-bottom:4px;">Background</label>
                     <label style="margin-right:14px;"><input type="radio" name="exportOptBg" value="white" checked> White (solid)</label>
                     <label><input type="radio" name="exportOptBg" value="transparent"> Transparent</label>
+                </div>
+                <div id="exportOptLegendFrameRow" style="margin-bottom:10px; display:none;">
+                    <label style="cursor:pointer;"><input type="checkbox" id="exportOptLegendFrame"> Draw a thin frame around the legend</label>
                 </div>
                 <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px;">
                     <button class="btn btn-outline btn-sm" id="exportOptCancel">Cancel</button>
