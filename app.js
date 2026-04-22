@@ -2468,9 +2468,9 @@ class CorrelationExplorer {
         // Inspect modal
         document.getElementById('closeInspect').addEventListener('click', () => this.closeInspectModal());
         document.getElementById('closeInspectBtn').addEventListener('click', () => this.closeInspectModal());
-        document.getElementById('inspectModal').addEventListener('click', (e) => {
-            if (e.target.id === 'inspectModal') this.closeInspectModal();
-        });
+        // Inspect modal does NOT close on backdrop click — same protection as
+        // the Cell Line Browser. The X in the upper-right is the only exit.
+        // Easy to lose filter / gate / highlight state with a stray click.
 
         // Global keyboard handler for closing modals with Enter or Escape
         document.addEventListener('keydown', (e) => {
@@ -2489,12 +2489,10 @@ class CorrelationExplorer {
                 // accidentally hit Esc while typing in a custom-CL textarea or
                 // dismissing a pinned gene tooltip; losing the whole CLB state
                 // on that was too expensive.
-                // Close inspect modal if open
-                const inspectModal = document.getElementById('inspectModal');
-                if (inspectModal && inspectModal.classList.contains('active')) {
-                    this.closeInspectModal();
-                    return;
-                }
+                // Inspect modal intentionally does NOT close on Escape either
+                // — same exit-safety policy as the Cell Line Browser. The X in
+                // the upper-right is the only exit; otherwise typed input or
+                // a stray Esc could lose all filter / gate / highlight state.
                 // Close infographic modal if open
                 const infographicModal = document.getElementById('infographicModal');
                 if (infographicModal && infographicModal.style.display !== 'none') {
@@ -3559,6 +3557,35 @@ class CorrelationExplorer {
         }
 
         return indices;
+    }
+
+    adjustScatterFontSize(delta) {
+        const el = document.getElementById('scatterFontSize');
+        if (!el) return;
+        const val = parseInt(el.value) || 5;
+        el.value = Math.max(1, Math.min(20, val + delta));
+        this.updateInspectPlot();
+    }
+
+    // Generic +/- helper for any <input type="number">. Reads min/max/step
+    // from the element so calls stay short. Fires a 'change' event so any
+    // existing change-listener (re-render, etc.) runs as if the user typed.
+    adjustNumber(id, delta) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const val = parseFloat(el.value) || 0;
+        const min = el.min !== '' ? parseFloat(el.min) : -Infinity;
+        const max = el.max !== '' ? parseFloat(el.max) : Infinity;
+        let next = val + delta;
+        if (Number.isFinite(min)) next = Math.max(min, next);
+        if (Number.isFinite(max)) next = Math.min(max, next);
+        // Round away floating-point dust (e.g. 0.30000000004 from 0.1+0.2 step).
+        const step = parseFloat(el.step) || 1;
+        if (step >= 1) next = Math.round(next);
+        else next = Math.round(next / step) * step;
+        el.value = next;
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        el.dispatchEvent(new Event('input', { bubbles: true }));
     }
 
     findBestFilter() {
@@ -9071,7 +9098,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const mutFilterLevel = document.getElementById('mutationFilterLevel').value;
         const searchTerms = document.getElementById('scatterCellSearch').value
             .split('\n').map(s => s.trim().toUpperCase()).filter(s => s);
-        const fontSize = parseInt(document.getElementById('scatterFontSize')?.value) || 3;
+        const fontSize = parseInt(document.getElementById('scatterFontSize')?.value) || 5;
         const hotspotGene = document.getElementById('hotspotGene').value;
         const hotspotMode = document.getElementById('hotspotMode').value;
         const transOverlayGene = document.getElementById('translocationGene').value;
