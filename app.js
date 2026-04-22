@@ -2690,6 +2690,15 @@ class CorrelationExplorer {
                 this.switchGeneEffectView('hotspot');
             }
         });
+        // Third "Hotspot Mutation Inspect" view button — bootstraps a minimal
+        // mutationResults and hands off to showGeneEffectDistribution (the
+        // mutation-analysis inspect renderer). Default to TP53 if available.
+        document.getElementById('geViewMutation')?.addEventListener('click', () => {
+            const genes = this.mutations?.genes || [];
+            const defaultGene = genes.includes('TP53') ? 'TP53' : genes[0];
+            if (!defaultGene) { alert('No hotspot mutation data available to stratify by.'); return; }
+            this._enterMutationInspectFromStandalone(defaultGene);
+        });
         document.getElementById('geTissueFilter')?.addEventListener('change', () => {
             this.updateGeSubtypeFilter();
             if (this.geneEffectViewMode === 'mutation' && this.mutationResults && this.currentGeneEffectGene) {
@@ -5355,16 +5364,43 @@ class CorrelationExplorer {
             fusionFilterEl.innerHTML = html;
         }
 
-        // Populate and show hotspot gene selector (Y axis mutation/fusion)
+        // Populate and show hotspot gene selector (Y axis mutation/fusion).
+        // Counts reflect cell lines mutated under the currently-active
+        // mutation-analysis filters (lineage, subLineage, excluded tissues)
+        // so the user knows whether a gene has enough samples to stratify by.
         const hotspotGeneSelectEl = document.getElementById('geHotspotGeneSelect');
         if (hotspotGeneSelectEl) {
             const geneList = isTranslocation
                 ? (this.translocations?.genes || [])
                 : (this.mutations?.genes || []);
-            let gHtml = '';
+            const src = isTranslocation ? this.translocations : this.mutations;
+            const innerKey = isTranslocation ? 'translocations' : 'mutations';
+            // Pre-build a set of cell lines that pass mutation-analysis filters.
+            const eligibleCL = new Set();
+            for (const cl of this.metadata.cellLines) {
+                if (mr.lineageFilter && this.cellLineMetadata?.lineage?.[cl] !== mr.lineageFilter) continue;
+                if (mr.excludedTissues && mr.excludedTissues.size > 0) {
+                    const lin = this.cellLineMetadata?.lineage?.[cl];
+                    if (lin && mr.excludedTissues.has(lin)) continue;
+                }
+                if (mr.subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cl] !== mr.subLineageFilter) continue;
+                eligibleCL.add(cl);
+            }
+            const counts = {};
             for (const g of geneList) {
+                const inner = src?.geneData?.[g]?.[innerKey] || {};
+                let n = 0;
+                for (const cl in inner) {
+                    if (inner[cl] >= 1 && eligibleCL.has(cl)) n++;
+                }
+                counts[g] = n;
+            }
+            const sortedGenes = [...geneList].sort((a, b) => counts[b] - counts[a]);
+            let gHtml = '';
+            for (const g of sortedGenes) {
                 const sel = g === hotspotGene ? ' selected' : '';
-                gHtml += `<option value="${g}"${sel}>${g}</option>`;
+                const label = isTranslocation ? `${g} (${counts[g]} fused)` : `${g} (${counts[g]} mut)`;
+                gHtml += `<option value="${g}"${sel}>${label}</option>`;
             }
             hotspotGeneSelectEl.innerHTML = gHtml;
         }
@@ -5393,11 +5429,21 @@ class CorrelationExplorer {
         document.getElementById('geResetFiltersBtn').style.display = '';
         document.getElementById('geCompareByTranslocationBtn').style.display =
             this.translocations?.genes?.length > 0 ? '' : 'none';
-        document.getElementById('geViewTissue').style.display = 'none';
-        document.getElementById('geViewHotspot').style.display = 'none';
-        // Hide the "View:" label too (previous sibling span)
-        const viewLabel = document.getElementById('geViewTissue').previousElementSibling;
-        if (viewLabel && viewLabel.textContent.trim() === 'View:') viewLabel.style.display = 'none';
+        // Keep the View toggle visible in Mutation Inspect so the user can
+        // switch back to the standalone views (By Tissue / By Hotspot)
+        // without closing the modal.
+        document.getElementById('geViewTissue').style.display = '';
+        document.getElementById('geViewHotspot').style.display = '';
+        const _viewMutBtn = document.getElementById('geViewMutation');
+        if (_viewMutBtn) _viewMutBtn.style.display = '';
+        const _viewLabel = document.getElementById('geViewTissue').previousElementSibling;
+        if (_viewLabel && _viewLabel.textContent.trim() === 'View:') _viewLabel.style.display = '';
+        this._highlightGEViewBtn('mutation');
+        // Mirror the By Hotspot scan caution: hotspot mutations are often
+        // enriched in specific cancer types, so differences can reflect
+        // lineage rather than the mutation itself.
+        const _inspectBanner = document.getElementById('mutationCautionGEInspect');
+        if (_inspectBanner) _inspectBanner.style.display = '';
         if (!this._keepInlineCompare) {
             document.getElementById('geInlineCompareTable').style.display = 'none';
         }
@@ -11419,16 +11465,18 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         document.getElementById('geSummaryN').textContent = allEffects.length;
         document.getElementById('geneEffectSummary').style.display = 'block';
 
-        // Populate tissue filter dropdown
+        // Populate tissue filter dropdown (with per-tissue counts; sorted desc by N)
         const tissueFilter = document.getElementById('geTissueFilter');
         if (tissueFilter) {
             const currentValue = tissueFilter.value;
-            const lineages = [...new Set(this.currentGeneEffect.data.map(d => d.lineage).filter(Boolean))].sort();
+            const geLinCounts = {};
+            this.currentGeneEffect.data.forEach(d => { if (d.lineage) geLinCounts[d.lineage] = (geLinCounts[d.lineage] || 0) + 1; });
+            const lineages = Object.keys(geLinCounts).sort((a, b) => geLinCounts[b] - geLinCounts[a]);
             tissueFilter.innerHTML = '<option value="">All tissues</option>';
             lineages.forEach(l => {
                 const opt = document.createElement('option');
                 opt.value = l;
-                opt.textContent = l;
+                opt.textContent = `${l} (n=${geLinCounts[l]})`;
                 tissueFilter.appendChild(opt);
             });
             tissueFilter.value = currentValue || '';
@@ -11461,6 +11509,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
         const warn = document.getElementById('geHotspotBiasWarning');
         if (warn) warn.style.display = 'none';
+        // Banner is Hotspot-Mutation-Inspect-only; hide in standalone view.
+        const _inspectBanner = document.getElementById('mutationCautionGEInspect');
+        if (_inspectBanner) _inspectBanner.style.display = 'none';
 
         // Populate and show fusion filter
         const fusionFilterEl = document.getElementById('geFusionFilter');
@@ -11477,6 +11528,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Restore view buttons (may have been hidden by mutation inspect)
         document.getElementById('geViewTissue').style.display = '';
         document.getElementById('geViewHotspot').style.display = '';
+        const viewMutBtn = document.getElementById('geViewMutation');
+        if (viewMutBtn) viewMutBtn.style.display = '';
         const viewLabel = document.getElementById('geViewTissue').previousElementSibling;
         if (viewLabel && viewLabel.textContent.trim() === 'View:') viewLabel.style.display = '';
 
@@ -11521,37 +11574,78 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const searchInput = document.getElementById('geTableSearch');
         if (searchInput) searchInput.value = '';
 
-        // Update button styles
-        const tissueBtn = document.getElementById('geViewTissue');
-        const hotspotBtn = document.getElementById('geViewHotspot');
+        this._highlightGEViewBtn(view);
 
         // Update statistics explanation text
         const statsExplanation = document.getElementById('geStatsExplanationText');
 
         if (view === 'tissue') {
-            tissueBtn.style.background = '#5a9f4a';
-            tissueBtn.style.color = 'white';
-            tissueBtn.classList.remove('btn-secondary');
-            hotspotBtn.style.background = '';
-            hotspotBtn.style.color = '';
-            hotspotBtn.classList.add('btn-secondary');
             document.getElementById('geByTissueView').style.display = 'block';
             document.getElementById('geByHotspotView').style.display = 'none';
             if (statsExplanation) statsExplanation.textContent = "p-values: Welch's t-test comparing each cancer type vs all other cell lines.";
             this.renderGeneEffectByTissue();
         } else {
-            hotspotBtn.style.background = '#5a9f4a';
-            hotspotBtn.style.color = 'white';
-            hotspotBtn.classList.remove('btn-secondary');
-            tissueBtn.style.background = '';
-            tissueBtn.style.color = '';
-            tissueBtn.classList.add('btn-secondary');
             document.getElementById('geByTissueView').style.display = 'none';
             document.getElementById('geByHotspotView').style.display = 'block';
             if (statsExplanation) statsExplanation.textContent = "Shows 3 mutation levels: 0 (WT, blue), 1 (orange), 2 (red). p-value: Welch's t-test comparing 1+2 combined vs WT.";
             this.renderGeneEffectByHotspot();
         }
         this._updateGEPlaceholderVisibility();
+    }
+
+    _highlightGEViewBtn(view) {
+        const tBtn = document.getElementById('geViewTissue');
+        const hBtn = document.getElementById('geViewHotspot');
+        const mBtn = document.getElementById('geViewMutation');
+        [tBtn, hBtn, mBtn].forEach(b => {
+            if (!b) return;
+            b.style.background = '';
+            b.style.color = '';
+            b.classList.add('btn-secondary');
+        });
+        const active = view === 'tissue' ? tBtn : view === 'mutation' ? mBtn : hBtn;
+        if (active) {
+            active.style.background = '#5a9f4a';
+            active.style.color = 'white';
+            active.classList.remove('btn-secondary');
+        }
+    }
+
+    // "Hotspot Mutation Inspect" button in the standalone GE modal:
+    // bootstrap a minimal mutationResults so the existing mutation-analysis
+    // inspect renderer (`showGeneEffectDistribution`) can run, even if the
+    // user never ran a mutation analysis first. Reuses all the existing UI
+    // chrome (full-width chart, hotspot/fusion filters, Δ compare buttons)
+    // — no duplicate rendering code.
+    _enterMutationInspectFromStandalone(pickedHotspotGene) {
+        const gene = this.currentGeneEffectGene || document.getElementById('geneEffectSearch')?.value.trim().toUpperCase();
+        if (!gene) return;
+        const hotspotGene = (pickedHotspotGene || '').toUpperCase();
+        if (!hotspotGene || !this.mutations?.geneData?.[hotspotGene]) {
+            alert('No hotspot mutation data available to stratify by.');
+            return;
+        }
+        this.mutationResults = {
+            hotspotGene,
+            pThreshold: 0.05,
+            minN: 3,
+            lineageFilter: '',
+            subLineageFilter: '',
+            additionalHotspot: '',
+            additionalHotspotLevel: 'all',
+            additionalTransGene: '',
+            additionalTransLevel: '',
+            isTranslocation: false,
+            isDamaging: false,
+            excludedTissues: new Set(),
+            nWT: 0, nMut: 0, n2: 0,
+            hasFusionData: false,
+            nFused: 0, nWTFusion: 0,
+            allResults: [],
+            significantResults: []
+        };
+        this.showGeneEffectDistribution(gene);
+        this._highlightGEViewBtn('mutation');
     }
 
     filterGETable(searchTerm) {
@@ -12087,7 +12181,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 if (n > 0) {
                     const mean = vals.reduce((a, b) => a + b, 0) / n;
                     const sd = n > 1 ? Math.sqrt(vals.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / (n - 1)) : 0;
-                    tbody.innerHTML += `<tr class="clickable-row" data-group="_all" style="cursor: pointer; background: #f3f4f6; font-weight: 600; border-bottom: 2px solid #d1d5db;">
+                    tbody.innerHTML += `<tr class="clickable-row" data-group="_all" title="Click to return to the all-tissues overview" style="cursor: pointer; background: #f3f4f6; font-weight: 600; border-bottom: 2px solid #d1d5db;">
                         <td>All</td>
                         <td style="text-align: center;">${n}</td>
                         <td style="text-align: center;">${mean.toFixed(2)}</td>
@@ -12128,12 +12222,25 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             });
         }
 
-        // Add click handlers for detailed view (skip the pinned "All" row)
+        // Row click behaviour:
+        //  - By Tissue row → drill into detailed view for that tissue.
+        //  - By Hotspot row → jump into Hotspot Mutation Inspect with that
+        //    gene pre-selected (the 0/1/2 plot is the same data in the more
+        //    useful mutation-analysis inspect layout).
+        //  - Pinned "All" row → jump back to the overview (only meaningful
+        //    when a detailed view is currently active).
         tbody.querySelectorAll('.clickable-row').forEach(row => {
-            if (row.dataset.group === '_all') return;
             row.addEventListener('click', () => {
+                if (row.dataset.group === '_all') {
+                    if (this.geDetailedView) this.showAllGeneEffect();
+                    return;
+                }
                 const group = row.dataset.group;
-                this.showGEDetailedView(group, mode);
+                if (mode === 'hotspot') {
+                    this._enterMutationInspectFromStandalone(group);
+                } else {
+                    this.showGEDetailedView(group, mode);
+                }
             });
         });
     }
@@ -15029,6 +15136,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             }
         }
 
+        // Damaging mutation genes in this cell line (list, not just count)
+        const damagingGenes = [];
+        if (this.damagingMutations?.geneData) {
+            for (const gene of Object.keys(this.damagingMutations.geneData)) {
+                if (this.damagingMutations.geneData[gene].mutations?.[cellLineId] >= 1) damagingGenes.push(gene);
+            }
+        }
+
         const fusionGenes = [];
         if (this.translocations?.geneData) {
             for (const gene of Object.keys(this.translocations.geneData)) {
@@ -15066,21 +15181,63 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         top += `<div class="clb-stat-row"><span class="clb-stat-label">Sex (expression)</span><span class="clb-stat-value"${expStyle}>${expDisplay}</span></div>`;
         top += `</div>`;
 
-        top += `<div class="clb-detail-section"><strong>Hotspot Mutations (${mutGenes.length})</strong>`;
-        top += `<div style="color:var(--gray-500); font-size:11px;">${mutGenes.length > 0 ? mutGenes.map(g => `<span class="gene-hover clb-gene-link" data-gene="${g}" style="cursor:help;">${g}</span>`).join(', ') : 'None'}</div></div>`;
+        // Render a gene list where the first `INITIAL_VISIBLE` genes (sorted
+        // alphabetically) are always visible and the rest are hidden behind
+        // a "Show all" toggle — keeps Jurkat-style long lists from dominating.
+        const INITIAL_VISIBLE = 10;
+        const renderGeneList = (genes, toggleId) => {
+            if (genes.length === 0) return `<div style="color:var(--gray-500); font-size:11px;">None</div>`;
+            const sorted = [...genes].sort((a, b) => a.localeCompare(b));
+            const tagHtml = (g) => `<span class="gene-hover clb-gene-link" data-gene="${g}" style="cursor:help;">${g}</span>`;
+            if (sorted.length <= INITIAL_VISIBLE) {
+                return `<div style="color:var(--gray-500); font-size:11px;">${sorted.map(tagHtml).join(', ')}</div>`;
+            }
+            const visible = sorted.slice(0, INITIAL_VISIBLE).map(tagHtml).join(', ');
+            const hidden  = sorted.slice(INITIAL_VISIBLE).map(tagHtml).join(', ');
+            return `<div style="color:var(--gray-500); font-size:11px;">`
+                + `<span id="${toggleId}-visible">${visible}</span>`
+                + `<span id="${toggleId}-hidden" style="display:none;">, ${hidden}</span>`
+                + ` <a href="#" id="${toggleId}-btn" data-total="${sorted.length}" style="color:var(--green-700); text-decoration:none; font-size:10px; white-space:nowrap;">&#x25BE; show all ${sorted.length}</a>`
+                + `</div>`;
+        };
 
-        const damagingCount = this._damagingCountByCL?.get(cellLineId) || 0;
-        top += `<div class="clb-detail-section"><strong>Damaging Mutations (${damagingCount})</strong></div>`;
+        top += `<div class="clb-detail-section"><strong>Hotspot Mutations (${mutGenes.length})</strong>`;
+        top += renderGeneList(mutGenes, 'clb-hotspot');
+        top += `</div>`;
+
+        const damagingCount = this._damagingCountByCL?.get(cellLineId) || damagingGenes.length;
+        top += `<div class="clb-detail-section"><strong>Damaging Mutations (${damagingCount})</strong>`;
+        top += renderGeneList(damagingGenes, 'clb-damaging');
+        top += `</div>`;
 
         top += `<div class="clb-detail-section"><strong>Fusions (${fusionGenes.length})</strong>`;
-        top += `<div style="color:var(--gray-500); font-size:11px;">${fusionGenes.length > 0 ? fusionGenes.map(g => `<span class="gene-hover clb-gene-link" data-gene="${g}" style="cursor:help;">${g}</span>`).join(', ') : 'None'}</div></div>`;
+        top += renderGeneList(fusionGenes, 'clb-fusion');
+        top += `</div>`;
 
-        top += `<div class="clb-detail-section"><strong>Gene Effect Stats</strong>`;
-        top += `<div class="clb-stat-row"><span class="clb-stat-label">Genes</span><span class="clb-stat-value">${count.toLocaleString()}</span></div>`;
-        top += `<div class="clb-stat-row"><span class="clb-stat-label">Mean GE</span><span class="clb-stat-value">${this.formatNum(mean)}</span></div>`;
+        // Gene Effect section — separator + combined stats + list headings.
+        top += `<div style="border-top:1px solid #e5e7eb; margin:12px 0 8px;"></div>`;
+        top += `<div class="clb-detail-section"><strong>Gene Effects</strong>`;
+        top += `<div class="clb-stat-row"><span class="clb-stat-label">Genes scored</span><span class="clb-stat-value">${count.toLocaleString()}</span></div>`;
+        top += `<div class="clb-stat-row"><span class="clb-stat-label">Mean</span><span class="clb-stat-value">${this.formatNum(mean)}</span></div>`;
         top += `<div class="clb-stat-row"><span class="clb-stat-label">Range</span><span class="clb-stat-value">${count > 0 ? this.formatNum(min) + ' to ' + this.formatNum(max) : '-'}</span></div>`;
         top += `</div>`;
         document.getElementById('clbDetailTop').innerHTML = top;
+
+        // Wire gene-list toggles (re-wired on every re-render because the DOM
+        // is replaced in place).
+        ['clb-hotspot', 'clb-damaging', 'clb-fusion'].forEach(id => {
+            const btn = document.getElementById(id + '-btn');
+            if (!btn) return;
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                const hidden = document.getElementById(id + '-hidden');
+                if (!hidden) return;
+                const nowHidden = hidden.style.display === 'none';
+                hidden.style.display = nowHidden ? '' : 'none';
+                const total = btn.dataset.total;
+                btn.innerHTML = nowHidden ? '&#x25B4; hide extras' : `&#x25BE; show all ${total}`;
+            });
+        });
 
         const bottomN = geneVals.slice(0, N);
         const topN = geneVals.slice(-N).reverse();
