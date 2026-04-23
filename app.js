@@ -2354,11 +2354,13 @@ class CorrelationExplorer {
         document.getElementById('closeGeneEffect').addEventListener('click', () => {
             document.getElementById('geneEffectModal').style.display = 'none';
             this._geHighlightCellLine = null;
+            this._geSelectionHighlight = null;
         });
         document.getElementById('geneEffectModal').addEventListener('click', (e) => {
             if (e.target.id === 'geneEffectModal') {
                 document.getElementById('geneEffectModal').style.display = 'none';
                 this._geHighlightCellLine = null;
+                this._geSelectionHighlight = null;
             }
         });
         document.getElementById('downloadGeneEffectPNG').addEventListener('click', () => this.downloadGeneEffectPNG());
@@ -11832,20 +11834,36 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         stats.sort((a, b) => a.mean - b.mean);
         this.currentGEStats = stats;
 
-        // Create box plot traces for each group
-        const traces = stats.map((s, idx) => ({
-            type: 'box',
-            name: `${s.group} (n=${s.n})`,
-            x: s.cellData.map(c => c.geneEffect),
-            text: s.cellData.map(c => c.cellLineName),
-            boxpoints: 'all',
-            jitter: 0.3,
-            pointpos: 0,
-            marker: { color: 'rgba(80,80,80,0.5)', size: 5 },
-            line: { color: '#374151' },
-            fillcolor: 'rgba(200,200,200,0.3)',
-            hovertemplate: '<b>%{text}</b><br>Gene Effect: %{x:.3f}<extra></extra>'
-        }));
+        // When the user entered the GE modal via "Inspect Gene Effects for
+        // selected cell lines", highlight those cell lines in a vivid colour
+        // and larger size so they stand out from the rest of each box.
+        const hl = this._geSelectionHighlight instanceof Set ? this._geSelectionHighlight : null;
+        const hlColor = '#dc2626';
+        const baseColor = 'rgba(80,80,80,0.5)';
+        const traces = stats.map((s, idx) => {
+            const colors = hl ? s.cellData.map(c => hl.has(c.cellLineId) ? hlColor : baseColor) : baseColor;
+            const sizes = hl ? s.cellData.map(c => hl.has(c.cellLineId) ? 9 : 5) : 5;
+            return {
+                type: 'box',
+                name: `${s.group} (n=${s.n})`,
+                x: s.cellData.map(c => c.geneEffect),
+                text: s.cellData.map(c => c.cellLineName),
+                boxpoints: 'all',
+                jitter: 0.3,
+                pointpos: 0,
+                marker: {
+                    color: colors,
+                    size: sizes,
+                    line: hl ? {
+                        color: s.cellData.map(c => hl.has(c.cellLineId) ? '#7f1d1d' : 'rgba(0,0,0,0)'),
+                        width: s.cellData.map(c => hl.has(c.cellLineId) ? 1 : 0)
+                    } : undefined
+                },
+                line: { color: '#374151' },
+                fillcolor: 'rgba(200,200,200,0.3)',
+                hovertemplate: '<b>%{text}</b><br>Gene Effect: %{x:.3f}<extra></extra>'
+            };
+        });
 
         // Calculate dynamic sizing
         const numEntries = stats.length;
@@ -11854,9 +11872,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const chartHeight = Math.max(400, numEntries * boxHeight + 100);
 
         const geTissueTitle = `${gene} by ${groupBySubtype ? 'Disease Subtype' : 'Cancer Type'}`;
+        const subtitleParts = [];
+        if (hl && hl.size > 0) subtitleParts.push(`<span style="color:${hlColor}">&#9679; ${hl.size} selected cell lines highlighted</span>`);
         const layout = {
             annotations: [
-                { text: `<b>${geTissueTitle}</b>`, xref: 'paper', yref: 'paper', x: 0.5, y: 1.02, xanchor: 'center', yanchor: 'bottom', showarrow: false, font: { size: 19 }, _tsRole: 'title' },
+                { text: `<b>${geTissueTitle}</b>${subtitleParts.length ? '<br><span style="font-size:11px;color:#6b7280;">' + subtitleParts.join(' | ') + '</span>' : ''}`, xref: 'paper', yref: 'paper', x: 0.5, y: 1.02, xanchor: 'center', yanchor: 'bottom', showarrow: false, font: { size: 19 }, _tsRole: 'title' },
                 { text: `${gene} Gene Effect`, xref: 'paper', yref: 'paper', x: 0.5, y: -0.04, xanchor: 'center', yanchor: 'top', showarrow: false, font: { size: 17 }, _tsRole: 'xlabel' }
             ],
             xaxis: {
@@ -15635,6 +15655,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             tr.addEventListener('click', () => {
                 const gene = tr.dataset.gene;
                 document.getElementById('selectionInspectModal').style.display = 'none';
+                // Stash the selection so the GE tissue plot can draw the
+                // selected cell lines in a distinct colour / symbol. Cleared
+                // automatically the next time the GE modal opens via a
+                // non-selection path.
+                this._geSelectionHighlight = new Set(selected);
                 this.openGeneEffectModal(gene, 'tissue');
             });
             tr.addEventListener('mouseenter', () => tr.style.background = '#f0fdf4');
@@ -15656,17 +15681,15 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const cellLines = this.metadata.cellLines;
         const clIndexOf = new Map(cellLines.map((cl, i) => [cl, i]));
         const selIdx = selected.map(cl => clIndexOf.get(cl)).filter(i => i !== undefined);
-        const selSet = new Set(selIdx);
-        const otherIdx = [];
-        for (let i = 0; i < this.nCellLines; i++) if (!selSet.has(i)) otherIdx.push(i);
+        const allIdx = [];
+        for (let i = 0; i < this.nCellLines; i++) allIdx.push(i);
 
-        const estSec = Math.round(0.0015 * this.nGenes * this.nGenes / 1e6 * (selIdx.length + otherIdx.length) / 500);
         const cont = confirm(
             `Unbiased all-vs-all correlation:\n\n` +
-            `Genes: ${this.nGenes}\n` +
+            `Genes: ${this.nGenes.toLocaleString()}\n` +
             `Selected cell lines: ${selIdx.length}\n` +
-            `Other cell lines: ${otherIdx.length}\n\n` +
-            `Estimated time: ~${Math.max(30, estSec)}–${Math.max(60, estSec * 2)} s on a typical laptop, longer on older hardware.\n\n` +
+            `Baseline: all ${allIdx.length} cell lines (Δ is selected r − all-cells r).\n\n` +
+            `This is computationally expensive: up to 5–10 minutes on a typical laptop, longer on older hardware. The browser will remain responsive and you can cancel.\n\n` +
             `Continue?`
         );
         if (!cont) return;
@@ -15711,100 +15734,80 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         };
 
         const _yield = () => new Promise(r => setTimeout(r, 0));
+
+        // Centred vectors across ALL cell lines are the baseline that Δ is
+        // computed against. They're also the same across runs with different
+        // selections, so we cache them on the instance for the lifetime of
+        // the page — subsequent inspect-correlation runs skip this cost.
+        if (!this._corrCacheAll) {
+            this._showProgress('Computing correlations', 'Centring gene vectors (all cells, one-time)…', 2);
+            await _yield();
+            this._corrCacheAll = buildCentred(allIdx);
+        }
+        const allData = this._corrCacheAll;
+        await _yield();
+        if (this._corrInspectCancelled) { this._hideProgress(); return; }
+
+        this._showProgress('Computing correlations', 'Centring gene vectors (selection)…', 4);
+        await _yield();
         const selData = buildCentred(selIdx);
         await _yield();
         if (this._corrInspectCancelled) { this._hideProgress(); return; }
-        this._showProgress('Computing correlations', 'Computing correlations in selection…', 5);
-        await _yield();
 
-        // Top-K heap of best absolute correlations.
+        // Top-K heap of best absolute correlations. Using a proper min-heap
+        // would be asymptotically better but K is small (200) so linear
+        // scan to find the minimum is fine and keeps the code clear.
         const TOPK = 200;
         const pushHeap = (heap, item) => {
             if (heap.length < TOPK) { heap.push(item); return; }
-            // Replace minimum if bigger.
             let minIdx = 0;
             for (let i = 1; i < heap.length; i++) if (Math.abs(heap[i].abs) < Math.abs(heap[minIdx].abs)) minIdx = i;
             if (Math.abs(item.abs) > Math.abs(heap[minIdx].abs)) heap[minIdx] = item;
         };
 
-        const corrInSel = [];                         // top correlations in selected
-        const corrDiff = [];                          // top Δ correlations (sel − rest)
+        const corrInSel = [];   // top correlations in selected
+        const corrDiff = [];    // top Δ correlations (sel − all)
 
-        // Compute correlation in selection.
-        const startSel = performance.now();
+        // Single pass: for each gene pair, compute r in selected and r in
+        // all-cells; push into both heaps. Avoids the redundant double-pass
+        // the earlier implementation had (which discarded its first pass
+        // and recomputed everything in a second loop).
+        const start = performance.now();
         const chunk = 50;
         for (let i = 0; i < nGenes; i++) {
             if (this._corrInspectCancelled) { this._hideProgress(); return; }
-            if (!selData.keep[i]) continue;
-            const iOff = i * selData.n;
-            const ni = selData.norms[i];
+            const inSel = selData.keep[i], inAll = allData.keep[i];
+            if (!inSel && !inAll) continue;
+            const iOffS = i * selData.n, iOffA = i * allData.n;
+            const niS = selData.norms[i], niA = allData.norms[i];
             for (let j = i + 1; j < nGenes; j++) {
-                if (!selData.keep[j]) continue;
-                const jOff = j * selData.n;
-                let dot = 0;
-                for (let k = 0; k < selData.n; k++) dot += selData.centred[iOff + k] * selData.centred[jOff + k];
-                const r = dot / (ni * selData.norms[j]);
-                if (!isFinite(r)) continue;
-                pushHeap(corrInSel, { g1: this.geneNames[i], g2: this.geneNames[j], r, abs: r });
-            }
-            if (i % chunk === 0) {
-                const pct = (i / nGenes) * 50;
-                const elapsed = (performance.now() - startSel) / 1000;
-                const eta = elapsed * (nGenes - i) / Math.max(1, i);
-                this._showProgress('Computing correlations', `In selection: gene ${i.toLocaleString()} of ${nGenes.toLocaleString()}, ~${Math.round(eta)} s remaining.`, pct);
-                await _yield();
-            }
-        }
-
-        if (this._corrInspectCancelled) { this._hideProgress(); return; }
-        this._showProgress('Computing correlations', 'Computing correlations in the rest…', 50);
-        await _yield();
-        const otherData = buildCentred(otherIdx);
-        await _yield();
-
-        // Compute correlation in rest AND Δ simultaneously. Reuse the same
-        // gene pairs from sel; not strictly all-vs-all in rest, but top-K
-        // Δ is our target.
-        // More correct: also scan pairs where rest is strong; so iterate
-        // fresh over all pairs, compute both r values, and push into two
-        // different top-K heaps.
-        const startRest = performance.now();
-        const corrInSel2 = []; // reset, we'll use one pass for everything
-        corrInSel.length = 0;
-        for (let i = 0; i < nGenes; i++) {
-            if (this._corrInspectCancelled) { this._hideProgress(); return; }
-            const inSel = selData.keep[i], inOther = otherData.keep[i];
-            if (!inSel && !inOther) continue;
-            const iOffS = i * selData.n, iOffO = i * otherData.n;
-            const niS = selData.norms[i], niO = otherData.norms[i];
-            for (let j = i + 1; j < nGenes; j++) {
-                if ((!selData.keep[j] && !otherData.keep[j])) continue;
-                let rS = NaN, rO = NaN;
+                if (!selData.keep[j] && !allData.keep[j]) continue;
+                let rS = NaN, rA = NaN;
                 if (inSel && selData.keep[j]) {
                     let dot = 0;
                     const jOff = j * selData.n;
                     for (let k = 0; k < selData.n; k++) dot += selData.centred[iOffS + k] * selData.centred[jOff + k];
                     rS = dot / (niS * selData.norms[j]);
                 }
-                if (inOther && otherData.keep[j]) {
+                if (inAll && allData.keep[j]) {
                     let dot = 0;
-                    const jOff = j * otherData.n;
-                    for (let k = 0; k < otherData.n; k++) dot += otherData.centred[iOffO + k] * otherData.centred[jOff + k];
-                    rO = dot / (niO * otherData.norms[j]);
+                    const jOff = j * allData.n;
+                    for (let k = 0; k < allData.n; k++) dot += allData.centred[iOffA + k] * allData.centred[jOff + k];
+                    rA = dot / (niA * allData.norms[j]);
                 }
                 if (isFinite(rS)) {
                     pushHeap(corrInSel, { g1: this.geneNames[i], g2: this.geneNames[j], r: rS, abs: rS });
                 }
-                if (isFinite(rS) && isFinite(rO)) {
-                    const d = rS - rO;
-                    pushHeap(corrDiff, { g1: this.geneNames[i], g2: this.geneNames[j], rSel: rS, rOther: rO, d, abs: d });
+                if (isFinite(rS) && isFinite(rA)) {
+                    const d = rS - rA;
+                    pushHeap(corrDiff, { g1: this.geneNames[i], g2: this.geneNames[j], rSel: rS, rOther: rA, d, abs: d });
                 }
             }
             if (i % chunk === 0) {
-                const pct = 50 + (i / nGenes) * 50;
-                const elapsed = (performance.now() - startRest) / 1000;
+                const pct = (i / nGenes) * 100;
+                const elapsed = (performance.now() - start) / 1000;
                 const eta = elapsed * (nGenes - i) / Math.max(1, i);
-                this._showProgress('Computing correlations', `Δ vs rest: gene ${i.toLocaleString()} of ${nGenes.toLocaleString()}, ~${Math.round(eta)} s remaining.`, pct);
+                this._showProgress('Computing correlations', `Gene ${i.toLocaleString()} of ${nGenes.toLocaleString()}, ~${Math.round(eta)} s remaining.`, pct);
                 await _yield();
             }
         }
@@ -15901,7 +15904,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         document.querySelectorAll('.si-row').forEach(tr => {
             tr.addEventListener('click', () => {
                 document.getElementById('selectionInspectModal').style.display = 'none';
-                this.openInspectByGenes(tr.dataset.g1, tr.dataset.g2);
+                // Open the correlation inspect directly with a lightweight
+                // correlation stub — we don't require a prior analysis to
+                // have run and populated this.results.correlations.
+                this.openInspect({ gene1: tr.dataset.g1, gene2: tr.dataset.g2, correlation: null });
             });
             tr.addEventListener('mouseenter', () => tr.style.background = '#f0fdf4');
             tr.addEventListener('mouseleave', () => tr.style.background = '');
