@@ -2281,6 +2281,17 @@
         </div>
     </div>
 
+    <!-- Curated-collections reference -->
+    <div id="collectionsInfoModal" style="display:none; position:fixed; inset:0; z-index:1250; background:rgba(0,0,0,0.5); align-items:flex-start; justify-content:center; padding:20px; overflow-y:auto;">
+        <div style="background:#fff; width:100%; max-width:min(94vw,760px); max-height:calc(100vh - 40px); border-radius:8px; display:flex; flex-direction:column; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);">
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 18px; border-bottom:1px solid #e5e7eb; background:linear-gradient(90deg,#f0fdf4 0%,#fff 100%);">
+                <h3 style="margin:0; font-size:17px; color:#15803d;">Curated collections — inclusion criteria</h3>
+                <button id="collectionsInfoClose" style="background:none; border:none; font-size:24px; cursor:pointer; line-height:1; color:#6b7280;">&times;</button>
+            </div>
+            <div id="collectionsInfoBody" style="padding:14px 18px; overflow-y:auto; font-size:12px; color:#374151; line-height:1.55;"></div>
+        </div>
+    </div>
+
     <!-- Selection Inspect (GE / Correlations for selected cell lines) -->
     <div id="selectionInspectModal" style="display:none; position:fixed; inset:0; z-index:1250; background:rgba(0,0,0,0.5); align-items:flex-start; justify-content:center; padding:20px; overflow-y:auto;">
         <div style="background:#fff; width:100%; max-width:min(96vw,1200px); max-height:calc(100vh - 40px); border-radius:8px; display:flex; flex-direction:column; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);">
@@ -2605,14 +2616,18 @@
           <input type="text" id="clbSearch" placeholder="Search cell lines...">
           <select id="clbTissueFilter"><option value="">All tissues</option></select>
           <select id="clbSubtypeFilter" style="display:none;"><option value="">All subtypes</option></select>
-          <select id="clbCollectionFilter" title="Curated multi-gene / phenotype collections"><option value="">All collections</option></select>
-          <select id="clbSexFilter" style="font-size:12px;" title="Filter by sex — annotation (from DepMap) or expression (Y-markers + XIST) are independent axes">
+          <select id="clbSexFilter" style="font-size:12px;" title="Filter by sex. Annotation (from DepMap) and expression-based calls (Y-markers + XIST) are independent axes — they often disagree.">
             <option value="">All sexes</option>
-            <option value="ann_male">Male (by annotation)</option>
-            <option value="ann_female">Female (by annotation)</option>
-            <option value="exp_male">Male (by expression)</option>
-            <option value="exp_female">Female (by expression)</option>
-            <option value="unknown">Unknown</option>
+            <optgroup label="By annotation">
+              <option value="ann_male">Male</option>
+              <option value="ann_female">Female</option>
+              <option value="ann_unknown">Unknown</option>
+            </optgroup>
+            <optgroup label="By expression (Y-markers + XIST)">
+              <option value="exp_male">Male</option>
+              <option value="exp_female">Female</option>
+              <option value="exp_unknown">Unknown</option>
+            </optgroup>
           </select>
           <span style="display:inline-flex; align-items:center; gap:2px; border:1px solid #d1d5db; border-radius:5px; padding:1px;">
             <input type="text" id="clbHotspotFilter" list="clbHotspotList" placeholder="Hotspot filter" autocomplete="off" style="width:120px; border:none; font-size:12px; padding:4px 6px;">
@@ -2643,6 +2658,12 @@
             <button id="clbExportMinimal" class="btn btn-outline btn-sm" style="color:var(--green-700); border-color:var(--green-400); line-height:1.2; padding:4px 8px;" title="Gene Effect values for all genes x selected cell lines (CSV)">Export GE<br><span style="font-size:9px;font-weight:normal;">for selected CLs</span></button>
             <button id="clbExportFull" class="btn btn-outline btn-sm" style="color:var(--green-700); border-color:var(--green-400); line-height:1.2; padding:4px 8px;" title="Detailed report: metadata, mutations, top depleted/enriched genes, z-scores">Cell Line<br><span style="font-size:9px;font-weight:normal;">Detail Report</span></button>
           </div>
+        </div>
+        <!-- Row 2: Curated collections + help -->
+        <div style="padding: 4px 20px; border-bottom: 1px solid #e5e7eb; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; background: var(--gray-50, #f9fafb);">
+          <span style="font-size: 11px; font-weight: 600; color: #374151; white-space: nowrap;">Collections:</span>
+          <select id="clbCollectionFilter" title="Curated multi-gene / phenotype collections" style="font-size:12px;"><option value="">All collections</option></select>
+          <button id="clbCollectionsInfoBtn" class="btn btn-outline btn-sm" title="Show inclusion criteria for each curated collection" style="padding:2px 8px; font-size:10px; font-weight:700;">?</button>
         </div>
         <div class="clb-content">
           <div class="clb-list-wrap" id="clbListContainer">

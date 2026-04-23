@@ -14540,6 +14540,35 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
 
     // Populate the CLB collection dropdown from the catalog.
+    // Reference modal listing every curated collection with its inclusion
+    // criteria + current membership count. Pulls straight from the catalog
+    // so adding a new collection just requires editing the catalog.
+    _showCollectionsInfo() {
+        const modal = document.getElementById('collectionsInfoModal');
+        const body = document.getElementById('collectionsInfoBody');
+        if (!modal || !body) return;
+        const catalog = this._curatedCollectionsCatalog();
+        const mem = this._collectionMembership || {};
+        const byCat = {};
+        for (const [id, def] of Object.entries(catalog)) {
+            const n = mem[id] ? mem[id].size : null;
+            (byCat[def.category] = byCat[def.category] || []).push({ id, def, n });
+        }
+        let html = `<p style="margin:0 0 12px; color:#6b7280;">Each collection is computed at load time from DepMap mutation / expression data. Numbers reflect the current dataset; the actual filter also respects any other active filters (tissue, subtype, hotspot, …).</p>`;
+        for (const cat of Object.keys(byCat)) {
+            html += `<h4 style="margin:14px 0 6px; font-size:13px; color:#15803d; border-bottom:1px solid #e5e7eb; padding-bottom:4px;">${cat}</h4>`;
+            for (const { id, def, n } of byCat[cat]) {
+                const nStr = n == null ? '<i style="color:#9ca3af;">requires expression data</i>' : `n = ${n}`;
+                html += `<div style="margin-bottom:10px;">`
+                     +  `<div style="font-weight:600; color:#374151;">${def.label} <span style="font-weight:400; color:#6b7280;">— ${nStr}</span></div>`
+                     +  `<div style="color:#4b5563; margin-top:2px;">${def.description}</div>`
+                     +  `</div>`;
+            }
+        }
+        body.innerHTML = html;
+        modal.style.display = 'flex';
+    }
+
     _populateCollectionFilter() {
         const sel = document.getElementById('clbCollectionFilter');
         if (!sel) return;
@@ -14603,11 +14632,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (!filter) return true;
         const { annotation, byExpression } = this._getCellLineSex(cl);
         switch (filter) {
-            case 'ann_male':    return annotation === 'Male';
-            case 'ann_female':  return annotation === 'Female';
-            case 'exp_male':    return byExpression === 'male';
-            case 'exp_female':  return byExpression === 'female';
-            case 'unknown':     return annotation === 'Unknown';
+            case 'ann_male':     return annotation === 'Male';
+            case 'ann_female':   return annotation === 'Female';
+            case 'ann_unknown':  return annotation === 'Unknown';
+            case 'exp_male':     return byExpression === 'male';
+            case 'exp_female':   return byExpression === 'female';
+            case 'exp_unknown':  return byExpression === 'unknown' || byExpression === '' || byExpression == null;
             default: return true;
         }
     }
@@ -14772,6 +14802,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         });
         document.getElementById('clbSubtypeFilter').addEventListener('change', () => this.renderCellLineList());
         document.getElementById('clbCollectionFilter').addEventListener('change', () => this.renderCellLineList());
+        document.getElementById('clbCollectionsInfoBtn')?.addEventListener('click', () => this._showCollectionsInfo());
+        document.getElementById('collectionsInfoClose')?.addEventListener('click', () => {
+            document.getElementById('collectionsInfoModal').style.display = 'none';
+        });
         document.getElementById('clbHotspotFilter').addEventListener('input', () => {
             const val = document.getElementById('clbHotspotFilter').value.trim();
             if (val === '' || this.mutations?.geneData?.[val]) this.renderCellLineList();
@@ -15197,9 +15231,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             });
         };
 
-        // Sex filter — six options with live counts.
+        // Sex filter — annotation and expression are independent axes, and
+        // many cell lines that are annotated (e.g. "Male") aren't confirmed
+        // by expression. Having "Unknown" for each axis separately makes
+        // that gap explicit.
         const sexBase = getBaseSet('sex');
-        const sexCounts = { ann_male: 0, ann_female: 0, exp_male: 0, exp_female: 0, unknown: 0 };
+        const sexCounts = { ann_male: 0, ann_female: 0, ann_unknown: 0, exp_male: 0, exp_female: 0, exp_unknown: 0 };
         for (const cl of sexBase) {
             for (const key of Object.keys(sexCounts)) {
                 if (this._cellLineMatchesSexFilter(cl, key)) sexCounts[key]++;
@@ -15210,11 +15247,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const prev = sexSelect.value;
             sexSelect.innerHTML =
                 `<option value="">All sexes (n=${sexBase.length})</option>` +
-                `<option value="ann_male">Male (by annotation) (n=${sexCounts.ann_male})</option>` +
-                `<option value="ann_female">Female (by annotation) (n=${sexCounts.ann_female})</option>` +
-                `<option value="exp_male">Male (by expression) (n=${sexCounts.exp_male})</option>` +
-                `<option value="exp_female">Female (by expression) (n=${sexCounts.exp_female})</option>` +
-                `<option value="unknown">Unknown (n=${sexCounts.unknown})</option>`;
+                `<optgroup label="By annotation">` +
+                    `<option value="ann_male">Male (n=${sexCounts.ann_male})</option>` +
+                    `<option value="ann_female">Female (n=${sexCounts.ann_female})</option>` +
+                    `<option value="ann_unknown">Unknown (n=${sexCounts.ann_unknown})</option>` +
+                `</optgroup>` +
+                `<optgroup label="By expression (Y-markers + XIST)">` +
+                    `<option value="exp_male">Male (n=${sexCounts.exp_male})</option>` +
+                    `<option value="exp_female">Female (n=${sexCounts.exp_female})</option>` +
+                    `<option value="exp_unknown">Unknown (n=${sexCounts.exp_unknown})</option>` +
+                `</optgroup>`;
             sexSelect.value = prev;
         }
 
@@ -15593,7 +15635,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const otherIdx = [];
         for (let i = 0; i < this.nCellLines; i++) if (!selSet.has(i)) otherIdx.push(i);
 
-        const rows = []; // { gene, meanSel, meanOther, delta, nSel, nOther }
+        const rows = [];
         for (let g = 0; g < this.nGenes; g++) {
             const off = g * this.nCellLines;
             let sSum = 0, sN = 0;
@@ -15613,59 +15655,208 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             rows.push({ gene: this.geneNames[g], meanSel: mS, meanOther: mO, delta: mS - mO, nSel: sN, nOther: oN });
         }
 
-        // Left: most depleted (strongest negative GE) in selected.
-        const depleted = [...rows].sort((a, b) => a.meanSel - b.meanSel).slice(0, 50);
-        // Right: largest Δ (selected more depleted than rest, i.e. most negative Δ).
-        const selEssential = [...rows].sort((a, b) => a.delta - b.delta).slice(0, 50);
+        // Cache the full per-gene stats on the instance so sort / filter /
+        // Network actions don't need to recompute.
+        this._geInspectResults = { rows, selected };
 
-        const fmt = (v) => (isNaN(v) ? '-' : v.toFixed(3));
-        const renderTable = (title, hint, data, sideLabels) => {
-            const th = (t) => `<th style="padding:6px 8px; border-bottom:2px solid #d1d5db; text-align:left; font-size:11px;">${t}</th>`;
-            const trows = data.map(r => `
-                <tr class="si-row" data-gene="${r.gene}" style="cursor:pointer;">
-                    <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; font-weight:600; color:#15803d;">${r.gene}</td>
-                    <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; text-align:right;">${fmt(r.meanSel)}</td>
-                    <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; text-align:right; color:#6b7280;">${fmt(r.meanOther)}</td>
-                    <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; text-align:right; font-weight:600; color:${r.delta < 0 ? '#dc2626' : '#2563eb'};">${fmt(r.delta)}</td>
-                </tr>`).join('');
-            return `
+        document.getElementById('selectionInspectTitle').textContent = `Inspect Gene Effects — ${selected.length} selected cell lines`;
+        document.getElementById('selectionInspectSubtitle').textContent = `Left: most depleted in selection (ranked by Mean GE in the selection). Right: largest &Delta; (selection &minus; rest). Columns are sortable; change the |&Delta;| or row-count filters below. Click any gene to open its GE inspect; use Network to build a correlation network from the displayed genes.`;
+        document.getElementById('selectionInspectBody').innerHTML = `
+            <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start;">
                 <div style="flex:1; min-width:0;">
-                    <div style="font-weight:600; color:#374151; margin-bottom:4px;">${title}</div>
-                    <div style="font-size:10px; color:#9ca3af; margin-bottom:6px;">${hint}</div>
-                    <div style="max-height:60vh; overflow-y:auto; border:1px solid #e5e7eb; border-radius:4px;">
-                        <table style="width:100%; border-collapse:collapse; font-size:11px;">
-                            <thead style="background:#f9fafb; position:sticky; top:0;">
-                                <tr>${th('Gene')}${th(sideLabels[0])}${th(sideLabels[1])}${th('Δ')}</tr>
-                            </thead>
-                            <tbody>${trows}</tbody>
-                        </table>
+                    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
+                        <div style="font-weight:600; color:#374151;">Most depleted in selection</div>
+                        <div style="display:flex; gap:6px; align-items:center; font-size:11px;">
+                            <label>|&Delta;|&nbsp;&ge;</label>
+                            <input type="number" id="geLeftDeltaCutoff" min="0" max="5" step="0.05" value="0" style="width:56px; padding:2px 4px; border:1px solid #d1d5db; border-radius:3px; text-align:center;">
+                            <label>Top</label>
+                            <input type="number" id="geLeftN" min="10" max="2000" step="10" value="200" style="width:64px; padding:2px 4px; border:1px solid #d1d5db; border-radius:3px; text-align:center;">
+                            <button class="btn btn-outline btn-sm" id="geLeftNetwork" style="font-size:11px; padding:3px 8px;" title="Build a correlation network from the displayed genes, restricted to the selected cell lines">Network</button>
+                        </div>
                     </div>
-                </div>`;
+                    <div id="geLeftHint" style="font-size:10px; color:#9ca3af; margin-bottom:6px;"></div>
+                    <div id="geLeftBody" style="max-height:58vh; overflow-y:auto; border:1px solid #e5e7eb; border-radius:4px;"></div>
+                </div>
+                <div style="flex:1; min-width:0;">
+                    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
+                        <div style="font-weight:600; color:#374151;">Most different from rest</div>
+                        <div style="display:flex; gap:6px; align-items:center; font-size:11px;">
+                            <label>|&Delta;|&nbsp;&ge;</label>
+                            <input type="number" id="geRightDeltaCutoff" min="0" max="5" step="0.05" value="0.1" style="width:56px; padding:2px 4px; border:1px solid #d1d5db; border-radius:3px; text-align:center;">
+                            <label>Top</label>
+                            <input type="number" id="geRightN" min="10" max="2000" step="10" value="200" style="width:64px; padding:2px 4px; border:1px solid #d1d5db; border-radius:3px; text-align:center;">
+                            <button class="btn btn-outline btn-sm" id="geRightNetwork" style="font-size:11px; padding:3px 8px;" title="Build a correlation network from the displayed genes, restricted to the selected cell lines">Network</button>
+                        </div>
+                    </div>
+                    <div id="geRightHint" style="font-size:10px; color:#9ca3af; margin-bottom:6px;"></div>
+                    <div id="geRightBody" style="max-height:58vh; overflow-y:auto; border:1px solid #e5e7eb; border-radius:4px;"></div>
+                </div>
+            </div>`;
+
+        // Independent sort state per side. Default: left sorted by meanSel asc
+        // (most depleted first), right sorted by delta asc (most negative first).
+        this._geInspectSort = {
+            left:  { key: 'meanSel', dir: 1 },
+            right: { key: 'delta',   dir: 1 }
+        };
+        document.getElementById('selectionInspectModal').style.display = 'flex';
+
+        const renderSides = () => this._renderGEInspectTables();
+        document.getElementById('geLeftDeltaCutoff').addEventListener('input', renderSides);
+        document.getElementById('geRightDeltaCutoff').addEventListener('input', renderSides);
+        document.getElementById('geLeftN').addEventListener('input', renderSides);
+        document.getElementById('geRightN').addEventListener('input', renderSides);
+        document.getElementById('geLeftNetwork').addEventListener('click', () => this._launchGENetwork('left'));
+        document.getElementById('geRightNetwork').addEventListener('click', () => this._launchGENetwork('right'));
+        renderSides();
+    }
+
+    // Render the two GE inspect tables with current sort + filter state.
+    _renderGEInspectTables() {
+        if (!this._geInspectResults) return;
+        const { rows, selected } = this._geInspectResults;
+        const leftCut = parseFloat(document.getElementById('geLeftDeltaCutoff').value) || 0;
+        const rightCut = parseFloat(document.getElementById('geRightDeltaCutoff').value) || 0;
+        const leftN = Math.max(10, Math.min(2000, parseInt(document.getElementById('geLeftN').value) || 200));
+        const rightN = Math.max(10, Math.min(2000, parseInt(document.getElementById('geRightN').value) || 200));
+
+        const applySort = (arr, sort) => {
+            const key = sort.key, dir = sort.dir;
+            return [...arr].sort((a, b) => {
+                const va = a[key], vb = b[key];
+                if (key === 'gene') return dir * String(va).localeCompare(String(vb));
+                // Sort by absolute value so "largest Δ" picks |Δ| not signed.
+                const cmpA = (key === 'delta' && sort.absolute) ? Math.abs(va) : va;
+                const cmpB = (key === 'delta' && sort.absolute) ? Math.abs(vb) : vb;
+                return dir * (cmpA - cmpB);
+            });
         };
 
-        const body = document.getElementById('selectionInspectBody');
-        document.getElementById('selectionInspectTitle').textContent = `Inspect Gene Effects — ${selected.length} selected cell lines`;
-        document.getElementById('selectionInspectSubtitle').textContent = `Left: genes the selected lines depend on most (lowest mean GE). Right: genes where the selected lines differ most from the rest (Δ = selected − rest). Click any row to open Gene Effect inspect for that gene.`;
-        body.innerHTML = `
-            <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start;">
-                ${renderTable('Most depleted in selected', 'Strongest dependencies (n=50). Lower = more essential.', depleted, ['Mean GE (sel)', 'Mean GE (rest)'])}
-                ${renderTable('Most different from rest', 'Largest negative Δ (n=50). More essential in selected than in the rest.', selEssential, ['Mean GE (sel)', 'Mean GE (rest)'])}
-            </div>`;
-        body.querySelectorAll('.si-row').forEach(tr => {
-            tr.addEventListener('click', () => {
-                const gene = tr.dataset.gene;
-                document.getElementById('selectionInspectModal').style.display = 'none';
-                // Stash the selection so the GE tissue plot can draw the
-                // selected cell lines in a distinct colour / symbol. Cleared
-                // automatically the next time the GE modal opens via a
-                // non-selection path.
-                this._geSelectionHighlight = new Set(selected);
-                this.openGeneEffectModal(gene, 'tissue');
+        const leftRows = applySort(
+            rows.filter(r => Math.abs(r.delta) >= leftCut),
+            this._geInspectSort.left
+        ).slice(0, leftN);
+        const rightRows = applySort(
+            rows.filter(r => Math.abs(r.delta) >= rightCut),
+            this._geInspectSort.right
+        ).slice(0, rightN);
+
+        // Stash the currently displayed gene lists so the Network button
+        // can pull from them directly.
+        this._geInspectResults.leftDisplayed = leftRows;
+        this._geInspectResults.rightDisplayed = rightRows;
+
+        document.getElementById('geLeftHint').textContent = `${leftRows.length} gene(s) shown (|Δ| ≥ ${leftCut.toFixed(2)}). Click a column to sort.`;
+        document.getElementById('geRightHint').textContent = `${rightRows.length} gene(s) shown (|Δ| ≥ ${rightCut.toFixed(2)}). Click a column to sort.`;
+        document.getElementById('geLeftBody').innerHTML = this._buildGEInspectTable(leftRows, 'left');
+        document.getElementById('geRightBody').innerHTML = this._buildGEInspectTable(rightRows, 'right');
+
+        const wireRows = () => {
+            document.querySelectorAll('#geLeftBody .si-row, #geRightBody .si-row').forEach(tr => {
+                tr.addEventListener('click', (ev) => {
+                    if (ev.target.closest('th')) return;
+                    const gene = tr.dataset.gene;
+                    document.getElementById('selectionInspectModal').style.display = 'none';
+                    this._geSelectionHighlight = new Set(selected);
+                    this.openGeneEffectModal(gene, 'tissue');
+                });
+                tr.addEventListener('mouseenter', () => tr.style.background = '#f0fdf4');
+                tr.addEventListener('mouseleave', () => tr.style.background = '');
             });
-            tr.addEventListener('mouseenter', () => tr.style.background = '#f0fdf4');
-            tr.addEventListener('mouseleave', () => tr.style.background = '');
-        });
-        document.getElementById('selectionInspectModal').style.display = 'flex';
+            // Column-header sort clicks.
+            document.querySelectorAll('#geLeftBody th.ge-sortable, #geRightBody th.ge-sortable').forEach(th => {
+                th.addEventListener('click', () => {
+                    const side = th.dataset.side;
+                    const key = th.dataset.key;
+                    const cur = this._geInspectSort[side];
+                    // Same column → flip direction; new column → sensible
+                    // default: gene asc, numbers asc (most negative first),
+                    // delta absolute desc (biggest |Δ| first).
+                    if (cur.key === key) {
+                        cur.dir = -cur.dir;
+                    } else {
+                        cur.key = key;
+                        cur.dir = (key === 'delta') ? -1 : 1;
+                        cur.absolute = (key === 'delta');
+                    }
+                    this._renderGEInspectTables();
+                });
+            });
+        };
+        wireRows();
+    }
+
+    // Build the HTML for one sortable GE-inspect table.
+    _buildGEInspectTable(rows, side) {
+        const fmt = (v) => (isNaN(v) ? '-' : v.toFixed(3));
+        const sort = this._geInspectSort[side];
+        // Sortable header cell. Column headers are centred over the numeric
+        // values they label (text-align:center). The Gene column stays
+        // left-aligned for readability.
+        const th = (label, key, align) => {
+            const arrow = sort.key === key ? (sort.dir === 1 ? ' ▲' : ' ▼') : '';
+            return `<th class="ge-sortable" data-side="${side}" data-key="${key}" title="Sort by ${label}" style="padding:6px 8px; border-bottom:2px solid #d1d5db; text-align:${align || 'center'}; font-size:11px; cursor:pointer; user-select:none; white-space:nowrap;">${label}${arrow}</th>`;
+        };
+        const trows = rows.map(r => `
+            <tr class="si-row" data-gene="${r.gene}" style="cursor:pointer;">
+                <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; font-weight:600; color:#15803d;">${r.gene}</td>
+                <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; text-align:center;">${fmt(r.meanSel)}</td>
+                <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; text-align:center; color:#6b7280;">${fmt(r.meanOther)}</td>
+                <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; text-align:center; font-weight:600; color:${r.delta < 0 ? '#dc2626' : '#2563eb'};">${fmt(r.delta)}</td>
+            </tr>`).join('');
+        return `<table style="width:100%; border-collapse:collapse; font-size:11px;">
+            <thead style="background:#f9fafb; position:sticky; top:0;"><tr>
+                ${th('Gene', 'gene', 'left')}
+                ${th('Mean GE (sel)', 'meanSel')}
+                ${th('Mean GE (rest)', 'meanOther')}
+                ${th('Δ', 'delta')}
+            </tr></thead>
+            <tbody>${trows}</tbody>
+        </table>`;
+    }
+
+    // Build a correlation network from the genes currently displayed on the
+    // requested side of the Inspect GE modal, restricted to the selected
+    // cell lines. Same flow as _launchCorrelationNetwork but starting from
+    // a gene list rather than gene pairs.
+    _launchGENetwork(side) {
+        if (!this._geInspectResults) return;
+        const list = side === 'left' ? this._geInspectResults.leftDisplayed : this._geInspectResults.rightDisplayed;
+        const selected = this._geInspectResults.selected || [];
+        if (!list || !list.length) { alert('No genes in the current list.'); return; }
+
+        const cutStr = prompt(
+            `Correlation cutoff |r| for the network (0 – 1).\n\n` +
+            `Only gene pairs (among the ${list.length} displayed genes) at or above this cutoff become edges.`,
+            '0.5'
+        );
+        if (cutStr === null) return;
+        const cut = parseFloat(cutStr);
+        if (isNaN(cut) || cut < 0) return;
+
+        if (list.length > 500) {
+            if (!confirm(`${list.length} genes — the analysis will be large. Continue?`)) return;
+        }
+
+        document.getElementById('selectionInspectModal').style.display = 'none';
+        document.getElementById('cellLineBrowserModal').style.display = 'none';
+
+        const taEl = document.getElementById('geneTextarea');
+        if (taEl) taEl.value = list.map(r => r.gene).join('\n');
+
+        const customCLEl = document.getElementById('customCellLineFilter');
+        if (customCLEl) {
+            customCLEl.value = selected.join('\n');
+            try { this.applyCustomCellLineFilter?.(); } catch (e) { /* fall through */ }
+        }
+
+        const cutoffEl = document.getElementById('correlationCutoff');
+        if (cutoffEl) {
+            const clamped = Math.max(0.1, Math.min(0.8, cut));
+            cutoffEl.value = clamped.toFixed(2);
+            cutoffEl.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        document.getElementById('runAnalysis')?.click();
     }
 
     // Inspect Correlations for the selection: unbiased all-vs-all Pearson's r
