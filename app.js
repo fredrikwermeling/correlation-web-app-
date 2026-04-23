@@ -3597,6 +3597,36 @@ class CorrelationExplorer {
         el.dispatchEvent(new Event('input', { bubbles: true }));
     }
 
+    // Width/height +/- for the export dialog: if "Lock aspect" is checked,
+    // changing one dimension recomputes the other from the on-screen plot
+    // aspect ratio so the exported figure doesn't stretch.
+    adjustExportSize(id, delta) {
+        this.adjustNumber(id, delta);
+        const lockEl = document.getElementById('exportOptLockAspect');
+        if (!lockEl || !lockEl.checked) return;
+        const aspect = this._exportDialogAspect || 1;
+        const widthEl = document.getElementById('exportOptWidth');
+        const heightEl = document.getElementById('exportOptHeight');
+        if (id === 'exportOptWidth') {
+            const w = parseFloat(widthEl.value) || 5;
+            heightEl.value = Math.max(2, Math.round(w * aspect * 10) / 10);
+        } else if (id === 'exportOptHeight') {
+            const h = parseFloat(heightEl.value) || 5;
+            widthEl.value = aspect > 0 ? Math.max(2, Math.round((h / aspect) * 10) / 10) : h;
+        }
+    }
+
+    // Size presets: Small / Medium / Large set the width in cm; height is
+    // recomputed from the on-screen aspect ratio. Called from the dialog.
+    applyExportSizePreset(widthCm) {
+        const widthEl = document.getElementById('exportOptWidth');
+        const heightEl = document.getElementById('exportOptHeight');
+        if (!widthEl || !heightEl) return;
+        const aspect = this._exportDialogAspect || 1;
+        widthEl.value = widthCm;
+        heightEl.value = Math.max(2, Math.round(widthCm * aspect * 10) / 10);
+    }
+
     findBestFilter() {
         const geneList = this.getGeneList();
         if (geneList.length < 2) {
@@ -12628,22 +12658,25 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const heightEl = document.getElementById('exportOptHeight');
             const dpiEl = document.getElementById('exportOptDpi');
             const bgRadios = document.querySelectorAll('input[name="exportOptBg"]');
-            // Legend-frame option only relevant for charts that draw a
-            // separate legend block (currently the network export). Show it
-            // only when the caller flags `hasLegendFrame: true`.
             const frameRow = document.getElementById('exportOptLegendFrameRow');
             const frameEl = document.getElementById('exportOptLegendFrame');
+            const lockEl = document.getElementById('exportOptLockAspect');
             if (frameRow) frameRow.style.display = context.hasLegendFrame ? '' : 'none';
+
+            // Persist the on-screen aspect ratio for the lifetime of the
+            // dialog so presets and +/- can auto-scale the other dimension.
+            const aspect = context.plotH > 0 ? (context.plotH / context.plotW) : 1;
+            this._exportDialogAspect = aspect;
 
             const prev = this._lastExportOpts || {};
             const defaultW = prev.widthCm || 5;
-            const plotAspect = context.plotH > 0 ? (context.plotH / context.plotW) : 1;
-            const defaultH = prev.heightCm || Math.max(2, Math.round(defaultW * plotAspect * 10) / 10);
+            const defaultH = prev.heightCm || Math.max(2, Math.round(defaultW * aspect * 10) / 10);
             widthEl.value = defaultW;
             heightEl.value = defaultH;
             if (dpiEl) dpiEl.value = prev.dpi || 600;
             bgRadios.forEach(r => { r.checked = r.value === (prev.background || 'white'); });
             if (frameEl) frameEl.checked = !!prev.legendFrame;
+            if (lockEl) lockEl.checked = prev.lockAspect !== false;  // default on
 
             modal.style.display = 'flex';
 
@@ -12659,7 +12692,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     heightCm: parseFloat(heightEl.value) || 5,
                     dpi: parseInt(dpiEl.value) || 600,
                     background: document.querySelector('input[name="exportOptBg"]:checked')?.value || 'white',
-                    legendFrame: !!frameEl?.checked
+                    legendFrame: !!frameEl?.checked,
+                    lockAspect: !!(lockEl ? lockEl.checked : true)
                 };
                 this._lastExportOpts = opts;
                 cleanup();
