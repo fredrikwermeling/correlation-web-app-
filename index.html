@@ -2284,6 +2284,34 @@
         </div>
     </div>
 
+    <!-- Selection Inspect (GE / Correlations for selected cell lines) -->
+    <div id="selectionInspectModal" style="display:none; position:fixed; inset:0; z-index:1250; background:rgba(0,0,0,0.5); align-items:flex-start; justify-content:center; padding:20px; overflow-y:auto;">
+        <div style="background:#fff; width:100%; max-width:min(96vw,1200px); max-height:calc(100vh - 40px); border-radius:8px; display:flex; flex-direction:column; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);">
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 18px; border-bottom:1px solid #e5e7eb; background:linear-gradient(90deg,#f0fdf4 0%,#fff 100%);">
+                <div>
+                    <h3 id="selectionInspectTitle" style="margin:0; font-size:17px; color:#15803d;">Inspect selection</h3>
+                    <div id="selectionInspectSubtitle" style="font-size:11px; color:#6b7280; margin-top:2px;"></div>
+                </div>
+                <button id="selectionInspectClose" style="background:none; border:none; font-size:24px; cursor:pointer; line-height:1; color:#6b7280;">&times;</button>
+            </div>
+            <div id="selectionInspectBody" style="padding:14px 18px; overflow-y:auto; font-size:12px; color:#374151;"></div>
+        </div>
+    </div>
+
+    <!-- Progress overlay used by long-running analyses (correlation inspect). -->
+    <div id="progressOverlay" style="display:none; position:fixed; inset:0; z-index:1400; background:rgba(0,0,0,0.6); align-items:center; justify-content:center;">
+        <div style="background:#fff; max-width:420px; width:90%; border-radius:8px; padding:20px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.35);">
+            <div id="progressTitle" style="font-size:14px; font-weight:600; color:#15803d; margin-bottom:6px;">Working&hellip;</div>
+            <div id="progressStatus" style="font-size:12px; color:#374151; margin-bottom:10px;">Preparing&hellip;</div>
+            <div style="background:#e5e7eb; height:10px; border-radius:5px; overflow:hidden;">
+                <div id="progressBar" style="background:#5a9f4a; height:100%; width:0%; transition:width 0.15s;"></div>
+            </div>
+            <div style="text-align:right; margin-top:10px;">
+                <button id="progressCancelBtn" class="btn btn-outline btn-sm">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Publication-quality export options -->
     <div class="modal-overlay" id="exportOptionsModal" style="display:none; z-index:1300;">
         <div class="modal" style="max-width:420px;">
@@ -2580,6 +2608,7 @@
           <input type="text" id="clbSearch" placeholder="Search cell lines...">
           <select id="clbTissueFilter"><option value="">All tissues</option></select>
           <select id="clbSubtypeFilter" style="display:none;"><option value="">All subtypes</option></select>
+          <select id="clbCollectionFilter" title="Curated multi-gene / phenotype collections"><option value="">All collections</option></select>
           <select id="clbSexFilter" style="font-size:12px;" title="Filter by sex — annotation (from DepMap) or expression (Y-markers + XIST) are independent axes">
             <option value="">All sexes</option>
             <option value="ann_male">Male (by annotation)</option>
@@ -2612,6 +2641,8 @@
           <div style="margin-left:auto; display:flex; gap:6px;">
             <button id="clbSelectVisible" class="btn btn-outline btn-sm">Select Visible</button>
             <button id="clbDeselectAll" class="btn btn-outline btn-sm">Deselect All</button>
+            <button id="clbInspectGEBtn" class="btn btn-outline btn-sm" style="color:#5a9f4a; border-color:#5a9f4a; line-height:1.2; padding:4px 8px;" title="Top gene-effect hits in the selected cell lines — and top Δ vs the rest. Fast (~seconds).">Inspect<br><span style="font-size:9px;font-weight:normal;">Gene Effects</span></button>
+            <button id="clbInspectCorrBtn" class="btn btn-outline btn-sm" style="color:#5a9f4a; border-color:#5a9f4a; line-height:1.2; padding:4px 8px;" title="Unbiased all-vs-all gene correlations in the selected cell lines. Slow — can take 1–3 minutes depending on selection size and hardware.">Inspect<br><span style="font-size:9px;font-weight:normal;">Correlations</span></button>
             <button id="clbExportMinimal" class="btn btn-outline btn-sm" style="color:var(--green-700); border-color:var(--green-400); line-height:1.2; padding:4px 8px;" title="Gene Effect values for all genes x selected cell lines (CSV)">Export GE<br><span style="font-size:9px;font-weight:normal;">for selected CLs</span></button>
             <button id="clbExportFull" class="btn btn-outline btn-sm" style="color:var(--green-700); border-color:var(--green-400); line-height:1.2; padding:4px 8px;" title="Detailed report: metadata, mutations, top depleted/enriched genes, z-scores">Cell Line<br><span style="font-size:9px;font-weight:normal;">Detail Report</span></button>
           </div>
