@@ -6056,6 +6056,15 @@ class CorrelationExplorer {
         this.network = new vis.Network(container, data, options);
         this.networkData = data;
 
+        // Keep the edge-thickness legend's line widths in sync with the
+        // canvas zoom so the legend isn't visually misrepresentative when
+        // the user zooms in. Exports always use the base (zoom=1) mapping.
+        this.network.on('zoom', () => {
+            if (this._edgeLegendBaseParams) {
+                this.updateEdgeLegend(this._edgeLegendBaseParams.edgeWidthBase, this._edgeLegendBaseParams.cutoff);
+            }
+        });
+
         // Add filter banner after vis.Network has set up its canvas
         const filterText = this._getNetworkFilterText();
         if (filterText) {
@@ -6415,20 +6424,32 @@ class CorrelationExplorer {
         const maxCorr = Math.ceil(rawMax * 10) / 10;
         const midCorr = (minCorr + maxCorr) / 2;
 
-        // Calculate widths for actual data range
+        // Base (zoom=1) widths — the canonical mapping. Exports always use these.
         const widthMin = Math.max(1, 1 + (minCorr - cutoff) / (1 - cutoff) * (edgeWidthBase * 3));
         const widthMid = Math.max(1, 1 + (midCorr - cutoff) / (1 - cutoff) * (edgeWidthBase * 3));
         const widthMax = Math.max(1, 1 + (maxCorr - cutoff) / (1 - cutoff) * (edgeWidthBase * 3));
 
-        legendEl.innerHTML = `
-            <strong>Edge Thickness:</strong>
-            <div class="legend-item"><span class="legend-line" style="background: #666; height: ${Math.round(widthMin)}px;"></span> r=${minCorr.toFixed(1)}</div>
-            <div class="legend-item"><span class="legend-line" style="background: #666; height: ${Math.round(widthMid)}px;"></span> r=${midCorr.toFixed(1)}</div>
-            <div class="legend-item"><span class="legend-line" style="background: #666; height: ${Math.round(widthMax)}px;"></span> r=${maxCorr.toFixed(1)}</div>
-        `;
-
-        // Store for use in PNG/SVG export
+        // Remember params so the network zoom handler can re-render the legend.
+        this._edgeLegendBaseParams = { edgeWidthBase, cutoff };
+        // Store for PNG/SVG export (export recomputes widths from r values + edgeWidthBase, ignoring zoom)
         this.edgeLegendValues = { minCorr, midCorr, maxCorr, widthMin, widthMid, widthMax };
+
+        // Scale the on-screen legend by the current canvas zoom so its line
+        // widths match what vis-network actually paints. Clamped to [0.5, 3]
+        // so the legend block doesn't overflow or vanish.
+        const rawScale = (this.network && typeof this.network.getScale === 'function') ? this.network.getScale() : 1;
+        const scale = Math.max(0.5, Math.min(rawScale, 3));
+        const scaled = (w) => Math.max(1, Math.round(w * scale));
+        const zoomHint = Math.abs(rawScale - 1) > 0.05
+            ? ` <span style="color:#9ca3af; font-weight:400; font-size:10px;">(at current zoom ${rawScale.toFixed(2)}×)</span>`
+            : '';
+
+        legendEl.innerHTML = `
+            <strong>Edge Thickness:</strong>${zoomHint}
+            <div class="legend-item"><span class="legend-line" style="background: #666; height: ${scaled(widthMin)}px;"></span> r=${minCorr.toFixed(1)}</div>
+            <div class="legend-item"><span class="legend-line" style="background: #666; height: ${scaled(widthMid)}px;"></span> r=${midCorr.toFixed(1)}</div>
+            <div class="legend-item"><span class="legend-line" style="background: #666; height: ${scaled(widthMax)}px;"></span> r=${maxCorr.toFixed(1)}</div>
+        `;
     }
 
     displayCorrelationsTable() {
