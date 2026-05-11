@@ -13386,13 +13386,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (allWT.length > 0 && allMut.length > 0) {
             const meanWT = allWT.reduce((a, b) => a + b, 0) / allWT.length;
             const meanMut = allMut.reduce((a, b) => a + b, 0) / allMut.length;
-            rows.push({ label: 'All', nWT: allWT.length, meanWT, nMut: allMut.length, meanMut, delta: meanMut - meanWT, isAll: true, tissue: '' });
+            rows.push({ label: 'All', nSubset: allWT.length + allMut.length, nWT: allWT.length, meanWT, nMut: allMut.length, meanMut, delta: meanMut - meanWT, isAll: true, tissue: '' });
         }
         Object.entries(groupMap).forEach(([group, groups]) => {
             if (groups.wt.length > 0 && groups.mut.length > 0) {
                 const meanWT = groups.wt.reduce((a, b) => a + b, 0) / groups.wt.length;
                 const meanMut = groups.mut.reduce((a, b) => a + b, 0) / groups.mut.length;
-                rows.push({ label: group, nWT: groups.wt.length, meanWT, nMut: groups.mut.length, meanMut, delta: meanMut - meanWT, tissue: group });
+                rows.push({ label: group, nSubset: groups.wt.length + groups.mut.length, nWT: groups.wt.length, meanWT, nMut: groups.mut.length, meanMut, delta: meanMut - meanWT, tissue: group });
             }
         });
 
@@ -13400,7 +13400,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const otherRows = rows.filter(r => !r.isAll).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
 
         const groupLabel = groupBySubtype ? 'Subtype' : 'Tissue';
-        this._inlineCompareData = { title: `${gene} — Δ GE by ${groupLabel} (${hotspotGene} WT vs ${mutLabel})`, headers: [groupLabel, 'N(WT)', 'GE(WT)', `N(${mutLabel})`, `GE(${mutLabel})`, 'Δ GE'], refRows: allRow, sortableRows: otherRows, mode: 'tissue' };
+        this._inlineCompareData = {
+            title: `${gene} GE — comparison of ${hotspotGene} ${mutLabel} vs WT, repeated within each ${groupLabel.toLowerCase()} subset`,
+            subsetLabel: groupLabel,
+            subsetCountHeader: `N (in ${groupLabel.toLowerCase()})`,
+            mainGene: hotspotGene,
+            mutLabel,
+            refRows: allRow,
+            sortableRows: otherRows,
+            mode: 'tissue'
+        };
         this._renderInlineCompareTable();
     }
 
@@ -13463,7 +13472,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (noneWT.length > 0 && noneMut.length > 0) {
             const meanWT = noneWT.reduce((a, b) => a + b, 0) / noneWT.length;
             const meanMut = noneMut.reduce((a, b) => a + b, 0) / noneMut.length;
-            rows.push({ label: 'None', nWT: noneWT.length, meanWT, nMut: noneMut.length, meanMut, delta: meanMut - meanWT, isRef: true, hotspot: '' });
+            rows.push({ label: 'None (no extra filter)', nSubset: noneWT.length + noneMut.length, nWT: noneWT.length, meanWT, nMut: noneMut.length, meanMut, delta: meanMut - meanWT, isRef: true, hotspot: '' });
         }
 
         // Iterate over hotspot mutation genes only (fusions handled by showInlineCompareByTranslocation)
@@ -13477,7 +13486,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (wtGE.length > 0 && mutGE.length > 0) {
                 const meanWT = wtGE.reduce((a, b) => a + b, 0) / wtGE.length;
                 const meanMut = mutGE.reduce((a, b) => a + b, 0) / mutGE.length;
-                rows.push({ label: hGene, nWT: wtGE.length, meanWT, nMut: mutGE.length, meanMut, delta: meanMut - meanWT, hotspot: hGene });
+                rows.push({ label: hGene, nSubset: wtGE.length + mutGE.length, nWT: wtGE.length, meanWT, nMut: mutGE.length, meanMut, delta: meanMut - meanWT, hotspot: hGene });
             }
         });
 
@@ -13485,7 +13494,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const otherRows = rows.filter(r => !r.isRef).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
 
         const typeLabel = isTranslocation ? 'Fusion' : 'Hotspot';
-        this._inlineCompareData = { title: `${gene} — Δ GE by Additional ${typeLabel} (${mainHotspot} WT vs ${mutLabel})`, headers: [`${typeLabel} Filter`, 'N(WT)', 'GE(WT)', `N(${mutLabel})`, `GE(${mutLabel})`, 'Δ GE'], refRows: refRow, sortableRows: otherRows, mode: 'hotspot' };
+        this._inlineCompareData = {
+            title: `${gene} GE — comparison of ${mainHotspot} ${mutLabel} vs WT, repeated within each additional-${typeLabel.toLowerCase()} subset`,
+            subsetLabel: `Additional ${typeLabel}`,
+            subsetCountHeader: `N (with ${typeLabel.toLowerCase()})`,
+            mainGene: mainHotspot,
+            mutLabel,
+            refRows: refRow,
+            sortableRows: otherRows,
+            mode: 'hotspot'
+        };
         this._renderInlineCompareTable();
     }
 
@@ -13549,7 +13567,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (noneWT.length > 0 && noneMut.length > 0) {
             const meanWT = noneWT.reduce((a, b) => a + b, 0) / noneWT.length;
             const meanMut = noneMut.reduce((a, b) => a + b, 0) / noneMut.length;
-            rows.push({ label: 'None', nWT: noneWT.length, meanWT, nMut: noneMut.length, meanMut, delta: meanMut - meanWT, isRef: true, fusion: '' });
+            rows.push({ label: 'None (no extra filter)', nSubset: noneWT.length + noneMut.length, nWT: noneWT.length, meanWT, nMut: noneMut.length, meanMut, delta: meanMut - meanWT, isRef: true, fusion: '' });
         }
 
         // Iterate ONLY over translocation genes — pre-filter to genes with fusions in baseCells
@@ -13570,14 +13588,23 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (wtGE.length > 0 && mutGE.length > 0) {
                 const meanWT = wtGE.reduce((a, b) => a + b, 0) / wtGE.length;
                 const meanMut = mutGE.reduce((a, b) => a + b, 0) / mutGE.length;
-                rows.push({ label: tGene, nWT: wtGE.length, meanWT, nMut: mutGE.length, meanMut, delta: meanMut - meanWT, fusion: tGene });
+                rows.push({ label: tGene, nSubset: wtGE.length + mutGE.length, nWT: wtGE.length, meanWT, nMut: mutGE.length, meanMut, delta: meanMut - meanWT, fusion: tGene });
             }
         }
 
         const refRow = rows.filter(r => r.isRef);
         const otherRows = rows.filter(r => !r.isRef).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
 
-        this._inlineCompareData = { title: `${gene} — Δ GE by Fusion (${mainHotspot} WT vs ${mutLabel})`, headers: ['Fusion Gene', 'N(WT)', 'GE(WT)', `N(${mutLabel})`, `GE(${mutLabel})`, 'Δ GE'], refRows: refRow, sortableRows: otherRows, mode: 'fusion' };
+        this._inlineCompareData = {
+            title: `${gene} GE — comparison of ${mainHotspot} ${mutLabel} vs WT, repeated within each fusion subset`,
+            subsetLabel: 'Fusion partner',
+            subsetCountHeader: 'N (with fusion)',
+            mainGene: mainHotspot,
+            mutLabel,
+            refRows: refRow,
+            sortableRows: otherRows,
+            mode: 'fusion'
+        };
         this._renderInlineCompareTable();
     }
 
@@ -13590,7 +13617,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             this._inlineSortAsc = true;
         }
         const d = this._inlineCompareData;
-        const keyMap = ['label', 'nWT', 'meanWT', 'nMut', 'meanMut', 'delta'];
+        // 0 subset label · 1 nSubset · 2 nWT · 3 meanWT · 4 nMut · 5 meanMut · 6 delta
+        const keyMap = ['label', 'nSubset', 'nWT', 'meanWT', 'nMut', 'meanMut', 'delta'];
         const key = keyMap[colIndex] || 'delta';
         const asc = this._inlineSortAsc;
         d.sortableRows.sort((a, b) => {
@@ -13601,10 +13629,18 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         this._renderInlineCompareTable();
     }
 
+    setInlineCompareMinN(v) {
+        const n = parseInt(v, 10);
+        if (Number.isFinite(n) && n >= 0) {
+            this._inlineMinN = n;
+            this._renderInlineCompareTable();
+        }
+    }
+
     _renderInlineCompareTable() {
         if (!this._inlineCompareData) return;
-        const { title, headers, refRows, sortableRows, mode } = this._inlineCompareData;
-        const allRows = [...refRows, ...sortableRows];
+        const d = this._inlineCompareData;
+        const { title, subsetLabel, subsetCountHeader, mainGene, mutLabel, refRows, sortableRows, mode } = d;
 
         const container = document.getElementById('geInlineCompareTable');
         const titleEl = document.getElementById('geInlineCompareTitle');
@@ -13612,18 +13648,43 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         titleEl.textContent = title;
 
+        if (this._inlineMinN === undefined) this._inlineMinN = 5;
+        const minN = this._inlineMinN;
+        const filteredSortable = sortableRows.filter(r => (r.nSubset ?? (r.nWT + r.nMut)) >= minN);
+        const allRows = [...refRows, ...filteredSortable];
+        const hiddenByMinN = sortableRows.length - filteredSortable.length;
+
         let maxAbs = 0;
         allRows.forEach(r => { const abs = Math.abs(r.delta); if (abs > maxAbs) maxAbs = abs; });
         if (maxAbs === 0) maxAbs = 1;
 
-        let html = '<table style="border-collapse:collapse; font-size:11px;">';
-        html += '<thead><tr>';
-        headers.forEach((h, i) => {
-            let arrow = '';
-            if (this._inlineSortCol === i) arrow = this._inlineSortAsc ? ' ▲' : ' ▼';
-            html += `<th onclick="app.sortInlineCompare(${i})" style="text-align:left; padding:2px 6px; border-bottom:2px solid #6366f1; font-size:10px; cursor:pointer; white-space:nowrap;">${h}${arrow}</th>`;
+        let html = `<div style="font-size:11px; color:#374151; margin-bottom:4px; display:flex; align-items:center; gap:10px;">
+            <label>Hide rows with N &lt; <input type="number" id="inlineCompareMinN" value="${minN}" min="0" max="500" step="1" style="width:50px; padding:1px 4px; border:1px solid #d1d5db; border-radius:3px; text-align:center;" onchange="app.setInlineCompareMinN(this.value)"></label>
+            ${hiddenByMinN > 0 ? `<span style="color:#9ca3af;">${hiddenByMinN} row${hiddenByMinN === 1 ? '' : 's'} hidden</span>` : ''}
+            <span style="color:#9ca3af; font-size:10px;">N column = how many cells share this ${(subsetLabel || 'subset').toLowerCase()}; the WT / ${mutLabel || 'Mut'} columns are <b>${mainGene || 'main gene'}</b> stratification <em>within</em> that subset.</span>
+        </div>`;
+
+        html += '<table style="border-collapse:collapse; font-size:11px;">';
+        html += '<thead>';
+        html += '<tr>';
+        html += `<th rowspan="2" onclick="app.sortInlineCompare(0)" style="text-align:left; padding:4px 8px 4px 6px; border-bottom:2px solid #6366f1; font-size:10px; cursor:pointer; white-space:nowrap; vertical-align:bottom;">${subsetLabel || 'Subset'}${this._inlineSortCol === 0 ? (this._inlineSortAsc ? ' ▲' : ' ▼') : ''}</th>`;
+        html += `<th rowspan="2" onclick="app.sortInlineCompare(1)" style="text-align:right; padding:4px 10px 4px 6px; border-bottom:2px solid #6366f1; border-right:2px solid #d1d5db; font-size:10px; cursor:pointer; white-space:nowrap; vertical-align:bottom;">${subsetCountHeader || 'N'}${this._inlineSortCol === 1 ? (this._inlineSortAsc ? ' ▲' : ' ▼') : ''}</th>`;
+        html += `<th colspan="5" style="text-align:center; padding:2px 6px; border-bottom:1px solid #e5e7eb; font-size:10px; font-weight:600; color:#6366f1; white-space:nowrap;">${mainGene || 'main gene'} stratification <span style="color:#9ca3af; font-weight:400;">(within subset)</span></th>`;
+        html += '</tr>';
+        html += '<tr>';
+        const subHeaders = [
+            { label: 'N(WT)', sortIdx: 2 },
+            { label: 'GE(WT)', sortIdx: 3 },
+            { label: `N(${mutLabel || 'Mut'})`, sortIdx: 4 },
+            { label: `GE(${mutLabel || 'Mut'})`, sortIdx: 5 },
+            { label: 'Δ GE', sortIdx: 6 },
+        ];
+        subHeaders.forEach((h) => {
+            const arrow = this._inlineSortCol === h.sortIdx ? (this._inlineSortAsc ? ' ▲' : ' ▼') : '';
+            html += `<th onclick="app.sortInlineCompare(${h.sortIdx})" style="text-align:right; padding:2px 6px; border-bottom:2px solid #6366f1; font-size:10px; cursor:pointer; white-space:nowrap;">${h.label}${arrow}</th>`;
         });
-        html += '</tr></thead><tbody>';
+        html += '</tr>';
+        html += '</thead><tbody>';
 
         allRows.forEach(row => {
             const delta = row.delta;
@@ -13644,8 +13705,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 ? `app.onInlineCompareFusionClick('${(clickVal || '').replace(/'/g, "\\'")}')`
                 : `app.onInlineCompareHotspotClick('${(clickVal || '').replace(/'/g, "\\'")}')`;
 
+            const nSubset = row.nSubset ?? (row.nWT + row.nMut);
             html += `<tr onclick="${clickFn}" style="cursor:pointer; ${bold}">`;
             html += `<td style="padding:2px 6px; border-bottom:1px solid #e5e7eb;">${row.label}</td>`;
+            html += `<td style="padding:2px 10px 2px 6px; border-bottom:1px solid #e5e7eb; border-right:2px solid #d1d5db; text-align:right;">${nSubset}</td>`;
             html += `<td style="padding:2px 6px; border-bottom:1px solid #e5e7eb; text-align:right;">${row.nWT}</td>`;
             html += `<td style="padding:2px 6px; border-bottom:1px solid #e5e7eb; text-align:right; color:#6b7280;">${row.meanWT !== undefined ? row.meanWT.toFixed(2) : ''}</td>`;
             html += `<td style="padding:2px 6px; border-bottom:1px solid #e5e7eb; text-align:right;">${row.nMut}</td>`;
