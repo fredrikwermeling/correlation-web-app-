@@ -2322,7 +2322,7 @@
 
     <!-- Publication-quality export options -->
     <div class="modal-overlay" id="exportOptionsModal" style="display:none; z-index:1300;">
-        <div class="modal" style="max-width:420px;">
+        <div class="modal" style="max-width:500px;">
             <div class="modal-header">
                 <h3 id="exportOptionsTitle" style="margin:0;">Export chart</h3>
                 <button class="modal-close" id="exportOptionsClose" style="background:none; border:none; font-size:24px; cursor:pointer; color:#6b7280;">&times;</button>
@@ -2335,21 +2335,25 @@
                         <button type="button" class="btn btn-outline btn-sm" style="font-size:11px; padding:3px 10px;" onclick="app.applyExportSizePreset(10)">Medium</button>
                         <button type="button" class="btn btn-outline btn-sm" style="font-size:11px; padding:3px 10px;" onclick="app.applyExportSizePreset(15)">Large</button>
                     </div>
-                    <label style="font-weight:600; margin-right:4px;">Width (cm)</label>
-                    <span style="display:inline-flex; gap:3px; align-items:center;">
-                        <button onclick="app.adjustExportSize('exportOptWidth', -0.5)" style="font-size:11px; padding:2px 6px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer;">−</button>
-                        <input type="number" id="exportOptWidth" value="5" min="2" max="30" step="0.5" style="width:60px; padding:4px 6px; border:1px solid #d1d5db; border-radius:4px; text-align:center;">
-                        <button onclick="app.adjustExportSize('exportOptWidth', 0.5)" style="font-size:11px; padding:2px 6px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer;">+</button>
-                    </span>
-                    <label style="font-weight:600; margin:0 4px 0 16px;">Height (cm)</label>
-                    <span style="display:inline-flex; gap:3px; align-items:center;">
-                        <button onclick="app.adjustExportSize('exportOptHeight', -0.5)" style="font-size:11px; padding:2px 6px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer;">−</button>
-                        <input type="number" id="exportOptHeight" value="5" min="2" max="30" step="0.5" style="width:60px; padding:4px 6px; border:1px solid #d1d5db; border-radius:4px; text-align:center;">
-                        <button onclick="app.adjustExportSize('exportOptHeight', 0.5)" style="font-size:11px; padding:2px 6px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer;">+</button>
-                    </span>
-                    <label style="margin-left:12px; font-size:11px; color:#374151; cursor:pointer;" title="When on, changing one dimension scales the other to keep the plot aspect ratio">
-                        <input type="checkbox" id="exportOptLockAspect" checked> Lock aspect
-                    </label>
+                    <!-- Width, Height, Lock-aspect on a single flex row so the
+                         input next to "Height (cm)" doesn't wrap below. -->
+                    <div style="display:flex; flex-wrap:nowrap; align-items:center; gap:8px;">
+                        <label style="font-weight:600;">Width (cm)</label>
+                        <span style="display:inline-flex; gap:3px; align-items:center;">
+                            <button onclick="app.adjustExportSize('exportOptWidth', -0.5)" style="font-size:11px; padding:2px 6px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer;">−</button>
+                            <input type="number" id="exportOptWidth" value="5" min="2" max="30" step="0.5" style="width:54px; padding:4px 6px; border:1px solid #d1d5db; border-radius:4px; text-align:center;">
+                            <button onclick="app.adjustExportSize('exportOptWidth', 0.5)" style="font-size:11px; padding:2px 6px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer;">+</button>
+                        </span>
+                        <label style="font-weight:600;">Height (cm)</label>
+                        <span style="display:inline-flex; gap:3px; align-items:center;">
+                            <button onclick="app.adjustExportSize('exportOptHeight', -0.5)" style="font-size:11px; padding:2px 6px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer;">−</button>
+                            <input type="number" id="exportOptHeight" value="5" min="2" max="30" step="0.5" style="width:54px; padding:4px 6px; border:1px solid #d1d5db; border-radius:4px; text-align:center;">
+                            <button onclick="app.adjustExportSize('exportOptHeight', 0.5)" style="font-size:11px; padding:2px 6px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer;">+</button>
+                        </span>
+                        <label style="font-size:11px; color:#374151; cursor:pointer; white-space:nowrap;" title="When on, changing one dimension scales the other to keep the plot aspect ratio">
+                            <input type="checkbox" id="exportOptLockAspect" checked> Lock aspect
+                        </label>
+                    </div>
                     <div style="font-size:10px; color:#9ca3af; margin-top:4px;">Presets set the width; height auto-scales to match the on-screen plot aspect.</div>
                 </div>
                 <div id="exportOptDpiRow" style="margin-bottom:10px;">
@@ -2702,6 +2706,6 @@
         <div id="textSettingsBody" style="padding:8px 12px; max-height:70vh; overflow-y:auto;"></div>
     </div>
 
-    <script src="app.js?v=20260224v1"></script>
+    <script src="app.js?v=20260511v1"></script>
 </body>
 </html>
