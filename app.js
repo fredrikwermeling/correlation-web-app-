@@ -6058,9 +6058,17 @@ class CorrelationExplorer {
 
         // Keep the edge-thickness legend's line widths in sync with the
         // canvas zoom so the legend isn't visually misrepresentative when
-        // the user zooms in. Exports always use the base (zoom=1) mapping.
-        this.network.on('zoom', () => {
-            if (this._edgeLegendBaseParams) {
+        // the user zooms in. vis-network's `zoom` event only fires for
+        // wheel/pinch — not for the navigation home button or programmatic
+        // fit() — so we listen on afterDrawing (cheap) and re-render the
+        // legend only when the scale actually changes. Exports always use
+        // the base (zoom=1) mapping.
+        this._edgeLegendLastScale = null;
+        this.network.on('afterDrawing', () => {
+            if (!this._edgeLegendBaseParams || !this.network) return;
+            const s = this.network.getScale();
+            if (this._edgeLegendLastScale === null || Math.abs(s - this._edgeLegendLastScale) > 1e-3) {
+                this._edgeLegendLastScale = s;
                 this.updateEdgeLegend(this._edgeLegendBaseParams.edgeWidthBase, this._edgeLegendBaseParams.cutoff);
             }
         });
