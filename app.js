@@ -106,6 +106,11 @@ class CorrelationExplorer {
             await this.loadData();
             this.setupUI();
             this.hideLoading();
+            // URL-hash deep links — load with #cell to open the cell-line
+            // browser directly. Used by sibling apps (Greenlisted, MouseCLB)
+            // to link straight into the right view.
+            this._handleUrlHash();
+            window.addEventListener('hashchange', () => this._handleUrlHash());
         } catch (error) {
             console.error('Initialization error:', error);
             this.updateLoadingText('Error loading data: ' + error.message);
@@ -114,6 +119,14 @@ class CorrelationExplorer {
 
     updateLoadingText(text) {
         document.getElementById('loadingText').textContent = text;
+    }
+
+    _handleUrlHash() {
+        const h = (window.location.hash || '').toLowerCase().replace(/^#/, '');
+        if (h === 'cell' || h === 'cellbrowser' || h === 'cell-line-browser') {
+            try { this.openCellLineBrowser(); }
+            catch (e) { console.warn('Could not open cell-line browser from #cell route:', e); }
+        }
     }
 
     hideLoading() {
