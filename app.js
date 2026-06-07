@@ -123,7 +123,8 @@ class CorrelationExplorer {
 
     _handleUrlHash() {
         const h = (window.location.hash || '').toLowerCase().replace(/^#/, '');
-        if (h === 'cell' || h === 'cellbrowser' || h === 'cell-line-browser') {
+        const CELL_BROWSER_ROUTES = ['cell', 'cells', 'cellbrowser', 'cellsbrowser', 'cell-line-browser', 'celllinebrowser', 'browser'];
+        if (CELL_BROWSER_ROUTES.includes(h)) {
             try { this.openCellLineBrowser(); }
             catch (e) { console.warn('Could not open cell-line browser from #cell route:', e); }
         }
