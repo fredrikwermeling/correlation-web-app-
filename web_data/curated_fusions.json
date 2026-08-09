@@ -1,0 +1,433 @@
+{
+  "_description": "Literature-curated gene fusion calls. Two jobs: supply a fusion status for cell lines the DepMap caller could not read (no RNA-seq), and add recurrent driver fusions that are documented in the literature but absent from the caller's output. Only recurrent, disease-defining or clinically actionable fusions are listed; private one-off fusions and normal immunoglobulin V-J rearrangements are deliberately excluded, since adding them would reproduce the noise the curated fusion axis exists to avoid.",
+  "_howToRead": "byCellLine[<DepMap ID>].fusions lists fusions the line is documented to carry. An empty list with unknown:true means no fusion is documented and the line stays uncallable. supplementsCaller:true marks a line the caller could read, where the entry only adds a fusion the caller missed. Entries never overturn a positive call.",
+  "source": "Cellosaurus (https://www.cellosaurus.org), entries retrieved 2026-08-04",
+  "curatedOn": "2026-08-04",
+  "byCellLine": {
+    "ACH-002116": {
+      "name": "EW-22",
+      "rrid": "CVCL_1214",
+      "disease": "Ewing sarcoma",
+      "fusions": [
+        "EWSR1-FLI1"
+      ],
+      "detail": "Type 1 fusion (EWSR1 exon 7 / FLI1 exon 6)",
+      "source": "Cellosaurus CVCL_1214"
+    },
+    "ACH-001643": {
+      "name": "SCCH-196",
+      "rrid": "CVCL_3161",
+      "disease": "Ewing sarcoma",
+      "fusions": [
+        "EWSR1-FLI1"
+      ],
+      "detail": "Type 1 fusion (EWSR1 exon 7 / FLI1 exon 6)",
+      "source": "Cellosaurus CVCL_3161"
+    },
+    "ACH-002160": {
+      "name": "MC-IXC",
+      "rrid": "CVCL_1398",
+      "disease": "Askin tumor (Ewing family)",
+      "fusions": [
+        "EWSR1-FLI1"
+      ],
+      "detail": "Type 1 fusion, inherited from the parent line SK-N-MC. Long mislabelled a neuroblastoma line; the parent was shown to come from an Askin tumor.",
+      "source": "Cellosaurus CVCL_1398"
+    },
+    "ACH-002105": {
+      "name": "ES4",
+      "rrid": "CVCL_1200",
+      "disease": "Ewing sarcoma",
+      "fusions": [
+        "EWSR1-FLI1"
+      ],
+      "detail": "Type 2 fusion (EWSR1 exon 7 / FLI1 exon 5)",
+      "source": "Cellosaurus CVCL_1200"
+    },
+    "ACH-002119": {
+      "name": "EW-7",
+      "rrid": "CVCL_1217",
+      "disease": "Ewing sarcoma",
+      "fusions": [
+        "EWSR1-FLI1"
+      ],
+      "detail": "Type 1 fusion (EWSR1 exon 7 / FLI1 exon 6)",
+      "source": "Cellosaurus CVCL_1217"
+    },
+    "ACH-002110": {
+      "name": "EW-1",
+      "rrid": "CVCL_1208",
+      "disease": "Ewing sarcoma",
+      "fusions": [
+        "EWSR1-FLI1"
+      ],
+      "detail": "Type 2 fusion (EWSR1 exon 7 / FLI1 exon 5)",
+      "source": "Cellosaurus CVCL_1208"
+    },
+    "ACH-001205": {
+      "name": "TC-32",
+      "rrid": "CVCL_7151",
+      "disease": "Ewing sarcoma",
+      "fusions": [
+        "EWSR1-FLI1"
+      ],
+      "detail": "Type 1 fusion (EWSR1 exon 7 / FLI1 exon 6)",
+      "source": "Cellosaurus CVCL_7151"
+    },
+    "ACH-002114": {
+      "name": "EW-16",
+      "rrid": "CVCL_1212",
+      "disease": "Ewing sarcoma",
+      "fusions": [
+        "EWSR1-FLI1"
+      ],
+      "detail": "EWSR1 exon 8 fused to FLI1 exon 7",
+      "source": "Cellosaurus CVCL_1212"
+    },
+    "ACH-002109": {
+      "name": "ES8",
+      "rrid": "CVCL_1204",
+      "disease": "Ewing sarcoma",
+      "fusions": [
+        "EWSR1-FLI1"
+      ],
+      "detail": "Type 2 fusion (EWSR1 exon 7 / FLI1 exon 5)",
+      "source": "Cellosaurus CVCL_1204"
+    },
+    "ACH-002106": {
+      "name": "ES5",
+      "rrid": "CVCL_1201",
+      "disease": "Ewing sarcoma",
+      "fusions": [],
+      "unknown": true,
+      "detail": "No gene fusion is recorded in Cellosaurus for this line, so its fusion partner remains unknown rather than negative.",
+      "source": "Cellosaurus CVCL_1201"
+    },
+    "ACH-001431": {
+      "name": "TC-205",
+      "rrid": "CVCL_4Z31",
+      "disease": "Ewing sarcoma",
+      "fusions": [
+        "EWSR1-FEV"
+      ],
+      "detail": "EWSR1 exon 7 fused to FEV exon 3. A variant Ewing fusion, so genuinely EWSR1-FLI1 negative.",
+      "source": "Cellosaurus CVCL_4Z31"
+    },
+    "ACH-000210": {
+      "name": "CADO-ES1",
+      "rrid": "CVCL_1103",
+      "disease": "Ewing sarcoma",
+      "fusions": [
+        "EWSR1-ERG"
+      ],
+      "detail": "Cellosaurus notes this line was incorrectly reported to carry EWSR1-FLI1 in one publication; the fusion is EWSR1-ERG.",
+      "source": "Cellosaurus CVCL_1103"
+    },
+    "ACH-001283": {
+      "name": "TC-106",
+      "rrid": "CVCL_F531",
+      "disease": "Ewing sarcoma",
+      "fusions": [
+        "EWSR1-ERG"
+      ],
+      "detail": "EWSR1 exon 7 fused to ERG exon 6.",
+      "source": "Cellosaurus CVCL_F531"
+    },
+    "ACH-001038": {
+      "name": "COG-E-352",
+      "rrid": "CVCL_M153",
+      "disease": "Primitive neuroectodermal tumor",
+      "fusions": [
+        "EWSR1-ERG"
+      ],
+      "detail": "EWSR1-ERG fusion.",
+      "source": "Cellosaurus CVCL_M153"
+    },
+    "ACH-000337": {
+      "name": "NCI-H3122",
+      "rrid": "CVCL_5160",
+      "disease": "Non-Small Cell Lung Cancer",
+      "fusions": [
+        "EML4-ALK"
+      ],
+      "detail": "E13;A20 (variant 1) fusion. PubMed 18594010.",
+      "supplementsCaller": true,
+      "source": "Cellosaurus CVCL_5160"
+    },
+    "ACH-000969": {
+      "name": "KM12",
+      "rrid": "CVCL_1331",
+      "disease": "Colorectal Adenocarcinoma",
+      "fusions": [
+        "TPM3-NTRK1"
+      ],
+      "detail": "PubMed 24962792, 25485619.",
+      "supplementsCaller": true,
+      "source": "Cellosaurus CVCL_1331"
+    },
+    "ACH-002708": {
+      "name": "DL-221",
+      "rrid": "CVCL_DQ91",
+      "disease": "Liposarcoma",
+      "fusions": [
+        "FUS-DDIT3"
+      ],
+      "detail": "Also called TLS-CHOP, the defining fusion of myxoid liposarcoma. PubMed 27270875.",
+      "supplementsCaller": true,
+      "source": "Cellosaurus CVCL_DQ91"
+    },
+    "ACH-002711": {
+      "name": "UM-HACC-2A",
+      "rrid": "CVCL_C4UW",
+      "disease": "Salivary Carcinoma",
+      "fusions": [
+        "MYB-NFIB"
+      ],
+      "detail": "MYB exon 5/6 fused to NFIB exon 9, the defining fusion of adenoid cystic carcinoma. PubMed 30527239.",
+      "supplementsCaller": true,
+      "source": "Cellosaurus CVCL_C4UW"
+    },
+    "ACH-000519": {
+      "name": "PEER",
+      "rrid": "CVCL_1913",
+      "disease": "T-Lymphoblastic Leukemia/Lymphoma",
+      "fusions": [
+        "NUP214-ABL1"
+      ],
+      "detail": "NUP214 exon 34 fused to ABL1 exon 2. PubMed 15361874, 35354797.",
+      "supplementsCaller": true,
+      "source": "Cellosaurus CVCL_1913"
+    },
+    "ACH-000874": {
+      "name": "RS4;11",
+      "rrid": "CVCL_0093",
+      "disease": "B-Cell Acute Lymphoblastic Leukemia",
+      "fusions": [
+        "KMT2A-AFF1"
+      ],
+      "detail": "Also called MLL-AF4. In frame. PubMed 1423625, 8358709, 32721124.",
+      "supplementsCaller": true,
+      "source": "Cellosaurus CVCL_0093"
+    },
+    "ACH-000113": {
+      "name": "OCI-AML2",
+      "rrid": "CVCL_1619",
+      "disease": "Acute Myeloid Leukemia",
+      "fusions": [
+        "KMT2A-AFDN"
+      ],
+      "detail": "Also called MLL-AF6 / MLL-MLLT4. PubMed 25485619.",
+      "supplementsCaller": true,
+      "source": "Cellosaurus CVCL_1619"
+    },
+    "ACH-001647": {
+      "name": "SHI-1",
+      "rrid": "CVCL_2191",
+      "disease": "Acute Myeloid Leukemia",
+      "fusions": [
+        "KMT2A-AFDN"
+      ],
+      "detail": "Also called MLL-AF6 / MLL-MLLT4. PubMed 15921626, 15951289.",
+      "supplementsCaller": true,
+      "source": "Cellosaurus CVCL_2191"
+    },
+    "ACH-000406": {
+      "name": "U-937",
+      "rrid": "CVCL_0007",
+      "disease": "Acute Myeloid Leukemia",
+      "fusions": [
+        "PICALM-MLLT10"
+      ],
+      "detail": "Also called CALM-AF10. PubMed 8643484, 25485619.",
+      "supplementsCaller": true,
+      "source": "Cellosaurus CVCL_0007"
+    },
+    "ACH-000602": {
+      "name": "M-07e",
+      "rrid": "CVCL_2106",
+      "disease": "Acute Myeloid Leukemia",
+      "fusions": [
+        "CBFA2T3-GLIS2"
+      ],
+      "detail": "Also called ETO2-GLIS2, defining a paediatric acute megakaryoblastic leukaemia subtype. PubMed 28109323.",
+      "supplementsCaller": true,
+      "source": "Cellosaurus CVCL_2106"
+    },
+    "ACH-000365": {
+      "name": "SU-DHL-4",
+      "rrid": "CVCL_0539",
+      "disease": "Mature B-Cell Neoplasms",
+      "fusions": [
+        "IGH-BCL2"
+      ],
+      "detail": "t(14;18). PubMed 2875799.",
+      "supplementsCaller": true,
+      "source": "Cellosaurus CVCL_0539"
+    },
+    "ACH-000363": {
+      "name": "SK-MM-2",
+      "rrid": "CVCL_1699",
+      "disease": "Mature B-Cell Neoplasms",
+      "fusions": [
+        "IGH-CCND1"
+      ],
+      "detail": "t(11;14). PubMed 8695815.",
+      "supplementsCaller": true,
+      "source": "Cellosaurus CVCL_1699"
+    },
+    "ACH-000204": {
+      "name": "LP-1",
+      "rrid": "CVCL_0012",
+      "disease": "Mature B-Cell Neoplasms",
+      "fusions": [
+        "IGH-NSD2"
+      ],
+      "detail": "t(4;14), also written IGH-WHSC1 / MMSET. PubMed 31160637.",
+      "supplementsCaller": true,
+      "source": "Cellosaurus CVCL_0012"
+    },
+    "ACH-000938": {
+      "name": "NALM-6",
+      "rrid": "CVCL_0092",
+      "disease": "B-Cell Acute Lymphoblastic Leukemia",
+      "fusions": [
+        "IGH-DUX4"
+      ],
+      "detail": "The translocation sits in the silenced IGH allele. PubMed 31243274.",
+      "supplementsCaller": true,
+      "source": "Cellosaurus CVCL_0092"
+    },
+    "ACH-000654": {
+      "name": "Raji",
+      "rrid": "CVCL_0511",
+      "disease": "Non-Hodgkin Lymphoma",
+      "fusions": [
+        "MYC-IGH"
+      ],
+      "detail": "t(8;14), Burkitt lymphoma. PubMed 6306472, 6419122, 6806672.",
+      "supplementsCaller": true,
+      "source": "Cellosaurus CVCL_0511"
+    },
+    "ACH-000567": {
+      "name": "ST486",
+      "rrid": "CVCL_1712",
+      "disease": "Mature B-Cell Neoplasms",
+      "fusions": [
+        "MYC-IGH"
+      ],
+      "detail": "t(8;14). PubMed 6328505, 9643977, 11587216.",
+      "supplementsCaller": true,
+      "source": "Cellosaurus CVCL_1712"
+    },
+    "ACH-001450": {
+      "name": "BLUE-1",
+      "rrid": "CVCL_1967",
+      "disease": "Mature B-Cell Neoplasms",
+      "fusions": [
+        "MYC-IGH"
+      ],
+      "detail": "t(8;14). PubMed 16697040.",
+      "supplementsCaller": true,
+      "source": "Cellosaurus CVCL_1967"
+    },
+    "ACH-002677": {
+      "name": "U-2946",
+      "rrid": "CVCL_X503",
+      "disease": "Mature B-Cell Neoplasms",
+      "fusions": [
+        "MYC-IGH"
+      ],
+      "detail": "t(8;14). PubMed 31160637.",
+      "supplementsCaller": true,
+      "source": "Cellosaurus CVCL_X503"
+    },
+    "ACH-002059": {
+      "name": "P30/OHK",
+      "rrid": "CVCL_1631",
+      "disease": "B-Cell Acute Lymphoblastic Leukemia",
+      "fusions": [
+        "MEF2D-HNRNPUL1"
+      ],
+      "detail": "Defines a B-ALL subtype. PubMed 35354797.",
+      "supplementsCaller": true,
+      "source": "Cellosaurus CVCL_1631"
+    },
+    "ACH-001839": {
+      "name": "MGH-ICC13-7",
+      "rrid": "CVCL_A1VD",
+      "disease": "Intraductal Papillary Neoplasm of the Bile Duct",
+      "fusions": [
+        "FGFR2-OPTN"
+      ],
+      "detail": "In frame, FGFR2 exon 17 fused to OPTN exon 9. FGFR2 fusions are an FGFR-inhibitor indication in cholangiocarcinoma. PubMed 31109923.",
+      "supplementsCaller": true,
+      "source": "Cellosaurus CVCL_A1VD"
+    },
+    "ACH-001834": {
+      "name": "MGH-ICC10",
+      "rrid": "CVCL_A1VB",
+      "disease": "Intraductal Papillary Neoplasm of the Bile Duct",
+      "fusions": [
+        "FGFR2-PHGDH"
+      ],
+      "detail": "FGFR2 fusion, an FGFR-inhibitor indication in cholangiocarcinoma. PubMed 39026794.",
+      "supplementsCaller": true,
+      "source": "Cellosaurus CVCL_A1VB"
+    },
+    "ACH-001835": {
+      "name": "MGH-ICC10-6",
+      "rrid": "CVCL_A1UZ",
+      "disease": "Intraductal Papillary Neoplasm of the Bile Duct",
+      "fusions": [
+        "FGFR2-PHGDH"
+      ],
+      "detail": "FGFR2 fusion. PubMed 39026794.",
+      "supplementsCaller": true,
+      "source": "Cellosaurus CVCL_A1UZ"
+    },
+    "ACH-001836": {
+      "name": "MGH-ICC10-8",
+      "rrid": "CVCL_A1VA",
+      "disease": "Intraductal Papillary Neoplasm of the Bile Duct",
+      "fusions": [
+        "FGFR2-PHGDH"
+      ],
+      "detail": "FGFR2 fusion. PubMed 39026794.",
+      "supplementsCaller": true,
+      "source": "Cellosaurus CVCL_A1VA"
+    },
+    "ACH-002239": {
+      "name": "H3118",
+      "rrid": "CVCL_A464",
+      "disease": "Salivary Carcinoma",
+      "fusions": [
+        "CRTC1-MAML2"
+      ],
+      "detail": "Also called MECT1-MAML2, the defining fusion of mucoepidermoid carcinoma. PubMed 12539049.",
+      "supplementsCaller": true,
+      "source": "Cellosaurus CVCL_A464"
+    },
+    "ACH-000235": {
+      "name": "Panc 04.03",
+      "rrid": "CVCL_1636",
+      "disease": "Pancreatic Adenocarcinoma",
+      "fusions": [
+        "ATG7-RAF1"
+      ],
+      "detail": "RAF1 fusion. PubMed 23637631.",
+      "supplementsCaller": true,
+      "source": "Cellosaurus CVCL_1636"
+    },
+    "ACH-001041": {
+      "name": "CHL-1-DM",
+      "rrid": "CVCL_1122",
+      "disease": "Melanoma",
+      "fusions": [
+        "EWSR1-CREM"
+      ],
+      "detail": "PubMed 23637631.",
+      "supplementsCaller": true,
+      "source": "Cellosaurus CVCL_1122"
+    }
+  }
+}
