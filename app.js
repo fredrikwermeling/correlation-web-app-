@@ -400,6 +400,7 @@ class CorrelationExplorer {
         return {
             geneList: this.getGeneList(),
             mode: this.results?.mode,
+            analysisBasis: this.results?.basis || 'ge',
             cutoff: this.results?.cutoff,
             nCellLines: this.results?.nCellLines,
             networkSettings: this._captureNetworkSettings(),
@@ -5157,6 +5158,41 @@ class CorrelationExplorer {
         return this.geneEffects.subarray(start, start + this.nCellLines);
     }
 
+    // Which matrix the gene-set analysis correlates on: 'ge' (default) or
+    // 'expr'. Snapshot into _runBasis at run time so post-run consumers
+    // (cluster stats, below-cutoff rows) stay on the run's own basis even if
+    // the radio is flipped afterwards.
+    _analysisBasis() {
+        return document.querySelector('input[name="analysisBasis"]:checked')?.value || 'ge';
+    }
+
+    // Full-cohort vector for the current run's basis, in GE cell-line order.
+    // For expression, values are remapped through expressionCellLineMap; genes
+    // or lines without expression come back NaN and fall out via minN.
+    _analysisVector(gene) {
+        if (this._runBasis !== 'expr') {
+            const idx = this.geneIndex.get(gene);
+            return idx === undefined ? null : this.getGeneData(idx);
+        }
+        if (!this._exprVectorCache) this._exprVectorCache = new Map();
+        let v = this._exprVectorCache.get(gene);
+        if (v) return v;
+        v = new Float32Array(this.nCellLines);
+        const gi = this.expressionGeneIndex?.get(gene.toUpperCase());
+        if (gi === undefined || !this.expressionData) {
+            v.fill(NaN);
+        } else {
+            const nE = this.expressionMetadata.nCellLines;
+            const base = gi * nE;
+            for (let i = 0; i < this.nCellLines; i++) {
+                const e = this.expressionCellLineMap?.[i];
+                v[i] = (e === undefined || e === -1) ? NaN : this.expressionData[base + e];
+            }
+        }
+        this._exprVectorCache.set(gene, v);
+        return v;
+    }
+
     /**
      * Get expression value for a gene at a given GE cell-line index.
      * Returns NaN if expression data is not loaded or the gene/cell line is missing.
@@ -5255,6 +5291,9 @@ class CorrelationExplorer {
         });
 
         document.getElementById('minCellLines')?.addEventListener('change', () => this._markMutationRunStale());
+        document.querySelectorAll('input[name="analysisBasis"]').forEach(r => {
+            r.addEventListener('change', () => this._markMutationRunStale());
+        });
 
         // Gene textarea
         document.getElementById('geneTextarea').addEventListener('input', () => this.updateGeneCount());
@@ -8022,6 +8061,16 @@ class CorrelationExplorer {
             return;
         }
 
+        // The expression basis needs the expression matrix; it preloads in the
+        // background after startup, but a fast first Run can beat it. Load,
+        // then come back here once.
+        if (mode !== 'synonym' && this._analysisBasis() === 'expr' && !this.expressionLoaded) {
+            this.showStatus('info', 'Loading expression data, the analysis starts as soon as it is in…');
+            this.loadExpressionData().then(() => this.runAnalysis())
+                .catch(e => this.showStatus('error', 'Could not load expression data: ' + (e?.message || e)));
+            return;
+        }
+
         // Handle synonym/ortholog lookup mode
         if (mode === 'synonym') {
             this.runSynonymLookup();
@@ -10447,6 +10496,10 @@ class CorrelationExplorer {
     }
 
     calculateCorrelations(geneList, mode, cutoff, minN, minSlope, cellLineIndices, expandNetwork = false, includeGrowthRate = false) {
+        // Freeze the basis for this run; drop any expression-vector cache
+        // from a previous run so a data reload can't serve stale vectors.
+        this._runBasis = this._analysisBasis();
+        this._exprVectorCache = new Map();
         const correlations = [];
         // Pairs that fall just short of the cutoff, for the optional
         // "below cutoff" rows in the Correlations table.
@@ -10466,8 +10519,7 @@ class CorrelationExplorer {
         // Get gene data for input genes
         const inputData = new Map();
         geneList.forEach(gene => {
-            const idx = this.geneIndex.get(gene);
-            const fullData = this.getGeneData(idx);
+            const fullData = this._analysisVector(gene);
             const filteredData = cellLineIndices.map(i => fullData[i]);
             inputData.set(gene, filteredData);
         });
@@ -10499,8 +10551,7 @@ class CorrelationExplorer {
                 if (inputData.has(gene2)) {
                     data2 = inputData.get(gene2);
                 } else {
-                    const idx = this.geneIndex.get(gene2);
-                    const fullData = this.getGeneData(idx);
+                    const fullData = this._analysisVector(gene2);
                     data2 = cellLineIndices.map(i => fullData[i]);
                 }
 
@@ -10549,8 +10600,7 @@ class CorrelationExplorer {
                 // Cache gene data for discovered genes
                 const discoveredData = new Map();
                 discoveredArray.forEach(gene => {
-                    const idx = this.geneIndex.get(gene);
-                    const fullData = this.getGeneData(idx);
+                    const fullData = this._analysisVector(gene);
                     discoveredData.set(gene, cellLineIndices.map(i => fullData[i]));
                 });
 
@@ -10606,8 +10656,7 @@ class CorrelationExplorer {
                     return this.growthRateData[cl] ?? NaN;
                 }).filter(v => !isNaN(v));
             } else {
-                const idx = this.geneIndex.get(gene);
-                fullData = this.getGeneData(idx);
+                fullData = this._analysisVector(gene);
                 allValidData = Array.from(fullData).filter(v => !isNaN(v));
                 filteredData = cellLineIndices.map(i => fullData[i]).filter(v => !isNaN(v));
             }
@@ -10647,8 +10696,7 @@ class CorrelationExplorer {
                         return this.growthRateData[cl] ?? NaN;
                     }).filter(v => !isNaN(v));
                 } else {
-                    const idx = this.geneIndex.get(gene);
-                    const fullData = this.getGeneData(idx);
+                    const fullData = this._analysisVector(gene);
                     allValidData = Array.from(fullData).filter(v => !isNaN(v));
                     filteredData2 = cellLineIndices.map(i => fullData[i]).filter(v => !isNaN(v));
                 }
@@ -10683,6 +10731,7 @@ class CorrelationExplorer {
 
         return {
             success: true,
+            basis: this._runBasis,
             correlations: correlations,
             // Kept separate so nothing downstream (network, clusters, exports)
             // silently starts including pairs the user filtered out.
@@ -10871,7 +10920,24 @@ class CorrelationExplorer {
         document.getElementById('networkLoadingOverlay')?.remove();
     }
 
+    // The label/color checkboxes talk about the run's basis; on an
+    // expression network "gene effect" would mislabel every number they show.
+    _syncBasisNetworkLabels() {
+        const expr = this.results?.basis === 'expr';
+        const setLabel = (inputId, text) => {
+            const input = document.getElementById(inputId);
+            const label = input?.parentElement;
+            if (!label) return;
+            for (const n of label.childNodes) {
+                if (n.nodeType === 3 && n.textContent.trim()) { n.textContent = ' ' + text; return; }
+            }
+        };
+        setLabel('showGeneEffect', expr ? 'Show expression in label' : 'Show gene effect (GE) in label');
+        setLabel('colorByGeneEffect', expr ? 'Color by expression' : 'Color by GE');
+    }
+
     displayNetwork() {
+        this._syncBasisNetworkLabels();
         const container = document.getElementById('networkPlot');
         container.innerHTML = '';
 
@@ -10931,8 +10997,9 @@ class CorrelationExplorer {
             if (isSynonym) {
                 titleLines.push(`(synonym of ${originalName})`);
             }
-            titleLines.push(`GE mean: ${cluster?.meanEffect || 'N/A'}`);
-            titleLines.push(`GE SD: ${cluster?.sdEffect || 'N/A'}`);
+            const _bl = this.results?.basis === 'expr' ? 'Expr' : 'GE';
+            titleLines.push(`${_bl} mean: ${cluster?.meanEffect || 'N/A'}`);
+            titleLines.push(`${_bl} SD: ${cluster?.sdEffect || 'N/A'}`);
             if (geneStat?.lfc !== undefined && geneStat?.lfc !== null) {
                 titleLines.push(`LFC: ${geneStat.lfc.toFixed(3)}`);
             }
@@ -10975,8 +11042,7 @@ class CorrelationExplorer {
         if (showUncorrelated && this.results.geneList) {
             this.results.geneList.forEach(gene => {
                 if (!geneSet.has(gene) && this.geneIndex.has(gene)) {
-                    const idx = this.geneIndex.get(gene);
-                    const fullData = this.getGeneData(idx);
+                    const fullData = this._analysisVector(gene);
                     const validData = Array.from(fullData).filter(v => !isNaN(v));
                     const meanEffect = validData.length > 0 ? (validData.reduce((a, b) => a + b, 0) / validData.length) : NaN;
                     const sd = validData.length > 0 ? Math.sqrt(validData.reduce((a, b) => a + (b - meanEffect) ** 2, 0) / validData.length) : NaN;
@@ -10987,8 +11053,9 @@ class CorrelationExplorer {
 
                     let titleLines = [gene];
                     if (isSynonym) titleLines.push(`(synonym of ${originalName})`);
-                    titleLines.push(`GE mean: ${isNaN(meanEffect) ? 'N/A' : meanEffect.toFixed(2)}`);
-                    titleLines.push(`GE SD: ${isNaN(sd) ? 'N/A' : sd.toFixed(2)}`);
+                    const _bl2 = this.results?.basis === 'expr' ? 'Expr' : 'GE';
+                    titleLines.push(`${_bl2} mean: ${isNaN(meanEffect) ? 'N/A' : meanEffect.toFixed(2)}`);
+                    titleLines.push(`${_bl2} SD: ${isNaN(sd) ? 'N/A' : sd.toFixed(2)}`);
                     // These nodes carry stats like any other input gene; the
                     // lookup was simply missing here, so hovering an
                     // uncorrelated gene showed no LFC/FDR.
@@ -12314,15 +12381,25 @@ class CorrelationExplorer {
         if (hasCorrCol) {
             headerCells += `<th data-sort="hasCorrelation">Correlation</th>`;
         }
+        // Column labels follow the run's basis: a network correlated on
+        // expression shows expression means, and says so.
+        const isExprBasis = this.results.basis === 'expr';
+        const bLab = isExprBasis ? 'Expr' : 'GE';
+        const bMeanTitle = isExprBasis
+            ? 'Mean expression (log₂ TPM+1) across all cell lines. Higher means more mRNA.'
+            : 'Mean gene effect across all cell lines. Negative means knocking the gene out slows growth.';
+        const bSdTitle = isExprBasis
+            ? 'Spread of the expression across all cell lines. A high value means the level varies a lot between lines.'
+            : 'Spread of the gene effect across all cell lines. A high value means the dependency varies a lot between lines.';
         headerCells += `
-            <th data-sort="meanEffect" title="Mean gene effect across all cell lines. Negative means knocking the gene out slows growth.">GE mean (all)</th>
-            <th data-sort="sdEffect" title="Spread of the gene effect across all cell lines. A high value means the dependency varies a lot between lines.">GE SD (all)</th>
+            <th data-sort="meanEffect" title="${bMeanTitle}">${bLab} mean (all)</th>
+            <th data-sort="sdEffect" title="${bSdTitle}">${bLab} SD (all)</th>
         `;
 
         if (isFiltered) {
             headerCells += `
-            <th data-sort="meanEffectFiltered" title="Mean gene effect across the filtered cell lines only">GE mean (filtered)</th>
-            <th data-sort="sdEffectFiltered" title="Spread of the gene effect across the filtered cell lines only">GE SD (filtered)</th>
+            <th data-sort="meanEffectFiltered" title="Mean ${isExprBasis ? 'expression' : 'gene effect'} across the filtered cell lines only">${bLab} mean (filtered)</th>
+            <th data-sort="sdEffectFiltered" title="Spread of the ${isExprBasis ? 'expression' : 'gene effect'} across the filtered cell lines only">${bLab} SD (filtered)</th>
             `;
         }
 
@@ -12429,7 +12506,7 @@ class CorrelationExplorer {
                 missing.forEach(gene => {
                     let meanTxt = '-', sdTxt = '-';
                     if (this.geneIndex?.has(gene)) {
-                        const valid = Array.from(this.getGeneData(this.geneIndex.get(gene))).filter(v => !isNaN(v));
+                        const valid = Array.from(this._analysisVector(gene) || []).filter(v => !isNaN(v));
                         if (valid.length) {
                             const mean = valid.reduce((a, b) => a + b, 0) / valid.length;
                             const sd = Math.sqrt(valid.reduce((a, b) => a + (b - mean) ** 2, 0) / valid.length);
@@ -12943,6 +13020,7 @@ Results:
         const meta = this._buildExportMetadata('network', {
             geneList: this.getGeneList(),
             mode: this.results?.mode,
+            analysisBasis: this.results?.basis || 'ge',
             cutoff: this.results?.cutoff,
             nCellLines: this.results?.nCellLines,
             networkSettings: this._captureNetworkSettings(),
@@ -13638,6 +13716,7 @@ ${filterText ? `<text x="${width / 2}" y="${headerH / 2}" dominant-baseline="mid
         const meta = this._buildExportMetadata('network', {
             geneList: this.getGeneList(),
             mode: this.results?.mode,
+            analysisBasis: this.results?.basis || 'ge',
             cutoff: this.results?.cutoff,
             nCellLines: this.results?.nCellLines,
             networkSettings: this._captureNetworkSettings(),
@@ -15589,6 +15668,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
 
     openInspectByGenes(gene1, gene2) {
+        // The scatter opens on the analysis's own basis, so the r on an edge
+        // and the r in the plot describe the same numbers. The axis selectors
+        // stay live for switching afterwards.
+        if (this.results?.basis) {
+            const b = this.results.basis === 'expr' ? 'expr' : 'ge';
+            const xSel = document.getElementById('xAxisDataType');
+            const ySel = document.getElementById('yAxisDataType');
+            if (xSel) xSel.value = b;
+            if (ySel) ySel.value = b;
+        }
         // Find the correlation entry by gene names. If it isn't in the current
         // results (e.g. a discovered-gene edge, or after a filtered re-run via
         // "best filter"), fall back to a minimal entry so the scatter still
@@ -22284,6 +22373,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     _resetForRestore() {
         // Reset parameter filters so they don't bleed into restored view
         const resetEl = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+        const basisGe = document.querySelector('input[name="analysisBasis"][value="ge"]');
+        if (basisGe) basisGe.checked = true;
         resetEl('lineageFilter', '');
         resetEl('subLineageFilter', '');
         resetEl('paramHotspotGene', '');
@@ -22378,6 +22469,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 // Setting .checked fires no change event, so bring the Options
                 // buttons and box 1 in line with the restored mode by hand.
                 this._syncAnalysisModeButtons();
+            }
+            if (meta.analysisBasis) {
+                const b = document.querySelector(`input[name="analysisBasis"][value="${meta.analysisBasis}"]`);
+                if (b) b.checked = true;
             }
             if (meta.cutoff != null) {
                 document.getElementById('correlationCutoff').value = meta.cutoff;
@@ -25887,7 +25982,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
 
     openGeneEffectFromNetwork(gene) {
-        this.openGeneEffectModal(gene, 'tissue', { dataType: 'ge' });
+        // Open on the analysis's own basis, so a node in an expression
+        // network drills into the expression distribution.
+        this.openGeneEffectModal(gene, 'tissue', { dataType: this.results?.basis === 'expr' ? 'expr' : 'ge' });
         this._applyParamFiltersToGEModal();
     }
 
