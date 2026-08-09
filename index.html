@@ -2513,22 +2513,6 @@
                             </select>
                             <button type="button" class="btn btn-outline btn-sm clb-icon-btn" id="paramGridCnBtn" title="Copy-number grid for the cell lines currently selected, click a gene to require the event present or absent">&#9638;</button>
                         </div>
-                        <div id="paramHotspotControls">
-                            <select id="paramHotspotGene" class="form-control" style="margin-bottom: 4px;">
-                                <option value="">No filter</option>
-                            </select>
-                            <select id="paramHotspotLevel" class="form-control">
-                                <option value="all">All cells</option>
-                                <option value="0">Only WT (0 mutations)</option>
-                                <option value="1">Only 1 mutation</option>
-                                <option value="2">Only 2 mutations</option>
-                                <option value="1+2">Only mutated (1+2)</option>
-                            </select>
-                            <div style="background: #fef3c7; border: 1px solid #f59e0b; border-radius: 4px; padding: 4px 6px; margin-top: 4px; font-size: 9px; color: #92400e;">
-                                Selecting for mutations may introduce bias — mutations are often enriched in specific cancer types.
-                            </div>
-                        </div>
-                        <div id="oncoprintFilterLabel" style="display:none; font-size:11px; color:#5a9f4a; margin-top:4px; cursor:pointer;" title="Click to clear oncoprint filters"></div>
                     </div>
 
                     <div class="form-group" id="paramTranslocationFilterGroup" style="display: none;">
@@ -2791,12 +2775,6 @@
                                 <!-- Hidden master switch for the node border; several renderers read
                                      its state. The visible control lives in the Settings popout. -->
                                 <input type="checkbox" id="networkNodeBorder" checked style="display:none;">
-                            </div>
-                            <div class="button-group-horizontal" style="margin-bottom: 4px;">
-                                <button class="btn btn-secondary" id="networkAaBtn" style="font-weight:700;">Aa</button>
-                                <label style="font-size: 10px; display: flex; align-items: center; gap: 3px; cursor: pointer;">
-                                    <input type="checkbox" id="networkNodeBorder" checked> Node border
-                                </label>
                             </div>
                             <p class="help-text" id="networkHelpText" style="font-size: 9px; margin-bottom: 6px;">Double-click node for Gene Effect, edge for Correlation</p>
                             <div id="selectedNodesList" style="display: none; font-size: 9px; margin-bottom: 6px; padding: 4px; background: #dbeafe; border-radius: 3px;">
@@ -4037,106 +4015,6 @@
                     <label style="display:block; font-weight:600; margin-bottom:4px;">Background</label>
                     <label style="margin-right:14px;" title="Solid white everywhere, including the chart panel."><input type="radio" name="exportOptBg" value="white" checked> White (solid)</label>
                     <label title="No background at all: the chart panel becomes see-through, for placing the figure on a colored slide."><input type="radio" name="exportOptBg" value="transparent"> Transparent</label>
-                </div>
-                <div id="exportOptLegendFrameRow" style="margin-bottom:10px; display:none;">
-                    <label style="cursor:pointer;"><input type="checkbox" id="exportOptLegendFrame"> Draw a thin frame around the legend</label>
-                </div>
-                <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px;">
-                    <button class="btn btn-outline btn-sm" id="exportOptCancel">Cancel</button>
-                    <button class="btn btn-success btn-sm" id="exportOptConfirm">Export</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Curated-collections reference -->
-    <div id="collectionsInfoModal" style="display:none; position:fixed; inset:0; z-index:1250; background:rgba(0,0,0,0.5); align-items:flex-start; justify-content:center; padding:20px; overflow-y:auto;">
-        <div style="background:#fff; width:100%; max-width:min(94vw,760px); max-height:calc(100vh - 40px); border-radius:8px; display:flex; flex-direction:column; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);">
-            <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 18px; border-bottom:1px solid #e5e7eb; background:linear-gradient(90deg,#f0fdf4 0%,#fff 100%);">
-                <h3 style="margin:0; font-size:17px; color:#15803d;">Curated collections — inclusion criteria</h3>
-                <button id="collectionsInfoClose" style="background:none; border:none; font-size:24px; cursor:pointer; line-height:1; color:#6b7280;">&times;</button>
-            </div>
-            <div id="collectionsInfoBody" style="padding:14px 18px; overflow-y:auto; font-size:12px; color:#374151; line-height:1.55;"></div>
-        </div>
-    </div>
-
-    <!-- Selection Inspect (GE / Correlations for selected cell lines) -->
-    <div id="selectionInspectModal" style="display:none; position:fixed; inset:0; z-index:1250; background:rgba(0,0,0,0.5); align-items:flex-start; justify-content:center; padding:20px; overflow-y:auto;">
-        <div style="background:#fff; width:100%; max-width:min(96vw,1200px); max-height:calc(100vh - 40px); border-radius:8px; display:flex; flex-direction:column; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);">
-            <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 18px; border-bottom:1px solid #e5e7eb; background:linear-gradient(90deg,#f0fdf4 0%,#fff 100%);">
-                <div>
-                    <h3 id="selectionInspectTitle" style="margin:0; font-size:17px; color:#15803d;">Inspect selection</h3>
-                    <div id="selectionInspectSubtitle" style="font-size:11px; color:#6b7280; margin-top:2px;"></div>
-                </div>
-                <button id="selectionInspectClose" style="background:none; border:none; font-size:24px; cursor:pointer; line-height:1; color:#6b7280;">&times;</button>
-            </div>
-            <div id="selectionInspectBody" style="padding:14px 18px; overflow-y:auto; font-size:12px; color:#374151;"></div>
-        </div>
-    </div>
-
-    <!-- Progress overlay used by long-running analyses (correlation inspect). -->
-    <div id="progressOverlay" style="display:none; position:fixed; inset:0; z-index:1400; background:rgba(0,0,0,0.6); align-items:center; justify-content:center;">
-        <div style="background:#fff; max-width:420px; width:90%; border-radius:8px; padding:20px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.35);">
-            <div id="progressTitle" style="font-size:14px; font-weight:600; color:#15803d; margin-bottom:6px;">Working&hellip;</div>
-            <div id="progressStatus" style="font-size:12px; color:#374151; margin-bottom:10px;">Preparing&hellip;</div>
-            <div style="background:#e5e7eb; height:10px; border-radius:5px; overflow:hidden;">
-                <div id="progressBar" style="background:#5a9f4a; height:100%; width:0%; transition:width 0.15s;"></div>
-            </div>
-            <div style="text-align:right; margin-top:10px;">
-                <button id="progressCancelBtn" class="btn btn-outline btn-sm">Cancel</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Publication-quality export options -->
-    <div class="modal-overlay" id="exportOptionsModal" style="display:none; z-index:1300;">
-        <div class="modal" style="max-width:500px;">
-            <div class="modal-header">
-                <h3 id="exportOptionsTitle" style="margin:0;">Export chart</h3>
-                <button class="modal-close" id="exportOptionsClose" style="background:none; border:none; font-size:24px; cursor:pointer; color:#6b7280;">&times;</button>
-            </div>
-            <div class="modal-body" style="padding:14px 18px; font-size:13px; color:#374151;">
-                <div style="margin-bottom:10px;">
-                    <label style="display:block; font-weight:600; margin-bottom:4px;">Size</label>
-                    <div style="display:flex; gap:4px; margin-bottom:6px;">
-                        <button type="button" class="btn btn-outline btn-sm" style="font-size:11px; padding:3px 10px;" onclick="app.applyExportSizePreset(5)">Small</button>
-                        <button type="button" class="btn btn-outline btn-sm" style="font-size:11px; padding:3px 10px;" onclick="app.applyExportSizePreset(10)">Medium</button>
-                        <button type="button" class="btn btn-outline btn-sm" style="font-size:11px; padding:3px 10px;" onclick="app.applyExportSizePreset(15)">Large</button>
-                    </div>
-                    <!-- Width, Height, Lock-aspect on a single flex row so the
-                         input next to "Height (cm)" doesn't wrap below. -->
-                    <div style="display:flex; flex-wrap:nowrap; align-items:center; gap:8px;">
-                        <label style="font-weight:600;">Width (cm)</label>
-                        <span style="display:inline-flex; gap:3px; align-items:center;">
-                            <button onclick="app.adjustExportSize('exportOptWidth', -0.5)" style="font-size:11px; padding:2px 6px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer;">−</button>
-                            <input type="number" id="exportOptWidth" value="5" min="2" max="30" step="0.5" style="width:54px; padding:4px 6px; border:1px solid #d1d5db; border-radius:4px; text-align:center;">
-                            <button onclick="app.adjustExportSize('exportOptWidth', 0.5)" style="font-size:11px; padding:2px 6px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer;">+</button>
-                        </span>
-                        <label style="font-weight:600;">Height (cm)</label>
-                        <span style="display:inline-flex; gap:3px; align-items:center;">
-                            <button onclick="app.adjustExportSize('exportOptHeight', -0.5)" style="font-size:11px; padding:2px 6px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer;">−</button>
-                            <input type="number" id="exportOptHeight" value="5" min="2" max="30" step="0.5" style="width:54px; padding:4px 6px; border:1px solid #d1d5db; border-radius:4px; text-align:center;">
-                            <button onclick="app.adjustExportSize('exportOptHeight', 0.5)" style="font-size:11px; padding:2px 6px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer;">+</button>
-                        </span>
-                        <label style="font-size:11px; color:#374151; cursor:pointer; white-space:nowrap;" title="When on, changing one dimension scales the other to keep the plot aspect ratio">
-                            <input type="checkbox" id="exportOptLockAspect" checked> Lock aspect
-                        </label>
-                    </div>
-                    <div style="font-size:10px; color:#9ca3af; margin-top:4px;">Presets set the width; height auto-scales to match the on-screen plot aspect.</div>
-                </div>
-                <div id="exportOptDpiRow" style="margin-bottom:10px;">
-                    <label style="display:block; font-weight:600; margin-bottom:4px;">DPI (PNG only)</label>
-                    <span style="display:inline-flex; gap:3px; align-items:center;">
-                        <button onclick="app.adjustNumber('exportOptDpi', -100)" style="font-size:11px; padding:2px 6px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer;">−</button>
-                        <input type="number" id="exportOptDpi" value="600" min="72" max="2400" step="100" style="width:70px; padding:4px 6px; border:1px solid #d1d5db; border-radius:4px; text-align:center;">
-                        <button onclick="app.adjustNumber('exportOptDpi', 100)" style="font-size:11px; padding:2px 6px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer;">+</button>
-                    </span>
-                    <span style="margin-left:8px; font-size:10px; color:#9ca3af;">300 = screen / draft; 600 = print; 1200+ = high-quality print.</span>
-                </div>
-                <div style="margin-bottom:10px;">
-                    <label style="display:block; font-weight:600; margin-bottom:4px;">Background</label>
-                    <label style="margin-right:14px;"><input type="radio" name="exportOptBg" value="white" checked> White (solid)</label>
-                    <label><input type="radio" name="exportOptBg" value="transparent"> Transparent</label>
                 </div>
                 <div id="exportOptLegendFrameRow" style="margin-bottom:10px; display:none;">
                     <label style="cursor:pointer;"><input type="checkbox" id="exportOptLegendFrame"> Draw a thin frame around the legend</label>
