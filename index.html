@@ -830,28 +830,6 @@
             background: var(--green-50);
         }
 
-        /* The gene-effect / expression basis choice: same boxed treatment as
-           the gene-set alternatives above, so it reads as a real choice
-           rather than a footnote under them. */
-        #basisModeOptions > label {
-            align-items: flex-start;
-            padding: 6px 8px;
-            margin-right: 2px;
-            border: 1px solid var(--gray-200);
-            border-radius: 5px;
-            font-weight: 600;
-            font-size: 12px;
-            color: #374151;
-        }
-
-        #basisModeOptions > label:hover {
-            background: var(--green-50);
-        }
-
-        #basisModeOptions > label:has(input:checked) {
-            border-color: var(--green-500);
-            background: var(--green-50);
-        }
 
         /* Section headings that give box 1 its structure ("Lineage filter",
            "Genetic alterations"). */
@@ -4448,6 +4426,8 @@
               <span class="clb-group-label" style="color:var(--earth-700);">Export CSV</span>
               <button id="clbExportMinimal" class="btn btn-outline btn-sm clb-tall-btn" style="color:var(--earth-700); border-color:var(--earth-300);" title="One or a few selected cell lines: Gene Effect + Expression for every gene (CSV). Includes DepMap version and citation.">Cell line:<br><span>GE + expression</span></button>
               <button id="clbExportComprehensive" class="btn btn-outline btn-sm clb-tall-btn" style="color:var(--earth-700); border-color:var(--earth-300);" title="Selected cell line(s): full profile for every gene, GE + Expression + Hotspot + Damaging + Fusion + focal CN amplifications / deletions (CSV).">Cell line:<br><span>full profile</span></button>
+              <button id="clbExportListBtn" class="btn btn-outline btn-sm clb-tall-btn" style="color:var(--earth-700); border-color:var(--earth-300);" title="The list exactly as it is on screen: every visible cell line in its current sort order, with tissue, subtype, disease and whichever value the list is sorted by (expression, drug response, copy number, mutation counts).">List on screen:<br><span>CSV</span></button>
+              <button id="clbCopyListBtn" class="btn btn-outline btn-sm clb-tall-btn" style="color:var(--earth-700); border-color:var(--earth-300);" title="Copy the same on-screen list to the clipboard as tab-separated text, ready to paste straight into Excel.">List on screen:<br><span>copy</span></button>
               <button id="clbExportGenesBtn" class="btn btn-outline btn-sm clb-tall-btn" style="color:var(--earth-700); border-color:var(--earth-300);" title="One or a few genes: full profile (GE, Expression, Hotspot, Damaging, Fusion, focal CN) across the selected / visible cell lines (CSV).">Genes:<br><span>full profile</span></button>
             </div>
           </div>
@@ -4633,6 +4613,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v87_5"></script>
+    <script src="app.js?v=v87_6"></script>
 </body>
 </html>

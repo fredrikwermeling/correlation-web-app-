@@ -5292,21 +5292,7 @@ class CorrelationExplorer {
 
         document.getElementById('minCellLines')?.addEventListener('change', () => this._markMutationRunStale());
         document.querySelectorAll('input[name="analysisBasis"]').forEach(r => {
-            r.addEventListener('change', (e) => {
-                // Expression correlates run higher than gene effect across the
-                // board, so 0.5 returns a great deal more there. Move the
-                // cutoff to the new basis's default, but only while it still
-                // sits on the old one: a value the user chose is left alone.
-                const DEF = { ge: 0.5, expr: 0.6 };
-                const to = e.target.value === 'expr' ? 'expr' : 'ge';
-                const from = to === 'expr' ? 'ge' : 'expr';
-                const slider = document.getElementById('correlationCutoff');
-                if (slider && Math.abs(parseFloat(slider.value) - DEF[from]) < 1e-9) {
-                    slider.value = String(DEF[to]);
-                    slider.dispatchEvent(new Event('input', { bubbles: true }));
-                }
-                this._markMutationRunStale();
-            });
+            r.addEventListener('change', () => this._markMutationRunStale());
         });
 
         // Gene textarea
@@ -8004,19 +7990,9 @@ class CorrelationExplorer {
         const results = [];
 
         const finish = () => {
-            results.sort((a, b) => b.nGenes - a.nGenes);
-            let html = '<div style="margin-top:4px; font-size:10px;">';
-            html += '<select id="bestFilterSelect" class="form-control" style="font-size:10px; padding:2px 4px;" onchange="if(this.value!==\'_none\'){document.getElementById(\'lineageFilter\').value=this.value;app.updateSubLineageFilter();app._refreshFilteredSelectors();app._markMutationRunStale();}">';
-            const allEntry = results.find(r => r.filter === 'All tissues');
-            const allGenes = allEntry ? allEntry.nGenes : 0;
-            html += `<option value="_none">Best filters (All: ${allGenes} genes):</option>`;
-            results.forEach(r => {
-                const filterVal = r.filter === 'All tissues' ? '' : r.filter;
-                html += `<option value="${filterVal}">${r.filter}, ${r.nGenes} genes (n=${r.n})</option>`;
-            });
-            html += '</select></div>';
+            this._bestFilterResults = results;
             const statusEl = document.getElementById('analysisStatus');
-            statusEl.innerHTML = html;
+            statusEl.innerHTML = this._bestFilterHtml('genes');
             if (btn) { btn.textContent = 'Best Filter'; btn.disabled = false; }
         };
 
@@ -8033,12 +8009,71 @@ class CorrelationExplorer {
                 const result = this.calculateCorrelations(geneList, 'analysis', cutoff, minN, 0, indices);
                 if (result.success && result.correlations.length > 0) {
                     const genes = new Set(); result.correlations.forEach(c => { genes.add(c.gene1); genes.add(c.gene2); });
-                    results.push({ filter: job === '__all__' ? 'All tissues' : job, n: indices.length, nGenes: genes.size });
+                    // Two different questions get two different scores:
+                    // "how much of the network survives here" (genes kept) and
+                    // "how tight are the relationships here" (mean |r| over the
+                    // surviving pairs, so a lineage with few but very strong
+                    // correlations can win). nPairs is carried so a single
+                    // lucky pair can be recognised as thin evidence.
+                    const meanR = result.correlations.reduce((a, c) => a + Math.abs(c.correlation), 0)
+                        / result.correlations.length;
+                    results.push({
+                        filter: job === '__all__' ? 'All tissues' : job,
+                        n: indices.length, nGenes: genes.size,
+                        nPairs: result.correlations.length, meanR
+                    });
                 }
             }
             setTimeout(() => step(k + 1), 0);
         };
         setTimeout(() => step(0), 50);
+    }
+
+    // The best-filter list, ranked either by how many genes stay connected in
+    // that lineage (breadth) or by the mean |r| of the surviving pairs
+    // (strength). Two genuinely different questions, so the user picks which
+    // one is being asked rather than one being declared "best".
+    _bestFilterHtml(rank) {
+        const results = (this._bestFilterResults || []).slice();
+        if (!results.length) return '';
+        const byStrength = rank === 'strength';
+        // A mean over one or two pairs is not evidence of a strong lineage, so
+        // the strength ranking asks for at least three pairs before a lineage
+        // can head the list; thinner ones still appear, below.
+        const MIN_PAIRS = 3;
+        results.sort((a, b) => {
+            if (!byStrength) return b.nGenes - a.nGenes;
+            const aThin = (a.nPairs || 0) < MIN_PAIRS, bThin = (b.nPairs || 0) < MIN_PAIRS;
+            if (aThin !== bThin) return aThin ? 1 : -1;
+            return (b.meanR || 0) - (a.meanR || 0);
+        });
+        const all = results.find(r => r.filter === 'All tissues');
+        const head = byStrength
+            ? `Strongest correlations (All: mean r=${all ? all.meanR.toFixed(2) : '-'}):`
+            : `Most connected (All: ${all ? all.nGenes : 0} genes):`;
+        const onChange = "if(this.value!=='_none'){document.getElementById('lineageFilter').value=this.value;app.updateSubLineageFilter();app._refreshFilteredSelectors();app._markMutationRunStale();}";
+        let html = '<div style="margin-top:4px; font-size:10px;">';
+        html += '<div style="display:flex; gap:6px; align-items:center; margin-bottom:3px;">'
+            + `<span style="color:#6b7280;">Rank by:</span>`
+            + `<label style="cursor:pointer;"><input type="radio" name="bestFilterRank" value="genes"${byStrength ? '' : ' checked'} onchange="app._setBestFilterRank('genes')"> most genes</label>`
+            + `<label style="cursor:pointer;" title="Average absolute correlation over the pairs that survive in that lineage, so a tissue with fewer but tighter relationships can come top."><input type="radio" name="bestFilterRank" value="strength"${byStrength ? ' checked' : ''} onchange="app._setBestFilterRank('strength')"> strongest r</label>`
+            + '</div>';
+        html += `<select id="bestFilterSelect" class="form-control" style="font-size:10px; padding:2px 4px;" onchange="${onChange}">`;
+        html += `<option value="_none">${head}</option>`;
+        results.forEach(r => {
+            const filterVal = r.filter === 'All tissues' ? '' : r.filter;
+            const label = byStrength
+                ? `${r.filter}, mean r=${(r.meanR || 0).toFixed(2)} over ${r.nPairs} pair${r.nPairs === 1 ? '' : 's'} (n=${r.n})`
+                : `${r.filter}, ${r.nGenes} genes (n=${r.n})`;
+            html += `<option value="${filterVal}">${label}</option>`;
+        });
+        html += '</select></div>';
+        return html;
+    }
+
+    _setBestFilterRank(rank) {
+        const statusEl = document.getElementById('analysisStatus');
+        if (statusEl) statusEl.innerHTML = this._bestFilterHtml(rank);
     }
 
     runAnalysis() {
@@ -16059,7 +16094,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // clicking a new edge produced a GE vs expression plot unasked. Coming
         // back to the same pair (from a gene popout, say) keeps its setup.
         const pairKey = `${c?.gene1 || ''}::${c?.gene2 || ''}`;
-        if (this._lastInspectPair && this._lastInspectPair !== pairKey) {
+        const keep = this._keepInspectSettings;
+        this._keepInspectSettings = false;
+        if (!keep && this._lastInspectPair && this._lastInspectPair !== pairKey) {
             this._resetInspectSettings();
         }
         this._lastInspectPair = pairKey;
@@ -16206,10 +16243,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         // Reset color-by dropdown. "By subtype" is always offered now: it was
         // hidden unless a tissue was selected because 70+ colors is unreadable,
-        // which the group picker solves instead.
-        document.getElementById('colorByCategory').value = '';
-        const pickedReset = document.getElementById('colorByPicked');
-        if (pickedReset) pickedReset.value = '';
+        // which the group picker solves instead. Editing the current view from
+        // inside the popout keeps the colouring, like the other settings.
+        if (!keep) {
+            document.getElementById('colorByCategory').value = '';
+            const pickedReset = document.getElementById('colorByPicked');
+            if (pickedReset) pickedReset.value = '';
+        }
         this._syncColorByGroupBtn();
         this._styleActiveFilters();
 
@@ -19300,6 +19340,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
 
         // Re-open inspect with the new genes
+        // Changing the genes or the GE / Expr / CN measure from inside the
+        // popout is a deliberate edit of the current view, so the filters,
+        // colouring and axis measures the user has set stay put. (The reset
+        // exists for arriving at a different pair from the network, where
+        // inheriting the previous pair's setup was surprising.)
+        this._keepInspectSettings = true;
         this.openInspect({ gene1, gene2, correlation: null });
 
         // Update title
@@ -34223,7 +34269,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const btn = document.getElementById('colorByGroupBtn');
         if (!btn) return;
         const mode = document.getElementById('colorByCategory')?.value;
-        const on = mode === 'tissue' || mode === 'subtype';
+        const on = mode === 'tissue' || mode === 'subtype' || mode === 'disease';
         btn.style.display = on ? '' : 'none';
         const raw = (document.getElementById('colorByPicked')?.value || '').trim();
         if (raw === '*') btn.textContent = 'Groups: all';
@@ -35321,6 +35367,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         document.getElementById('clbExportMinimal').addEventListener('click', () => this.exportCellLineBrowserCSV('minimal'));
         document.getElementById('clbExportComprehensive')?.addEventListener('click', () => this.exportCellLineBrowserCSV('comprehensive'));
         document.getElementById('clbExportGenesBtn')?.addEventListener('click', () => this.exportCellLineBrowserGenesCSV());
+        document.getElementById('clbExportListBtn')?.addEventListener('click', () => this.exportCellLineListOnScreen('csv'));
+        document.getElementById('clbCopyListBtn')?.addEventListener('click', () => this.exportCellLineListOnScreen('copy'));
         document.getElementById('clbInspectGEBtn')?.addEventListener('click', () => this.inspectSelectionGE());
         document.getElementById('clbInspectCorrBtn')?.addEventListener('click', () => this.inspectSelectionCorrelations());
         document.getElementById('clbCopyNamesBtn')?.addEventListener('click', () => this.copyCellLineNames());
@@ -36086,6 +36134,24 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 Values shown: <b>${lbl}</b> per cell line.
             </div>`;
         }
+
+        // Remember the value column exactly as the list shows it, so "Export
+        // list" and "Copy list" can hand over what is on screen rather than
+        // recomputing it from the sort settings.
+        this._clbListValues = geMap || countMap || null;
+        this._clbListValueHeader = geMap
+            ? `${geValueLabel === 'Expr' ? 'Expression (log2 TPM+1)' : 'Gene Effect (CERES)'}${geGenesLabel ? ` for ${geGenesLabel}` : ''}`
+            : countMap
+                ? (mode === 'hotspot' ? 'Hotspot mutations'
+                    : mode === 'damaging' ? 'Damaging mutations'
+                    : mode === 'fusion' ? 'Fusions'
+                    : mode === 'ploidy' ? 'Ploidy'
+                    : mode === 'aneuploidy' ? 'Aneuploidy'
+                    : mode === 'cin' ? 'CIN'
+                    : mode === 'cn' ? `Copy number${geGenesLabel ? ` for ${geGenesLabel}` : ''}`
+                    : mode === 'drug' ? `Drug response AUC${geGenesLabel ? ` for ${geGenesLabel}` : ''}`
+                    : String(mode))
+                : '';
 
         const html = filtered.map(cl => {
             const name = this.getCellLineName(cl);
@@ -41957,6 +42023,64 @@ ${clone.innerHTML}
             lines.push(row.join(','));
         }
         return lines.join('\n');
+    }
+
+    // The visible list, in its current sort order, with the value column the
+    // list is showing (expression, drug-response AUC, copy number, mutation
+    // counts...). `how` is 'csv' to download or 'copy' to put tab-separated
+    // text on the clipboard for pasting into Excel.
+    _cellLineListRows() {
+        const ids = this._clbVisibleCellLines || [];
+        const valueHeader = this._clbListValueHeader || '';
+        const values = this._clbListValues || null;
+        const header = ['Cell line', 'DepMap ID', 'Tissue', 'Subtype', 'Disease', 'Sex']
+            .concat(valueHeader && values ? [valueHeader] : []);
+        const rows = ids.map(cl => {
+            const row = [
+                this.getCellLineName(cl),
+                cl,
+                this.getCellLineLineage(cl) || '',
+                this.getCellLineSublineage(cl) || '',
+                this.cellLineMetadata?.oncotreeSubtype?.[cl] || '',
+                this.cellLineMetadata?.sex?.[cl] || ''
+            ];
+            if (valueHeader && values) {
+                const v = values.get ? values.get(cl) : values[cl];
+                // Trim binary-float noise (7.993333339691162) without losing
+                // precision anyone would use.
+                row.push(v == null || (typeof v === 'number' && isNaN(v)) ? ''
+                    : typeof v === 'number' && !Number.isInteger(v) ? String(Number(v.toFixed(4)))
+                    : String(v));
+            }
+            return row;
+        });
+        return { header, rows, valueHeader };
+    }
+
+    async exportCellLineListOnScreen(how) {
+        const { header, rows, valueHeader } = this._cellLineListRows();
+        if (!rows.length) {
+            this.showCopyNotification?.('No cell lines in the list to export.');
+            return;
+        }
+        if (how === 'copy') {
+            const tsv = [header.join('\t')].concat(rows.map(r => r.join('\t'))).join('\n');
+            try {
+                await navigator.clipboard.writeText(tsv);
+                this.showCopyNotification?.(`Copied ${rows.length} cell lines, paste into Excel`);
+            } catch (e) {
+                this.showCopyNotification?.('Could not reach the clipboard. Use the CSV button instead.');
+            }
+            return;
+        }
+        const esc = (v) => {
+            const t = String(v ?? '');
+            return /[",\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+        };
+        const lines = [header.map(esc).join(',')].concat(rows.map(r => r.map(esc).join(',')));
+        const tag = valueHeader ? '_' + valueHeader.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '') : '';
+        this.downloadFile(lines.join('\n'), csvName(`cell_lines${tag}`), 'text/csv');
+        this.showCopyNotification?.(`Exported ${rows.length} cell lines`);
     }
 
     async exportCellLineBrowserGenesCSV() {
