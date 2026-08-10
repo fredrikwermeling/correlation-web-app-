@@ -5853,6 +5853,9 @@ class CorrelationExplorer {
         document.getElementById('setGateBBtn')?.addEventListener('click', () => this.startGateSelection('B'));
         document.getElementById('compareGatesBtn')?.addEventListener('click', () => this.compareGates());
         document.getElementById('clearGatesBtn')?.addEventListener('click', () => this.clearGates());
+        document.getElementById('gateAsFilterBtn')?.addEventListener('click', (e) => this.chooseGateAsFilter(e));
+        document.getElementById('clearGateFilterBtn')?.addEventListener('click', () => this.clearGateFilter());
+        document.getElementById('gateFilterPanelClear')?.addEventListener('click', () => this.clearGateFilter());
         document.getElementById('closeGateCompare')?.addEventListener('click', () => {
             document.getElementById('gateComparePanel').style.display = 'none';
         });
@@ -8053,10 +8056,12 @@ class CorrelationExplorer {
             : `Most connected (All: ${all ? all.nGenes : 0} genes):`;
         const onChange = "if(this.value!=='_none'){document.getElementById('lineageFilter').value=this.value;app.updateSubLineageFilter();app._refreshFilteredSelectors();app._markMutationRunStale();}";
         let html = '<div style="margin-top:4px; font-size:10px;">';
-        html += '<div style="display:flex; gap:6px; align-items:center; margin-bottom:3px;">'
-            + `<span style="color:#6b7280;">Rank by:</span>`
-            + `<label style="cursor:pointer;"><input type="radio" name="bestFilterRank" value="genes"${byStrength ? '' : ' checked'} onchange="app._setBestFilterRank('genes')"> most genes</label>`
-            + `<label style="cursor:pointer;" title="Average absolute correlation over the pairs that survive in that lineage, so a tissue with fewer but tighter relationships can come top."><input type="radio" name="bestFilterRank" value="strength"${byStrength ? ' checked' : ''} onchange="app._setBestFilterRank('strength')"> strongest r</label>`
+        // The column is narrow, so the label sits on its own line and each
+        // option stays on one line; they wrap as whole options if needed.
+        html += '<div style="color:#6b7280; margin-bottom:2px;">Rank by:</div>'
+            + '<div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:3px;">'
+            + `<label style="cursor:pointer; white-space:nowrap;"><input type="radio" name="bestFilterRank" value="genes"${byStrength ? '' : ' checked'} onchange="app._setBestFilterRank('genes')"> most genes</label>`
+            + `<label style="cursor:pointer; white-space:nowrap;" title="Average absolute correlation over the pairs that survive in that lineage, so a tissue with fewer but tighter relationships can come top."><input type="radio" name="bestFilterRank" value="strength"${byStrength ? ' checked' : ''} onchange="app._setBestFilterRank('strength')"> strongest r</label>`
             + '</div>';
         html += `<select id="bestFilterSelect" class="form-control" style="font-size:10px; padding:2px 4px;" onchange="${onChange}">`;
         html += `<option value="_none">${head}</option>`;
@@ -14546,6 +14551,54 @@ ${filterText ? `<text x="${width / 2}" y="${headerH / 2}" dominant-baseline="mid
         }
     }
 
+    // Put the gating plot under an exported figure. A figure filtered to a
+    // gate is only readable next to the plot the gate was drawn on, so the
+    // two travel together: the main chart on top, the gating plot beneath it
+    // with a one-line caption, in one image.
+    async _appendGatePlotToSvg(svgStr) {
+        const f = this._gateFilter;
+        if (!f?.image) return svgStr;
+        const doc = new DOMParser().parseFromString(svgStr, 'image/svg+xml');
+        const svg = doc.documentElement;
+        if (doc.querySelector('parsererror')) return svgStr;
+        const W = parseFloat(svg.getAttribute('width')) || 700;
+        const H = parseFloat(svg.getAttribute('height')) || 500;
+        // Natural size of the snapshot, so it is never stretched.
+        const dims = await new Promise(res => {
+            const im = new Image();
+            im.onload = () => res({ w: im.naturalWidth, h: im.naturalHeight });
+            im.onerror = () => res(null);
+            im.src = f.image;
+        });
+        if (!dims) return svgStr;
+        const GAP = 18, CAPTION = 34, PAD = 10;
+        const imgW = Math.min(W - PAD * 2, W * 0.72);
+        const imgH = imgW * (dims.h / dims.w);
+        const newH = H + GAP + imgH + CAPTION;
+        svg.setAttribute('height', String(newH));
+        const vb = (svg.getAttribute('viewBox') || `0 0 ${W} ${H}`).split(/\s+/).map(Number);
+        svg.setAttribute('viewBox', `${vb[0]} ${vb[1]} ${vb[2]} ${vb[3] + (newH - H)}`);
+        const NS = 'http://www.w3.org/2000/svg';
+        const mk = (tag, attrs, text) => {
+            const e = doc.createElementNS(NS, tag);
+            Object.entries(attrs).forEach(([k, v]) => e.setAttribute(k, String(v)));
+            if (text != null) e.textContent = text;
+            return e;
+        };
+        // A hairline above the gating plot, so it reads as a second panel
+        // rather than something floating under the chart.
+        svg.appendChild(mk('line', { x1: PAD, y1: H + GAP / 2, x2: W - PAD, y2: H + GAP / 2, stroke: '#e5e7eb', 'stroke-width': 1 }));
+        const img = mk('image', { x: (W - imgW) / 2, y: H + GAP, width: imgW, height: imgH, preserveAspectRatio: 'xMidYMid meet' });
+        img.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', f.image);
+        img.setAttribute('href', f.image);
+        svg.appendChild(img);
+        svg.appendChild(mk('text', {
+            x: W / 2, y: H + GAP + imgH + 20, 'text-anchor': 'middle',
+            'font-family': 'Arial, sans-serif', 'font-size': 12, fill: '#4b5563'
+        }, `Gate ${f.gate} on ${f.genes}: the ${f.n} cell lines inside it are the cohort above.`));
+        return new XMLSerializer().serializeToString(svg);
+    }
+
     // Fit AFTER a redraw. vis caches each label's absolute position when it
     // draws, and fit() sizes the view from bounding boxes built on that
     // cache. Any hand-placement (component separation, the parked grid, the
@@ -16411,6 +16464,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const caution = document.getElementById('mutationCautionScatter');
         if (caution) caution.style.display = 'none';
         this._scatterHighlight = null;
+        this._gateFilter = null;
+        this._syncGateFilterUI?.();
         this._syncColorByGroupBtn?.();
         this._styleActiveFilters?.();
         this.clearGEGates?.();
@@ -19708,6 +19763,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 document.getElementById('gateStatus').textContent = `Gate A: ${cells.length} cell lines. Now set Gate B.`;
                 document.getElementById('gateStatus').style.color = '#5d9239';
                 document.getElementById('clearGatesBtn').style.display = '';
+                this._syncGateFilterUI();
             } else {
                 // If there was already a Gate B shape, remove it
                 if (this._gateBShapeIndex != null && this._gateBShapeIndex !== currentShapes.length - 1) {
@@ -19733,6 +19789,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 document.getElementById('setGateBBtn').textContent = `Gate B (n=${cells.length})`;
                 document.getElementById('setGateBBtn').style.opacity = '0.7';
                 document.getElementById('compareGatesBtn').style.display = '';
+                this._syncGateFilterUI();
                 document.getElementById('gateStatus').textContent = `Gate A: ${this._gateA?.length || 0}, Gate B: ${cells.length}. Click Compare.`;
                 document.getElementById('gateStatus').style.color = '#5d9239';
             }
@@ -19838,7 +19895,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         return { x: (shape.x0 + shape.x1) / 2, y: Math.max(shape.y0, shape.y1) };
     }
 
-    clearGates() {
+    clearGates(opts = {}) {
         this._gateA = null;
         this._gateB = null;
         this._gateSelecting = null;
@@ -19853,6 +19910,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (el('setGateBBtn')) { el('setGateBBtn').textContent = 'Set Gate B'; el('setGateBBtn').style.opacity = '1'; el('setGateBBtn').disabled = true; }
         if (el('compareGatesBtn')) el('compareGatesBtn').style.display = 'none';
         if (el('clearGatesBtn')) el('clearGatesBtn').style.display = 'none';
+        if (el('gateAsFilterBtn')) el('gateAsFilterBtn').style.display = 'none';
+        // Clearing the drawn shapes does not undo a filter already applied
+        // from one, unless the caller wants everything gone.
+        if (!opts.keepFilter && this._gateFilter) this.clearGateFilter();
         if (el('gateStatus')) { el('gateStatus').textContent = 'Draw a rectangle or lasso on the plot to define gates'; el('gateStatus').style.color = '#6b7280'; }
         if (el('gateComparePanel')) el('gateComparePanel').style.display = 'none';
 
@@ -19965,6 +20026,126 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             return this.cellLineMetadata?.primaryDisease?.[id] || lineage;
         }
         return lineage;
+    }
+
+    // A small cue that something appeared further down, with a click that
+    // takes the user there. Used when a result lands below the fold.
+    _pointToPanel(panelId, label) {
+        const panel = document.getElementById(panelId);
+        if (!panel) return;
+        const scrollTo = () => panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        const rect = panel.getBoundingClientRect();
+        // Already in view: nothing to point at.
+        if (rect.top >= 0 && rect.top < window.innerHeight * 0.9) return;
+        document.getElementById('panelPointer')?.remove();
+        const host = panel.closest('.modal') || document.body;
+        const cue = document.createElement('button');
+        cue.id = 'panelPointer';
+        cue.type = 'button';
+        cue.innerHTML = `${this.esc(label)} <span style="font-size:14px; line-height:1;">&#8595;</span>`;
+        cue.style.cssText = 'position:absolute; left:50%; transform:translateX(-50%); bottom:64px; z-index:30; display:inline-flex; align-items:center; gap:6px; background:#6ba544; color:#fff; border:none; border-radius:14px; padding:5px 14px; font-size:11px; font-weight:600; box-shadow:0 3px 10px rgba(0,0,0,0.2); cursor:pointer;';
+        cue.onclick = () => { scrollTo(); cue.remove(); };
+        if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
+        host.appendChild(cue);
+        // It is a hint, not a dialog: it goes once the user scrolls there or
+        // after a few seconds either way.
+        const done = () => { cue.remove(); window.removeEventListener('scroll', onScroll, true); };
+        const onScroll = () => {
+            const r = panel.getBoundingClientRect();
+            if (r.top < window.innerHeight * 0.9) done();
+        };
+        window.addEventListener('scroll', onScroll, true);
+        setTimeout(done, 8000);
+    }
+
+    // A gate can be used two ways: compared against the other gate (the
+    // existing analysis), or carried forward as a filter the way a FACS gate
+    // hands a population to the next plot. This is the second: the cell lines
+    // inside the gate become the cohort, every other filter still applies on
+    // top, and the plot the gate was drawn on is kept underneath so the
+    // figure still shows where the population came from.
+    chooseGateAsFilter(ev) {
+        const haveA = !!this._gateA?.length, haveB = !!this._gateB?.length;
+        if (!haveA && !haveB) return;
+        if (haveA !== haveB) { this.applyGateAsFilter(haveA ? 'A' : 'B'); return; }
+        document.getElementById('gateFilterMenu')?.remove();
+        const menu = document.createElement('div');
+        menu.id = 'gateFilterMenu';
+        menu.style.cssText = 'position:absolute; z-index:10002; background:#fff; border:1px solid #d1d5db; border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,0.15); padding:4px; display:flex; flex-direction:column; gap:2px;';
+        [['A', this._gateA.length, '#2563eb'], ['B', this._gateB.length, '#dc2626']].forEach(([g, n, col]) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.textContent = `Gate ${g} (${n} cell lines)`;
+            b.style.cssText = `border:none; background:none; text-align:left; padding:4px 12px; cursor:pointer; border-radius:4px; font-size:11px; white-space:nowrap; color:${col}; font-weight:600;`;
+            b.onmouseenter = () => { b.style.background = '#f3f4f6'; };
+            b.onmouseleave = () => { b.style.background = 'none'; };
+            b.onclick = () => { menu.remove(); this.applyGateAsFilter(g); };
+            menu.appendChild(b);
+        });
+        const r = (ev?.currentTarget || document.getElementById('gateAsFilterBtn')).getBoundingClientRect();
+        menu.style.left = (r.left + window.scrollX) + 'px';
+        menu.style.top = (r.bottom + window.scrollY + 4) + 'px';
+        document.body.appendChild(menu);
+        setTimeout(() => {
+            const dismiss = (e2) => { if (menu.contains(e2.target)) return; menu.remove(); document.removeEventListener('click', dismiss); };
+            document.addEventListener('click', dismiss);
+        }, 0);
+    }
+
+    async applyGateAsFilter(which) {
+        const gate = which === 'B' ? this._gateB : this._gateA;
+        if (!gate?.length) return;
+        const ids = new Set(gate.map(d => d.cellLineId));
+        // Snapshot the plot as it looks right now, gate outline and all, before
+        // the filter redraws it.
+        let img = null;
+        try {
+            const el = document.getElementById('scatterPlot');
+            img = await Plotly.toImage(el, { format: 'png', width: el.offsetWidth || 700, height: el.offsetHeight || 500, scale: 2 });
+        } catch (e) { img = null; }
+        this._gateFilter = {
+            gate: which,
+            ids,
+            n: ids.size,
+            image: img,
+            genes: `${this.currentInspect?.gene1 || ''} vs ${this.currentInspect?.gene2 || ''}`
+        };
+        // Reuse the custom cell-line filter: one cohort chain, no new layer.
+        this._customCellLineFilter = ids;
+        const cnt = document.getElementById('customCLFilterCount');
+        if (cnt) cnt.textContent = `${ids.size} from gate ${which}`;
+        this.clearGates({ keepFilter: true });
+        this._syncGateFilterUI();
+        this.updateInspectPlot();
+        this.showCopyNotification?.(`Filtered to the ${ids.size} cell lines inside gate ${which}`);
+    }
+
+    clearGateFilter() {
+        if (!this._gateFilter) return;
+        this._gateFilter = null;
+        this._customCellLineFilter = null;
+        const cnt = document.getElementById('customCLFilterCount');
+        if (cnt) cnt.textContent = '';
+        this._syncGateFilterUI();
+        this.updateInspectPlot();
+    }
+
+    _syncGateFilterUI() {
+        const f = this._gateFilter;
+        const panel = document.getElementById('gateFilterPanel');
+        const clearBtn = document.getElementById('clearGateFilterBtn');
+        const applyBtn = document.getElementById('gateAsFilterBtn');
+        if (applyBtn) applyBtn.style.display = (!f && (this._gateA?.length || this._gateB?.length)) ? '' : 'none';
+        if (clearBtn) clearBtn.style.display = f ? '' : 'none';
+        if (!panel) return;
+        if (!f) { panel.style.display = 'none'; return; }
+        panel.style.display = '';
+        const t = document.getElementById('gateFilterTitle');
+        if (t) t.textContent = `Gating plot: gate ${f.gate}, ${f.n} cell lines`;
+        const im = document.getElementById('gateFilterImage');
+        if (im) { if (f.image) { im.src = f.image; im.style.display = ''; } else im.style.display = 'none'; }
+        const cap = document.getElementById('gateFilterCaption');
+        if (cap) cap.textContent = `Gate ${f.gate} drawn on ${f.genes}; the ${f.n} cell lines inside it are the cohort of the plot above.`;
     }
 
     // Share of each group in gate A vs gate B, sorted by the biggest
@@ -20137,6 +20318,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Show panel
         document.getElementById('gateComparePanel').style.display = '';
         document.getElementById('gateCompareTitle').textContent = `Gate A (${gateA.length}) vs Gate B (${gateB.length})`;
+        // The results land below the plot, which on a short screen is out of
+        // sight: point at them rather than leaving the button looking dead.
+        this._pointToPanel('gateComparePanel', 'Comparison ready below');
 
         // Show first tab
         document.querySelectorAll('.gate-tab').forEach(t => t.classList.remove('active'));
@@ -21962,6 +22146,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             format,
             filename: `scatter_${this.currentInspect.gene1}_vs_${this.currentInspect.gene2}${suffix}`,
             popout: { elId: 'inspectModalInner', fileStem: 'correlate_correlation' },
+            withGatePlot: true,
             meta: this._buildPopoutMeta('scatter'),
             // Plotly's legend has a clipPath that crops long entries (gene
             // symbols can exceed the assumed Open-Sans width). Remove the
@@ -26867,7 +27052,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // print size and DPI for raster output. Follows feedback_plotly_exports.md:
     // SVG from Plotly → _expandSvgToContent → rasterise at target DPI.
     async _exportPlotly(plotEl, opts) {
-        const { w, h, format, filename, meta, postProcess, popout } = opts || {};
+        const { w, h, format, filename, meta, postProcess, popout, withGatePlot } = opts || {};
 
         // Ask user for publication dimensions + DPI. When the chart sits in a
         // popout, the same dialog also offers capturing the whole panel, which
@@ -26928,7 +27113,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
 
         const expanded = this._expandSvgToContent(svgStr, w, h);
-        return this._exportSvgString(expanded.svg, dlg, { filename, meta, widthPx: w, heightPx: h });
+        return this._exportSvgString(expanded.svg, dlg, { filename, meta, widthPx: w, heightPx: h, withGatePlot });
     }
 
     // Takes a finished SVG string and saves it in whatever format the export
@@ -26942,6 +27127,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         let outSvg = svgIn;
         // The dialog's settings-file checkbox.
         const metaJson = (meta && dlg.sidecar !== false) ? JSON.stringify(meta) : null;
+
+        // A gate-filtered scatter carries its gating plot into the file.
+        if (this._gateFilter?.image && opts?.withGatePlot) {
+            outSvg = await this._appendGatePlotToSvg(outSvg);
+        }
 
         // White background for vector outputs (PDF / PPTX embed the SVG directly,
         // so they need the rect baked in, the raster path paints white on canvas
@@ -34734,13 +34924,29 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // if even that overflows.
     _anchorDropdownInView(dd, margin = 10) {
         if (!dd || dd.style.display === 'none') return;
+        // The limit is whichever comes first: the window, or an ancestor that
+        // clips its overflow (the Cell Line Browser card does, so it can never
+        // outgrow the window). Measuring against the window alone left the
+        // list clipped by the card instead.
+        let limitRight = window.innerWidth - margin;
+        let limitLeft = margin;
+        for (let n = dd.parentElement; n && n !== document.body; n = n.parentElement) {
+            const ov = getComputedStyle(n).overflow + getComputedStyle(n).overflowX;
+            if (/hidden|auto|scroll/.test(ov)) {
+                const b = n.getBoundingClientRect();
+                limitRight = Math.min(limitRight, b.right - 4);
+                limitLeft = Math.max(limitLeft, b.left + 4);
+                break;
+            }
+        }
         dd.style.left = '0'; dd.style.right = 'auto'; dd.style.marginLeft = '';
+        dd.style.maxWidth = Math.max(220, Math.round(limitRight - limitLeft)) + 'px';
         let r = dd.getBoundingClientRect();
-        if (r.right <= window.innerWidth - margin) return;
+        if (r.right <= limitRight) return;
         dd.style.left = 'auto'; dd.style.right = '0';
         r = dd.getBoundingClientRect();
-        if (r.left >= margin) return;
-        dd.style.marginLeft = Math.round(margin - r.left) + 'px';
+        if (r.left >= limitLeft) return;
+        dd.style.marginLeft = Math.round(limitLeft - r.left) + 'px';
     }
 
     // Clamp an open popup so it sits fully within the viewport. Switches it to
@@ -42067,7 +42273,7 @@ ${clone.innerHTML}
             const tsv = [header.join('\t')].concat(rows.map(r => r.join('\t'))).join('\n');
             try {
                 await navigator.clipboard.writeText(tsv);
-                this.showCopyNotification?.(`Copied ${rows.length} cell lines, paste into Excel`);
+                this.showCopyNotification?.(`Copied ${rows.length} cell lines, paste into a spreadsheet`);
             } catch (e) {
                 this.showCopyNotification?.('Could not reach the clipboard. Use the CSV button instead.');
             }

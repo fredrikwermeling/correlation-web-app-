@@ -2343,7 +2343,7 @@
                         <label class="form-label">Correlation Cutoff: <span class="slider-value" id="cutoffValue">0.50</span></label>
                         <div style="display:flex; gap:3px; align-items:center;">
                             <button type="button" onclick="app.adjustNumber('correlationCutoff', -0.05)" style="font-size:11px; padding:0 6px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer;">−</button>
-                            <input type="range" id="correlationCutoff" min="0.1" max="0.8" step="0.05" value="0.5" style="flex:1; min-width:0;">
+                            <input type="range" id="correlationCutoff" min="0.1" max="0.8" step="0.05" value="0.5" data-grow-max="1" title="Drag for the usual range; the + button keeps going past 0.8 when you want only the very strongest correlations." style="flex:1; min-width:0;">
                             <button type="button" onclick="app.adjustNumber('correlationCutoff', 0.05)" style="font-size:11px; padding:0 6px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer;">+</button>
                         </div>
                     </div>
@@ -2352,7 +2352,7 @@
                         <label class="form-label">Min Slope: <span class="slider-value" id="slopeValue">0.10</span></label>
                         <div style="display:flex; gap:3px; align-items:center;">
                             <button type="button" onclick="app.adjustNumber('minSlope', -0.05)" style="font-size:11px; padding:0 6px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer;">−</button>
-                            <input type="range" id="minSlope" min="0" max="2" step="0.05" value="0.1" style="flex:1; min-width:0;">
+                            <input data-grow-max="1" type="range" id="minSlope" min="0" max="2" step="0.05" value="0.1" style="flex:1; min-width:0;">
                             <button type="button" onclick="app.adjustNumber('minSlope', 0.05)" style="font-size:11px; padding:0 6px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer;">+</button>
                         </div>
                     </div>
@@ -2796,7 +2796,7 @@
                                 <button class="btn btn-secondary mobile-hide" onclick="app.copyNetworkToClipboard()" title="Copy the network as an image to the clipboard, legend included, ready to paste into an email or slide">Copy network</button>
                                 <button class="btn btn-secondary" id="downloadNetworkSVG" style="display:none;">SVG</button>
                                 <button class="btn btn-secondary" id="networkAnalyzeWithAI" title="Package this network as one compressed file for a language model: gene effect, expression and mutation data plus the settings, with a description of every field">Export for AI</button>
-                                <button class="btn btn-secondary" id="downloadAllData" title="Download everything behind this run as one zip: the correlation table, the clusters, the gene-effect values for the genes in the network, and the settings used, as CSV files you can open in Excel or R">All Data (ZIP)</button>
+                                <button class="btn btn-secondary" id="downloadAllData" title="Download everything behind this run as one zip: the correlation table, the clusters, the gene-effect values for the genes in the network, and the settings used, as CSV files you can open in a spreadsheet, R or similar">All Data (ZIP)</button>
                             </div>
                         </div>
                     </div>
@@ -3244,6 +3244,8 @@
                                 <button class="btn btn-sm" id="setGateABtn" style="font-size:10px; padding:2px 6px; background:#2563eb; color:white;">Set Gate A</button>
                                 <button class="btn btn-sm" id="setGateBBtn" style="font-size:10px; padding:2px 6px; background:#dc2626; color:white;" disabled>Set Gate B</button>
                                 <button class="btn btn-success btn-sm" id="compareGatesBtn" style="font-size:10px; padding:2px 5px; display:none;">Compare</button>
+                                <button class="btn btn-sm" id="gateAsFilterBtn" style="font-size:10px; padding:2px 5px; display:none; background:#7c3aed; color:white;" title="Keep only the cell lines inside a gate, the way a FACS gate carries a population forward. Every other filter still applies on top, and the gating plot is kept underneath and travels into the exported image.">Apply gate as filter</button>
+                                <button class="btn btn-outline btn-sm" id="clearGateFilterBtn" style="font-size:10px; padding:2px 5px; display:none; border-color:#7c3aed; color:#7c3aed;" title="Stop filtering on the gate and go back to the full cohort.">Clear gate filter</button>
                                 <button class="btn btn-outline btn-sm" id="clearGatesBtn" style="font-size:10px; padding:2px 5px; display:none;">Clear</button>
                                 <span id="gateStatus" style="font-size:9px; color:#9ca3af; margin-left:4px;"></span>
                             </div>
@@ -3276,6 +3278,19 @@
                     </div>
                 </div>
                 <!-- Gate Comparison Results -->
+                <!-- The plot the gate was drawn on, kept so a filtered figure still
+                     shows where its population came from. -->
+                <div id="gateFilterPanel" class="mobile-hide" style="display:none; margin-top:15px; border:1px solid #ddd6fe; border-radius:8px; overflow:hidden;">
+                    <div style="background:#f5f3ff; color:#5b21b6; padding:6px 12px; font-weight:600; font-size:12px; display:flex; justify-content:space-between; align-items:center;">
+                        <span id="gateFilterTitle">Gating plot</span>
+                        <button class="btn btn-outline btn-sm" id="gateFilterPanelClear" style="font-size:10px; padding:1px 8px; border-color:#7c3aed; color:#7c3aed;">Remove filter</button>
+                    </div>
+                    <div style="padding:10px 12px; background:#fff; text-align:center;">
+                        <img id="gateFilterImage" alt="The plot the gate was drawn on" style="max-width:100%; height:auto; border:1px solid #eee; border-radius:4px;">
+                        <div id="gateFilterCaption" style="font-size:10px; color:#6b7280; margin-top:6px;"></div>
+                    </div>
+                </div>
+
                 <div id="gateComparePanel" class="mobile-hide" style="display: none; margin-top: 15px; border: 2px solid #6ba544; border-radius: 8px; overflow: hidden;">
                     <div style="background: #6ba544; color: white; padding: 8px 15px; font-weight: 600; font-size: 13px; display: flex; justify-content: space-between; align-items: center;">
                         <span>Gate Comparison: <span id="gateCompareTitle">Gate A vs Gate B</span></span>
@@ -4427,7 +4442,7 @@
               <button id="clbExportMinimal" class="btn btn-outline btn-sm clb-tall-btn" style="color:var(--earth-700); border-color:var(--earth-300);" title="One or a few selected cell lines: Gene Effect + Expression for every gene (CSV). Includes DepMap version and citation.">Cell line:<br><span>GE + expression</span></button>
               <button id="clbExportComprehensive" class="btn btn-outline btn-sm clb-tall-btn" style="color:var(--earth-700); border-color:var(--earth-300);" title="Selected cell line(s): full profile for every gene, GE + Expression + Hotspot + Damaging + Fusion + focal CN amplifications / deletions (CSV).">Cell line:<br><span>full profile</span></button>
               <button id="clbExportListBtn" class="btn btn-outline btn-sm clb-tall-btn" style="color:var(--earth-700); border-color:var(--earth-300);" title="The list exactly as it is on screen: every visible cell line in its current sort order, with tissue, subtype, disease and whichever value the list is sorted by (expression, drug response, copy number, mutation counts).">List on screen:<br><span>CSV</span></button>
-              <button id="clbCopyListBtn" class="btn btn-outline btn-sm clb-tall-btn" style="color:var(--earth-700); border-color:var(--earth-300);" title="Copy the same on-screen list to the clipboard as tab-separated text, ready to paste straight into Excel.">List on screen:<br><span>copy</span></button>
+              <button id="clbCopyListBtn" class="btn btn-outline btn-sm clb-tall-btn" style="color:var(--earth-700); border-color:var(--earth-300);" title="Copy the same on-screen list to the clipboard as tab-separated text, ready to paste straight into a spreadsheet.">List on screen:<br><span>copy</span></button>
               <button id="clbExportGenesBtn" class="btn btn-outline btn-sm clb-tall-btn" style="color:var(--earth-700); border-color:var(--earth-300);" title="One or a few genes: full profile (GE, Expression, Hotspot, Damaging, Fusion, focal CN) across the selected / visible cell lines (CSV).">Genes:<br><span>full profile</span></button>
             </div>
           </div>
@@ -4613,6 +4628,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v87_6"></script>
+    <script src="app.js?v=v87_7"></script>
 </body>
 </html>
