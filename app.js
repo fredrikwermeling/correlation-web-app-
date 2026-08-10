@@ -14556,34 +14556,55 @@ ${filterText ? `<text x="${width / 2}" y="${headerH / 2}" dominant-baseline="mid
         }
     }
 
+    // Re-render the stored gating figure off screen at exactly the size and
+    // background the export is using, so the two panels match in plot size,
+    // font size, alignment and panel colour.
+    async _renderGateFigure(width, height, background) {
+        const f = this._gateFilter;
+        if (!f?.figure) return f?.image || null;
+        const holder = document.createElement('div');
+        holder.style.cssText = 'position:fixed; left:-99999px; top:0;';
+        document.body.appendChild(holder);
+        try {
+            const layout = { ...f.figure.layout, width, height, autosize: false };
+            layout.plot_bgcolor = background === 'transparent' ? 'rgba(0,0,0,0)' : '#ffffff';
+            layout.paper_bgcolor = background === 'transparent' ? 'rgba(0,0,0,0)' : '#ffffff';
+            // Borrow the exported chart's margins so the two plot areas line
+            // up. The filtered chart carries an extra subtitle line (the gate),
+            // which would otherwise push its panel lower than the gate plot's.
+            const live = document.getElementById('scatterPlot');
+            const m = live?._fullLayout?.margin;
+            if (m) layout.margin = { l: m.l, r: m.r, t: m.t, b: m.b, pad: m.pad || 0 };
+            await Plotly.newPlot(holder, f.figure.data, layout, { staticPlot: true });
+            return await Plotly.toImage(holder, { format: 'png', width, height, scale: 3 });
+        } catch (e) {
+            return f.image || null;
+        } finally {
+            try { Plotly.purge(holder); } catch (e) {}
+            holder.remove();
+        }
+    }
+
     // Put the gating plot beside an exported figure. A figure filtered to a
     // gate is only readable next to the plot the gate was drawn on, so the
     // two travel together, side by side and at the same size, with a caption
     // under the gate. (PowerPoint gets them as two separate pictures instead,
     // so they can be moved apart on the slide.)
-    async _appendGatePlotToSvg(svgStr) {
+    async _appendGatePlotToSvg(svgStr, background) {
         const f = this._gateFilter;
-        if (!f?.image) return svgStr;
+        if (!f) return svgStr;
         const doc = new DOMParser().parseFromString(svgStr, 'image/svg+xml');
         if (doc.querySelector('parsererror')) return svgStr;
         const svg = doc.documentElement;
         const W = parseFloat(svg.getAttribute('width')) || 700;
         const H = parseFloat(svg.getAttribute('height')) || 500;
-        const dims = await new Promise(res => {
-            const im = new Image();
-            im.onload = () => res({ w: im.naturalWidth, h: im.naturalHeight });
-            im.onerror = () => res(null);
-            im.src = f.image;
-        });
-        if (!dims) return svgStr;
-        const GAP = Math.round(W * 0.04), CAPTION = 30;
-        // The gate plot gets a box the same size as the chart and keeps its
-        // own proportions inside it, so the pair reads as two equal panels.
-        const boxW = W, boxH = H;
-        const sc = Math.min(boxW / dims.w, boxH / dims.h);
-        const imgW = dims.w * sc, imgH = dims.h * sc;
-        const newW = W + GAP + boxW;
-        const newH = Math.max(H, imgH + CAPTION);
+        // Rendered at the chart's own width and height, so the two panels have
+        // the same plot area, the same font size and the same background.
+        const png = await this._renderGateFigure(W, H, background);
+        if (!png) return svgStr;
+        const GAP = Math.round(W * 0.04), CAPTION = 26;
+        const newW = W * 2 + GAP;
+        const newH = H + CAPTION;
         svg.setAttribute('width', String(newW));
         svg.setAttribute('height', String(newH));
         const vb = (svg.getAttribute('viewBox') || `0 0 ${W} ${H}`).split(/\s+/).map(Number);
@@ -14597,20 +14618,19 @@ ${filterText ? `<text x="${width / 2}" y="${headerH / 2}" dominant-baseline="mid
         };
         // Reading order follows the analysis: the gate that selected the
         // population first, then the plot of what came out of it. The chart's
-        // own contents are shifted right to make room on the left.
-        const shift = boxW + GAP;
+        // own contents shift right to make room, keeping both tops aligned.
+        const shift = W + GAP;
         [...svg.childNodes].forEach(n => {
             if (n.nodeType !== 1 || n.tagName === 'defs' || n.tagName === 'title' || n.tagName === 'desc') return;
             const t = n.getAttribute('transform');
             n.setAttribute('transform', `translate(${shift},0)${t ? ' ' + t : ''}`);
         });
-        const x0 = (boxW - imgW) / 2;
-        const img = mk('image', { x: x0, y: 0, width: imgW, height: imgH, preserveAspectRatio: 'xMidYMid meet' });
-        img.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', f.image);
-        img.setAttribute('href', f.image);
+        const img = mk('image', { x: 0, y: 0, width: W, height: H, preserveAspectRatio: 'none' });
+        img.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', png);
+        img.setAttribute('href', png);
         svg.appendChild(img);
         svg.appendChild(mk('text', {
-            x: boxW / 2, y: imgH + 20, 'text-anchor': 'middle',
+            x: W / 2, y: H + 17, 'text-anchor': 'middle',
             'font-family': 'Arial, sans-serif', 'font-size': 12, fill: '#4b5563'
         }, `Gate ${f.gate} on ${f.genes}: the ${f.n} cell lines inside it are the plot at right.`));
         return new XMLSerializer().serializeToString(svg);
@@ -20120,20 +20140,28 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const ids = new Set(gate.map(d => d.cellLineId));
         // Snapshot the plot as it looks right now, gate outline and all, before
         // the filter redraws it.
-        let img = null;
+        let img = null, gateFigure = null;
         try {
             const el = document.getElementById('scatterPlot');
-            // Capture at the same dimensions the image export renders at, so
-            // the two panels come out exactly the same size side by side.
             const w = el._fullLayout?.width || el.layout?.width || el.offsetWidth || 700;
             const h = el._fullLayout?.height || el.layout?.height || el.offsetHeight || 500;
             img = await Plotly.toImage(el, { format: 'png', width: w, height: h, scale: 2 });
+            // Keep the figure itself, not only a picture of it. An export
+            // re-renders the chart at its own size with its own background,
+            // so a picture taken now would differ in plot size, font size and
+            // panel colour; from the stored figure the gating plot can be
+            // re-rendered to match the exported chart exactly.
+            gateFigure = {
+                data: JSON.parse(JSON.stringify(el.data || [])),
+                layout: JSON.parse(JSON.stringify(el.layout || {}))
+            };
         } catch (e) { img = null; }
         this._gateFilter = {
             gate: which,
             ids,
             n: ids.size,
             image: img,
+            figure: gateFigure,
             genes: `${this.currentInspect?.gene1 || ''} vs ${this.currentInspect?.gene2 || ''}`
         };
         // Reuse the custom cell-line filter: one cohort chain, no new layer.
@@ -27170,11 +27198,18 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // formats get the two panels composed side by side in one image;
         // PowerPoint gets them as two separate pictures instead (below), so
         // they can be moved apart on the slide.
-        const gateSecond = (this._gateFilter?.image && opts?.withGatePlot)
+        const gateSecond = (this._gateFilter && opts?.withGatePlot)
             ? { png: this._gateFilter.image, name: `Gating plot (gate ${this._gateFilter.gate})` }
             : null;
+        // PowerPoint places the gate as its own picture, so it too is
+        // re-rendered at the chart's dimensions and background rather than
+        // reusing the on-screen snapshot.
+        if (gateSecond && fmt === 'pptx') {
+            const rendered = await this._renderGateFigure(w || 700, h || 500, background);
+            if (rendered) gateSecond.png = rendered;
+        }
         if (gateSecond && fmt !== 'pptx') {
-            outSvg = await this._appendGatePlotToSvg(outSvg);
+            outSvg = await this._appendGatePlotToSvg(outSvg, background);
         }
 
         // White background for vector outputs (PDF / PPTX embed the SVG directly,
@@ -29100,6 +29135,21 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 extras: 'Optional. Source-specific precomputed analysis results: differentialGeneEffect / differentialExpression / tissueEnrichment / mutationEnrichment (gates, mutation analysis), correlationPairs (correlations), tissueStratifiedCorrelations (correlations, top 20 pairs broken out by tissue, each tissue with n>=10 cell lines reports its own r; flags lineage-driven artifacts where overall r vanishes within tissues), clusterGenes (clusters), clusterAnnotations (clusters, per-cluster wiki cancer-pathway overlaps with >=2 shared genes plus CORUM co-member count; tells the LLM whether a cluster is biologically coherent or a grab-bag), expressionCorrelates (exprCorrelates), focalGeneTissueSummary (per-tissue/subtype mean / sd / n / zVsOverall for the focal gene\'s GE, saves the LLM from scanning the matrix to find tissue-level signals; subtypes gated at n>=5), focalGeneMutationSummary ({ coreDrivers: canonical drivers always shown regardless of effect size with n_mut>=5; topByEffect: top 20 from extended panel ranked by |t| with n_mut>=10 }, Welch\'s t comparing mutated vs WT lines on focal-gene GE), focalGeneVarianceWarning ({ geneEffect: ..., expression: ... }, emitted only when the focal axis sits in cohort noise, e.g. mean GE near 0 with no essential lines, or expression SD < 0.5; warns the LLM not to chase phantom biology in noise-driven correlations), pairCorrelation (scatter views, actual Pearson + Spearman + n + two-sided p between the two scatter axes in the filtered cohort), _method (block documenting how every summary was computed).',
                 _method: 'Same content as extras._method, duplicated here at schema level so it\'s available even when extras is omitted (e.g. for views without precomputed source-specific extras).'
             },
+            // What the file does NOT carry. Without this an assistant either
+            // assumes the absence is meaningful ("no drug data, so we cannot
+            // say") or silently invents it; with it, it can name the gap and
+            // ask for the one extra export that would close it.
+            notIncluded: {
+                _readMe: 'Data the app holds but this file does not carry. If any of it would materially change the answer, say so and tell the user exactly which of these to fetch, rather than guessing or treating the absence as evidence.',
+                drugResponse: 'PRISM Repurposing drug sensitivity (AUC per cell line per compound) is NOT here. The user can get it from the Cell Line Browser: sort by "Drug response (PRISM AUC)", pick the compound, then "List on screen: CSV" for the visible cohort with its AUC values.',
+                growthRate: 'CRISPR-inferred proliferation rate per cell line is NOT here. In the app it is available as a pseudo-gene axis in the scatter (Growth Rate).',
+                fullCopyNumber: 'Only the focal gene(s) relative copy number and the curated amplification / deletion calls per line are here. The genome-wide relative-CN matrix (~19 000 genes) is NOT, and can be added per gene from the Cell Line Browser copy-number sort.',
+                genesBelowThreshold: `Genes filtered out of the matrices by the data tier in force (${tierLabel}). A gene absent from geneEffect or expression was dropped by that filter or is missing from DepMap; it is not evidence of no effect. The focal gene and its named correlates are always kept.`,
+                cellLinesOutsideCohort: 'Only the cohort described in `context` is here. Cell lines excluded by the active filters are absent by design; conclusions apply to this cohort, not to DepMap as a whole.',
+                rawFusionCalls: 'Only curated / validated driver fusions are here. The full raw RNA-seq fusion output (largely passengers and read-through artefacts) is NOT.',
+                identityWarnings: 'Cellosaurus identity / contamination flags and STR profiles are NOT here. A handful of lines in DepMap are misidentified; the app shows a warning triangle on those.',
+                neverInThisApp: 'Proteomics, methylation, metabolomics and drug-combination screens are not part of this app at all. DepMap publishes some of them separately; they cannot be exported from here.'
+            },
             _instructions: [
                 'CRISPR gene effect: negative = essential for cell survival. 0 = no effect.',
                 'Expression: log2(TPM+1). Higher = more expressed.',
@@ -29107,12 +29157,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 'Clinical fusions: only the curated driver list (BCR-ABL1, EWSR1-FLI1, EML4-ALK, …), validated per cell line on lineage match + partner expression z-score + partner CRISPR dependency z-score. Tier ∈ {high, medium, low}.',
                 'Inferred functional loss: integrated CN+mutation+expression call from DepMap, catches deletion-driven tumor-suppressor losses (CDKN2A homo-del, RB1 deep deletion) that the damaging-mutation matrix alone misses.',
                 `Data tier: ${tierLabel}.`,
-                'Use cellLineOrder as the shared index for geneEffect and expression arrays.'
+                'Use cellLineOrder as the shared index for geneEffect and expression arrays.',
+                'Read `notIncluded` before concluding that something is missing from the data: it lists what this file leaves out and how the user can fetch it.'
             ],
             _analysisInstructions: [
                 "Step 0 - Sanity check: Look for extras.focalGeneVarianceWarning. If present, the focal gene sits in screen noise in this cohort, top genome-wide correlations will be noise-driven. Read the warning aloud to the user, suggest stratification or a wider cohort, and treat any pattern hunting in this export as exploratory, not load-bearing.",
                 "Step 1 - Overview: Briefly survey the data. Summarize key groups, sample sizes, and the target gene's effect distribution. When the export includes them (gene-effect / scatter / mutation / expression-correlate views with a single focal gene), USE these precomputed scans before recomputing anything: topCoessentials (GE-vs-GE Pearson, which other genes' essentiality co-varies with the focal gene's; positive r = co-essentiality BUFFERING within a complex, negative r = same-pathway co-essentiality) and topCorrelates (GE-vs-expression Pearson, which genes' expression predicts focal-gene dependency; positive r = high partner expression covaries with WEAKER focal-gene essentiality). If those fields are not present (e.g. multi-gene views like correlation / cluster / gate-comparison), recompute against the matrix yourself.",
                 "Step 2 - Confirm scope (judgment call): If the question is open-ended ('explain the variability', 'what drives X'), present the overview to the user with 2-3 candidate analytical angles and ask which to pursue. If the question is specific and self-contained ('what is the top correlate of NEDD8', 'compare gates A and B on differential GE'), skip this step and go straight to the analysis, don't pad with friction.",
+                "Step 3b - Name the gaps: if answering the question properly would need something in `notIncluded` (drug response, growth rate, genome-wide copy number, cell lines outside this cohort), say so plainly and tell the user which export would supply it. Do not treat an absent layer as a negative result.",
                 "Step 3 - Deep analysis: Work data-first. Use the precomputed extras (focalGeneTissueSummary for per-tissue/subtype means, focalGeneMutationSummary for driver-mutation effects) before scanning the matrix gene-by-gene. Characterize unbiased genome-wide hits and annotate by pathway before testing hypothesis-driven candidate gene lists. After finding one explanatory model, actively search for alternative or complementary axes. Report all major signals, not just the first plausible one."
             ],
             context,
