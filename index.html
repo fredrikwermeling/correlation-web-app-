@@ -7,15 +7,15 @@
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
     <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;600;700&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
-    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/umap-js@1.4.0/lib/umap-js.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js" integrity="sha384-Hl48Kq2HifOWdXEjMsKo6qxqvRLTYqIGbvlENBmkHAxZKIGCXv43H6W1jA671RzC" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js" integrity="sha384-rNlaE5fs9dGIjmxWDALQh/RBAaGRYT5ChrzHo6tRfgrZ36iRFAiquP5g41Jsv+0j" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://unpkg.com/vis-network@10.1.1/standalone/umd/vis-network.min.js" integrity="sha384-hQiS3pHN272vQg3Yxv+h9eJDB+peejHT2uA031YxhWTxH7miNr5arcgJD2Ytx3uS" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" integrity="sha384-+mbV2IY1Zk/X1p/nWllGySJSUN8uMs+gUAN10Or95UBH0fpj6GfKgPmgC5EXieXG" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdn.jsdelivr.net/npm/umap-js@1.4.0/lib/umap-js.min.js" integrity="sha384-5bjAtWKrlgIl+nR7Xjv+eEp7QlOEeyXjMil3ll3fIHu+cusk8DfbJLrsxm3Ftpfo" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" integrity="sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <!-- Vector PDF export: jsPDF + svg2pdf.js (svg2pdf registers the jsPDF .svg() plugin) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/svg2pdf.js@2.2.3/dist/svg2pdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdn.jsdelivr.net/npm/svg2pdf.js@2.2.3/dist/svg2pdf.umd.min.js" integrity="sha384-HoxAKaOOcVifYbcey45SDVl9ja1q3b04qwykef9f6tzQAkkmNNGH3lclNdTquUX9" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;600;700&family=Roboto+Mono:wght@400;500&display=swap');
 
@@ -2219,7 +2219,7 @@
             <div class="modal-body">
                 <div class="reference-status status-box status-warning">Loading data...</div>
                 <div style="font-size:12px; color:#4b5563; line-height:1.5;">
-                    <p style="margin: 12px 0 0 0; font-weight:600; color:#374151;">Cell-line data: <a href="https://depmap.org/portal/data_page/?tab=currentRelease" target="_blank" style="color: #0066cc;">DepMap 26Q1</a></p>
+                    <p style="margin: 12px 0 0 0; font-weight:600; color:#374151;">Cell-line data: <a href="https://depmap.org/portal/data_page/?tab=currentRelease" target="_blank" style="color: #0066cc;" rel="noopener noreferrer">DepMap 26Q1</a></p>
                     <ul style="margin: 4px 0 0 0; padding-left: 18px;">
                         <li>CRISPRGeneEffect.csv <span style="color:#999;">(gene effects)</span></li>
                         <li>OmicsExpressionTPMLogp1HumanProteinCodingGenes.csv <span style="color:#999;">(expression)</span></li>
@@ -2232,8 +2232,8 @@
                     </ul>
                     <p style="margin: 12px 0 0 0; font-weight:600; color:#374151;">Pathway / complex memberships</p>
                     <ul style="margin: 4px 0 0 0; padding-left: 18px;">
-                        <li><a href="https://mips.helmholtz-muenchen.de/corum/" target="_blank" style="color:#0066cc;">CORUM</a> <span style="color:#999;">(manually curated mammalian protein complexes; ~5,000 human genes)</span></li>
-                        <li><a href="https://reactome.org/" target="_blank" style="color:#0066cc;">Reactome</a> <span style="color:#999;">(curated human pathways &amp; signaling cascades; pathways of size 5&ndash;100)</span></li>
+                        <li><a href="https://mips.helmholtz-muenchen.de/corum/" target="_blank" style="color:#0066cc;" rel="noopener noreferrer">CORUM</a> <span style="color:#999;">(manually curated mammalian protein complexes; ~5,000 human genes)</span></li>
+                        <li><a href="https://reactome.org/" target="_blank" style="color:#0066cc;" rel="noopener noreferrer">Reactome</a> <span style="color:#999;">(curated human pathways &amp; signaling cascades; pathways of size 5&ndash;100)</span></li>
                         <li>Curated cancer-pathway and complex KBs <span style="color:#999;">(in-app)</span></li>
                     </ul>
                     <p style="margin: 12px 0 0 0; font-weight:600; color:#374151;">Curated annotations (in this app)</p>
@@ -2244,11 +2244,11 @@
                         <li>Focal CN events <span style="color:#999;">(curated panel of ~32 amps + ~14 extended TSG deletions; from <code>OmicsCNGeneWGS.csv</code>)</span></li>
                         <li>HLA copy number <span style="color:#999;">(extracted from <code>OmicsCNGeneWGS.csv</code>; B2M-normalized to control for HLA-C mapping bias)</span></li>
                         <li>STR profiles <span style="color:#999;">(Cellosaurus reference panels)</span></li>
-                        <li>Published fusion calls <span style="color:#999;">(<a href="https://www.cellosaurus.org/" target="_blank" style="color:#0066cc;">Cellosaurus</a>; fills in cell lines with no RNA-seq, and recurrent driver fusions the caller did not report)</span></li>
-                        <li>Problematic cell lines <span style="color:#999;">(<a href="https://www.cellosaurus.org/" target="_blank" style="color:#0066cc;">Cellosaurus</a>; contaminated / misidentified / misclassified flags, 56 lines in this panel)</span></li>
-                        <li>Viral transformation <span style="color:#999;">(<a href="https://www.cellosaurus.org/" target="_blank" style="color:#0066cc;">Cellosaurus</a> Transformant records; 53 lines in this panel are confirmed transformed by EBV, HPV16/18, HBV, KSHV or HTLV-1. A line without a record has not been recorded, which is not the same as being free of the virus)</span></li>
+                        <li>Published fusion calls <span style="color:#999;">(<a href="https://www.cellosaurus.org/" target="_blank" style="color:#0066cc;" rel="noopener noreferrer">Cellosaurus</a>; fills in cell lines with no RNA-seq, and recurrent driver fusions the caller did not report)</span></li>
+                        <li>Problematic cell lines <span style="color:#999;">(<a href="https://www.cellosaurus.org/" target="_blank" style="color:#0066cc;" rel="noopener noreferrer">Cellosaurus</a>; contaminated / misidentified / misclassified flags, 56 lines in this panel)</span></li>
+                        <li>Viral transformation <span style="color:#999;">(<a href="https://www.cellosaurus.org/" target="_blank" style="color:#0066cc;" rel="noopener noreferrer">Cellosaurus</a> Transformant records; 53 lines in this panel are confirmed transformed by EBV, HPV16/18, HBV, KSHV or HTLV-1. A line without a record has not been recorded, which is not the same as being free of the virus)</span></li>
                     </ul>
-                    <p style="margin: 12px 0 0 0; font-style: italic;"><a href="https://depmap.org/portal/data_page/?tab=overview#how-to-cite" target="_blank" style="color: #0066cc;">Please acknowledge DepMap</a> if you use this data. CORUM, Reactome and COSMIC have their own attribution requirements. Cell-line identity, fusion and provenance annotations come from <a href="https://www.cellosaurus.org/" target="_blank" style="color: #0066cc;">Cellosaurus</a> (Bairoch A. <em>J Biomol Tech</em> 2018), which asks to be cited when used.</p>
+                    <p style="margin: 12px 0 0 0; font-style: italic;"><a href="https://depmap.org/portal/data_page/?tab=overview#how-to-cite" target="_blank" style="color: #0066cc;" rel="noopener noreferrer">Please acknowledge DepMap</a> if you use this data. CORUM, Reactome and COSMIC have their own attribution requirements. Cell-line identity, fusion and provenance annotations come from <a href="https://www.cellosaurus.org/" target="_blank" style="color: #0066cc;" rel="noopener noreferrer">Cellosaurus</a> (Bairoch A. <em>J Biomol Tech</em> 2018), which asks to be cited when used.</p>
                 </div>
             </div>
         </div>
@@ -2261,10 +2261,10 @@
                 <a href="#" id="showInfoGraphic">How it works</a>
                 <a href="#" id="showReferenceData">Reference Data</a>
             </span>
-            <a href="https://greenlisted.cmm.se" target="_blank">Green Listed</a>
+            <a href="https://greenlisted.cmm.se" target="_blank" rel="noopener noreferrer">Green Listed</a>
             <span class="nav-side nav-side-r">
-                <a href="https://wermelinglab.com" target="_blank">Wermeling Lab</a>
-                <a href="https://www.youtube.com/@fredrikwermeling1330" target="_blank">YouTube</a>
+                <a href="https://wermelinglab.com" target="_blank" rel="noopener noreferrer">Wermeling Lab</a>
+                <a href="https://www.youtube.com/@fredrikwermeling1330" target="_blank" rel="noopener noreferrer">YouTube</a>
             </span>
             <!-- Positioned off the row's right end (see #versionBadge CSS), so
                  it sits next to YouTube without moving the centred links. -->
@@ -3090,7 +3090,7 @@
 
     <!-- Footer - funding acknowledgment -->
     <div class="site-footer">
-        Financially supported by the <a href="https://www.cancerfonden.se/om-oss/about" target="_blank">Swedish Cancer Society</a>, the <a href="https://www.vr.se/english.html" target="_blank">Swedish Research Council</a>, and <a href="https://ki.se/en" target="_blank">Karolinska Institutet</a>.
+        Financially supported by the <a href="https://www.cancerfonden.se/om-oss/about" target="_blank" rel="noopener noreferrer">Swedish Cancer Society</a>, the <a href="https://www.vr.se/english.html" target="_blank" rel="noopener noreferrer">Swedish Research Council</a>, and <a href="https://ki.se/en" target="_blank" rel="noopener noreferrer">Karolinska Institutet</a>.
     </div>
     </div> <!-- end main-content -->
 
@@ -3383,12 +3383,12 @@
 
     <!-- Footer -->
     <footer class="footer">
-        <p>Correlate | Part of the <a href="https://greenlisted.cmm.se" target="_blank">Green Listed</a> tool family | Data from <a href="https://depmap.org/portal/" target="_blank">DepMap 26Q1</a> | <a href="https://wermelinglab.com" target="_blank">Wermeling Lab</a></p>
+        <p>Correlate | Part of the <a href="https://greenlisted.cmm.se" target="_blank" rel="noopener noreferrer">Green Listed</a> tool family | Data from <a href="https://depmap.org/portal/" target="_blank" rel="noopener noreferrer">DepMap 26Q1</a> | <a href="https://wermelinglab.com" target="_blank" rel="noopener noreferrer">Wermeling Lab</a></p>
         <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--gray-200); font-size: 0.8em; line-height: 1.6; color: var(--gray-500);">
-            <p style="margin: 0 0 4px 0;">Data source: <a href="https://depmap.org" target="_blank">DepMap</a> (Broad Institute). DepMap, Broad (2026). DepMap 26Q1 Public. Figshare+. Dataset.</p>
-            <p style="margin: 0 0 4px 0;">Licensed under <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank">CC BY 4.0</a>. This data is provided for research purposes only and should not be used for clinical decision-making.</p>
+            <p style="margin: 0 0 4px 0;">Data source: <a href="https://depmap.org" target="_blank" rel="noopener noreferrer">DepMap</a> (Broad Institute). DepMap, Broad (2026). DepMap 26Q1 Public. Figshare+. Dataset.</p>
+            <p style="margin: 0 0 4px 0;">Licensed under <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer">CC BY 4.0</a>. This data is provided for research purposes only and should not be used for clinical decision-making.</p>
             <p style="margin: 0 0 4px 0;">Disclaimer: This tool is provided as-is without warranty. Not intended for diagnostic or clinical use. Results should be independently validated.</p>
-            <p style="margin: 0;">&copy; 2025 <a href="https://wermelinglab.com" target="_blank">Wermeling Lab</a>. All rights reserved.</p>
+            <p style="margin: 0;">&copy; 2025 <a href="https://wermelinglab.com" target="_blank" rel="noopener noreferrer">Wermeling Lab</a>. All rights reserved.</p>
         </div>
     </footer>
 
@@ -4297,8 +4297,8 @@
             <li><b>Quick filters</b>: curated cell-line collections to include or exclude, among them the two provenance sets below.</li>
           </ul>
 
-          <p style="margin-top:14px;"><strong>&#9888; Warning marks</strong>: a triangle beside a cell line's name means <a href="https://www.cellosaurus.org/" target="_blank" style="color:#0066cc;">Cellosaurus</a> records a problem with it. 56 of the 1,208 lines are flagged. Hover the mark for the full explanation, or open the line to see it with a link to the source.</p>
-          <p style="margin-top:14px;"><strong>&#129440; Virus marks</strong>: a virus beside a cell line's name means <a href="https://www.cellosaurus.org/" target="_blank" style="color:#0066cc;">Cellosaurus</a> records which virus the line was transformed by. 53 of the 1,208 lines carry one, most often EBV, HPV16/18 or HBV. It matters because viral oncoproteins override host pathways: an HPV-transformed line behaves as p53- and RB-deficient whatever its <em>TP53</em> and <em>RB1</em> sequence says, and an EBV-immortalised lymphoblastoid line is not a tumour line at all. <b>A line without the mark simply has no such record</b>, which is not the same as being free of the virus. The matching quick filters are named &ldquo;Confirmed &hellip;-transformed&rdquo; for that reason.</p>
+          <p style="margin-top:14px;"><strong>&#9888; Warning marks</strong>: a triangle beside a cell line's name means <a href="https://www.cellosaurus.org/" target="_blank" style="color:#0066cc;" rel="noopener noreferrer">Cellosaurus</a> records a problem with it. 56 of the 1,208 lines are flagged. Hover the mark for the full explanation, or open the line to see it with a link to the source.</p>
+          <p style="margin-top:14px;"><strong>&#129440; Virus marks</strong>: a virus beside a cell line's name means <a href="https://www.cellosaurus.org/" target="_blank" style="color:#0066cc;" rel="noopener noreferrer">Cellosaurus</a> records which virus the line was transformed by. 53 of the 1,208 lines carry one, most often EBV, HPV16/18 or HBV. It matters because viral oncoproteins override host pathways: an HPV-transformed line behaves as p53- and RB-deficient whatever its <em>TP53</em> and <em>RB1</em> sequence says, and an EBV-immortalised lymphoblastoid line is not a tumour line at all. <b>A line without the mark simply has no such record</b>, which is not the same as being free of the virus. The matching quick filters are named &ldquo;Confirmed &hellip;-transformed&rdquo; for that reason.</p>
 
           <ul style="margin:4px 0 10px 20px;">
             <li><b>Identity disputed</b> (36 lines): the line is contaminated, misidentified, or a derivative of another line, so a result attributed to it may belong to something else. MKN28 is a MKN74 derivative; KP-1N is a PANC-1 derivative.</li>
@@ -4359,7 +4359,7 @@
             <li><b>Drug response (PRISM AUC)</b>: type a compound; the picker lists PRISM Repurposing compounds ranked by how many of the visible lines they kill. Ordered by area under the curve, most sensitive first, so a lower AUC means more killing.</li>
           </ul>
           <p style="color:#6b7280;"><b>Gene-sort input:</b> comma, semicolon, newline or whitespace can separate multiple symbols.</p>
-          <p style="color:#6b7280; margin-bottom:0;"><b>Data sources:</b> DepMap 26Q1 for every measurement. Cell-line identity warnings and the published fusion calls come from <a href="https://www.cellosaurus.org/" target="_blank" style="color:#0066cc;">Cellosaurus</a>; the curated fusion and subtype panels draw on COSMIC, OncoKB, WHO and NCCN. All filters and sorts use the data currently loaded in the browser; changing tissue / subtype filters narrows the visible set that subsequent sorts operate on.</p>
+          <p style="color:#6b7280; margin-bottom:0;"><b>Data sources:</b> DepMap 26Q1 for every measurement. Cell-line identity warnings and the published fusion calls come from <a href="https://www.cellosaurus.org/" target="_blank" style="color:#0066cc;" rel="noopener noreferrer">Cellosaurus</a>; the curated fusion and subtype panels draw on COSMIC, OncoKB, WHO and NCCN. All filters and sorts use the data currently loaded in the browser; changing tissue / subtype filters narrows the visible set that subsequent sorts operate on.</p>
         </div>
       </div>
     </div>
@@ -4672,6 +4672,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v87_19"></script>
+    <script src="app.js?v=v87_20"></script>
 </body>
 </html>
