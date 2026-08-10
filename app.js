@@ -14595,15 +14595,24 @@ ${filterText ? `<text x="${width / 2}" y="${headerH / 2}" dominant-baseline="mid
             if (text != null) e.textContent = text;
             return e;
         };
-        const x0 = W + GAP + (boxW - imgW) / 2;
+        // Reading order follows the analysis: the gate that selected the
+        // population first, then the plot of what came out of it. The chart's
+        // own contents are shifted right to make room on the left.
+        const shift = boxW + GAP;
+        [...svg.childNodes].forEach(n => {
+            if (n.nodeType !== 1 || n.tagName === 'defs' || n.tagName === 'title' || n.tagName === 'desc') return;
+            const t = n.getAttribute('transform');
+            n.setAttribute('transform', `translate(${shift},0)${t ? ' ' + t : ''}`);
+        });
+        const x0 = (boxW - imgW) / 2;
         const img = mk('image', { x: x0, y: 0, width: imgW, height: imgH, preserveAspectRatio: 'xMidYMid meet' });
         img.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', f.image);
         img.setAttribute('href', f.image);
         svg.appendChild(img);
         svg.appendChild(mk('text', {
-            x: W + GAP + boxW / 2, y: imgH + 20, 'text-anchor': 'middle',
+            x: boxW / 2, y: imgH + 20, 'text-anchor': 'middle',
             'font-family': 'Arial, sans-serif', 'font-size': 12, fill: '#4b5563'
-        }, `Gate ${f.gate} on ${f.genes}: the ${f.n} cell lines inside it are the cohort at left.`));
+        }, `Gate ${f.gate} on ${f.genes}: the ${f.n} cell lines inside it are the plot at right.`));
         return new XMLSerializer().serializeToString(svg);
     }
 
@@ -16970,6 +16979,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // The scatter's own grid picks are cohort filters too, so the title
         // names them alongside the rest.
         (this._scatterGridActive || []).forEach(f => filterParts.push(`${f.gene} ${f.state === 'mut' ? 'Mut' : 'WT'}`));
+        // A gate used as a filter is a cohort filter like the rest, so the
+        // line above the plot names it too.
+        if (this._gateFilter) filterParts.push(`Gate ${this._gateFilter.gate} (${this._gateFilter.n} cell lines)`);
         const filterDesc = filterParts.length > 0 ? filterParts.join(' | ') : '';
 
         // Show/hide plot and table based on mode
@@ -27703,8 +27715,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             : `<a:blip r:embed="rId1"/>`;
         const pic = (id, name, blipXml, x, y, w, h) =>
             `<p:pic><p:nvPicPr><p:cNvPr id="${id}" name="${name}"/><p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr/></p:nvPicPr><p:blipFill>${blipXml}<a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${w}" cy="${h}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>`;
-        const pics = pic(2, 'Figure', blip, offX, offY, picW, picH)
-            + (second ? pic(3, second.name || 'Gating plot', `<a:blip r:embed="rId4"/>`, off2X, offY, picW, picH) : '');
+        // Same reading order as the flat export: the gate first, then the
+        // plot it produced.
+        const pics = second
+            ? pic(3, second.name || 'Gating plot', `<a:blip r:embed="rId4"/>`, offX, offY, picW, picH)
+                + pic(2, 'Figure', blip, off2X, offY, picW, picH)
+            : pic(2, 'Figure', blip, offX, offY, picW, picH);
         zip.file('ppt/slides/slide1.xml',
             `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="${REL}" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>${pics}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>`);
         zip.file('ppt/slides/_rels/slide1.xml.rels',
