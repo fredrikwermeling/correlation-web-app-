@@ -1069,6 +1069,25 @@
             border-left: 3px solid var(--green-500);
         }
 
+        /* The gene-check panel lives inside a .status-box for its warning
+           tint, but it is a panel of controls rather than a status readout,
+           so it keeps the app's own typeface instead of the monospace the
+           short status lines use. */
+        #geneValidationDisplay .status-box,
+        #geneValidationDisplay .status-box * {
+            font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+        #geneValidationDisplay .status-box {
+            font-size: 12px;
+            line-height: 1.5;
+            color: #374151;
+            background: #fffdf7;
+            border-left-color: #f0b429;
+            padding: 10px 12px;
+        }
+        #geneValidationDisplay .status-box strong { font-weight: 600; color: #92400e; }
+        #geneValidationDisplay .btn { font-size: 11px; }
+
         .status-warning {
             background: #fffbeb;
             color: #92400e;
@@ -4628,6 +4647,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v87_9"></script>
+    <script src="app.js?v=v87_11"></script>
 </body>
 </html>
