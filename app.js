@@ -14556,19 +14556,19 @@ ${filterText ? `<text x="${width / 2}" y="${headerH / 2}" dominant-baseline="mid
         }
     }
 
-    // Put the gating plot under an exported figure. A figure filtered to a
+    // Put the gating plot beside an exported figure. A figure filtered to a
     // gate is only readable next to the plot the gate was drawn on, so the
-    // two travel together: the main chart on top, the gating plot beneath it
-    // with a one-line caption, in one image.
+    // two travel together, side by side and at the same size, with a caption
+    // under the gate. (PowerPoint gets them as two separate pictures instead,
+    // so they can be moved apart on the slide.)
     async _appendGatePlotToSvg(svgStr) {
         const f = this._gateFilter;
         if (!f?.image) return svgStr;
         const doc = new DOMParser().parseFromString(svgStr, 'image/svg+xml');
-        const svg = doc.documentElement;
         if (doc.querySelector('parsererror')) return svgStr;
+        const svg = doc.documentElement;
         const W = parseFloat(svg.getAttribute('width')) || 700;
         const H = parseFloat(svg.getAttribute('height')) || 500;
-        // Natural size of the snapshot, so it is never stretched.
         const dims = await new Promise(res => {
             const im = new Image();
             im.onload = () => res({ w: im.naturalWidth, h: im.naturalHeight });
@@ -14576,13 +14576,18 @@ ${filterText ? `<text x="${width / 2}" y="${headerH / 2}" dominant-baseline="mid
             im.src = f.image;
         });
         if (!dims) return svgStr;
-        const GAP = 18, CAPTION = 34, PAD = 10;
-        const imgW = Math.min(W - PAD * 2, W * 0.72);
-        const imgH = imgW * (dims.h / dims.w);
-        const newH = H + GAP + imgH + CAPTION;
+        const GAP = Math.round(W * 0.04), CAPTION = 30;
+        // The gate plot gets a box the same size as the chart and keeps its
+        // own proportions inside it, so the pair reads as two equal panels.
+        const boxW = W, boxH = H;
+        const sc = Math.min(boxW / dims.w, boxH / dims.h);
+        const imgW = dims.w * sc, imgH = dims.h * sc;
+        const newW = W + GAP + boxW;
+        const newH = Math.max(H, imgH + CAPTION);
+        svg.setAttribute('width', String(newW));
         svg.setAttribute('height', String(newH));
         const vb = (svg.getAttribute('viewBox') || `0 0 ${W} ${H}`).split(/\s+/).map(Number);
-        svg.setAttribute('viewBox', `${vb[0]} ${vb[1]} ${vb[2]} ${vb[3] + (newH - H)}`);
+        svg.setAttribute('viewBox', `${vb[0]} ${vb[1]} ${vb[2] + (newW - W)} ${vb[3] + (newH - H)}`);
         const NS = 'http://www.w3.org/2000/svg';
         const mk = (tag, attrs, text) => {
             const e = doc.createElementNS(NS, tag);
@@ -14590,17 +14595,15 @@ ${filterText ? `<text x="${width / 2}" y="${headerH / 2}" dominant-baseline="mid
             if (text != null) e.textContent = text;
             return e;
         };
-        // A hairline above the gating plot, so it reads as a second panel
-        // rather than something floating under the chart.
-        svg.appendChild(mk('line', { x1: PAD, y1: H + GAP / 2, x2: W - PAD, y2: H + GAP / 2, stroke: '#e5e7eb', 'stroke-width': 1 }));
-        const img = mk('image', { x: (W - imgW) / 2, y: H + GAP, width: imgW, height: imgH, preserveAspectRatio: 'xMidYMid meet' });
+        const x0 = W + GAP + (boxW - imgW) / 2;
+        const img = mk('image', { x: x0, y: 0, width: imgW, height: imgH, preserveAspectRatio: 'xMidYMid meet' });
         img.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', f.image);
         img.setAttribute('href', f.image);
         svg.appendChild(img);
         svg.appendChild(mk('text', {
-            x: W / 2, y: H + GAP + imgH + 20, 'text-anchor': 'middle',
+            x: W + GAP + boxW / 2, y: imgH + 20, 'text-anchor': 'middle',
             'font-family': 'Arial, sans-serif', 'font-size': 12, fill: '#4b5563'
-        }, `Gate ${f.gate} on ${f.genes}: the ${f.n} cell lines inside it are the cohort above.`));
+        }, `Gate ${f.gate} on ${f.genes}: the ${f.n} cell lines inside it are the cohort at left.`));
         return new XMLSerializer().serializeToString(svg);
     }
 
@@ -20108,7 +20111,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         let img = null;
         try {
             const el = document.getElementById('scatterPlot');
-            img = await Plotly.toImage(el, { format: 'png', width: el.offsetWidth || 700, height: el.offsetHeight || 500, scale: 2 });
+            // Capture at the same dimensions the image export renders at, so
+            // the two panels come out exactly the same size side by side.
+            const w = el._fullLayout?.width || el.layout?.width || el.offsetWidth || 700;
+            const h = el._fullLayout?.height || el.layout?.height || el.offsetHeight || 500;
+            img = await Plotly.toImage(el, { format: 'png', width: w, height: h, scale: 2 });
         } catch (e) { img = null; }
         this._gateFilter = {
             gate: which,
@@ -27147,8 +27154,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // The dialog's settings-file checkbox.
         const metaJson = (meta && dlg.sidecar !== false) ? JSON.stringify(meta) : null;
 
-        // A gate-filtered scatter carries its gating plot into the file.
-        if (this._gateFilter?.image && opts?.withGatePlot) {
+        // A gate-filtered scatter carries its gating plot into the file. Flat
+        // formats get the two panels composed side by side in one image;
+        // PowerPoint gets them as two separate pictures instead (below), so
+        // they can be moved apart on the slide.
+        const gateSecond = (this._gateFilter?.image && opts?.withGatePlot)
+            ? { png: this._gateFilter.image, name: `Gating plot (gate ${this._gateFilter.gate})` }
+            : null;
+        if (gateSecond && fmt !== 'pptx') {
             outSvg = await this._appendGatePlotToSvg(outSvg);
         }
 
@@ -27228,7 +27241,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 const outH = (trimmed !== canvas && trimmed.width)
                     ? Math.round(widthCm * (trimmed.height / trimmed.width) * 100) / 100
                     : heightCm;
-                await this._downloadCanvasAs(trimmed, fmt, filename, { dpi, widthCm, heightCm: outH, metaJson, svg: outSvg, widthPx: w, heightPx: h });
+                await this._downloadCanvasAs(trimmed, fmt, filename, { dpi, widthCm, heightCm: outH, metaJson, svg: outSvg, widthPx: w, heightPx: h, second: gateSecond });
                 resolve();
             };
             img.onerror = () => { URL.revokeObjectURL(svgUrl); resolve(); };
@@ -27452,7 +27465,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
 
     async _downloadCanvasAs(canvas, fmt, filename, opts = {}) {
-        const { dpi = 300, widthCm, heightCm, metaJson, svg, skipSidecar } = opts;
+        const { dpi = 300, widthCm, heightCm, metaJson, svg, skipSidecar, second } = opts;
         // Date and time on every exported file, so a folder of them can be told
         // apart later. Added here rather than at each call site.
         if (filename && !/_\d{4}-\d{2}-\d{2}_\d{4}$/.test(filename)) filename = `${filename}_${exportStamp()}`;
@@ -27475,7 +27488,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 }
                 save(new Blob([this._canvasToPdf(canvas, widthCm, heightCm)], { type: 'application/pdf' }), 'pdf'); return;
             }
-            if (fmt === 'pptx') { save(await this._canvasToPptx(canvas, widthCm, heightCm, svg), 'pptx'); return; }
+            if (fmt === 'pptx') { save(await this._canvasToPptx(canvas, widthCm, heightCm, svg, second), 'pptx'); return; }
         } catch (e) {
             console.warn(`${fmt} export failed, falling back to PNG:`, e);
         }
@@ -27632,7 +27645,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // deck (13.333in × 7.5in); the figure is scaled to fit with a small margin
     // and centered, so the export drops straight into a normal presentation
     // instead of producing an oddly-sized slide cropped to the figure.
-    async _canvasToPptx(canvas, widthCm, heightCm, svgStr) {
+    async _canvasToPptx(canvas, widthCm, heightCm, svgStr, second) {
         if (typeof JSZip === 'undefined') throw new Error('JSZip unavailable');
         const EMU = 360000;                       // EMU per cm
         // Standard PowerPoint widescreen slide (16:9).
@@ -27643,12 +27656,20 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // to fill the slide is fine.
         const figW = (widthCm || 10) * EMU;
         const figH = (heightCm || 10) * EMU;
-        const availW = cx * 0.88, availH = cy * 0.88;
+        let availW = cx * 0.88;
+        const availH = cy * 0.88;
+        // A gating plot rides along as its OWN picture, so the two can be
+        // pulled apart on the slide. Each gets half the width, and both are
+        // scaled by the same factor so they stay the same size.
+        const GAPX = second ? Math.round(cx * 0.03) : 0;
+        if (second) availW = (availW - GAPX) / 2;
         const scale = Math.min(availW / figW, availH / figH);
         const picW = Math.round(figW * scale);
         const picH = Math.round(figH * scale);
-        const offX = Math.round((cx - picW) / 2);
+        const totalW = second ? picW * 2 + GAPX : picW;
+        const offX = Math.round((cx - totalW) / 2);
         const offY = Math.round((cy - picH) / 2);
+        const off2X = offX + picW + GAPX;
         const pngB64 = canvas.toDataURL('image/png').split(',')[1];
         // PowerPoint 2016+ renders an embedded SVG as true vector, keeping the
         // PNG only as a compatibility fallback. We embed both when we have the
@@ -27680,12 +27701,17 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const blip = useSvg
             ? `<a:blip r:embed="rId1"><a:extLst><a:ext uri="{96DAC541-7B7A-43D3-8B79-37D633B846F1}"><asvg:svgBlip xmlns:asvg="http://schemas.microsoft.com/office/drawing/2016/SVG/main" r:embed="rId3"/></a:ext></a:extLst></a:blip>`
             : `<a:blip r:embed="rId1"/>`;
+        const pic = (id, name, blipXml, x, y, w, h) =>
+            `<p:pic><p:nvPicPr><p:cNvPr id="${id}" name="${name}"/><p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr/></p:nvPicPr><p:blipFill>${blipXml}<a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${w}" cy="${h}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic>`;
+        const pics = pic(2, 'Figure', blip, offX, offY, picW, picH)
+            + (second ? pic(3, second.name || 'Gating plot', `<a:blip r:embed="rId4"/>`, off2X, offY, picW, picH) : '');
         zip.file('ppt/slides/slide1.xml',
-            `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="${REL}" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/><p:pic><p:nvPicPr><p:cNvPr id="2" name="Figure"/><p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr/></p:nvPicPr><p:blipFill>${blip}<a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr><a:xfrm><a:off x="${offX}" y="${offY}"/><a:ext cx="${picW}" cy="${picH}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr></p:pic></p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>`);
+            `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="${REL}" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>${pics}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>`);
         zip.file('ppt/slides/_rels/slide1.xml.rels',
-            `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${REL}/image" Target="../media/image1.png"/><Relationship Id="rId2" Type="${REL}/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>${useSvg ? `<Relationship Id="rId3" Type="${REL}/image" Target="../media/image2.svg"/>` : ''}</Relationships>`);
+            `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${REL}/image" Target="../media/image1.png"/><Relationship Id="rId2" Type="${REL}/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>${useSvg ? `<Relationship Id="rId3" Type="${REL}/image" Target="../media/image2.svg"/>` : ''}${second ? `<Relationship Id="rId4" Type="${REL}/image" Target="../media/image3.png"/>` : ''}</Relationships>`);
         zip.file('ppt/media/image1.png', pngB64, { base64: true });
         if (useSvg) zip.file('ppt/media/image2.svg', svgStr);
+        if (second) zip.file('ppt/media/image3.png', second.png.split(',')[1], { base64: true });
         return await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' });
     }
 
