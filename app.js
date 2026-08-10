@@ -9582,20 +9582,20 @@ class CorrelationExplorer {
                 r.n_mut,
                 r.mean_mut.toFixed(2),
                 r.diff_mut.toFixed(2),
-                this.formatPValue(r.p_mut),
+                this.csvPValue(r.p_mut),
                 r.n_2,
                 isNaN(r.mean_2) ? '' : r.mean_2.toFixed(2),
                 isNaN(r.diff_2) ? '' : r.diff_2.toFixed(2),
-                this.formatPValue(r.p_2),
+                this.csvPValue(r.p_2),
                 isNaN(r.diff_2v1) ? '' : r.diff_2v1.toFixed(2),
-                isNaN(r.diff_2v1) ? '' : this.formatPValue(r.p_2v1)
+                isNaN(r.diff_2v1) ? '' : this.csvPValue(r.p_2v1)
             ];
             if (hasFusion) {
                 row.push(
                     r.n_fused || 0,
                     isNaN(r.mean_fused) ? '' : r.mean_fused.toFixed(2),
                     isNaN(r.diff_fused) ? '' : r.diff_fused.toFixed(2),
-                    isNaN(r.diff_fused) ? '' : this.formatPValue(r.p_fused)
+                    isNaN(r.diff_fused) ? '' : this.csvPValue(r.p_fused)
                 );
             }
             csv += row.join(',') + '\n';
@@ -13610,11 +13610,16 @@ ${filterText ? `<text x="${width / 2}" y="${headerH / 2}" dominant-baseline="mid
                 const borderW = node.borderWidth != null ? node.borderWidth : 2;
                 svg += `  <circle cx="${pos.x}" cy="${pos.y}" r="${nodeRadius}" fill="${bgColor}" stroke="${borderW > 0 ? '#000' : 'none'}" stroke-width="${borderW * scale}"/>\n`;
 
-                // Handle multi-line labels
-                const labelLines = (node.label || node.id).split('\n');
+                // Handle multi-line labels. Bold / Italic arrive as markup
+                // inside the label, so they become font attributes here rather
+                // than being escaped into visible tags.
+                const lbl = this._plainNodeLabel(node.label || node.id);
+                const weight = lbl.bold ? ' font-weight: bold;' : '';
+                const italic = lbl.italic ? ' font-style: italic;' : '';
+                const labelLines = lbl.text.split('\n');
                 labelLines.forEach((line, i) => {
                     const yOffset = pos.y + nodeRadius + 14 * scale + (i * nodeFontSize);
-                    svg += `  <text x="${pos.x}" y="${yOffset}" text-anchor="middle" style="font-family: Arial; font-size: ${nodeFontSize}px; fill: ${node.font?.color || '#333'};">${this.escapeXml(line)}</text>\n`;
+                    svg += `  <text x="${pos.x}" y="${yOffset}" text-anchor="middle" style="font-family: ${node.font?.face || 'Arial'}; font-size: ${nodeFontSize}px;${weight}${italic} fill: ${node.font?.color || '#333'};">${this.escapeXml(line)}</text>\n`;
                 });
             }
         });
@@ -14243,6 +14248,19 @@ ${filterText ? `<text x="${width / 2}" y="${headerH / 2}" dominant-baseline="mid
     // Gene names in the network are italic by default (standard for gene
     // symbols); bold and italic are toggleable in Settings. Labels use
     // vis-network's multi:'html' markup.
+    // Node labels carry vis-network's inline markup (<b>/<i>) for the Bold and
+    // Italic settings. The canvas renderer understands it; the hand-built SVG
+    // exports did not, and printed the tags as literal text. Split the markup
+    // off so an exporter can set real font attributes instead.
+    _plainNodeLabel(label) {
+        const raw = String(label ?? '');
+        return {
+            text: raw.replace(/<\/?[bi]>/g, ''),
+            bold: /<b>/.test(raw),
+            italic: /<i>/.test(raw)
+        };
+    }
+
     _decorateNodeLabel(text) {
         let t = text;
         if (this._netLabelBold) t = `<b>${t}</b>`;
@@ -15696,11 +15714,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 const borderW = node.borderWidth != null ? node.borderWidth : 2;
                 svg += `  <circle cx="${pos.x}" cy="${pos.y}" r="${nodeRadius}" fill="${bgColor}" stroke="${borderW > 0 ? '#000' : 'none'}" stroke-width="${borderW * scale}"/>\n`;
 
-                // Handle multi-line labels
-                const labelLines = (node.label || node.id).split('\n');
+                // Handle multi-line labels. Bold / Italic arrive as markup
+                // inside the label, so they become font attributes here rather
+                // than being escaped into visible tags.
+                const lbl = this._plainNodeLabel(node.label || node.id);
+                const weight = lbl.bold ? ' font-weight: bold;' : '';
+                const italic = lbl.italic ? ' font-style: italic;' : '';
+                const labelLines = lbl.text.split('\n');
                 labelLines.forEach((line, i) => {
                     const yOffset = pos.y + nodeRadius + 14 * scale + (i * nodeFontSize);
-                    svg += `  <text x="${pos.x}" y="${yOffset}" text-anchor="middle" style="font-family: Arial; font-size: ${nodeFontSize}px; fill: ${node.font?.color || '#333'};">${this.escapeXml(line)}</text>\n`;
+                    svg += `  <text x="${pos.x}" y="${yOffset}" text-anchor="middle" style="font-family: ${node.font?.face || 'Arial'}; font-size: ${nodeFontSize}px;${weight}${italic} fill: ${node.font?.color || '#333'};">${this.escapeXml(line)}</text>\n`;
                 });
             }
         });
@@ -19711,6 +19734,15 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     formatPClause(p) {
         const t = this.formatPValue(p);
         return t.startsWith('<') ? `p ${t}` : `p = ${t}`;
+    }
+
+    // p-values written to a file must stay numbers. formatPValue renders for
+    // reading ("3.8 × 10⁻⁵⁷", with Unicode superscripts), which a spreadsheet
+    // imports as text: it cannot sort or compute with it. Files use this.
+    csvPValue(p) {
+        if (p === null || p === undefined || isNaN(p)) return '';
+        if (p === 0) return '0';
+        return (p >= 1e-4 && p < 1e7) ? String(Number(p.toPrecision(6))) : p.toExponential(3);
     }
 
     formatPValue(p) {
@@ -27326,7 +27358,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 // Charts reserve a top margin for the title, which leaves a blank
                 // band above the figure once exported. Crop it, and recompute the
                 // print height so the proportions survive.
-                const trimmed = this._trimCanvasWhitespace(canvas);
+                // A composed gate figure lays itself out; trimming to the ink would
+                // crop its caption flush against the bottom edge.
+                const trimmed = gateSecond ? canvas : this._trimCanvasWhitespace(canvas);
                 const outH = (trimmed !== canvas && trimmed.width)
                     ? Math.round(widthCm * (trimmed.height / trimmed.width) * 100) / 100
                     : heightCm;
