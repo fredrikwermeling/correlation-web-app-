@@ -740,7 +740,7 @@ class CorrelationExplorer {
         const _dv = (document.querySelector('script[src*="app.js"]')?.src.split('?v=')[1]) || '';
         const dfetch = (path) => fetch(_dv ? `${path}?v=${_dv}` : path);
 
-        const [metadataRes, cellLineRes, mutationsRes, orthologsRes, translocationsRes, damagingMutRes, growthRateRes, drugRes, clinicalFusionsRes, inferredSubtypesRes, globalSigRes, corumRes, reactomeRes, hlaCnRes, lehmannRes, clinicalCnRes, validatedFusionsRes, functionalLossRes, curatedFusionsRes, problematicRes] = await Promise.all([
+        const [metadataRes, cellLineRes, mutationsRes, orthologsRes, translocationsRes, damagingMutRes, growthRateRes, drugRes, clinicalFusionsRes, inferredSubtypesRes, globalSigRes, corumRes, reactomeRes, hlaCnRes, lehmannRes, clinicalCnRes, validatedFusionsRes, functionalLossRes, curatedFusionsRes, problematicRes, virusRes] = await Promise.all([
             dfetch('web_data/metadata.json'),
             dfetch('web_data/cellLineMetadata.json'),
             dfetch('web_data/mutations.json'),
@@ -760,7 +760,8 @@ class CorrelationExplorer {
             dfetch('web_data/validated_fusions.json').catch(() => null),
             dfetch('web_data/functional_loss.json').catch(() => null),
             dfetch('web_data/curated_fusions.json').catch(() => null),
-            dfetch('web_data/problematic_lines.json').catch(() => null)
+            dfetch('web_data/problematic_lines.json').catch(() => null),
+            dfetch('web_data/virus_status.json').catch(() => null)
         ]);
 
         this.metadata = await metadataRes.json();
@@ -833,6 +834,12 @@ class CorrelationExplorer {
         if (problematicRes && problematicRes.ok) {
             try { this.problematicLines = await problematicRes.json(); }
             catch (e) { this.problematicLines = null; }
+        }
+        // Curated virus-transformation status. Presence is a confirmed record;
+        // absence means nobody has recorded one, NOT that the line is clean.
+        if (virusRes && virusRes.ok) {
+            try { this.virusStatus = await virusRes.json(); }
+            catch (e) { this.virusStatus = null; }
         }
         if (translocationsRes && translocationsRes.ok) {
             this.translocations = await translocationsRes.json();
@@ -29223,6 +29230,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 genesBelowThreshold: `Genes filtered out of the matrices by the data tier in force (${tierLabel}). A gene absent from geneEffect or expression was dropped by that filter or is missing from DepMap; it is not evidence of no effect. The focal gene and its named correlates are always kept.`,
                 cellLinesOutsideCohort: 'Only the cohort described in `context` is here. Cell lines excluded by the active filters are absent by design; conclusions apply to this cohort, not to DepMap as a whole.',
                 rawFusionCalls: 'Only curated / validated driver fusions are here. The full raw RNA-seq fusion output (largely passengers and read-through artefacts) is NOT.',
+                viralTransformation: 'Cellosaurus records which cell lines were transformed by a virus (EBV, HPV16/18, HBV, KSHV, HTLV-1). Those calls are NOT in this file. They matter because viral oncoproteins override host pathways: an HPV-transformed line behaves as p53- and RB-deficient whatever its TP53 and RB1 sequence says, and an EBV-immortalised lymphoblastoid line is not a tumor line at all. The app shows the status on each cell line, and "Confirmed virus-transformed" is one of its curated collections. Note that absence of a record is not evidence a line is free of the virus.',
                 identityWarnings: 'Cellosaurus identity / contamination flags and STR profiles are NOT here. A handful of lines in DepMap are misidentified; the app shows a warning triangle on those.',
                 neverInThisApp: 'Proteomics, methylation, metabolomics and drug-combination screens are not part of this app at all. DepMap publishes some of them separately; they cannot be exported from here.'
             },
@@ -29240,7 +29248,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 "Step 0 - Sanity check: Look for extras.focalGeneVarianceWarning. If present, the focal gene sits in screen noise in this cohort, top genome-wide correlations will be noise-driven. Read the warning aloud to the user, suggest stratification or a wider cohort, and treat any pattern hunting in this export as exploratory, not load-bearing.",
                 "Step 1 - Overview: Briefly survey the data. Summarize key groups, sample sizes, and the target gene's effect distribution. When the export includes them (gene-effect / scatter / mutation / expression-correlate views with a single focal gene), USE these precomputed scans before recomputing anything: topCoessentials (GE-vs-GE Pearson, which other genes' essentiality co-varies with the focal gene's; positive r = co-essentiality BUFFERING within a complex, negative r = same-pathway co-essentiality) and topCorrelates (GE-vs-expression Pearson, which genes' expression predicts focal-gene dependency; positive r = high partner expression covaries with WEAKER focal-gene essentiality). If those fields are not present (e.g. multi-gene views like correlation / cluster / gate-comparison), recompute against the matrix yourself.",
                 "Step 2 - Confirm scope (judgment call): If the question is open-ended ('explain the variability', 'what drives X'), present the overview to the user with 2-3 candidate analytical angles and ask which to pursue. If the question is specific and self-contained ('what is the top correlate of NEDD8', 'compare gates A and B on differential GE'), skip this step and go straight to the analysis, don't pad with friction.",
-                "Step 3b - Name the gaps: if answering the question properly would need something in `notIncluded` (drug response, growth rate, genome-wide copy number, cell lines outside this cohort), say so plainly and tell the user which export would supply it. Do not treat an absent layer as a negative result.",
+                "Step 3b - Name the gaps: if answering the question properly would need something in `notIncluded` (drug response, growth rate, genome-wide copy number, viral transformation status, cell lines outside this cohort), say so plainly and tell the user which export would supply it. Do not treat an absent layer as a negative result.",
                 "Step 3 - Deep analysis: Work data-first. Use the precomputed extras (focalGeneTissueSummary for per-tissue/subtype means, focalGeneMutationSummary for driver-mutation effects) before scanning the matrix gene-by-gene. Characterize unbiased genome-wide hits and annotate by pathway before testing hypothesis-driven candidate gene lists. After finding one explanatory model, actively search for alternative or complementary axes. Report all major signals, not just the first plausible one."
             ],
             context,
@@ -29990,6 +29998,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (gs?.WGD === true) features.push('<b>whole-genome doubled</b>');
         // Ploidy alone is not notable, so it is reported only when extreme.
         if (gs?.Ploidy != null && gs.Ploidy >= 4.6) features.push(`highly polyploid (ploidy ${gs.Ploidy.toFixed(1)})`);
+        const virusHits = this._virusAgents(cellLineId);
+        if (virusHits) {
+            features.push(`confirmed <b>${this.esc(virusHits.map(h => h.agent).join(' + '))}</b>-transformed`);
+        }
         if (classOne.status === 'likely_lost') features.push('<b>Class-I antigen presentation likely lost</b> (immune-escape candidate)');
         else if (classOne.status === 'reduced') features.push('<b>Class-I antigen presentation reduced</b>');
         const s4 = features.length > 0 ? `Genome / phenotype: ${features.join('; ')}.` : '';
@@ -32596,6 +32608,26 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 category: 'DNA repair / damage response',
                 description: '<b>Inclusion:</b> at least one damaging mutation (frameshift / nonsense / splice) in any of <b>MLH1, MSH2, MSH6, PMS2, EPCAM</b>, the canonical Lynch-syndrome / mismatch-repair gene panel. <b>This is a genetic signal, not a functional one</b>, see the "MSI-high (functional)" collection below for lines that actually score MSI-high on MSIsensor2 (which is what the per-cell-line MSI-high badge on the detail card uses). The two sets overlap but are not identical: <b>(a)</b> the most common sporadic cause of MMR-deficiency is <em>MLH1 promoter hypermethylation</em>, invisible to the mutation matrix, those lines are MSI-high without showing up here; <b>(b)</b> a single damaging mutation without biallelic loss does not always abolish MMR, those lines show up here but may still be microsatellite stable.'
             },
+            virus_transformed: {
+                label: 'Confirmed virus-transformed (any agent)',
+                category: 'Viral transformation',
+                description: '<b>Inclusion:</b> cell lines with a curated Cellosaurus <i>Transformant</i> record naming a virus, i.e. lines documented to have been transformed or immortalised by that virus. <b>Why it matters:</b> viral oncoproteins rewire the pathways most experiments are aimed at. EBV-transformed lymphoblastoid lines are not tumour lines at all, and HPV E6/E7 inactivate p53 and RB, so a line can read as TP53-wild-type by sequence while behaving as p53-null. <b>Important caveat:</b> this records what a line was transformed BY, it is not a survey of infection. A cell line outside this collection has no curated transformant record, which is not evidence that it carries no virus.'
+            },
+            virus_ebv: {
+                label: 'Confirmed EBV-transformed',
+                category: 'Viral transformation',
+                description: '<b>Inclusion:</b> Cellosaurus records the line as transformed by Epstein-Barr virus. <b>What these usually are:</b> lymphoblastoid lines made by immortalising normal B cells, plus EBV-positive Burkitt and NK/T lymphoma lines. <b>Why it matters:</b> lymphoblastoid lines are non-malignant proliferating B cells, so treating one as a lymphoma model, or as a normal-tissue control, misleads in opposite directions. <b>Caveat:</b> absence from this list means no curated record, not a negative EBV test.'
+            },
+            virus_hpv: {
+                label: 'Confirmed HPV-transformed',
+                category: 'Viral transformation',
+                description: '<b>Inclusion:</b> Cellosaurus records the line as transformed by human papillomavirus (type 16, type 18, or unspecified). <b>Why it matters:</b> the viral E6 and E7 proteins degrade p53 and inactivate RB, so these lines behave as p53/RB-deficient whatever their TP53 and RB1 sequences say. Expect them to separate from HPV-negative lines in any p53-pathway or CDK4/6 analysis. <b>Caveat:</b> absence from this list means no curated record, not an HPV-negative result.'
+            },
+            virus_hbv: {
+                label: 'Confirmed HBV-transformed',
+                category: 'Viral transformation',
+                description: '<b>Inclusion:</b> Cellosaurus records the line as transformed by hepatitis B virus, typically hepatocellular carcinoma lines carrying integrated HBV. <b>Why it matters:</b> integration is mutagenic and the HBx protein drives a transcriptional programme of its own, so these lines carry a different biology from HBV-unrelated liver lines. <b>Caveat:</b> absence from this list means no curated record, not an HBV-negative result.'
+            },
             problematic_identity: {
                 label: 'Identity disputed (contaminated / misidentified)',
                 category: 'Provenance',
@@ -33204,6 +33236,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             'fusion_bcr_abl1', 'fusion_ewsr1_fli1', 'fusion_eml4_alk', 'fusion_pml_rara', 'fusion_ss18_ssx', 'fusion_pax3_foxo1', 'fusion_tmprss2_erg', 'fusion_npm1_alk',
             // Oncogene addiction (mutation x CRISPR dependency)
             'kras_addicted', 'braf_addicted', 'egfr_dependent', 'cdk46_dependent', 'bcr_abl_addicted', 'pi3k_active_dependent',
+            // Viral transformation
+            'virus_transformed', 'virus_ebv', 'virus_hpv', 'virus_hbv',
             // Provenance
             'problematic_identity', 'problematic_classification',
             // Genome instability
@@ -33222,6 +33256,27 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             'age_infant', 'age_pediatric', 'age_aya', 'age_adult', 'age_elderly',
         ]);
         return Object.fromEntries(Object.entries(catalog).filter(([id]) => QUICK_FILTER_IDS.has(id)));
+    }
+
+    // Curated virus-transformation record for a cell line, or null. The
+    // wording everywhere is "confirmed ... transformed": Cellosaurus records
+    // what a line was transformed BY, and no record simply means none exists.
+    _virusAgents(cellLineId) {
+        const hits = this.virusStatus?.byCellLine?.[cellLineId];
+        return (hits && hits.length) ? hits : null;
+    }
+
+    _virusLabel(cellLineId) {
+        const hits = this._virusAgents(cellLineId);
+        return hits ? hits.map(h => h.agent).join(', ') : '';
+    }
+
+    _virusTitle(cellLineId) {
+        const hits = this._virusAgents(cellLineId);
+        if (!hits) return '';
+        const names = hits.map(h => `${h.name} (${h.agent})${h.note ? ` [${h.note}]` : ''}`).join('; ');
+        return `Confirmed virus-transformed: ${names}. Curated by Cellosaurus. `
+            + 'Lines without this mark have no such record, which is not the same as being free of the virus.';
     }
 
     // Compute which cell lines belong to each curated collection. Called
@@ -33877,6 +33932,23 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             }
         }
 
+        // Confirmed viral transformation, straight from the curated
+        // Cellosaurus Transformant field. Membership means a record exists;
+        // non-membership means no record, not a negative test.
+        mem.virus_transformed = new Set();
+        mem.virus_ebv = new Set();
+        mem.virus_hpv = new Set();
+        mem.virus_hbv = new Set();
+        for (const [cl, hits] of Object.entries(this.virusStatus?.byCellLine || {})) {
+            if (!hits || !hits.length) continue;
+            mem.virus_transformed.add(cl);
+            for (const h of hits) {
+                if (h.agent === 'EBV') mem.virus_ebv.add(cl);
+                else if (h.agent.startsWith('HPV')) mem.virus_hpv.add(cl);
+                else if (h.agent === 'HBV') mem.virus_hbv.add(cl);
+            }
+        }
+
         // Provenance flags, straight from the curated Cellosaurus scan.
         mem.problematic_identity = new Set();
         mem.problematic_classification = new Set();
@@ -33903,6 +33975,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         // Same explainers and order as the live panel.
         const CATEGORY_NOTES = {
+            'Viral transformation': 'Cell lines with a curated Cellosaurus record of the virus that transformed them. These are confirmed cases, not a screen: a line missing from these sets has no such record, which is not the same as being free of the virus.',
             'Driver oncogene mutations': 'Common oncogene activating mutations (KRAS / BRAF / EGFR / PIK3CA hotspots; CTNNB1 Wnt activators; IDH 2-HG producers). Mutation status only, see "Oncogene addiction" for the stricter mutation-plus-CRISPR-dependency-confirmed set.',
             'Oncogene addiction (mutation × CRISPR dependency)': 'Cancer cells that have become functionally dependent on a driver gene, knocking it out (or blocking it with a drug) kills the cell. Stricter than the mutation-only "Driver oncogene mutations" set above.',
             'Active expression programs': 'Each set marks lines where the pathway is transcriptionally active (mean z > +0.75 across a curated gene panel). Reflects what the cell is doing, not just what is mutated.',
@@ -33925,6 +33998,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             'Immunology',
             'DNA repair / damage response',
             'Genome, ploidy / instability',
+            'Viral transformation',
             'Chromatin remodelling, SWI/SNF complex',
             'Oxidative-stress response',
             'Active expression programs',
@@ -33961,6 +34035,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             msi: 'mutation', msi_high_functional: 'MSIsensor2 score',
             hrd: 'mutation', hypermutated: 'mutation count',
             pole_pold1_ultramutated: 'mutation', atm_deficient: 'mutation',
+            // Viral transformation
+            virus_transformed: 'Cellosaurus', virus_ebv: 'Cellosaurus',
+            virus_hpv: 'Cellosaurus', virus_hbv: 'Cellosaurus',
             // Provenance
             problematic_identity: 'Cellosaurus', problematic_classification: 'Cellosaurus',
             // Genome / ploidy / instability
@@ -34110,6 +34187,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Rendered as italic gray text below the category header so the user
         // doesn't need to hover or read the full description to get the gist.
         const CATEGORY_NOTES = {
+            'Viral transformation': 'Cell lines with a curated Cellosaurus record of the virus that transformed them. These are confirmed cases, not a screen: a line missing from these sets has no such record, which is not the same as being free of the virus.',
             'Driver oncogene mutations': 'Common oncogene activating mutations (KRAS / BRAF / EGFR / PIK3CA hotspots; CTNNB1 Wnt activators; IDH 2-HG producers). Mutation status only, see "Oncogene addiction" for the stricter mutation-plus-CRISPR-dependency-confirmed set.',
             'Oncogene addiction (mutation × CRISPR dependency)': 'Cancer cells that have become functionally dependent on a driver gene, knocking it out (or blocking it with a drug) kills the cell. Stricter than the mutation-only "Driver oncogene mutations" set above.',
             'Active expression programs': 'Each set marks lines where the pathway is transcriptionally active (mean z > +0.75 across a curated gene panel). Reflects what the cell is doing, not just what is mutated.',
@@ -34143,6 +34221,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             'DNA repair / damage response',
             // Genome state
             'Genome, ploidy / instability',
+            'Viral transformation',
             // Pathway / functional state
             'Chromatin remodelling, SWI/SNF complex',
             'Oxidative-stress response',
@@ -36637,10 +36716,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const probStr = prob
                 ? `<span style="color:#d97706; margin-right:3px; flex-shrink:0; cursor:help;" title="${this.esc(this._problemPlain(prob))} Open the cell line for the Cellosaurus record.">&#9888;</span>`
                 : '';
-            const titleParts = [name, lin, sub, sx.title, prob ? prob.category : ''].filter(Boolean).join(' · ');
+            // Curated viral transformation. Marked, never used to hide a line:
+            // the mark says a record exists, its absence says nothing.
+            const vLbl = this._virusLabel(cl);
+            const virusStr = vLbl
+                ? `<span style="margin-right:3px; flex-shrink:0; cursor:help; font-size:10px; opacity:0.75;" title="${this.esc(this._virusTitle(cl))}">&#129440;</span>`
+                : '';
+            const titleParts = [name, lin, sub, sx.title, vLbl ? vLbl + '-transformed' : '', prob ? prob.category : ''].filter(Boolean).join(' · ');
             return `<div class="${cls.join(' ')}" data-clid="${cl}" title="${titleParts}">` +
                 `<input type="checkbox"${selected ? ' checked' : ''}>` +
-                sexStr + probStr +
+                sexStr + probStr + virusStr +
                 `<span class="clb-entry-name">${name}</span>` +
                 `<span class="clb-entry-tissue">${lin}${sub ? ' · ' + sub : ''}</span>${sortValStr}</div>`;
         }).join('');
@@ -39157,6 +39242,14 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         // DepMap stores some free-text fields lowercase and underscore-separated
         // (e.g. "large_intestine"); swap underscores for spaces and capitalize.
         const cap = (v) => v ? `<span style="text-transform:capitalize;">${String(v).replace(/_/g, ' ')}</span>` : '';
+        // Cellosaurus records the agent a line was transformed BY. It is a
+        // confirmed statement where present and says nothing where absent, so
+        // the row is only drawn for lines that have a record.
+        const _vHits = this._virusAgents(cellLineId);
+        const virusRow = _vHits
+            ? _vHits.map(h => `<b>${this.esc(h.name)}</b> (${this.esc(h.agent)})${h.note ? ` <span style="font-size:10px; color:#9ca3af;">, ${this.esc(h.note)}</span>` : ''}`).join('<br>')
+                + `<div style="font-size:10px; color:#9ca3af; margin-top:3px;">Curated by Cellosaurus. Viral oncoproteins can override the pathways they hit: an HPV-transformed line behaves as p53- and RB-deficient whatever its <i>TP53</i> and <i>RB1</i> sequence says, and an EBV-immortalised lymphoblastoid line is not a tumor line at all. Cell lines without this row have no such record, which is not the same as being free of the virus.</div>`
+            : '';
         const originHtml = `
             <p style="margin:0 0 8px; font-size:11px; color:#6b7280;">Clinical information about the patient the cell line was derived from, plus how it grows in the lab.</p>
             ${row('Patient age at sampling', ageFmt)}
@@ -39167,6 +39260,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             ${row('Where sample was taken', cap(get('sampleCollectionSite')))}
             ${row('Tumor grade', get('patientTumorGrade'))}
             ${row('Growth pattern in culture', get('growthPattern'))}
+            ${row('Virus used to transform', virusRow)}
             ${row('Engineered modifications', get('engineeredModel'))}
             ${row('Drug resistance from culture', get('culturedResistanceDrug'))}`;
 

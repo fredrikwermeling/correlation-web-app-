@@ -2234,6 +2234,7 @@
                         <li>STR profiles <span style="color:#999;">(Cellosaurus reference panels)</span></li>
                         <li>Published fusion calls <span style="color:#999;">(<a href="https://www.cellosaurus.org/" target="_blank" style="color:#0066cc;">Cellosaurus</a>; fills in cell lines with no RNA-seq, and recurrent driver fusions the caller did not report)</span></li>
                         <li>Problematic cell lines <span style="color:#999;">(<a href="https://www.cellosaurus.org/" target="_blank" style="color:#0066cc;">Cellosaurus</a>; contaminated / misidentified / misclassified flags, 56 lines in this panel)</span></li>
+                        <li>Viral transformation <span style="color:#999;">(<a href="https://www.cellosaurus.org/" target="_blank" style="color:#0066cc;">Cellosaurus</a> Transformant records; 53 lines in this panel are confirmed transformed by EBV, HPV16/18, HBV, KSHV or HTLV-1. A line without a record has not been recorded, which is not the same as being free of the virus)</span></li>
                     </ul>
                     <p style="margin: 12px 0 0 0; font-style: italic;"><a href="https://depmap.org/portal/data_page/?tab=overview#how-to-cite" target="_blank" style="color: #0066cc;">Please acknowledge DepMap</a> if you use this data. CORUM, Reactome and COSMIC have their own attribution requirements. Cell-line identity, fusion and provenance annotations come from <a href="https://www.cellosaurus.org/" target="_blank" style="color: #0066cc;">Cellosaurus</a> (Bairoch A. <em>J Biomol Tech</em> 2018), which asks to be cited when used.</p>
                 </div>
@@ -4275,6 +4276,8 @@
           </ul>
 
           <p style="margin-top:14px;"><strong>&#9888; Warning marks</strong>: a triangle beside a cell line's name means <a href="https://www.cellosaurus.org/" target="_blank" style="color:#0066cc;">Cellosaurus</a> records a problem with it. 56 of the 1,208 lines are flagged. Hover the mark for the full explanation, or open the line to see it with a link to the source.</p>
+          <p style="margin-top:14px;"><strong>&#129440; Virus marks</strong>: a virus beside a cell line's name means <a href="https://www.cellosaurus.org/" target="_blank" style="color:#0066cc;">Cellosaurus</a> records which virus the line was transformed by. 53 of the 1,208 lines carry one, most often EBV, HPV16/18 or HBV. It matters because viral oncoproteins override host pathways: an HPV-transformed line behaves as p53- and RB-deficient whatever its <em>TP53</em> and <em>RB1</em> sequence says, and an EBV-immortalised lymphoblastoid line is not a tumour line at all. <b>A line without the mark simply has no such record</b>, which is not the same as being free of the virus. The matching quick filters are named &ldquo;Confirmed &hellip;-transformed&rdquo; for that reason.</p>
+
           <ul style="margin:4px 0 10px 20px;">
             <li><b>Identity disputed</b> (36 lines): the line is contaminated, misidentified, or a derivative of another line, so a result attributed to it may belong to something else. MKN28 is a MKN74 derivative; KP-1N is a PANC-1 derivative.</li>
             <li><b>Cancer type disputed</b> (4 lines): the line is itself, but its recorded disease or tissue is genuinely unresolved, so any tissue-grouped analysis may place it incorrectly.</li>
@@ -4647,6 +4650,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v87_17"></script>
+    <script src="app.js?v=v87_18"></script>
 </body>
 </html>
