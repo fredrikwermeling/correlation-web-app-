@@ -5292,7 +5292,21 @@ class CorrelationExplorer {
 
         document.getElementById('minCellLines')?.addEventListener('change', () => this._markMutationRunStale());
         document.querySelectorAll('input[name="analysisBasis"]').forEach(r => {
-            r.addEventListener('change', () => this._markMutationRunStale());
+            r.addEventListener('change', (e) => {
+                // Expression correlates run higher than gene effect across the
+                // board, so 0.5 returns a great deal more there. Move the
+                // cutoff to the new basis's default, but only while it still
+                // sits on the old one: a value the user chose is left alone.
+                const DEF = { ge: 0.5, expr: 0.6 };
+                const to = e.target.value === 'expr' ? 'expr' : 'ge';
+                const from = to === 'expr' ? 'ge' : 'expr';
+                const slider = document.getElementById('correlationCutoff');
+                if (slider && Math.abs(parseFloat(slider.value) - DEF[from]) < 1e-9) {
+                    slider.value = String(DEF[to]);
+                    slider.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+                this._markMutationRunStale();
+            });
         });
 
         // Gene textarea
@@ -17002,16 +17016,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 marker: { color: '#dc2626', size: 10, opacity: 0.8 },
                 name: `2+ partners (n=${t2.length}, ${t2Pct}%)`
             });
-        } else if (colorByCategory === 'tissue' || colorByCategory === 'subtype') {
-            // Color by tissue or subtype
+        } else if (colorByCategory === 'tissue' || colorByCategory === 'subtype' || colorByCategory === 'disease') {
+            // Color by tissue, subtype or disease
             const categoryMap = {};
             filteredData.forEach(d => {
-                let cat;
-                if (colorByCategory === 'subtype') {
-                    cat = this.cellLineMetadata?.primaryDisease?.[d.cellLineId] || d.lineage || 'Unknown';
-                } else {
-                    cat = d.lineage || 'Unknown';
-                }
+                const cat = this._colorByGroup(d, colorByCategory);
                 if (!categoryMap[cat]) categoryMap[cat] = [];
                 categoryMap[cat].push(d);
             });
@@ -17657,12 +17666,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         // Build category map for color-by mode (shared across panels)
         let categoryOrder = null;
-        if (colorByCategory === 'tissue' || colorByCategory === 'subtype') {
+        if (colorByCategory === 'tissue' || colorByCategory === 'subtype' || colorByCategory === 'disease') {
             const catCounts = {};
             filteredData.forEach(d => {
-                const cat = colorByCategory === 'subtype'
-                    ? (this.cellLineMetadata?.primaryDisease?.[d.cellLineId] || d.lineage || 'Unknown')
-                    : (d.lineage || 'Unknown');
+                const cat = this._colorByGroup(d, colorByCategory);
                 catCounts[cat] = (catCounts[cat] || 0) + 1;
             });
             categoryOrder = Object.keys(catCounts).sort((a, b) => catCounts[b] - catCounts[a]);
@@ -17673,9 +17680,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             this._colorByPickedActive = !!pickedSet;
         }
 
-        const rawCategory = (d) => (colorByCategory === 'subtype'
-            ? (this.cellLineMetadata?.primaryDisease?.[d.cellLineId] || d.lineage || 'Unknown')
-            : (d.lineage || 'Unknown'));
+        const rawCategory = (d) => this._colorByGroup(d, colorByCategory);
         // Anything outside the picked groups is folded into one muted series.
         const getCategory = (d) => {
             const c = rawCategory(d);
@@ -19899,6 +19904,42 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         Plotly.relayout('scatterPlot', { annotations: [...existingAnnotations, ...gateAnnotations] });
     }
 
+    // The group a cell line belongs to for "Color by", at whichever level of
+    // the cancer classification is selected. Tissue -> Oncotree lineage,
+    // subtype -> primary disease, disease -> the exact Oncotree entity; each
+    // falls back to the coarser level when the finer one is blank.
+    _colorByGroup(d, mode) {
+        const id = d.cellLineId;
+        const lineage = d.lineage || 'Unknown';
+        if (mode === 'disease') {
+            return this.cellLineMetadata?.oncotreeSubtype?.[id]
+                || this.cellLineMetadata?.primaryDisease?.[id] || lineage;
+        }
+        if (mode === 'subtype') {
+            return this.cellLineMetadata?.primaryDisease?.[id] || lineage;
+        }
+        return lineage;
+    }
+
+    // Share of each group in gate A vs gate B, sorted by the biggest
+    // difference. One implementation for the tissue / subtype / disease
+    // tables, which differ only in how a cell line is grouped.
+    _gateEnrichment(gateA, gateB, keyOf) {
+        const count = (rows) => {
+            const m = {};
+            rows.forEach(d => { const k = keyOf(d); m[k] = (m[k] || 0) + 1; });
+            return m;
+        };
+        const a = count(gateA), b = count(gateB);
+        return [...new Set([...Object.keys(a), ...Object.keys(b)])].sort().map(k => ({
+            tissue: k,
+            nA: a[k] || 0,
+            pctA: (a[k] || 0) / (gateA.length || 1) * 100,
+            nB: b[k] || 0,
+            pctB: (b[k] || 0) / (gateB.length || 1) * 100
+        })).sort((x, y) => Math.abs(y.pctA - y.pctB) - Math.abs(x.pctA - x.pctB));
+    }
+
     async compareGates() {
         if (!this._gateA?.length || !this._gateB?.length) return;
 
@@ -19911,39 +19952,15 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         document.getElementById('gateASummary').textContent = `${gateA.length} cell lines`;
         document.getElementById('gateBSummary').textContent = `${gateB.length} cell lines`;
 
-        // 1. Tissue enrichment
-        const tissueA = {}, tissueB = {};
-        gateA.forEach(d => { tissueA[d.lineage || 'Unknown'] = (tissueA[d.lineage || 'Unknown'] || 0) + 1; });
-        gateB.forEach(d => { tissueB[d.lineage || 'Unknown'] = (tissueB[d.lineage || 'Unknown'] || 0) + 1; });
-        const allTissues = [...new Set([...Object.keys(tissueA), ...Object.keys(tissueB)])].sort();
-        const tissueStats = allTissues.map(t => ({
-            tissue: t,
-            nA: tissueA[t] || 0,
-            pctA: ((tissueA[t] || 0) / gateA.length * 100),
-            nB: tissueB[t] || 0,
-            pctB: ((tissueB[t] || 0) / gateB.length * 100)
-        }));
-        tissueStats.sort((a, b) => Math.abs(b.pctA - b.pctB) - Math.abs(a.pctA - a.pctB));
-
-        // 1b. Subtissue (primaryDisease) enrichment
-        const subtissueA = {}, subtissueB = {};
-        gateA.forEach(d => {
-            const st = this.cellLineMetadata?.primaryDisease?.[d.cellLineId] || d.lineage || 'Unknown';
-            subtissueA[st] = (subtissueA[st] || 0) + 1;
-        });
-        gateB.forEach(d => {
-            const st = this.cellLineMetadata?.primaryDisease?.[d.cellLineId] || d.lineage || 'Unknown';
-            subtissueB[st] = (subtissueB[st] || 0) + 1;
-        });
-        const allSubtissues = [...new Set([...Object.keys(subtissueA), ...Object.keys(subtissueB)])].sort();
-        const subtissueStats = allSubtissues.map(st => ({
-            tissue: st,
-            nA: subtissueA[st] || 0,
-            pctA: ((subtissueA[st] || 0) / gateA.length * 100),
-            nB: subtissueB[st] || 0,
-            pctB: ((subtissueB[st] || 0) / gateB.length * 100)
-        }));
-        subtissueStats.sort((a, b) => Math.abs(b.pctA - b.pctB) - Math.abs(a.pctA - a.pctB));
+        // 1. Where the two gates' cell lines come from, at all three levels
+        // of the cancer classification (the same tissue / subtype / disease
+        // ladder the cohort filters use).
+        const tissueStats = this._gateEnrichment(gateA, gateB, d => d.lineage || 'Unknown');
+        const subtissueStats = this._gateEnrichment(gateA, gateB,
+            d => this.cellLineMetadata?.primaryDisease?.[d.cellLineId] || d.lineage || 'Unknown');
+        const diseaseStats = this._gateEnrichment(gateA, gateB,
+            d => this.cellLineMetadata?.oncotreeSubtype?.[d.cellLineId]
+                || this.cellLineMetadata?.primaryDisease?.[d.cellLineId] || d.lineage || 'Unknown');
 
         // 2. Mutation enrichment (hotspot + damaging mutations)
         const mutStats = [];
@@ -20064,7 +20081,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             diffExpr.sort((a, b) => a.pValue - b.pValue);
         }
 
-        this._gateCompareResults = { tissueStats, subtissueStats, mutStats, diffGE, diffExpr };
+        this._gateCompareResults = { tissueStats, subtissueStats, diseaseStats, mutStats, diffGE, diffExpr };
         this._gateSortCol = null;
         this._gateSortAsc = true;
 
@@ -20129,16 +20146,21 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             });
             html += '</tbody></table>';
 
-            // Subtissue section
-            if (r.subtissueStats && r.subtissueStats.length > 0) {
-                const subData = [...r.subtissueStats];
+            // Finer levels of the same classification, one table each.
+            [
+                { key: 'subtissueStats', title: 'Subtype (Primary Disease)', col: 'Subtype' },
+                { key: 'diseaseStats', title: 'Disease (Oncotree entity)', col: 'Disease' }
+            ].forEach(sec => {
+                const rows = r[sec.key];
+                if (!rows || !rows.length) return;
+                const subData = [...rows];
                 subData.sort((a, b) => Math.abs(b.pctA - b.pctB) - Math.abs(a.pctA - a.pctB));
                 html += `<div style="margin-top:12px;border-top:1px solid #e5e7eb;padding-top:8px;">
-                    <div style="font-size:11px;font-weight:600;margin-bottom:6px;color:#374151;">Subtissue (Primary Disease)</div>
+                    <div style="font-size:11px;font-weight:600;margin-bottom:6px;color:#374151;">${sec.title}</div>
                     <table style="width:100%;border-collapse:collapse;font-size:11px;table-layout:fixed;">
                     <colgroup><col style="width:35%"><col style="width:13%"><col style="width:13%"><col style="width:13%"><col style="width:13%"><col style="width:13%"></colgroup>
                     <thead><tr style="background:#f3f4f6;">
-                        <th style="padding:5px;text-align:left;">Subtype</th>
+                        <th style="padding:5px;text-align:left;">${sec.col}</th>
                         <th style="padding:5px;text-align:center;">Gate A</th>
                         <th style="padding:5px;text-align:center;">%A</th>
                         <th style="padding:5px;text-align:center;">Gate B</th>
@@ -20158,7 +20180,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     </tr>`;
                 });
                 html += '</tbody></table></div>';
-            }
+            });
             container.innerHTML = html;
 
         } else if (tab === 'mutations') {
@@ -34005,7 +34027,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             // is the default. Subtypes run to 70+ and mean nothing all at once,
             // so those start empty and wait to be picked.
             const mode = document.getElementById('colorByCategory')?.value;
-            return mode === 'subtype' ? new Set() : null;
+            return (mode === 'subtype' || mode === 'disease') ? new Set() : null;
         }
         const want = new Set(raw.split('|').filter(Boolean));
         const usable = new Set(available.filter(c => want.has(c)));
@@ -34052,20 +34074,19 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // list can be shown as a tree. A flat list of 70+ subtypes gives no clue
         // which lineage any of them came from.
         const parentOf = {};
+        const nested = mode === 'subtype' || mode === 'disease';
         data.forEach(d => {
             const tissue = d.lineage || 'Unknown';
-            const cat = mode === 'subtype'
-                ? (this.cellLineMetadata?.primaryDisease?.[d.cellLineId] || tissue)
-                : tissue;
+            const cat = this._colorByGroup(d, mode);
             counts[cat] = (counts[cat] || 0) + 1;
-            if (mode === 'subtype') parentOf[cat] = tissue;
+            if (nested) parentOf[cat] = tissue;
         });
         const cats = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
         if (!cats.length) return;
 
         // Group the categories under their tissue, tissues ordered by size.
         const tree = [];
-        if (mode === 'subtype') {
+        if (nested) {
             const byTissue = {};
             cats.forEach(c => { (byTissue[parentOf[c]] = byTissue[parentOf[c]] || []).push(c); });
             Object.keys(byTissue)
@@ -34087,7 +34108,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         panel.className = 'select-proxy-panel';
         panel.style.width = '270px';
         panel.innerHTML =
-            `<div style="font-size:11px; font-weight:600; color:#374151; padding:2px 4px 6px;">Color only these ${mode === 'subtype' ? 'subtypes' : 'tissues'}</div>` +
+            `<div style="font-size:11px; font-weight:600; color:#374151; padding:2px 4px 6px;">Color only these ${mode === 'subtype' ? 'subtypes' : mode === 'disease' ? 'diseases' : 'tissues'}</div>` +
             `<input type="text" class="select-proxy-filter" id="colorByGroupFilter" placeholder="Filter...">` +
             `<div class="select-proxy-list" id="colorByGroupList" style="max-height:250px;">` +
             tree.map(grp => {
@@ -34208,7 +34229,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (raw === '*') btn.textContent = 'Groups: all';
         else if (raw === 'none') btn.textContent = 'Groups: none';
         else if (raw) btn.textContent = `Groups: ${raw.split('|').filter(Boolean).length}`;
-        else btn.textContent = mode === 'subtype' ? 'Pick subtypes to color...' : 'Groups: all';
+        else btn.textContent = mode === 'subtype' ? 'Pick subtypes to color...'
+            : mode === 'disease' ? 'Pick diseases to color...' : 'Groups: all';
     }
 
     // Total plot width for the three-panel view. #plotWidth is sized for a
@@ -34659,6 +34681,22 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         });
     }
 
+    // Keep an anchored dropdown inside the window. It hangs from the left of
+    // its input, so an input near the right edge pushes a wide list off
+    // screen (the drug picker is 320px+ and its explanation was cut off).
+    // Align it to the input's right edge instead, then shift it further left
+    // if even that overflows.
+    _anchorDropdownInView(dd, margin = 10) {
+        if (!dd || dd.style.display === 'none') return;
+        dd.style.left = '0'; dd.style.right = 'auto'; dd.style.marginLeft = '';
+        let r = dd.getBoundingClientRect();
+        if (r.right <= window.innerWidth - margin) return;
+        dd.style.left = 'auto'; dd.style.right = '0';
+        r = dd.getBoundingClientRect();
+        if (r.left >= margin) return;
+        dd.style.marginLeft = Math.round(margin - r.left) + 'px';
+    }
+
     // Clamp an open popup so it sits fully within the viewport. Switches it to
     // fixed positioning only when it would overflow, so nothing (e.g. the last
     // quick-filter rows) ends up below the fold on small screens. The element
@@ -34995,12 +35033,15 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (mode === 'drug') {
                 this._renderSortDrugDropdown(clbSortGene.value);
                 dd.style.display = 'block';
+                this._anchorDropdownInView(dd);
             } else if (mode === 'ge' || mode === 'expr') {
                 this._renderSortGeneDropdown(clbSortGene.value);
                 dd.style.display = 'block';
+                this._anchorDropdownInView(dd);
             } else if (mode === 'cn') {
                 this._renderSortCnDropdown(clbSortGene.value);
                 dd.style.display = 'block';
+                this._anchorDropdownInView(dd);
             } else {
                 dd.style.display = 'none';
             }
