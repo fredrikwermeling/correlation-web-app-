@@ -246,6 +246,7 @@ class CorrelationExplorer {
         try {
             await this.loadData();
             this.setupUI();
+            this._setupGlobalCohortBar();
             this.hideLoading();
             // URL-hash deep links, open a specific view directly so
             // external apps (greenlisted / mouseclb / lab pages) can
@@ -3439,6 +3440,50 @@ class CorrelationExplorer {
             this.showStatus('info', 'Grid filter applied. Press Run to update the results.');
         }
         document.getElementById('oncoprintPopup')?.remove();
+    }
+
+    // Say what cohort the app is working on, always, from every screen.
+    // Filters set in one feature stay in force in the others by design, but
+    // that was invisible: results looked wrong, the app read as stale, and a
+    // page reload appeared to be the cure. Naming the cohort in one fixed
+    // place removes the mystery without taking the behaviour away.
+    _updateGlobalCohortBar() {
+        const bar = document.getElementById('globalCohortBar');
+        const txt = document.getElementById('globalCohortText');
+        const btn = document.getElementById('globalCohortReset');
+        if (!bar || !txt) return;
+        let desc = '';
+        try { desc = (this._composeNetworkFilterText(true) || '').replace(/^Filters:\s*/, ''); } catch (e) { desc = ''; }
+        // A gate used as a filter narrows the cohort as much as any dropdown.
+        if (this._gateFilter?.label) desc = desc ? `${desc} \u00b7 gate: ${this._gateFilter.label}` : `gate: ${this._gateFilter.label}`;
+        if (desc) {
+            txt.textContent = `Cohort everywhere in the app: ${desc}`;
+            bar.classList.add('is-filtered');
+            if (btn) btn.style.display = '';
+        } else {
+            txt.textContent = 'Cohort: all cell lines (any filter you set is named here).';
+            bar.classList.remove('is-filtered');
+            if (btn) btn.style.display = 'none';
+        }
+    }
+
+    // Any control anywhere can change the cohort, so the bar refreshes off a
+    // single delegated listener rather than a call at each of ~40 sites.
+    _setupGlobalCohortBar() {
+        const refresh = () => {
+            // A timer, not requestAnimationFrame: rAF is suspended while the
+            // tab is in the background, which would leave the bar describing a
+            // cohort that has since changed.
+            if (this._cohortBarPending) return;
+            this._cohortBarPending = true;
+            setTimeout(() => { this._cohortBarPending = false; this._updateGlobalCohortBar(); }, 0);
+        };
+        document.addEventListener('change', refresh, true);
+        document.addEventListener('click', refresh, true);
+        document.getElementById('globalCohortReset')?.addEventListener('click', () => {
+            document.getElementById('resetAppBtn')?.click();
+        });
+        this._updateGlobalCohortBar();
     }
 
     // Reset all starts as a quiet outline button like its Options neighbours;
@@ -9472,12 +9517,42 @@ class CorrelationExplorer {
                 alert('Image export failed. Try SVG instead.');
             }
         } else {
-            // Build clean SVG table
-            const cellW = 70, cellH = 20, headerH = 28, pad = 10, titleH = settingsText ? 20 : 0;
+            // Build clean SVG table. Columns are measured, not assumed: at a
+            // fixed 70 px every header longer than about ten characters ran
+            // into its neighbours, which is what the column titles were doing.
+            const cellH = 20, pad = 10, titleH = settingsText ? 20 : 0;
             const nCols = headers.length;
             const nRows = visibleRows.length;
-            const firstColW = 90;
-            const totalW = firstColW + (nCols - 1) * cellW + pad * 2;
+            const _mc = document.createElement('canvas').getContext('2d');
+            const measure = (t, bold) => { _mc.font = `${bold ? 'bold ' : ''}9px Arial`; return _mc.measureText(String(t || '')).width; };
+            // Wrap a header onto at most two lines so one long title widens the
+            // column a little rather than a lot.
+            const wrapHead = (t, max) => {
+                if (measure(t, true) <= max) return [t];
+                const words = String(t).split(/\s+/);
+                const lines = [];
+                let cur = '';
+                for (const w of words) {
+                    const test = cur ? `${cur} ${w}` : w;
+                    if (cur && measure(test, true) > max) { lines.push(cur); cur = w; }
+                    else cur = test;
+                    if (lines.length === 1 && measure(cur, true) > max && words.length > 2) continue;
+                }
+                if (cur) lines.push(cur);
+                return lines.slice(0, 2);
+            };
+            const HEAD_MAX = 130;
+            const headLines = headers.map(h => wrapHead(h, HEAD_MAX));
+            const colW = headers.map((h, ci) => {
+                let w = Math.max(...headLines[ci].map(l => measure(l, true)));
+                for (const row of visibleRows) if (row[ci] !== undefined) w = Math.max(w, measure(row[ci], false));
+                return Math.min(Math.max(Math.ceil(w) + 16, ci === 0 ? 90 : 52), 230);
+            });
+            const colX = [];
+            let _acc = pad;
+            for (let ci = 0; ci < nCols; ci++) { colX.push(_acc); _acc += colW[ci]; }
+            const headerH = 14 + 12 * Math.max(1, ...headLines.map(l => l.length));
+            const totalW = _acc + pad;
             const totalH = titleH + headerH + nRows * cellH + pad * 2;
 
             let svg = `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${totalW}" height="${totalH}" viewBox="0 0 ${totalW} ${totalH}">\n`;
@@ -9492,8 +9567,12 @@ class CorrelationExplorer {
             // Header row
             svg += `<rect x="${pad}" y="${startY}" width="${totalW - pad * 2}" height="${headerH}" fill="#f0fdf4"/>\n`;
             headers.forEach((h, i) => {
-                const x = pad + (i === 0 ? firstColW / 2 : firstColW + (i - 1) * cellW + cellW / 2);
-                svg += `<text x="${x}" y="${startY + headerH / 2 + 4}" font-family="Arial" font-size="9" font-weight="bold" fill="#1a4a1a" text-anchor="middle">${this.escapeXml(h)}</text>\n`;
+                const x = colX[i] + colW[i] / 2;
+                const lines = headLines[i];
+                const y0 = startY + headerH / 2 + 4 - (lines.length - 1) * 6;
+                lines.forEach((line, li) => {
+                    svg += `<text x="${x}" y="${y0 + li * 12}" font-family="Arial" font-size="9" font-weight="bold" fill="#1a4a1a" text-anchor="middle">${this.escapeXml(line)}</text>\n`;
+                });
             });
 
             // Data rows (visible portion only)
@@ -9501,7 +9580,8 @@ class CorrelationExplorer {
                 const y = startY + headerH + ri * cellH;
                 if (ri % 2 === 1) svg += `<rect x="${pad}" y="${y}" width="${totalW - pad * 2}" height="${cellH}" fill="#f9fafb"/>\n`;
                 row.forEach((cell, ci) => {
-                    const x = pad + (ci === 0 ? firstColW / 2 : firstColW + (ci - 1) * cellW + cellW / 2);
+                    if (ci >= nCols) return;
+                    const x = colX[ci] + colW[ci] / 2;
                     const color = cell.startsWith('-') && !cell.startsWith('-') === false ? '#dc2626' : cell.match(/^-?\d/) && parseFloat(cell) < 0 ? '#dc2626' : parseFloat(cell) > 0 && ci > 0 ? '#5d9239' : '#374151';
                     svg += `<text x="${x}" y="${y + cellH / 2 + 4}" font-family="Arial" font-size="9" fill="${color}" text-anchor="middle">${this.escapeXml(cell)}</text>\n`;
                 });
@@ -9623,7 +9703,11 @@ class CorrelationExplorer {
 
 
     showGeneEffectDistribution(gene, tissueOverride, inspectHotspotOverride) {
-        if (!this.mutationResults) return;
+        // A silent early return here reads as a broken button. Say why.
+        if (!this.mutationResults) {
+            this.showCopyNotification?.('Inspect needs mutation analysis results. Run the analysis again, then click Inspect.');
+            return;
+        }
         if (gene === '⚡ Growth Rate' || gene?.startsWith('📊')) return; // pseudo-gene, not a real gene
         this._updateGEActiveFilters();
 
@@ -12890,8 +12974,8 @@ Results:
         return this._composeNetworkFilterText();
     }
 
-    _composeNetworkFilterText() {
-        if (this._netBannerCustomText != null && this._netBannerCustomText !== '') return this._netBannerCustomText;
+    _composeNetworkFilterText(ignoreCustom) {
+        if (!ignoreCustom && this._netBannerCustomText != null && this._netBannerCustomText !== '') return this._netBannerCustomText;
         const parts = [];
         // When the analysis was launched from a CLB selection (via "Inspect
         // gene effects" / "Inspect correlations" → Network), surface that
@@ -12943,7 +13027,13 @@ Results:
         // CLB selection, the selection label already states the count, and
         // the dataset-level n= here would otherwise contradict it.
         if (fromSelection) return `Filters: ${parts.join('  \u00b7  ')}`;
-        return `Filters: ${parts.join('  \u00b7  ')}  \u00b7  n=${this.results.nCellLines}`;
+        // n= is the cohort the results were computed on. Asked before any
+        // analysis has run (the cohort bar does exactly that), there is no
+        // such number, and reaching for it used to throw.
+        const nRun = this.results?.nCellLines;
+        return nRun == null
+            ? `Filters: ${parts.join('  \u00b7  ')}`
+            : `Filters: ${parts.join('  \u00b7  ')}  \u00b7  n=${nRun}`;
     }
 
     // Resize the network canvas to its container and force a full redraw, which
@@ -25717,7 +25807,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const zl = document.getElementById('geShowZeroLine'); if (zl) zl.checked = true;
         this._geUserTitlePos = null; this._geUserXLabelPos = null; this._geUserYLabelPos = null;
         this._activeOncoprintFilters = [];
-        this.currentGeneEffect = null; this.currentGeneEffectGene = null; this.mutationResults = null;
+        // mutationResults is deliberately NOT cleared here. It belongs to the
+        // mutation analysis on the page behind this popout, not to the popout,
+        // and clearing it left every Inspect button in that table silently
+        // dead: they all return early without it, so the app looked frozen.
+        this.currentGeneEffect = null; this.currentGeneEffectGene = null;
         this.geneEffectViewMode = 'geneEffect'; this.currentGEView = 'tissue'; this.geDetailedView = null;
         document.getElementById('geByTissueView').style.display = 'none';
         document.getElementById('geByHotspotView').style.display = 'none';
@@ -28504,6 +28598,17 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         const question = document.getElementById('aiQuestion')?.value?.trim() || '';
 
+        // Growth rate is not loaded at startup (the network option that used it
+        // was retired), but proliferation is the standard alternative
+        // explanation for a modest dependency, so the export fetches it on
+        // demand rather than telling the reader to go and get it.
+        if (!this._exportGrowthRate) {
+            try {
+                const r = await fetch(this._dataUrl('web_data/growth_rate.json'));
+                this._exportGrowthRate = r.ok ? await r.json() : {};
+            } catch (e) { this._exportGrowthRate = {}; }
+        }
+
         // Load common essentials (#6)
         if (!this._commonEssentials) {
             try { const r = await fetch(this._dataUrl('web_data/common_essentials.json')); this._commonEssentials = new Set(await r.json()); } catch(e) { this._commonEssentials = new Set(); }
@@ -28523,11 +28628,25 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // useful at large n where stratification power matters most).
         const clMeta = {};
         for (const cl of cellLines) {
+            // `subtype` is the Oncotree *disease group*, which is too coarse to
+            // answer a question about one disease inside it: CLL, mantle cell,
+            // DLBCL and myeloma all sit in "Mature B-Cell Neoplasms". The finer
+            // Oncotree label and code are carried alongside it so a subgroup can
+            // actually be assembled from this file.
             const entry = {
                 name: this.getCellLineName(cl),
                 tissue: this.getCellLineLineage(cl),
                 subtype: this.cellLineMetadata?.primaryDisease?.[cl] || ''
             };
+            const _onSub = this.cellLineMetadata?.oncotreeSubtype?.[cl] || this.cellLineMetadata?.subtype?.[cl] || '';
+            const _onCode = this.cellLineMetadata?.oncotreeCode?.[cl] || '';
+            if (_onSub && _onSub !== entry.subtype) entry.oncotreeSubtype = _onSub;
+            if (_onCode) entry.oncotreeCode = _onCode;
+            // Proliferation is the standard alternative explanation for a
+            // dependency of modest size, so it belongs in the file rather than
+            // one export away.
+            const _gr = this._exportGrowthRate?.[cl] ?? this.growthRateData?.[cl];
+            if (_gr !== undefined && _gr !== null && !isNaN(_gr)) entry.growthRate = parseFloat(Number(_gr).toFixed(4));
             const mutations = {};
             if (this.mutations?.genes) {
                 for (const g of this.mutations.genes) {
@@ -28909,6 +29028,15 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const targetData = this.getGeneData(targetIdx);
             const tissueBuckets = {};
             const subtypeBuckets = {};
+            // Third, finest stratification. The Oncotree disease group is too
+            // coarse for a question about one disease inside it: CLL, mantle
+            // cell, DLBCL and myeloma all live in "Mature B-Cell Neoplasms",
+            // so a real CLL effect showed up only as a diluted group mean and
+            // the group that mattered appeared nowhere in the file.
+            const oncoBuckets = {};
+            // Positions (indices into cellLines) per group, so the same groups
+            // can be scored against the whole matrix further down.
+            const tissuePos = {}, subtypePos = {}, oncoPos = {};
             let allValues = [];
             for (let j = 0; j < cellLines.length; j++) {
                 const cl = cellLines[j];
@@ -28919,34 +29047,48 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 allValues.push(v);
                 const tissue = this.getCellLineLineage(cl) || 'Unknown';
                 const subtype = this.cellLineMetadata?.primaryDisease?.[cl] || 'Unknown';
+                const onco = this.cellLineMetadata?.oncotreeSubtype?.[cl] || this.cellLineMetadata?.subtype?.[cl] || '';
                 (tissueBuckets[tissue] = tissueBuckets[tissue] || []).push(v);
-                (subtypeBuckets[`${tissue} | ${subtype}`] = subtypeBuckets[`${tissue} | ${subtype}`] || []).push(v);
+                (tissuePos[tissue] = tissuePos[tissue] || []).push(j);
+                const sKey = `${tissue} | ${subtype}`;
+                (subtypeBuckets[sKey] = subtypeBuckets[sKey] || []).push(v);
+                (subtypePos[sKey] = subtypePos[sKey] || []).push(j);
+                if (onco && onco !== subtype) {
+                    const oKey = `${tissue} | ${onco}`;
+                    (oncoBuckets[oKey] = oncoBuckets[oKey] || []).push(v);
+                    (oncoPos[oKey] = oncoPos[oKey] || []).push(j);
+                }
             }
             if (allValues.length > 0) {
                 const overallMean = allValues.reduce((a, b) => a + b, 0) / allValues.length;
                 const overallSd = Math.sqrt(allValues.reduce((s, x) => s + (x - overallMean) ** 2, 0) / allValues.length) || 1;
-                const summarize = (buckets, minN) => {
+                // A group that is dropped is far more dangerous than a group
+                // that is flagged: the CLL case failed partly because the four
+                // relevant lines fell under an n>=5 floor and so were absent
+                // from the file entirely. Small groups are now emitted with
+                // lowN set, and only n=1 is dropped (that is a cell line, not
+                // a group).
+                const summarize = (buckets, solidN) => {
                     const out = [];
                     for (const [k, vs] of Object.entries(buckets)) {
-                        if (vs.length < minN) continue;
+                        if (vs.length < 2) continue;
                         const mean = vs.reduce((a, b) => a + b, 0) / vs.length;
                         const sd = Math.sqrt(vs.reduce((s, x) => s + (x - mean) ** 2, 0) / vs.length);
-                        out.push({
+                        const row = {
                             group: k, n: vs.length,
                             mean: parseFloat(mean.toFixed(3)),
                             sd: parseFloat(sd.toFixed(3)),
                             zVsOverall: parseFloat(((mean - overallMean) / overallSd).toFixed(3))
-                        });
+                        };
+                        if (vs.length < solidN) row.lowN = true;
+                        out.push(row);
                     }
                     out.sort((a, b) => a.mean - b.mean);
                     return out;
                 };
-                // n>=3 for tissues (often few entries per tissue, want them all);
-                // n>=5 for subtypes, at n=3 the SD/z is noise per the reviewer's
-                // feedback ("Kidney | Rhabdoid Cancer n=5 z=-0.99 was right at
-                // the edge of interesting tip vs noise").
                 const tissueSummary = summarize(tissueBuckets, 3);
                 const subtypeSummary = summarize(subtypeBuckets, 5);
+                const oncoSummary = summarize(oncoBuckets, 5);
                 if (tissueSummary.length || subtypeSummary.length) {
                     extras = extras || {};
                     extras.focalGeneTissueSummary = {
@@ -28954,9 +29096,130 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                         overallMean: parseFloat(overallMean.toFixed(3)),
                         overallSd: parseFloat(overallSd.toFixed(3)),
                         n: allValues.length,
+                        _readMe: 'zVsOverall is the group mean in units of the SPREAD ACROSS CELL LINES, which is not a significance test. Score a group with selectivityZ + focalGeneRankAmongGenes where they are present, and calibrate a small group against extras.groupContrastNull. lowN groups are kept deliberately: a flagged small group is less dangerous than a missing one.',
                         byTissue: tissueSummary,
-                        bySubtype: subtypeSummary
+                        bySubtype: subtypeSummary,
+                        byOncotreeSubtype: oncoSummary
                     };
+
+                    // --- score every group against the rest of the matrix ----
+                    // A group mean means nothing on its own. What settles it is
+                    // where the focal gene ranks among all genes for the SAME
+                    // contrast in the SAME group, and how wide the gene-level
+                    // null actually is (empirically nearer 0.6 than 1.0, so a
+                    // group z of -1.96 read as "marginal" is not marginal).
+                    // One pass over the exported matrix does the whole job,
+                    // and also yields the two standard per-line controls.
+                    const _rankGroups = [];
+                    const _pushGroups = (rows, posMap) => rows.forEach(r => {
+                        const idxs = posMap[r.group];
+                        if (idxs && idxs.length >= 2) _rankGroups.push({ row: r, idxs, zs: [], focalZ: null });
+                    });
+                    _pushGroups(tissueSummary, tissuePos);
+                    _pushGroups(subtypeSummary, subtypePos);
+                    _pushGroups(oncoSummary, oncoPos);
+
+                    const _geneNames = Object.keys(geMatrix);
+                    const _nPos = cellLines.length;
+                    const _lineSum = new Float64Array(_nPos);
+                    const _lineSq = new Float64Array(_nPos);
+                    const _lineCnt = new Int32Array(_nPos);
+                    // Work guard: the ranking pass is O(genes x lines). Beyond
+                    // this it would stall the export, so it is skipped and said
+                    // to be skipped rather than silently half-done.
+                    const _rankBudget = _geneNames.length * _nPos <= 30e6;
+                    const _focalUpper = analysisGene.toUpperCase();
+                    for (const gname of _geneNames) {
+                        const vals = geMatrix[gname];
+                        let tot = 0, cnt = 0, sq = 0;
+                        for (let j = 0; j < _nPos; j++) {
+                            const v = vals[j];
+                            if (v === null || v === undefined) continue;
+                            tot += v; cnt++; sq += v * v;
+                            _lineSum[j] += v; _lineSq[j] += v * v; _lineCnt[j]++;
+                        }
+                        if (!_rankBudget || cnt < 10) continue;
+                        const gMean = tot / cnt;
+                        const gSd = Math.sqrt(Math.max(sq / cnt - gMean * gMean, 0)) || 1;
+                        const isFocalGene = gname.toUpperCase() === _focalUpper;
+                        for (const G of _rankGroups) {
+                            let gs = 0, gc = 0;
+                            for (const j of G.idxs) {
+                                const v = vals[j];
+                                if (v === null || v === undefined) continue;
+                                gs += v; gc++;
+                            }
+                            if (gc < 2 || cnt - gc < 5) continue;
+                            const z = ((gs / gc) - (tot - gs) / (cnt - gc)) / gSd;
+                            G.zs.push(z);
+                            if (isFocalGene) G.focalZ = z;
+                        }
+                    }
+                    if (_rankBudget) {
+                        for (const G of _rankGroups) {
+                            if (G.focalZ === null || G.zs.length < 100) continue;
+                            const m = G.zs.reduce((a, b) => a + b, 0) / G.zs.length;
+                            const sd = Math.sqrt(G.zs.reduce((a, x) => a + (x - m) ** 2, 0) / G.zs.length);
+                            let below = 0;
+                            for (const z of G.zs) if (z < G.focalZ) below++;
+                            G.row.selectivityZ = parseFloat(G.focalZ.toFixed(3));
+                            G.row.focalGeneRankAmongGenes = below + 1;
+                            G.row.nGenesRanked = G.zs.length;
+                            G.row.groupZSdAcrossGenes = parseFloat(sd.toFixed(3));
+                        }
+                        extras.focalGeneTissueSummary._groupScoring =
+                            'selectivityZ = (group mean - rest-of-cohort mean) / that gene\'s SD across the cohort, so it is a within-gene contrast, not the group spread. focalGeneRankAmongGenes ranks the focal gene against every other gene in this file on that same contrast for that same group, most-selectively-essential first, and is the single most decisive number here: "26th of 3437" settles a question that "mean -0.165" does not. groupZSdAcrossGenes is the empirical SD of that contrast across genes and is the null to score selectivityZ against, it is usually well below 1.0, so dividing selectivityZ by it is the honest effect size.';
+                    } else {
+                        extras.focalGeneTissueSummary._groupScoring =
+                            'Per-group gene-level ranking was skipped: this cohort x matrix is too large to rank at export time. Recompute it yourself for any group you rely on, the recipe is in _method.';
+                    }
+
+                    // --- the two standard controls for a weak dependency ----
+                    // Both were previously a full matrix pass away, which meant
+                    // "is this screen just globally sick" and "is the gene
+                    // unusual for THIS line" went unchecked.
+                    const _lineMeans = [];
+                    for (let j = 0; j < _nPos; j++) if (_lineCnt[j] >= 10) _lineMeans.push(_lineSum[j] / _lineCnt[j]);
+                    _lineMeans.sort((a, b) => a - b);
+                    for (let j = 0; j < _nPos; j++) {
+                        if (_lineCnt[j] < 10) continue;
+                        const e = clMeta[cellLines[j]];
+                        if (!e) continue;
+                        const mu = _lineSum[j] / _lineCnt[j];
+                        const sd = Math.sqrt(Math.max(_lineSq[j] / _lineCnt[j] - mu * mu, 0)) || 1;
+                        let lo = 0; while (lo < _lineMeans.length && _lineMeans[lo] < mu) lo++;
+                        e.meanGeneEffect = parseFloat(mu.toFixed(3));
+                        e.meanGeneEffectPercentile = Math.round(100 * lo / _lineMeans.length);
+                        const fv = geMatrix[analysisGene] ? geMatrix[analysisGene][j] : null;
+                        if (fv !== null && fv !== undefined) e.focalGeneZWithinLine = parseFloat(((fv - mu) / sd).toFixed(2));
+                    }
+
+                    // --- what a group mean of this size looks like by chance -
+                    // Reading four lines at the 6th percentile as unremarkable
+                    // was the third failure: one line there is nothing, four is
+                    // p = 0.0005. Resampling the focal gene gives that directly.
+                    const _null = {};
+                    for (const k of [3, 5, 10, 25, 50]) {
+                        if (k >= allValues.length) continue;
+                        const draws = [];
+                        for (let it = 0; it < 2000; it++) {
+                            let sum = 0;
+                            for (let d = 0; d < k; d++) sum += allValues[(Math.random() * allValues.length) | 0];
+                            draws.push(((sum / k) - overallMean) / overallSd);
+                        }
+                        draws.sort((a, b) => a - b);
+                        const q = (p) => parseFloat(draws[Math.min(draws.length - 1, Math.floor(p * draws.length))].toFixed(3));
+                        _null['n' + k] = { p1: q(0.01), p5: q(0.05), p50: q(0.50), p95: q(0.95), p99: q(0.99) };
+                    }
+                    if (Object.keys(_null).length) {
+                        extras.groupContrastNull = {
+                            gene: analysisGene,
+                            _readMe: `Percentiles of (group mean - cohort mean) / cohort SD for RANDOM groups of k cell lines drawn from this cohort's ${analysisGene} gene effect, 2000 draws each. Use it to score a small group: a group z past the p1 / p99 bound is significant at roughly two-sided p = 0.02 for that group size. Small groups have wide nulls and large groups have narrow ones, which is exactly why eyeballing per-line percentiles misleads, four lines all near the 6th percentile is not four times "unremarkable".`,
+                            cohortMean: parseFloat(overallMean.toFixed(3)),
+                            cohortSd: parseFloat(overallSd.toFixed(3)),
+                            byGroupSize: _null
+                        };
+                    }
                 }
 
                 // Variance warning, flag when the focal gene sits in screen
@@ -29204,18 +29467,20 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         const exportData = {
             _description: 'Correlate V2, Unified Data Export (gzipped). Same shape regardless of source view (gene effect / scatter / mutation analysis / gate comparison / correlation / cluster / expression correlate). The `context` field tells you which view this came from.',
-            schemaVersion: '3.2',
+            schemaVersion: '3.3',
             nTotal: cellLines.length,
             dataStructure: {
                 cellLineOrder: 'Array of DepMap cell line IDs. Defines column order for geneEffect and expression matrices. Length = nTotal.',
-                cellLineMetadata: 'Object keyed by cell line ID. Per cell line: name, tissue, subtype, mutations (gene → {hotspot: 0|1|2, damaging: bool, caveat?: "polymorphic_locus"}), clinicalFusions (curated driver fusion calls with tier), inferred (DepMap inferred subtypes, specificVariants like KRAS p.G12D, namedFusions, functionalLoss, msi), signatures (ploidy, wgd, cin, lohFraction, msiScore, aneuploidy), cnEvents ({ amplifications: [{gene, cn, tier}], deletions: [{gene, cn, tier}] }, curated focal CN events from a clinically actionable panel; amp tier is "amp" (CN ≥ 3.0) or "strong_amp" (≥ 5.0); deletion tier is "del" (CN ≤ 0.5) or "deep_del" (≤ 0.3) on DepMap relative-CN scale where 1.0 = diploid; the 8 TSGs in inferred.functionalLoss are NOT duplicated here), lehmannTnbc ({ tnbcType6, tnbcType4 }, Lehmann TNBC subtype assignments from JCI 2011 / PLOS ONE 2016 for the ~22 panel cell lines that overlap DepMap; six-class: BL1, BL2, IM, M, MSL, LAR; four-class collapses IM/MSL as immune/stromal contamination), class1AntigenPresentation ({ status: "reduced" | "likely_lost", reasons: [...], evidence: { b2mDamaging?, classOneExprMeanZ?, classOneCn? } }, functional inference combining B2M damaging mutations + HLA-A/B/C expression z-score vs cohort + B2M-normalized HLA copy number; only emitted when class-I presentation looks compromised; NOT allele-specific LOH detection). The `caveat: "polymorphic_locus"` flag marks HLA / MIC / KIR genes, calls in these highly polymorphic regions typically reflect germline allelic divergence from GRCh38, not somatic events.',
+                cellLineMetadata: 'Object keyed by cell line ID. Per cell line: name, tissue, subtype, mutations (gene → {hotspot: 0|1|2, damaging: bool, caveat?: "polymorphic_locus"}), clinicalFusions (curated driver fusion calls with tier), inferred (DepMap inferred subtypes, specificVariants like KRAS p.G12D, namedFusions, functionalLoss, msi), signatures (ploidy, wgd, cin, lohFraction, msiScore, aneuploidy), cnEvents ({ amplifications: [{gene, cn, tier}], deletions: [{gene, cn, tier}] }, curated focal CN events from a clinically actionable panel; amp tier is "amp" (CN ≥ 3.0) or "strong_amp" (≥ 5.0); deletion tier is "del" (CN ≤ 0.5) or "deep_del" (≤ 0.3) on DepMap relative-CN scale where 1.0 = diploid; the 8 TSGs in inferred.functionalLoss are NOT duplicated here), lehmannTnbc ({ tnbcType6, tnbcType4 }, Lehmann TNBC subtype assignments from JCI 2011 / PLOS ONE 2016 for the ~22 panel cell lines that overlap DepMap; six-class: BL1, BL2, IM, M, MSL, LAR; four-class collapses IM/MSL as immune/stromal contamination), class1AntigenPresentation ({ status: "reduced" | "likely_lost", reasons: [...], evidence: { b2mDamaging?, classOneExprMeanZ?, classOneCn? } }, functional inference combining B2M damaging mutations + HLA-A/B/C expression z-score vs cohort + B2M-normalized HLA copy number; only emitted when class-I presentation looks compromised; NOT allele-specific LOH detection). Also per cell line where available: oncotreeSubtype / oncotreeCode (finer than `subtype`, which is the Oncotree disease GROUP and cannot separate CLL from DLBCL or myeloma), growthRate (CRISPR-inferred proliferation, the standard alternative explanation for a modest dependency), meanGeneEffect + meanGeneEffectPercentile (that line\'s mean across the whole matrix, the "is this screen globally sick" control) and focalGeneZWithinLine (the focal gene\'s z against that line\'s OWN dependency distribution, the "is this gene unusual for this line" control). The `caveat: "polymorphic_locus"` flag marks HLA / MIC / KIR genes, calls in these highly polymorphic regions typically reflect germline allelic divergence from GRCh38, not somatic events.',
                 geneEffect: 'Object keyed by gene name. Each value is an array of CRISPR gene effect scores aligned to cellLineOrder. Negative = essential. null = missing. The focal gene of the analysis is always included regardless of variance threshold.',
                 expression: 'Object keyed by gene name. Each value is an array of log2(TPM+1) RNA expression values aligned to cellLineOrder. null = missing. The focal gene, the genes surfaced in topCorrelates, and the focal gene\'s pathway / complex partners are always included regardless of variance threshold. Partner sources are layered: hand-curated high-value complexes (NEDD8/CRL, Proteasome, Hippo, MYC, TP53, BRCA, mTOR, BCL2, splicing) → CORUM physical protein complexes (~5000 human genes) → wiki cancer pathways (RAS/MAPK, PI3K, RTK family, etc.) → Reactome pathway / signaling-cascade co-members (~10000 human genes; broad parents filtered out, only pathways with 5-100 genes kept). So for SMARCA4 you get the BAF subunits via CORUM; for MCM4 the MCM2-7 helicase; for IL4R the JAK/STAT cascade via Reactome; for arbitrary genes you typically get something useful from at least one of the four layers.',
                 topCorrelates: 'Optional. Top 30 expression-vs-GE correlates of the focal gene: { gene, r (Pearson, focal-gene GE vs partner expression across the cohort), n }. Gated at n >= max(50, 0.6 * cohortSize) to drop partial-coverage genes. Polarity: positive r means high partner expression covaries with weaker focal-gene dependency (less negative GE).',
                 topCoessentials: 'Optional. Top 30 GE-vs-GE co-essentials of the focal gene: { gene, r (Pearson, focal-gene GE vs partner GE across the cohort), n }. Same n-gate as topCorrelates. Every gene named here is also present in the geneEffect matrix (added back if the variance filter dropped it), so the LLM can verify by recomputing. Polarity: positive r means lines that depend more on the partner depend less on the focal gene (classic co-essentiality buffering pattern within a complex). Negative r means partner and focal gene are co-essential, both required by the same lines (same-pathway dependency).',
                 topExpressionCorrelates: 'Optional. Top 30 expression-vs-expression correlates of the focal gene: { gene, r (Pearson, focal-gene expression vs partner expression across the cohort), n }. Same n-gate as topCorrelates. Every gene named here is in the expression matrix (the always-include set carries them through the variance filter). Polarity: positive r means partner expression is co-regulated with focal-gene expression (often shared transcriptional program / phenotype state / lineage marker); negative r means anti-correlated (often a competing program). Note: in homogeneous filtered cohorts, top hits often reflect transcriptional state / phenotype switches rather than direct mechanistic links. Suppressed when the focal gene\'s expression has near-zero variance in the cohort (SD < 0.05).',
                 cellLineGroups: 'Optional. Cell line IDs grouped by analysis stratification (WT/mut1/mut2 for mutation, gateA/gateB for gate comparison, etc.).',
-                extras: 'Optional. Source-specific precomputed analysis results: differentialGeneEffect / differentialExpression / tissueEnrichment / mutationEnrichment (gates, mutation analysis), correlationPairs (correlations), tissueStratifiedCorrelations (correlations, top 20 pairs broken out by tissue, each tissue with n>=10 cell lines reports its own r; flags lineage-driven artifacts where overall r vanishes within tissues), clusterGenes (clusters), clusterAnnotations (clusters, per-cluster wiki cancer-pathway overlaps with >=2 shared genes plus CORUM co-member count; tells the LLM whether a cluster is biologically coherent or a grab-bag), expressionCorrelates (exprCorrelates), focalGeneTissueSummary (per-tissue/subtype mean / sd / n / zVsOverall for the focal gene\'s GE, saves the LLM from scanning the matrix to find tissue-level signals; subtypes gated at n>=5), focalGeneMutationSummary ({ coreDrivers: canonical drivers always shown regardless of effect size with n_mut>=5; topByEffect: top 20 from extended panel ranked by |t| with n_mut>=10 }, Welch\'s t comparing mutated vs WT lines on focal-gene GE), focalGeneVarianceWarning ({ geneEffect: ..., expression: ... }, emitted only when the focal axis sits in cohort noise, e.g. mean GE near 0 with no essential lines, or expression SD < 0.5; warns the LLM not to chase phantom biology in noise-driven correlations), pairCorrelation (scatter views, actual Pearson + Spearman + n + two-sided p between the two scatter axes in the filtered cohort), _method (block documenting how every summary was computed).',
+                extras: 'Optional. Source-specific precomputed analysis results: differentialGeneEffect / differentialExpression / tissueEnrichment / mutationEnrichment (gates, mutation analysis), correlationPairs (correlations), tissueStratifiedCorrelations (correlations, top 20 pairs broken out by tissue, each tissue with n>=10 cell lines reports its own r; flags lineage-driven artifacts where overall r vanishes within tissues), clusterGenes (clusters), clusterAnnotations (clusters, per-cluster wiki cancer-pathway overlaps with >=2 shared genes plus CORUM co-member count; tells the LLM whether a cluster is biologically coherent or a grab-bag), expressionCorrelates (exprCorrelates), focalGeneTissueSummary (per-tissue/subtype/Oncotree-subtype mean / sd / n / zVsOverall for the focal gene\'s GE; three stratifications because the disease group alone is too coarse for a question about one disease inside it. Groups smaller than the solid-n threshold are kept and marked lowN rather than dropped. Where the ranking pass ran, each group also carries selectivityZ (group vs rest, in that gene\'s own SD), focalGeneRankAmongGenes / nGenesRanked (the focal gene\'s rank among all genes in this file on that same contrast, the most decisive single number available) and groupZSdAcrossGenes (the empirical gene-level null, usually well under 1.0)), groupContrastNull (percentiles of a random group\'s mean z at sizes 3/5/10/25/50, the calibration for judging whether a small group\'s mean is remarkable), focalGeneMutationSummary ({ coreDrivers: canonical drivers always shown regardless of effect size with n_mut>=5; topByEffect: top 20 from extended panel ranked by |t| with n_mut>=10 }, Welch\'s t comparing mutated vs WT lines on focal-gene GE), focalGeneVarianceWarning ({ geneEffect: ..., expression: ... }, emitted only when the focal axis sits in cohort noise, e.g. mean GE near 0 with no essential lines, or expression SD < 0.5; warns the LLM not to chase phantom biology in noise-driven correlations), pairCorrelation (scatter views, actual Pearson + Spearman + n + two-sided p between the two scatter axes in the filtered cohort), _method (block documenting how every summary was computed).',
+                questionScope: 'Optional, present when the question names a disease or subtype. The question\'s terms resolved to actual cell lines at export time: { term, matchedLines, n, borderline, confidence, basis, alsoMatched, note }. Emitted because the disease fields are coarser than most questions: CLL is not a value `subtype` takes, its lines sit inside "Mature B-Cell Neoplasms" alongside DLBCL, Burkitt, mantle cell and myeloma. `borderline` lists same-lineage lines filed as non-cancerous or unclassified, which is where a genuine member of the group most often hides. Start from this group; do not answer a subgroup question from a coarser bucket.',
+                scanScope: 'Optional. States that topCorrelates / topCoessentials / topExpressionCorrelates are cohort-wide Pearson, and that absence from them is not evidence of absence for a subgroup. Read it before dismissing a subgroup finding on the strength of flat cohort-wide values.',
                 _method: 'Same content as extras._method, duplicated here at schema level so it\'s available even when extras is omitted (e.g. for views without precomputed source-specific extras).'
             },
             // What the file does NOT carry. Without this an assistant either
@@ -29225,7 +29490,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             notIncluded: {
                 _readMe: 'Data the app holds but this file does not carry. If any of it would materially change the answer, say so and tell the user exactly which of these to fetch, rather than guessing or treating the absence as evidence.',
                 drugResponse: 'PRISM Repurposing drug sensitivity (AUC per cell line per compound) is NOT here. The user can get it from the Cell Line Browser: sort by "Drug response (PRISM AUC)", pick the compound, then "List on screen: CSV" for the visible cohort with its AUC values.',
-                growthRate: 'CRISPR-inferred proliferation rate per cell line is NOT here. In the app it is available as a pseudo-gene axis in the scatter (Growth Rate).',
+                growthRate: 'Where the app has it, CRISPR-inferred proliferation rate IS carried per cell line as cellLineMetadata[id].growthRate, because proliferation is the standard alternative explanation for a dependency of modest size. Lines without the field have no growth-rate estimate. The app also offers it as a pseudo-gene axis in the scatter.',
                 fullCopyNumber: 'Only the focal gene(s) relative copy number and the curated amplification / deletion calls per line are here. The genome-wide relative-CN matrix (~19 000 genes) is NOT, and can be added per gene from the Cell Line Browser copy-number sort.',
                 genesBelowThreshold: `Genes filtered out of the matrices by the data tier in force (${tierLabel}). A gene absent from geneEffect or expression was dropped by that filter or is missing from DepMap; it is not evidence of no effect. The focal gene and its named correlates are always kept.`,
                 cellLinesOutsideCohort: 'Only the cohort described in `context` is here. Cell lines excluded by the active filters are absent by design; conclusions apply to this cohort, not to DepMap as a whole.',
@@ -29247,7 +29512,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             _analysisInstructions: [
                 "Step 0 - Sanity check: Look for extras.focalGeneVarianceWarning. If present, the focal gene sits in screen noise in this cohort, top genome-wide correlations will be noise-driven. Read the warning aloud to the user, suggest stratification or a wider cohort, and treat any pattern hunting in this export as exploratory, not load-bearing.",
                 "Step 1 - Overview: Briefly survey the data. Summarize key groups, sample sizes, and the target gene's effect distribution. When the export includes them (gene-effect / scatter / mutation / expression-correlate views with a single focal gene), USE these precomputed scans before recomputing anything: topCoessentials (GE-vs-GE Pearson, which other genes' essentiality co-varies with the focal gene's; positive r = co-essentiality BUFFERING within a complex, negative r = same-pathway co-essentiality) and topCorrelates (GE-vs-expression Pearson, which genes' expression predicts focal-gene dependency; positive r = high partner expression covaries with WEAKER focal-gene essentiality). If those fields are not present (e.g. multi-gene views like correlation / cluster / gate-comparison), recompute against the matrix yourself.",
-                "Step 2 - Confirm scope (judgment call): If the question is open-ended ('explain the variability', 'what drives X'), present the overview to the user with 2-3 candidate analytical angles and ask which to pursue. If the question is specific and self-contained ('what is the top correlate of NEDD8', 'compare gates A and B on differential GE'), skip this step and go straight to the analysis, don't pad with friction.",
+                "Step 2 - Confirm scope: If the question names a disease, subtype, or gene-defined subset narrower than the stratification groups available in `extras`, define that subset explicitly by cell line FIRST and test it as a group, using `questionScope` if present. Do not answer a subgroup question from marginal summaries computed at a coarser granularity: a question can read as specific ('is IPO5 interesting in CLL') and still not be self-contained, because the cohort it names is not a group the file defines. Skip this step only when the question's cohort is already the export's cohort. If the question is instead open-ended ('explain the variability', 'what drives X'), present the overview with 2-3 candidate angles and ask which to pursue.",
+                "Step 2b - Before concluding a subgroup effect is ABSENT, check whether the precomputed scans could have detected it at that scope. topCorrelates / topCoessentials / topExpressionCorrelates are cohort-wide (see `scanScope`); an effect confined to a few lines is invisible in them by construction. Recompute inside the group, and score the group against extras.groupContrastNull for its size and against focalGeneRankAmongGenes, rather than eyeballing per-line percentiles: one line at the 6th percentile is unremarkable, four lines all there is not.",
                 "Step 3b - Name the gaps: if answering the question properly would need something in `notIncluded` (drug response, growth rate, genome-wide copy number, viral transformation status, cell lines outside this cohort), say so plainly and tell the user which export would supply it. Do not treat an absent layer as a negative result.",
                 "Step 3 - Deep analysis: Work data-first. Use the precomputed extras (focalGeneTissueSummary for per-tissue/subtype means, focalGeneMutationSummary for driver-mutation effects) before scanning the matrix gene-by-gene. Characterize unbiased genome-wide hits and annotate by pathway before testing hypothesis-driven candidate gene lists. After finding one explanatory model, actively search for alternative or complementary axes. Report all major signals, not just the first plausible one."
             ],
@@ -29291,18 +29557,38 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Assay context the model would otherwise have to guess at.
         exportData.assayNotes = {
             geneEffectProcessing: 'Gene effect scores are Chronos-processed and already copy-number-corrected by DepMap; do not re-correct for CN or attribute correlations between genes on different chromosomes to shared CN artifacts.',
-            correlationCalibration: 'Calibration for Pearson r between two genes\' gene-effect profiles across this panel: random gene pairs have median |r| around 0.05; catalogued complex or pathway partners typically reach |r| 0.3-0.6; |r| above about 0.7 approaches the reliability ceiling of the assay for well-measured genes, i.e. the two profiles agree to within screen noise.'
+            correlationCalibration: 'Calibration for Pearson r between two genes\' gene-effect profiles across this panel: random gene pairs have median |r| around 0.05; catalogued complex or pathway partners typically reach |r| 0.3-0.6; |r| above about 0.7 approaches the reliability ceiling of the assay for well-measured genes, i.e. the two profiles agree to within screen noise.',
+            groupComparisonCalibration: 'Calibration for comparing a GROUP of cell lines against the rest, which the pairwise-r calibration above does not cover. Three things settle it, and per-line percentiles settle none of them: (1) extras.groupContrastNull gives what a random group of that size does by chance, so a group z is read against its own size rather than against 1.0; (2) groupZSdAcrossGenes on each group is the empirical gene-level null and is typically near 0.6-0.7, not 1.0, so a group z of -1.96 is a larger effect than it looks; (3) focalGeneRankAmongGenes places the gene against every other gene in the file on the same contrast, which is the number that actually answers "is this competitive with this group\'s known dependencies". Also check the two per-line controls before believing a group effect: a low meanGeneEffectPercentile across the group means the screens are globally sensitive, and a focalGeneZWithinLine near zero means the gene is not unusual within those lines.'
         };
         exportData.dataStructure = exportData.dataStructure || {};
         exportData.dataStructure.assayNotes = 'Facts about the assay to use directly instead of re-deriving: CN correction status and how to judge the size of a correlation.';
 
         // Conditional fields, omit when not applicable instead of emitting null.
         if (question) exportData.question = question;
+        // Resolve the question's disease terms to cell lines while the app
+        // still has the annotation, so a subgroup question starts from a group
+        // that exists rather than from whatever bucket is nearest.
+        try {
+            const qScope = this._resolveQuestionScope(question, cellLines);
+            if (qScope) exportData.questionScope = qScope;
+        } catch (e) { /* scope resolution is a convenience, never block the export */ }
         if (Object.keys(cellLineGroups).length > 0) exportData.cellLineGroups = cellLineGroups;
         if (Object.keys(geMatrix).length > 0) exportData.geneEffect = geMatrix;
         if (exprMatrix && Object.keys(exprMatrix).length > 0) exportData.expression = exprMatrix;
         if (topCorrelates && topCorrelates.length > 0) exportData.topCorrelates = topCorrelates;
         if (topCoessentials && topCoessentials.length > 0) exportData.topCoessentials = topCoessentials;
+        // The scans are cohort-wide Pearson. A dependency confined to a handful
+        // of lines cannot appear in them, and reading their flat values as "no
+        // structure, therefore noise" is how a real subgroup effect got
+        // dismissed. Say the scope, and say the negative, in one place.
+        if (exportData.topCorrelates || exportData.topCoessentials || exportData.topExpressionCorrelates) {
+            exportData.scanScope = {
+                appliesTo: ['topCorrelates', 'topCoessentials', 'topExpressionCorrelates'],
+                computedOver: `all ${cellLines.length} cell lines in this cohort`,
+                scopeWarning: 'Cohort-wide Pearson. A dependency or correlation restricted to a small subgroup of lines cannot appear in these lists, and will look flat here even when it is strong inside the subgroup. If the question concerns a subgroup, recompute within it from the matrices. ABSENCE FROM THESE LISTS IS NOT EVIDENCE OF ABSENCE.',
+                howToRecompute: 'Take the cell lines of the subgroup (questionScope.matchedLines, or a group from extras.focalGeneTissueSummary), index into geneEffect / expression with those positions of cellLineOrder, and run Pearson within them. Partners invisible at cohort scale routinely appear at |r| 0.4-0.5 inside a lineage-restricted set.'
+            };
+        }
         if (topExpressionCorrelates && topExpressionCorrelates.length > 0) exportData.topExpressionCorrelates = topExpressionCorrelates;
         if (extras) {
             // Mirror the methods block into extras so it's discoverable
@@ -33256,6 +33542,101 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             'age_infant', 'age_pediatric', 'age_aya', 'age_adult', 'age_elderly',
         ]);
         return Object.fromEntries(Object.entries(catalog).filter(([id]) => QUICK_FILTER_IDS.has(id)));
+    }
+
+    // Resolve the disease / subtype terms in the user's question to actual
+    // cell lines, at export time, while the app still has the full annotation.
+    // Without this an assistant reading the file has to invent the group from
+    // labels that may not contain it: "CLL" is not a value the disease field
+    // takes, its lines sit inside "Mature B-Cell Neoplasms" (which also holds
+    // DLBCL, Burkitt, mantle cell and myeloma) and one of them is filed under
+    // "Non-Cancerous" entirely. Emitting the group is most of the value: it
+    // forces the group to exist before the analysis starts.
+    _resolveQuestionScope(question, cellLines) {
+        if (!question || !this.cellLineMetadata) return null;
+        const meta = this.cellLineMetadata;
+        const labelsOf = (cl) => [
+            meta.oncotreeSubtype?.[cl], meta.subtype?.[cl], meta.primaryDisease?.[cl],
+            meta.oncotreeCode?.[cl], meta.lineage?.[cl]
+        ].filter(Boolean);
+
+        // Abbreviations the annotation does not carry. Matched case-sensitively
+        // on a whole word so "mm" in a sentence cannot pass for myeloma. Bare
+        // "ALL" is deliberately absent: it is an ordinary English word and
+        // would fire on "all 1208 lines".
+        const ABBREV = [
+            ['CLL', /chronic lymphocytic leukemia|small lymphocytic lymphoma/i],
+            ['SLL', /small lymphocytic lymphoma/i],
+            ['AML', /acute myeloid leukemia/i],
+            ['APL', /acute promyelocytic leukemia/i],
+            ['CML', /chronic myeloid leukemia/i],
+            ['MCL', /mantle cell lymphoma/i],
+            ['DLBCL', /diffuse large b-cell lymphoma/i],
+            ['MM', /multiple myeloma|plasma cell myeloma/i],
+            ['B-ALL', /b-cell acute lymphoblastic/i],
+            ['T-ALL', /t-cell acute lymphoblastic/i],
+            ['NSCLC', /non-small cell lung/i],
+            ['SCLC', /small cell lung/i],
+            ['GBM', /glioblastoma/i],
+            ['CRC', /colorectal|colon adenocarcinoma/i],
+            ['HCC', /hepatocellular/i],
+            ['RCC', /renal cell/i],
+            ['PDAC', /pancreatic ductal/i],
+            ['HNSCC', /head and neck squamous/i],
+            ['ESCC', /esophageal squamous/i],
+            ['AT\\/RT', /rhabdoid/i]
+        ];
+
+        const terms = [];
+        for (const [abbr, re] of ABBREV) {
+            if (new RegExp(`(^|[^A-Za-z0-9-])${abbr}([^A-Za-z0-9-]|$)`).test(question)) terms.push({ term: abbr, re, basis: 'abbreviation resolved against the Oncotree subtype text' });
+        }
+        // Full annotation labels mentioned verbatim. Longest first so
+        // "mantle cell lymphoma" wins over "lymphoma".
+        const vocab = new Set();
+        for (const cl of cellLines) for (const l of labelsOf(cl)) if (l.length >= 6) vocab.add(l);
+        const ql = question.toLowerCase();
+        [...vocab].sort((a, b) => b.length - a.length).forEach(v => {
+            if (!ql.includes(v.toLowerCase())) return;
+            if (terms.some(t => t.re.test(v))) return;
+            terms.push({ term: v, re: new RegExp(v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), basis: 'disease label quoted in the question' });
+        });
+        if (!terms.length) return null;
+
+        // Score each term: the smallest non-empty group is the most specific
+        // reading of the question, and that is the one worth naming.
+        const resolved = terms.map(t => {
+            const hits = cellLines.filter(cl => labelsOf(cl).some(l => t.re.test(l)));
+            return { ...t, hits };
+        }).filter(t => t.hits.length > 0).sort((a, b) => a.hits.length - b.hits.length);
+        if (!resolved.length) return null;
+
+        const best = resolved[0];
+        const nameOf = (cl) => ({ id: cl, name: this.getCellLineName(cl) });
+        // Lines of the same lineage filed as non-cancerous or unclassified are
+        // the standard way a real member of the group goes missing (HG-3, a
+        // line from a CLL patient, is filed "Non-Cancerous"). They are offered
+        // as candidates rather than folded in silently.
+        const lineages = new Set(best.hits.map(cl => meta.lineage?.[cl]).filter(Boolean));
+        const borderline = cellLines.filter(cl =>
+            !best.hits.includes(cl) && lineages.has(meta.lineage?.[cl]) &&
+            /non-cancerous|unknown|^$/i.test(meta.primaryDisease?.[cl] || '')
+        ).slice(0, 10).map(cl => ({
+            ...nameOf(cl),
+            reason: `same lineage (${meta.lineage?.[cl]}), filed as "${meta.primaryDisease?.[cl] || 'unclassified'}" rather than a disease. Some of these are patient-derived lines of the disease in question that were classified by culture behaviour instead. Check each before including or excluding it.`
+        }));
+
+        const viaFine = best.hits.some(cl => new RegExp(best.re).test(meta.oncotreeSubtype?.[cl] || meta.oncotreeCode?.[cl] || ''));
+        return {
+            term: best.term,
+            matchedLines: best.hits.map(cl => nameOf(cl)),
+            n: best.hits.length,
+            borderline,
+            confidence: viaFine && best.hits.length >= 3 ? 'high' : 'medium',
+            basis: best.basis,
+            alsoMatched: resolved.slice(1, 4).map(t => ({ term: t.term, n: t.hits.length })),
+            note: `This group was assembled from the cell-line annotation at export time, it is not a field in the data. Treat it as a group of ${best.hits.length}, not as ${best.hits.length} individual lines: score it with extras.groupContrastNull for this size, and compare it BOTH against the rest of the cohort AND against other lines of the same lineage, so a lineage effect is not read as a disease effect. Review \`borderline\` before you start, and say which of those you included.`
+        };
     }
 
     // Curated virus-transformation record for a cell line, or null. The
@@ -46855,7 +47236,23 @@ document.addEventListener('DOMContentLoaded', () => {
         const card = overlay.querySelector(':scope > .modal') || overlay.firstElementChild;
         if (!card) return false;
         const cur = parseFloat(card.dataset.slideY || '0') || 0;
-        const next = Math.min(0, Math.max(-(card.offsetHeight - 80), cur - dy));
+        // Slide only as far as something is genuinely out of reach, otherwise
+        // every popout could be scrolled off the top and left a screenful of
+        // empty background behind it. Two things can hide the card's lower
+        // edge: it can extend past the bottom of the viewport, and the browser
+        // window itself can extend past the bottom of the screen (behind
+        // another app, or off a smaller display). The first is measured from
+        // the card, the second from the window's own position, and the second
+        // is capped because a window on a monitor below the primary one
+        // reports coordinates that would otherwise read as a huge overhang.
+        const bottom = card.getBoundingClientRect().bottom - cur;
+        const belowViewport = Math.max(0, bottom - window.innerHeight + 12);
+        const winBottom = window.screenY + window.outerHeight;
+        const screenBottom = (window.screen.availTop || 0) + window.screen.availHeight;
+        const offScreen = Math.min(Math.max(0, winBottom - screenBottom), window.innerHeight / 2);
+        const limit = belowViewport + offScreen;
+        if (limit <= 0) return false;
+        const next = Math.min(0, Math.max(-limit, cur - dy));
         if (next === cur) return false;
         card.dataset.slideY = String(next);
         card.style.transform = next ? `translateY(${next}px)` : '';
