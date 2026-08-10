@@ -14574,7 +14574,16 @@ ${filterText ? `<text x="${width / 2}" y="${headerH / 2}" dominant-baseline="mid
             // which would otherwise push its panel lower than the gate plot's.
             const live = document.getElementById('scatterPlot');
             const m = live?._fullLayout?.margin;
-            if (m) layout.margin = { l: m.l, r: m.r, t: m.t, b: m.b, pad: m.pad || 0 };
+            if (m) {
+                layout.margin = { l: m.l, r: m.r, t: m.t, b: m.b, pad: m.pad || 0 };
+                // Those margins only hold if the axes stop growing them: the
+                // two plots carry different tick labels and ranges, and
+                // automargin would size each panel to its own labels, which is
+                // what left the plot areas ending at different heights.
+                for (const ax of ['xaxis', 'yaxis']) {
+                    layout[ax] = { ...(layout[ax] || {}), automargin: false };
+                }
+            }
             await Plotly.newPlot(holder, f.figure.data, layout, { staticPlot: true });
             return await Plotly.toImage(holder, { format: 'png', width, height, scale: 3 });
         } catch (e) {
