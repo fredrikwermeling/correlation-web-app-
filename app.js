@@ -11274,7 +11274,7 @@ class CorrelationExplorer {
             this._separateNetworkComponents();
             this._arrangeUncorrelatedGrid();
             this._recentreNetworkOnOrigin();
-            this.network.fit({ animation: false });
+            this._redrawThenFit();
             this._maybeShowDenseNetworkHint(nodeCount);
             // The settled, fitted layout is the reference Spread works from.
             // The solver ran with the spring and gravity of the slider's
@@ -11723,7 +11723,7 @@ class CorrelationExplorer {
         if (!this.network) return;
         // Recentre first: a node can sit outside because the view is off-centre
         // rather than because it is too zoomed in, and shrinking would not fix that.
-        try { this.network.fit({ animation: false }); } catch (e) {}
+        this._redrawThenFit();
         for (let i = 0; i < 40; i++) {
             if (!this._networkNodesOutOfView().length) return;
             const sc = this.network.getScale();
@@ -14347,7 +14347,40 @@ ${filterText ? `<text x="${width / 2}" y="${headerH / 2}" dominant-baseline="mid
         const main = comps[0];
         // Satellites wrap into rows beside the main component, so many small
         // pairs form a block rather than one very wide strip.
-        const maxRowW = Math.max(main.w, 500);
+        // How wide the satellite block may grow before it wraps to a new row.
+        // A fixed width packed them into a tall column: with several small
+        // components the picture ended up taller than wide, and since the
+        // panel is much wider than tall the fit was forced by height and drew
+        // everything small between two broad empty margins. Choose the row
+        // width that brings the finished picture closest to the panel's own
+        // proportions instead, so the fit is limited by both sides at once.
+        const host = document.getElementById('networkPlot');
+        const panelAR = (host?.clientWidth && host?.clientHeight)
+            ? host.clientWidth / host.clientHeight : 2;
+        const satellites = comps.slice(1);
+        const packedHeight = (rowW) => {
+            let h = 0, rw = 0, rh = 0;
+            for (const c of satellites) {
+                if (rw > 0 && rw + c.w > rowW) { h += rh + PAD; rw = 0; rh = 0; }
+                rw += c.w + PAD;
+                rh = Math.max(rh, c.h);
+            }
+            return h + rh;
+        };
+        let maxRowW = Math.max(main.w, 500);
+        if (satellites.length) {
+            const widest = Math.max(...satellites.map(c => c.w));
+            const total = satellites.reduce((a, c) => a + c.w + PAD, 0);
+            let best = null;
+            for (let w = widest; w <= total + widest; w += Math.max(60, widest / 4)) {
+                const blockH = packedHeight(w);
+                const totalW = main.w + PAD + w;
+                const totalH = Math.max(main.h, blockH);
+                const score = Math.abs(Math.log((totalW / totalH) / panelAR));
+                if (!best || score < best.score) best = { w, score };
+            }
+            if (best) maxRowW = best.w;
+        }
         let cursorX = main.maxX + PAD;
         let rowTop = main.minY;
         let rowH = 0;
@@ -14464,6 +14497,19 @@ ${filterText ? `<text x="${width / 2}" y="${headerH / 2}" dominant-baseline="mid
         }
     }
 
+    // Fit AFTER a redraw. vis caches each label's absolute position when it
+    // draws, and fit() sizes the view from bounding boxes built on that
+    // cache. Any hand-placement (component separation, the parked grid, the
+    // recentre) moves nodes without redrawing, so the cached label boxes
+    // still sit at the old coordinates and the union comes out as much as
+    // the shift too wide -- fit then zooms far out and the network is drawn
+    // tiny in a mostly empty panel. One redraw refreshes the cache first.
+    _redrawThenFit() {
+        if (!this.network) return;
+        try { this.network.redraw(); } catch (e) {}
+        try { this.network.fit({ animation: false }); } catch (e) {}
+    }
+
     // Slide freshly dropped nodes off any parked (physics-less) gene they
     // landed on, pushing straight away from the collision. Runs only on
     // dragEnd, so hand placement is respected everywhere else.
@@ -14527,7 +14573,7 @@ ${filterText ? `<text x="${width / 2}" y="${headerH / 2}" dominant-baseline="mid
         } else {
             this._arrangeUncorrelatedGrid();
             this._recentreNetworkOnOrigin();
-            this.network.fit({ animation: false });
+            this._redrawThenFit();
         }
         // The switch moved nodes around, so the layout the Spread slider
         // scales from has to be re-recorded (as Run, Shuffle and Lock do).
@@ -14581,7 +14627,15 @@ ${filterText ? `<text x="${width / 2}" y="${headerH / 2}" dominant-baseline="mid
             if (Number.isFinite(minX)) {
                 const offX = Math.abs((minX + maxX) / 2 - c.clientWidth / 2);
                 const offY = Math.abs((minY + maxY) / 2 - c.clientHeight / 2);
-                if (offX > c.clientWidth * 0.14 || offY > c.clientHeight * 0.14) {
+                // The solver keeps pulling the picture together after the
+                // first fit (central gravity), so a network fitted at the
+                // right size slowly shrinks inside a frame nothing re-sizes.
+                // Treat "much smaller than the panel" like "wandered off
+                // centre": re-fit, unless we are already zoomed all the way in.
+                const fillW = (maxX - minX) / c.clientWidth;
+                const fillH = (maxY - minY) / c.clientHeight;
+                const shrunk = fillW < 0.62 && fillH < 0.62 && this.network.getScale() < 0.95;
+                if (offX > c.clientWidth * 0.14 || offY > c.clientHeight * 0.14 || shrunk) {
                     try { this.network.fit({ animation: false }); } catch (e) {}
                 }
             }
@@ -14614,7 +14668,7 @@ ${filterText ? `<text x="${width / 2}" y="${headerH / 2}" dominant-baseline="mid
             this._separateNetworkComponents();
             this._arrangeUncorrelatedGrid();
             this._recentreNetworkOnOrigin();
-            this.network.fit({ animation: false });
+            this._redrawThenFit();
             // The solver settled under the physics of the current Spread
             // setting, so the freshly fitted layout IS that setting's
             // picture: record it as the baseline at the slider's own value
@@ -29312,7 +29366,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (sexLower && sexLower !== 'unknown') originParts.push(sexLower);
         if (stageLower && stageLower !== 'unknown') originParts.push(stageLower);
         const article = /^[aeiou]/i.test(String(lineageTxt)) ? 'an' : 'a';
-        let s1 = `<b>${this.esc(name)}</b> is ${article} ${this.esc(lineageTxt)} cell line`;
+        // The cancer type is the one phrase a reader scans this sentence for,
+        // so it is underlined rather than left in the run of text.
+        let s1 = `<b>${this.esc(name)}</b> is ${article} <span style="text-decoration:underline; text-decoration-color:#9ecf82; text-decoration-thickness:2px; text-underline-offset:2px;">${this.esc(lineageTxt)}</span> cell line`;
         if (lin && lin.toLowerCase() !== String(lineageTxt).toLowerCase()) s1 += ` <span style="color:#6b7280;">(${this.esc(lin)})</span>`;
         if (originParts.length) s1 += ` <span style="color:#6b7280;">(${originParts.join(', ')})</span>`;
         s1 += '.';
