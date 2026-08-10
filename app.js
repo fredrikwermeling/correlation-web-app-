@@ -8054,7 +8054,12 @@ class CorrelationExplorer {
         const head = byStrength
             ? `Strongest correlations (All: mean r=${all ? all.meanR.toFixed(2) : '-'}):`
             : `Most connected (All: ${all ? all.nGenes : 0} genes):`;
-        const onChange = "if(this.value!=='_none'){document.getElementById('lineageFilter').value=this.value;app.updateSubLineageFilter();app._refreshFilteredSelectors();app._markMutationRunStale();}";
+        // Set the real Lineage control and let it announce the change: its own
+        // listener updates the subtype list, the counts and the Run marker,
+        // and the searchable dropdown only refreshes its visible label on a
+        // change event. Assigning .value alone left the box reading "All
+        // lineages" while the analysis was filtered, with nothing to reset.
+        const onChange = "if(this.value!=='_none'){const l=document.getElementById('lineageFilter');l.value=this.value;l.dispatchEvent(new Event('change',{bubbles:true}));}";
         let html = '<div style="margin-top:4px; font-size:10px;">';
         // The column is narrow, so the label sits on its own line and each
         // option stays on one line; they wrap as whole options if needed.
@@ -34300,7 +34305,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     showColorByGroupPicker() {
         document.getElementById('colorByGroupPanel')?.remove();
         const mode = document.getElementById('colorByCategory')?.value;
-        if (mode !== 'tissue' && mode !== 'subtype') return;
+        if (mode !== 'tissue' && mode !== 'subtype' && mode !== 'disease') return;
 
         // Only what is on the plot: offering a subtype that every active filter
         // has already excluded gives a choice that cannot change anything.
