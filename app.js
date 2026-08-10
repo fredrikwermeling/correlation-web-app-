@@ -17207,9 +17207,24 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             // count + group r) so entries never overlap; long subtype names end
             // up ~1 per row, short ones share a row. Plotly under-measures Open
             // Sans, so we pad generously.
-            const _lf = this._savedScatterTextSettings?.legendSize || 17;
+            let _lf = this._savedScatterTextSettings?.legendSize || 17;
             const _maxLabel = colorByCategories.reduce((m, c) => Math.max(m, (`${c} (${categoryMap[c].length}, r=-0.00)`).length), 0);
-            this._colorByLegendEntryW = Math.min(470, Math.max(150, Math.round(_maxLabel * _lf * 0.55 + 36)));
+            // An entry may never be wider than the row it sits in, or the
+            // longest names run off the left and right edges. Where the widest
+            // label still would not fit, the legend text shrinks (to a floor)
+            // rather than being cut off.
+            const _rowW = Math.max(200, (this.currentInspect?.plotWidth
+                || parseInt(document.getElementById('plotWidth')?.value, 10) || 400));
+            let _entryW = Math.max(150, Math.round(_maxLabel * _lf * 0.55 + 36));
+            if (_entryW > _rowW) {
+                const shrunk = Math.max(9, Math.floor(_lf * _rowW / _entryW));
+                if (shrunk < _lf) {
+                    _lf = shrunk;
+                    _entryW = Math.max(120, Math.round(_maxLabel * _lf * 0.55 + 36));
+                }
+            }
+            this._colorByLegendFont = _lf;
+            this._colorByLegendEntryW = Math.min(470, Math.min(_entryW, _rowW));
             colorByCategories.forEach((cat, i) => {
                 const catData = categoryMap[cat];
                 const color = colorByColors[i % colorByColors.length];
@@ -17222,7 +17237,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     text: catData.map(d => `${d.cellLineName}<br>${cat}`),
                     hovertemplate: '%{text}<br>x: %{x:.3f}<br>y: %{y:.3f}<extra></extra>',
                     marker: CorrelationExplorer.categoryMarker(i, 10, 0.8),
-                    name: `${cat} (${catData.length}${groupR(catData)})`,
+                    name: this._legendLabel(cat, `(${catData.length}${groupR(catData)})`),
                     legendgroup: cat,
                     showlegend: true
                 });
@@ -17583,7 +17598,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 bgcolor: 'white',
                 bordercolor: '#ddd',
                 borderwidth: 1,
-                font: { size: 17 },
+                font: { size: this._colorByLegendFont || 17 },
                 tracegroupgap: 0,
                 entrywidth: this._colorByLegendEntryW || 120,
                 entrywidthmode: 'pixels'
@@ -17659,7 +17674,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Grow the bottom margin / total height to fit the whole legend so it's
         // visible on screen AND captured in the PNG/SVG/JSON exports.
         if (colorByCategory && colorByCategories && colorByCategories.length) {
-            const legendFont = (sts?.legendSize) || 17;
+            const legendFont = this._colorByLegendFont || (sts?.legendSize) || 17;
             const perRow = Math.max(1, Math.floor(plotAreaW / (this._colorByLegendEntryW || 130)));
             const rows = Math.ceil(colorByCategories.length / perRow);
             const legendH = rows * Math.round(legendFont * 1.9) + 30;
@@ -19111,6 +19126,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 <label style="font-weight:600; color:#374151;" title="Cutoff for the Expression correlate list. Expression-vs-GE correlations run weaker, so the default is lower.">Expr |r| ≥
                     <input type="text" inputmode="decimal" id="icThresholdExpr" value="${defaultThresholdExpr}" min="0" max="1" step="0.05" style="width:52px; margin-left:6px; padding:2px 4px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;">
                 </label>
+                <label style="font-weight:600; color:#374151;" title="Least number of cell lines with data for both genes. An r computed on a handful of lines is noise, and the 26Q1 release added genes screened in only a few lines, so a floor here keeps them out of the list. Set 0 to see everything.">n ≥
+                    <input type="text" inputmode="numeric" id="icMinN" value="10" min="0" step="1" style="width:52px; margin-left:6px; padding:2px 4px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;">
+                </label>
                 <label style="font-weight:600; color:#374151;">Search
                     <input type="text" id="icSearch" placeholder="Gene symbol…" style="width:140px; margin-left:6px; padding:2px 6px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;">
                 </label>
@@ -19161,7 +19179,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; text-align:center; color:${r.n < 10 ? '#dc2626' : '#6b7280'};">${r.n}</td>
             </tr>`;
 
-        const filterByThreshold = (arr, t) => arr.filter(h => Math.abs(h.r) >= t);
+        const filterByThreshold = (arr, t, minN = 0) => arr.filter(h => Math.abs(h.r) >= t && (h.n ?? 0) >= minN);
 
         const sortRows = (arr, s) => {
             const copy = arr.slice();
@@ -19178,9 +19196,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const tEx = this.numInput('icThresholdExpr', NaN);
             const thrExpr = isFinite(tEx) && tEx >= 0 ? tEx : 0;
             const q = (document.getElementById('icSearch')?.value || '').trim().toUpperCase();
+            const nMin = Math.max(0, this.numInput('icMinN', 10) || 0);
             const nameMatch = (h) => !q || h.gene.toUpperCase().includes(q);
-            const geFiltered = filterByThreshold(geHits, thrGe).filter(nameMatch);
-            const exprFiltered = filterByThreshold(exprHits, thrExpr).filter(nameMatch);
+            const geFiltered = filterByThreshold(geHits, thrGe, nMin).filter(nameMatch);
+            const exprFiltered = filterByThreshold(exprHits, thrExpr, nMin).filter(nameMatch);
             this._inspectCorrelatesState.geFiltered = geFiltered;
             this._inspectCorrelatesState.exprFiltered = exprFiltered;
 
@@ -19273,6 +19292,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         document.getElementById('icThreshold').addEventListener('input', renderLists);
         document.getElementById('icThresholdExpr').addEventListener('input', renderLists);
+        document.getElementById('icMinN')?.addEventListener('input', renderLists);
         document.getElementById('icSearch').addEventListener('input', renderLists);
         document.getElementById('icEnrichrGe').addEventListener('click', () => this._runInspectCorrelatesEnrichr('ge'));
         document.getElementById('icEnrichrExpr').addEventListener('click', () => this._runInspectCorrelatesEnrichr('expr'));
@@ -20060,6 +20080,19 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
 
         Plotly.relayout('scatterPlot', { annotations: [...existingAnnotations, ...gateAnnotations] });
+    }
+
+    // A legend entry has a fixed width, and some Oncotree disease names run
+    // past 100 characters, so at any readable size they were cut mid-word by
+    // the plot edge. Shorten the name itself (keeping the count and r, which
+    // are what the entry is read for) and mark it with an ellipsis; the full
+    // name stays on the chip above the plot and in the hover.
+    _legendLabel(name, suffix) {
+        const entryW = this._colorByLegendEntryW || 400;
+        const font = this._colorByLegendFont || 17;
+        const budget = Math.max(8, Math.floor((entryW - 42) / (font * 0.55)) - (suffix.length + 1));
+        const short = name.length > budget ? name.slice(0, Math.max(4, budget - 1)).trimEnd() + '…' : name;
+        return `${short} ${suffix}`;
     }
 
     // The group a cell line belongs to for "Color by", at whichever level of
