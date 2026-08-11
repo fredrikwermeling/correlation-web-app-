@@ -25539,16 +25539,49 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const sel = document.getElementById('geScopeSelect');
         if (!sel) return;
         const lin = this._geScopeLineage;
-        if (!lin) { sel.style.display = 'none'; return; }
+        const sides = this._geCompareSides;
+        // The compare-with option is only meaningful when this gene was opened
+        // from a table that had two sides to compare.
+        let cmpOpt = sel.querySelector('option[value="compare"]');
+        if (sides) {
+            if (!cmpOpt) {
+                cmpOpt = document.createElement('option');
+                cmpOpt.value = 'compare';
+                sel.appendChild(cmpOpt);
+            }
+            cmpOpt.textContent = `${sides.selLabel} vs ${sides.cmpLabel}`;
+        } else if (cmpOpt) {
+            cmpOpt.remove();
+        }
+        if (!lin && !sides) { sel.style.display = 'none'; return; }
         sel.style.display = '';
-        const onLineage = (document.getElementById('geTissueFilter')?.value || '') === lin;
-        sel.value = !onLineage ? 'all' : (this._geSplitByOncotree ? 'disease' : 'primary');
-        sel.options[1].textContent = `${lin} only, by primary disease`;
-        sel.options[2].textContent = `${lin} only, by disease`;
+        if (this._geCompareMode && sides) {
+            sel.value = 'compare';
+        } else {
+            const onLineage = lin && (document.getElementById('geTissueFilter')?.value || '') === lin;
+            sel.value = !onLineage ? 'all' : (this._geSplitByOncotree ? 'disease' : 'primary');
+        }
+        if (lin) {
+            sel.options[1].textContent = `${lin} only, by primary disease`;
+            sel.options[2].textContent = `${lin} only, by disease`;
+        }
         sel.title = 'What this gene is compared against, and how that group is broken up';
     }
 
     setGeScopeMode(mode) {
+        // Compare-with is a different grouping axis from the lineage ones: it
+        // keeps only the two sides and splits on which side a line is in.
+        if (mode === 'compare' && this._geCompareSides) {
+            this._geCompareMode = true;
+            const tf = document.getElementById('geTissueFilter');
+            if (tf) { tf.value = ''; this.updateGeSubtypeFilter?.(); }
+            const sf = document.getElementById('geSubtypeFilter');
+            if (sf) sf.value = '';
+            this._syncGeScopeToggle?.();
+            if (this.currentGeneEffect) this.renderGeneEffectByTissue();
+            return;
+        }
+        this._geCompareMode = false;
         const lin = this._geScopeLineage;
         const t = document.getElementById('geTissueFilter');
         if (!t) return;
@@ -25570,7 +25603,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // against the whole panel opens against the whole panel; one identified
     // within its own lineage opens on that lineage. Used by the browser's
     // Inspect and by the wiki, so the two cannot drift apart.
-    openGeneScoped(gene, { dataType = 'ge', scope = 'all', lineage = '', condensed } = {}) {
+    openGeneScoped(gene, { dataType = 'ge', scope = 'all', lineage = '', condensed, compareSides = null } = {}) {
         // condensed is left undefined on purpose: openGeneEffectModal then works
         // out whether it would open behind another overlay and lifts itself
         // above it. Passing false forced z-index 1200, under the browser's
@@ -25592,6 +25625,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
         // Arm the scope control whenever there is a lineage to switch to.
         this._geScopeLineage = lineage || '';
+        // The two sides belong to the table this was opened from; a gene opened
+        // from anywhere else has none, and the option is not offered.
+        this._geCompareSides = (compareSides?.selection?.length && compareSides?.comparison?.length)
+            ? compareSides : null;
+        this._geCompareMode = false;
         this._syncGeScopeToggle?.();
     }
 
@@ -26015,6 +26053,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const zl = document.getElementById('geShowZeroLine'); if (zl) zl.checked = true;
         this._geUserTitlePos = null; this._geUserXLabelPos = null; this._geUserYLabelPos = null;
         this._activeOncoprintFilters = [];
+        this._geCompareMode = false;
+        this._geCompareSides = null;
+        this._syncGeScopeToggle?.();
         // mutationResults is deliberately NOT cleared here. It belongs to the
         // mutation analysis on the page behind this popout, not to the popout,
         // and clearing it left every Inspect button in that table silently
@@ -26112,6 +26153,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     getGETissueFilteredData() {
         if (!this.currentGeneEffect) return [];
         let data = this.currentGeneEffect.data;
+        // Comparing the two sides means those cell lines and no others; the
+        // lineage controls below would otherwise cut across both groups.
+        if (this._geCompareMode && this._geCompareSides) {
+            const keep = new Set([...this._geCompareSides.selection, ...this._geCompareSides.comparison]);
+            data = data.filter(d => keep.has(d.cellLineId));
+        }
         const tissueFilter = document.getElementById('geTissueFilter')?.value;
         if (tissueFilter) {
             data = data.filter(d => d.lineage === tissueFilter);
@@ -26178,10 +26225,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         // Group data by cancer type or subtype
         const groupedData = {};
+        const cmpSel = (this._geCompareMode && this._geCompareSides)
+            ? new Set(this._geCompareSides.selection) : null;
         data.forEach(d => {
-            const groupKey = groupBySubtype
-                ? this._geGroupOf(d.cellLineId)
-                : (d.lineage || 'Unknown');
+            const groupKey = cmpSel
+                ? (cmpSel.has(d.cellLineId) ? this._geCompareSides.selLabel : this._geCompareSides.cmpLabel)
+                : groupBySubtype
+                    ? this._geGroupOf(d.cellLineId)
+                    : (d.lineage || 'Unknown');
             if (!groupedData[groupKey]) groupedData[groupKey] = [];
             groupedData[groupKey].push({
                 geneEffect: d.geneEffect,
@@ -26271,7 +26322,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             fillcolor: 'rgba(200,200,200,0.3)',
             hovertemplate: `<b>%{text}</b><br>${hoverMetric}: %{x:.3f}<extra></extra>`
         }));
-        if (hl && hl.size) {
+        // In compare mode one of the two rows IS the selection, so marking the
+        // selected lines inside it adds nothing and reads as "Selected in 25
+        // selected".
+        if (hl && hl.size && !this._geCompareMode) {
             // One overlay scatter trace per tissue row so points line up on
             // the categorical y-axis that Plotly constructs from the box
             // names.
@@ -26325,7 +26379,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             subtitleParts.push(`<span style="color:#b45309;">measured in ${covered.measured.toLocaleString()} of ${covered.total.toLocaleString()} cell lines</span>`);
         }
         if (filterDesc) subtitleParts.push(filterDesc);
-        if (hl && hl.size > 0) {
+        // In compare mode the selection is one of the two rows, so a note
+        // about it being highlighted describes something no longer drawn.
+        if (hl && hl.size > 0 && !this._geCompareMode) {
             const shown = hl.__shown ?? hl.size;
             // Say when part of the selection is missing from the plot. A bare
             // "39 highlighted" against a selection of 126 hides that 87 have no
@@ -42529,6 +42585,18 @@ ${clone.innerHTML}
         const selSet = new Set(selIdx);
         const otherIdx = [];
         for (let i = 0; i < this.nCellLines; i++) if (!selSet.has(i) && inScope(cellLines[i])) otherIdx.push(i);
+        // Keep the two sides so a gene opened from this table can be charted as
+        // "your selection vs what you compared it with" rather than only by
+        // lineage, which is a different question from the one being asked here.
+        this._geInspectSides = {
+            selection: selected.slice(),
+            comparison: otherIdx.map(i => cellLines[i]),
+            selLabel: `${selected.length} selected`,
+            cmpLabel: scope === 'all' ? 'All other cell lines'
+                : scope === 'lineage' ? `Same lineage (${[...selLineages].join(', ')})`
+                : scope === 'custom' ? 'My list'
+                : [...grp.diseases, ...grp.sublineages, ...grp.lineages].slice(0, 3).join(', ') || 'Chosen groups'
+        };
 
         // CRISPR gene effect, straight from the GE matrix.
         const geRows = [];
@@ -42835,6 +42903,7 @@ ${clone.innerHTML}
                         dataType: fromExpr ? 'expr' : 'ge',
                         scope: this._geInspectScope === 'lineage' ? 'lineage' : 'all',
                         lineage: insLins.length === 1 ? insLins[0] : '',
+                        compareSides: this._geInspectSides || null,
                     });
                 });
                 tr.addEventListener('mouseenter', () => {
