@@ -5250,7 +5250,7 @@ class CorrelationExplorer {
             const wantWT = (id) => document.getElementById(id)?.value === 'wt';
             if (kind !== 'hotspot' && hotspot) {
                 const hs = this.mutations?.geneData?.[hotspot] || this.damagingMutations?.geneData?.[hotspot];
-                if (hs && (((hs.mutations[cl] || 0) >= 1) === wantWT('geHotspotLevel'))) continue;
+                if (hs && !this._mutLevelPasses(document.getElementById('geHotspotLevel')?.value || '1+2', hs.mutations[cl] || 0)) continue;
             }
             if (kind !== 'fusion' && fus && this._geFusionPasses(cl, fus) === wantWT('geFusionLevel')) continue;
             if (kind !== 'cn' && cn && this._cellLinePassesCnFilter(cl, cn) === wantWT('geCnLevel')) continue;
@@ -17021,17 +17021,18 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
         if (kind === 'tissue') {
             return this._simpleChipMenu(anchorEl, [
-                { label: 'Remove this filter', danger: true, act: () => { setVal('geTissueFilter', ''); setVal('geSubtypeFilter', ''); this.updateGESubtypeFilter?.(); } },
+                { label: 'Remove this filter', danger: true, act: () => { setVal('geTissueFilter', ''); setVal('geSubtypeFilter', ''); setVal('geOncotreeFilter', ''); this.updateGESubtypeFilter?.(); } },
             ], rerender);
         }
         if (kind === 'subtype') {
             return this._simpleChipMenu(anchorEl, [
-                { label: 'Remove this filter', danger: true, act: () => setVal('geSubtypeFilter', '') },
+                { label: 'Remove this filter', danger: true, act: () => { setVal('geSubtypeFilter', ''); setVal('geOncotreeFilter', ''); } },
             ], rerender);
         }
         const spec = {
             hotspot: { geneId: 'geHotspotFilter', levelId: 'geHotspotLevel',
-                       options: [['altered', 'Mutated'], ['wt', 'Wild-type']] },
+                       options: [['1+2', 'Mutated (either copy)'], ['1', 'One copy mutated'],
+                                 ['2', 'Both copies mutated'], ['0', 'Wild-type']] },
             fusion:  { geneId: 'geFusionFilter', levelId: 'geFusionLevel',
                        options: [['altered', 'Fused'], ['wt', 'Not fused']] },
             cn:      { geneId: 'geCnFilter', levelId: 'geCnLevel',
@@ -24982,6 +24983,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         } else {
             cancerBox.style.display = 'none';
             document.getElementById('scatterSubtypeFilter').value = '';
+            const _scOnc = document.getElementById('scatterOncotreeFilter');
+            if (_scOnc) _scOnc.value = '';
         }
 
         // Populate hotspot genes (same as openInspect)
@@ -26239,8 +26242,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const geFilterMutSource = hotspotGene && (this.mutations?.geneData?.[hotspotGene] || this.damagingMutations?.geneData?.[hotspotGene]);
         if (geFilterMutSource) {
             const mutData = geFilterMutSource.mutations || {};
-            const wt = wantWT('geHotspotLevel');
-            data = data.filter(d => ((mutData[d.cellLineId] || 0) >= 1) !== wt);
+            const lvl = document.getElementById('geHotspotLevel')?.value || '1+2';
+            data = data.filter(d => this._mutLevelPasses(lvl, mutData[d.cellLineId] || 0));
         }
         // Fusion filter (curated ★ clinical pair or validated fusion gene)
         const fusionGene = document.getElementById('geFusionFilter')?.value;
@@ -34045,6 +34048,21 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             + `</div>`;
     }
 
+    // Does this cell line's mutation level satisfy the chosen filter level?
+    // The four levels are the ones the Cell Line Browser has always offered
+    // (either copy / one copy / both copies / wild-type); the gene-effect
+    // popout only understood "mutated or not", so its chip could not offer
+    // the finer choices the rest of the app does.
+    _mutLevelPasses(level, lvlValue) {
+        const v = lvlValue || 0;
+        switch (String(level)) {
+            case '0': case 'wt': return v === 0;
+            case '1': return v === 1;
+            case '2': return v === 2;
+            default: return v >= 1;   // '1+2' / 'altered'
+        }
+    }
+
     // How many cell lines each gene is actually measured in, across the whole
     // dataset. 26Q1 added genes screened in only a handful of lines; their
     // correlations and group differences rest on almost no data yet they rank
@@ -36056,7 +36074,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (!overflowsRight && !overflowsBottom && !overflowsLeft && !overflowsTop) return;
         const w = Math.min(rect.width, vw - 2 * margin);
         const h = Math.min(rect.height, vh - 2 * margin);
-        const left = Math.max(margin, Math.min(rect.left, vw - w - margin));
+        // A wide panel anchored under its button opens off to one side and, on
+        // a small screen, runs off the edge. Once it is wide enough that its
+        // position no longer says anything useful, centre it instead of
+        // shoving it back from whichever edge it hit.
+        const wide = w > vw * 0.5;
+        const left = wide
+            ? Math.round((vw - w) / 2)
+            : Math.max(margin, Math.min(rect.left, vw - w - margin));
         const top = Math.max(margin, Math.min(rect.top, vh - h - margin));
         el.style.position = 'fixed';
         el.style.margin = '0';
@@ -36538,6 +36563,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             document.getElementById('clbSearch').value = '';
             document.getElementById('clbTissueFilter').value = '';
             document.getElementById('clbSubtypeFilter').value = '';
+            // Disease is the third level of the same choice; Reset left it set,
+            // so the list stayed filtered after a reset that claimed to clear
+            // everything.
+            const _clbOnc = document.getElementById('clbOncotreeFilter');
+            if (_clbOnc) _clbOnc.value = '';
             document.getElementById('clbSexFilter').value = '';
             document.getElementById('clbHotspotFilter').value = '';
             document.getElementById('clbTranslocationFilter').value = '';
@@ -42807,6 +42837,7 @@ ${clone.innerHTML}
         // lines, so it is indexed separately rather than reusing the GE indices.
         const exprRows = [];
         let exprOtherN = 0;
+        let exprCoverage = null;
         if (this.expressionLoaded && this.expressionData && this.expressionMetadata) {
             const exprCLs = this.expressionMetadata.cellLines;
             const exprIdxOf = new Map(exprCLs.map((cl, i) => [cl, i]));
@@ -42817,6 +42848,10 @@ ${clone.innerHTML}
                 if (!selES.has(i) && inScope(exprCLs[i])) othE.push(i);
             }
             exprOtherN = othE.length;
+            // The expression matrix covers a different, larger set of cell
+            // lines than the CRISPR screen, so judging its rows against the
+            // gene-effect group sizes compared the wrong things.
+            exprCoverage = { selNominal: selE.length, othNominal: othE.length };
             const nC = this.expressionMetadata.nCellLines;
             const genes = this.expressionMetadata.genes;
             for (let g = 0; g < genes.length; g++) {
@@ -42850,7 +42885,7 @@ ${clone.innerHTML}
             selMeasured: _medOf(geRows, 'nSel'),
             othMeasured: _medOf(geRows, 'nOther')
         };
-        this._geInspectResults = { rows: geRows, exprRows, selected, geCoverage };
+        this._geInspectResults = { rows: geRows, exprRows, selected, geCoverage, exprCoverage };
         this._activeSelectionInspect = { kind: 'ge' };
         const saveBtn = document.getElementById('selectionInspectSave');
         if (saveBtn) saveBtn.style.display = '';
@@ -43183,10 +43218,17 @@ ${clone.innerHTML}
         // screen, so a comparison billed as 48 against 12 can come down to
         // 27 against 3 for a particular gene, and without this the row looks
         // as solid as any other.
-        const cov = this._geInspectResults?.geCoverage;
+        // Each side is measured against its OWN cohort: the expression matrix
+        // covers more cell lines than the CRISPR screen does.
+        const cov = side === 'right'
+            ? (this._geInspectResults?.exprCoverage || this._geInspectResults?.geCoverage)
+            : this._geInspectResults?.geCoverage;
         const nomSel = cov?.selNominal || 0, nomOth = cov?.othNominal || 0;
-        const thin = (r) => (nomSel && r.nSel < nomSel * 0.7) || (nomOth && r.nOther < nomOth * 0.7)
-            || r.nSel < 5 || r.nOther < 5;
+        // Only "fewer lines than the group you picked" is a row-level fact. A
+        // group that is simply small is a property of the whole comparison, so
+        // it belongs in the heading; testing it here put a warning on every
+        // single row of a four-line selection, which said nothing.
+        const thin = (r) => (nomSel && r.nSel < nomSel * 0.7) || (nomOth && r.nOther < nomOth * 0.7);
         const trows = rows.map(r => `
             <tr class="si-row" data-gene="${this.esc(r.gene)}" style="cursor:pointer;">
                 <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; font-weight:600; color:#4c782e;">${r.gene}</td>

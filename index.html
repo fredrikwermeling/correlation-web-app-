@@ -3461,7 +3461,7 @@
                             <input type="text" id="geHotspotFilter" class="form-control" placeholder="Hotspot gene..." autocomplete="off" style="width: 140px; font-size: 11px; padding: 3px 6px;" title="Hotspot filter, only show cell lines mutated in this gene">
                             <div id="geHotspotDropdown" style="display:none; position:absolute; top:100%; left:0; min-width:240px; max-height:300px; overflow-y:auto; background:#fff; border:1px solid #d1d5db; border-radius:5px; box-shadow:0 6px 16px rgba(0,0,0,0.18); z-index:1450; font-size:11px;"></div>
                         </div>
-                        <select id="geHotspotLevel" class="form-control" style="width:96px; font-size:11px; padding:3px 4px; display:none;" title="Keep the cell lines carrying this mutation, or only those without it" style="display:none;"><option value="altered" selected>Mutated</option><option value="wt">Only WT</option></select>
+                        <select id="geHotspotLevel" class="form-control" style="width:96px; font-size:11px; padding:3px 4px; display:none;" title="Keep the cell lines carrying this mutation, or only those without it" style="display:none;"><option value="1+2" selected>Mutated (1+2)</option><option value="1">Only 1 mut</option><option value="2">Only 2 mut</option><option value="0">Only WT</option></select>
 <button id="geGridHotspotBtn" class="btn btn-outline btn-sm clb-icon-btn" type="button" title="Mutation grid for the cell lines shown, click a gene to require it mutated or wild-type">&#9638;</button>
                         <span id="geHotspotBiasWarning" class="mobile-hide" style="display: none; font-size: 9px; color: #92400e;" title="Filtering on a gene&#39;s status, mutated or wild-type, can introduce bias: these alterations are often concentrated in particular cancer types, so the two groups may differ by cancer type as much as by the alteration.">&#9888;</span>
                         <div id="geFusionFilterWrap" class="filter-input-wrap" style="position:relative; display:none; width:150px;">
@@ -4684,6 +4684,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v87_30"></script>
+    <script src="app.js?v=v87_31"></script>
 </body>
 </html>
