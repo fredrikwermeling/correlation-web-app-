@@ -42404,10 +42404,10 @@ ${clone.innerHTML}
             if (!isOpen) continue;
             for (const [sub, S] of [...L.subs.entries()].sort((a, b) => b[1].n - a[1].n)) {
                 const hasDis = S.diseases.size > 0;
-                const subOpen = open.has(lin + '\u0000' + sub);
+                const subOpen = open.has(`${lin} >> ${sub}`);
                 rows += `<tr style="background:#fafafa; cursor:pointer;" onmouseenter="this.style.background='#f0f0f0'" onmouseleave="this.style.background='#fafafa'">
                     <td style="padding:2px 8px 2px 16px;"><input type="checkbox" class="gis-check"${g.sublineages.has(sub) ? ' checked' : ''} onclick="event.stopPropagation(); app.toggleGEInspectGroup('sublineages','${esc(sub)}')"></td>
-                    <td style="padding:2px 4px 2px 8px; font-size:11px; color:#6b7280;" onclick="app.toggleGEInspectBranch('${esc(lin)}\u0000${esc(sub)}')">${hasDis ? `<span style="font-size:8px; color:#9ca3af; margin-right:2px;">${subOpen ? '\u25bc' : '\u25b6'}</span>` : '<span style="margin-right:8px;"></span>'}${this.esc(sub)}</td>
+                    <td style="padding:2px 4px 2px 8px; font-size:11px; color:#6b7280;" onclick="app.toggleGEInspectBranch('${esc(lin)} &gt;&gt; ${esc(sub)}')">${hasDis ? `<span style="font-size:8px; color:#9ca3af; margin-right:2px;">${subOpen ? '\u25bc' : '\u25b6'}</span>` : '<span style="margin-right:8px;"></span>'}${this.esc(sub)}</td>
                     <td style="padding:2px 8px; text-align:right; color:#9ca3af; font-size:11px;">${S.n}</td></tr>`;
                 if (!subOpen) continue;
                 for (const [dis, dn] of [...S.diseases.entries()].sort((a, b) => b[1] - a[1])) {
@@ -42604,7 +42604,8 @@ ${clone.innerHTML}
         const sub = document.getElementById('selectionInspectSubtitle');
         const _g = this._geInspectGroup || { lineages: new Set(), sublineages: new Set(), diseases: new Set() };
         const grpCount = _g.lineages.size + _g.sublineages.size + _g.diseases.size;
-        const btn = (val, label, title) => `<button type="button" onclick="app.setGEInspectScope('${val}')" title="${title}" style="font-size:10px; padding:2px 8px; border:1px solid ${scope === val ? '#6ba544' : '#d1d5db'}; background:${scope === val ? '#f0fdf4' : '#fff'}; color:${scope === val ? '#4c782e' : '#374151'}; font-weight:${scope === val ? '700' : '400'}; border-radius:4px; cursor:pointer;">${label}</button>`;
+        const chosen = this._geInspectScope || 'all';
+        const btn = (val, label, title) => `<button type="button" onclick="app.setGEInspectScope('${val}')" title="${title}" style="font-size:10px; padding:2px 8px; border:1px solid ${chosen === val ? '#6ba544' : '#d1d5db'}; background:${chosen === val ? '#f0fdf4' : '#fff'}; color:${chosen === val ? '#4c782e' : '#374151'}; font-weight:${chosen === val ? '700' : '400'}; border-radius:4px; cursor:pointer;">${label}</button>`;
         sub.innerHTML = (fromFilter
                 ? `<b>Nothing was ticked, so this compares the ${selected.length} cell lines your filters currently leave showing.</b> `
                 : '')
