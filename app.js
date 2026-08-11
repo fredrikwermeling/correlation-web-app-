@@ -2223,7 +2223,7 @@ class CorrelationExplorer {
         html += `<label style="font-size:10px;cursor:pointer;color:#374151;"><input type="checkbox" id="upsetShowPct" ${this._upsetShowPct ? 'checked' : ''} onchange="app._upsetToggle('pct')" style="margin:0 3px 0 0;vertical-align:middle;"> %</label>`;
         html += `<label style="font-size:10px;cursor:pointer;color:#374151;"><input type="checkbox" id="upsetShowNames" ${this._upsetShowNames ? 'checked' : ''} onchange="app._upsetToggle('names')" style="margin:0 3px 0 0;vertical-align:middle;"> Names</label>`;
         html += `<span style="border-left:1px solid #d1d5db;height:14px;"></span>`;
-        html += `<span style="font-size:10px; color:#6b7280; margin-right:6px;">Click a bar to filter on that combination</span>`;
+        html += `<span style="font-size:10px; color:#4c782e; background:#f0fdf4; border:1px solid #cdebb9; border-radius:10px; padding:2px 8px; margin-right:6px;">Click any bar to filter on that combination</span>`;
         html += `<button onclick="app._upsetExport()" style="font-size:10px;padding:2px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:#f9fafb;" title="Choose format, print size and resolution">Export image...</button>`;
         html += `<button onclick="app.copyPlotToClipboard('upsetPlotDiv', 'UpSet plot')" style="font-size:10px;padding:2px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:#f9fafb;" title="Copy this as an image to the clipboard, ready to paste into an email or slide">Copy</button>`;
         html += `</div>`;
@@ -2313,6 +2313,19 @@ class CorrelationExplorer {
         });
 
         const traces = [{
+            // An invisible full-height bar behind each real one. A combination
+            // with two cell lines draws a sliver a couple of pixels tall next
+            // to one with hundreds, and a sliver cannot be clicked; this gives
+            // every column the same target whatever its count.
+            x: barX,
+            y: barX.map(() => Math.max(...barY) || 1),
+            type: 'bar',
+            marker: { color: 'rgba(0,0,0,0)' },
+            hoverinfo: 'skip',
+            showlegend: false,
+            customdata: barLabels,
+            _upsetHitbox: true
+        }, {
             x: barX, y: barY,
             type: 'bar',
             marker: { color: barColors, line: { color: barColors.map(c => c === '#5d9239' ? '#4c782e' : 'transparent'), width: barColors.map(c => c === '#5d9239' ? 2 : 0) } },
@@ -2350,7 +2363,10 @@ class CorrelationExplorer {
                 range: [-0.5, nBars - 0.5]
             },
             yaxis: {
-                title: 'Cell lines', domain: [0.4, 1], anchor: 'x'
+                title: 'Cell lines', domain: [0.4, 1], anchor: 'x',
+                // Fixed to the real counts so the invisible click target,
+                // which spans the full height, cannot stretch the axis.
+                range: [0, (Math.max(...barY) || 1) * 1.08]
             },
             yaxis2: {
                 domain: [0, 0.35], anchor: 'x',
@@ -2388,6 +2404,13 @@ class CorrelationExplorer {
                 this._oncoprintFilterKinds = this._oncoprintFilterKinds || {};
                 if (!same) Object.keys(want).forEach(g => { this._oncoprintFilterKinds[g] = this._oncoprintKind || 'hotspot'; });
                 this._oncoprintSyncFilters?.();
+                // Show the pick in the grid this plot came from, so it can be
+                // adjusted there before it is applied to the list.
+                // Redraw the grid this plot came from, so the pick shows there
+                // and can be adjusted before it is carried back to the list.
+                try {
+                    if (document.getElementById('oncoprintPopup')) this.showOncoprint(this._oncoprintContext, this._oncoprintKind);
+                } catch (e) {}
                 const names = bits.map((b, i) => b === '1' ? upsetGenes[i].gene : null).filter(Boolean);
                 this.showCopyNotification?.(same
                     ? 'Filter removed.'
@@ -19511,8 +19534,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 <label style="font-weight:600; color:#374151;" title="Cutoff for the Expression correlate list. Expression-vs-GE correlations run weaker, so the default is lower.">Expr |r| ≥
                     <input type="text" inputmode="decimal" id="icThresholdExpr" value="${defaultThresholdExpr}" min="0" max="1" step="0.05" style="width:52px; margin-left:6px; padding:2px 4px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;">
                 </label>
-                <label style="font-weight:600; color:#374151;" title="Least number of cell lines with data for both genes. An r computed on a handful of lines is noise, and the 26Q1 release added genes screened in only a few lines, so a floor here keeps them out of the list. Set 0 to see everything.">n ≥
-                    <input type="text" inputmode="numeric" id="icMinN" value="10" min="0" step="1" style="width:52px; margin-left:6px; padding:2px 4px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;">
+                <label style="font-weight:600; color:#374151;" title="How much of this cohort a gene must be measured in before it can appear. A correlation computed on a fraction of the cell lines is mostly noise, and it rises to the top of the list precisely because small samples give large numbers. Expressed as a share of the cohort so it scales with whatever you have filtered to. Set 0 to see everything.">measured in ≥
+                    <input type="text" inputmode="numeric" id="icMinPct" value="75" min="0" max="100" step="5" style="width:46px; margin-left:6px; padding:2px 4px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;">
+                    <span style="font-weight:400; color:#6b7280;">% of lines</span>
                 </label>
                 <label style="font-weight:600; color:#374151;">Search
                     <input type="text" id="icSearch" placeholder="Gene symbol…" style="width:140px; margin-left:6px; padding:2px 6px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;">
@@ -19581,7 +19605,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const tEx = this.numInput('icThresholdExpr', NaN);
             const thrExpr = isFinite(tEx) && tEx >= 0 ? tEx : 0;
             const q = (document.getElementById('icSearch')?.value || '').trim().toUpperCase();
-            const nMin = Math.max(0, this.numInput('icMinN', 10) || 0);
+            // A share of the cohort, not a fixed count: with 315 cell lines a
+            // gene measured in 20 of them was topping the list on 6 % of the
+            // data. 75 % of whatever is currently filtered to.
+            const pct = Math.max(0, Math.min(100, this.numInput('icMinPct', 75) || 0));
+            const cohortN = this._inspectCorrelatesState?.xN
+                || this.currentInspect?.filteredData?.length || 0;
+            const nMin = pct > 0 && cohortN ? Math.ceil(cohortN * pct / 100) : 0;
             const nameMatch = (h) => !q || h.gene.toUpperCase().includes(q);
             const geFiltered = filterByThreshold(geHits, thrGe, nMin).filter(nameMatch);
             const exprFiltered = filterByThreshold(exprHits, thrExpr, nMin).filter(nameMatch);
@@ -19677,7 +19707,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         document.getElementById('icThreshold').addEventListener('input', renderLists);
         document.getElementById('icThresholdExpr').addEventListener('input', renderLists);
-        document.getElementById('icMinN')?.addEventListener('input', renderLists);
+        document.getElementById('icMinPct')?.addEventListener('input', renderLists);
         document.getElementById('icSearch').addEventListener('input', renderLists);
         document.getElementById('icEnrichrGe').addEventListener('click', () => this._runInspectCorrelatesEnrichr('ge'));
         document.getElementById('icEnrichrExpr').addEventListener('click', () => this._runInspectCorrelatesEnrichr('expr'));
@@ -28090,7 +28120,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 }
                 save(new Blob([this._canvasToPdf(canvas, widthCm, heightCm)], { type: 'application/pdf' }), 'pdf'); return;
             }
-            if (fmt === 'pptx') { save(await this._canvasToPptx(canvas, widthCm, heightCm, svg, second), 'pptx'); return; }
+            if (fmt === 'pptx') { save(await this._canvasToPptx(canvas, widthCm, heightCm, svg, second, opts?.firstPng), 'pptx'); return; }
         } catch (e) {
             console.warn(`${fmt} export failed, falling back to PNG:`, e);
         }
@@ -28247,7 +28277,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // deck (13.333in × 7.5in); the figure is scaled to fit with a small margin
     // and centered, so the export drops straight into a normal presentation
     // instead of producing an oddly-sized slide cropped to the figure.
-    async _canvasToPptx(canvas, widthCm, heightCm, svgStr, second) {
+    async _canvasToPptx(canvas, widthCm, heightCm, svgStr, second, firstPng) {
         if (typeof JSZip === 'undefined') throw new Error('JSZip unavailable');
         const EMU = 360000;                       // EMU per cm
         // Standard PowerPoint widescreen slide (16:9).
@@ -28272,7 +28302,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const offX = Math.round((cx - totalW) / 2);
         const offY = Math.round((cy - picH) / 2);
         const off2X = offX + picW + GAPX;
-        const pngB64 = canvas.toDataURL('image/png').split(',')[1];
+        // When the caller hands over its own first picture (two panels going on
+        // the slide as separate objects), the composed canvas is not what goes
+        // in: it holds both panels already.
+        const pngB64 = firstPng
+            ? String(firstPng).split(',')[1]
+            : canvas.toDataURL('image/png').split(',')[1];
         // PowerPoint 2016+ renders an embedded SVG as true vector, keeping the
         // PNG only as a compatibility fallback. We embed both when we have the
         // SVG; otherwise the slide is the PNG alone (raster).
@@ -38128,11 +38163,20 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (kind === 'grid') {
             const gene = anchorEl.dataset.gridGene;
             const cur = this._oncoprintFilters?.[gene];
-            return this._simpleChipMenu(anchorEl, [
+            const gKind = this._oncoprintFilterKinds?.[gene] || this._oncoprintKind || 'hotspot';
+            // Hotspot picks can name the copy count, the same choice the filter
+            // boxes offer. Fusion and copy-number events have no such levels.
+            const rows = gKind === 'hotspot' ? [
+                { label: 'Mutated (either copy)', active: cur === 'mut' || cur === '1+2', act: () => { this._oncoprintFilters[gene] = '1+2'; } },
+                { label: 'One copy mutated', active: cur === '1', act: () => { this._oncoprintFilters[gene] = '1'; } },
+                { label: 'Both copies mutated', active: cur === '2', act: () => { this._oncoprintFilters[gene] = '2'; } },
+                { label: 'Wild-type', active: cur === 'wt' || cur === '0', act: () => { this._oncoprintFilters[gene] = 'wt'; } },
+            ] : [
                 { label: 'Require altered', active: cur === 'mut', act: () => { this._oncoprintFilters[gene] = 'mut'; } },
                 { label: 'Require wild-type', active: cur === 'wt', act: () => { this._oncoprintFilters[gene] = 'wt'; } },
-                { label: 'Remove this filter', danger: true, act: () => { delete this._oncoprintFilters[gene]; } },
-            ], () => this._oncoprintSyncFilters());
+            ];
+            rows.push({ label: 'Remove this filter', danger: true, act: () => { delete this._oncoprintFilters[gene]; } });
+            return this._simpleChipMenu(anchorEl, rows, () => this._oncoprintSyncFilters());
         }
         const spec = this._CLB_CHIP_SPEC()[kind];
         if (!spec) return;
@@ -44300,6 +44344,11 @@ ${clone.innerHTML}
             genePlotDataUrl = await this._renderExportPlotToImage(geneEl, settings.geneW, settings.geneH, settings, imgFmt, mainMargin.t);
         }
 
+        // Kept for the PowerPoint path, which places the two panels as separate
+        // pictures rather than one flattened image.
+        this._gateReportSecondPng = genePlotDataUrl || null;
+        this._gateReportSecondName = 'Gene plot';
+        this._gateReportFirstPng = mainDataUrl || null;
         if (format === 'svg') {
             await this._composeGateReportSVG(mainDataUrl, settings.mainW, settings.mainH, genePlotDataUrl, settings.geneW, settings.geneH, filters, filenameBase);
         } else {
@@ -44412,7 +44461,19 @@ ${clone.innerHTML}
         const wCm = canvas.width / 150 * 2.54, hCm = canvas.height / 150 * 2.54;
         // No settings file: the gate report has no path back into the app, so
         // one would sit in the download folder doing nothing.
-        await this._downloadCanvasAs(canvas, fmt, filenameBase, { dpi: 150, widthCm: wCm, heightCm: hCm, skipSidecar: true });
+        // PowerPoint gets the two panels as SEPARATE pictures so they can be
+        // moved and resized independently on the slide. Every other format is
+        // the single composed image, where one picture is what you want.
+        const second = (fmt === 'pptx' && this._gateReportSecondPng)
+            ? { png: this._gateReportSecondPng, name: this._gateReportSecondName || 'Gene plot' }
+            : null;
+        // With two pictures the slide is sized from ONE panel, so the width and
+        // height handed over describe a panel rather than the composed pair.
+        const oneW = second ? mainW / 150 * 2.54 : wCm;
+        const oneH = second ? mainH / 150 * 2.54 : hCm;
+        await this._downloadCanvasAs(canvas, fmt, filenameBase,
+            { dpi: 150, widthCm: oneW, heightCm: oneH, skipSidecar: true,
+              second, firstPng: second ? this._gateReportFirstPng : null });
     }
 
     async _composeGateReportSVG(mainSvgStr, mainW, mainH, genePlotSvgStr, genePlotW, genePlotH, filterLines, filenameBase) {
