@@ -410,6 +410,76 @@ class CorrelationExplorer {
         };
     }
 
+    // Gene set analysis and mutation analysis share one box of cohort filters,
+    // which meant a tissue, an alteration or a gate set for one silently
+    // narrowed the other. Each mode now keeps its own set: switching stashes
+    // what is on screen under the mode being left and restores whatever the
+    // mode being entered had, or a clean slate if it has none.
+    _modeFilterKey() {
+        return document.querySelector('input[name="analysisMode"]:checked')?.value === 'mutation'
+            ? 'mutation' : 'geneset';
+    }
+
+    _captureModeFilters() {
+        const val = (id) => document.getElementById(id)?.value || '';
+        return {
+            lineage: val('lineageFilter'),
+            subLineage: val('subLineageFilter'),
+            params: this._captureParamFilters(),
+            oncoprint: this._oncoprintFilters ? JSON.parse(JSON.stringify(this._oncoprintFilters)) : null,
+            activeOncoprint: this._activeOncoprintFilters ? [...this._activeOncoprintFilters] : null,
+            customRaw: val('customCellLineFilter'),
+            custom: this._customCellLineFilter?.size ? [...this._customCellLineFilter] : null
+        };
+    }
+
+    _clearCohortFiltersForModeSwitch() {
+        const set = (id, v = '') => { const e = document.getElementById(id); if (e) e.value = v; };
+        set('lineageFilter');
+        this.updateSubLineageFilter?.();
+        set('subLineageFilter');
+        set('paramOncotreeFilter');
+        this._paramDiseaseMulti = null;
+        set('paramHotspotGene'); set('paramHotspotLevel', '1+2');
+        set('paramTranslocationGene'); set('paramTranslocationLevel', '1+2');
+        set('paramCnFilter'); set('paramCnLevel', 'altered');
+        this.excludedTissues = new Set();
+        document.querySelectorAll('#tissueExcludeList input[type="checkbox"]').forEach(cb => { cb.checked = false; });
+        this._oncoprintFilters = {};
+        this._activeOncoprintFilters = null;
+        this._oncoprintSyncFilters?.();
+        this._customCellLineFilter = null;
+        set('customCellLineFilter');
+        const cnt = document.getElementById('customCLFilterCount');
+        if (cnt) cnt.textContent = '';
+        // A gate is a cohort filter like any other, and the most surprising one
+        // to find still applied after switching modes.
+        this.clearAnalysisCellLineSubset?.();
+        this.clearGateFilter?.();
+    }
+
+    _applyModeFilters(snap) {
+        this._clearCohortFiltersForModeSwitch();
+        if (!snap) { this._renderAnalysisSubsetChip?.(); return; }
+        const lin = document.getElementById('lineageFilter');
+        if (lin && snap.lineage) {
+            lin.value = snap.lineage;
+            this.updateSubLineageFilter?.();
+            const sub = document.getElementById('subLineageFilter');
+            if (sub && snap.subLineage && [...sub.options].some(o => o.value === snap.subLineage)) sub.value = snap.subLineage;
+        }
+        this._applyParamFilters(snap.params);
+        if (snap.oncoprint) this._oncoprintFilters = JSON.parse(JSON.stringify(snap.oncoprint));
+        if (snap.activeOncoprint) this._activeOncoprintFilters = [...snap.activeOncoprint];
+        this._oncoprintSyncFilters?.();
+        if (snap.customRaw) {
+            const el = document.getElementById('customCellLineFilter');
+            if (el) el.value = snap.customRaw;
+            if (snap.custom) this._customCellLineFilter = new Set(snap.custom);
+        }
+        this._renderAnalysisSubsetChip?.();
+    }
+
     // Box-1 cohort filters the analysis reads beyond the lineage pair already in
     // networkSettings. Without these a restored network silently recomputes on a
     // different set of cell lines than the exported figure.
@@ -5444,6 +5514,7 @@ class CorrelationExplorer {
             this._setAnalysisLocked(false);
             this._setAnalysisMode('mutation');
         });
+        this._filterModeKey = this._modeFilterKey();
         this._syncAnalysisModeButtons();
 
         // Options card "Other" dropdown: Gene Effect / Correlation / Open saved
@@ -5479,6 +5550,15 @@ class CorrelationExplorer {
         // Analysis mode change
         document.querySelectorAll('input[name="analysisMode"]').forEach(radio => {
             radio.addEventListener('change', () => {
+                // Each mode keeps its own cohort filters; nothing set for one
+                // carries into the other.
+                const nextKey = this._modeFilterKey();
+                if (this._filterModeKey && this._filterModeKey !== nextKey) {
+                    this._modeFilters = this._modeFilters || {};
+                    this._modeFilters[this._filterModeKey] = this._captureModeFilters();
+                    this._applyModeFilters(this._modeFilters[nextKey] || null);
+                }
+                this._filterModeKey = nextKey;
                 // Results from the previous mode do not belong to the new one.
                 // Leaving a network on screen after switching to mutation
                 // analysis made it look like part of that analysis.
@@ -16770,8 +16850,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 + `${this.esc(c.label)}`
                 + (c.clear ? `<button type="button" data-chip="${i}" title="Remove this filter" style="border:none; background:#dcfce7; color:#4c782e; border-radius:50%; width:16px; height:16px; line-height:1; cursor:pointer; font-size:12px; padding:0;">&times;</button>` : '')
                 + `</span>`).join('')
-            + `</div>`
-            + `<div style="font-size:10px; color:#9ca3af; margin-top:3px;">These narrow the cell lines used by the gene set and mutation analyses, and carry into a scatter or gene effect opened from the network. The Cell Line Browser has its own filters. They stay set until removed.</div>`;
+            + `</div>`;
         box.querySelectorAll('button[data-chip]').forEach(b => {
             b.addEventListener('click', () => {
                 const c = chips[parseInt(b.dataset.chip, 10)];
