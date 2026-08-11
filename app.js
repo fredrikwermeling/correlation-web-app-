@@ -2223,6 +2223,7 @@ class CorrelationExplorer {
         html += `<label style="font-size:10px;cursor:pointer;color:#374151;"><input type="checkbox" id="upsetShowPct" ${this._upsetShowPct ? 'checked' : ''} onchange="app._upsetToggle('pct')" style="margin:0 3px 0 0;vertical-align:middle;"> %</label>`;
         html += `<label style="font-size:10px;cursor:pointer;color:#374151;"><input type="checkbox" id="upsetShowNames" ${this._upsetShowNames ? 'checked' : ''} onchange="app._upsetToggle('names')" style="margin:0 3px 0 0;vertical-align:middle;"> Names</label>`;
         html += `<span style="border-left:1px solid #d1d5db;height:14px;"></span>`;
+        html += `<span style="font-size:10px; color:#6b7280; margin-right:6px;">Click a bar to filter on that combination</span>`;
         html += `<button onclick="app._upsetExport()" style="font-size:10px;padding:2px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:#f9fafb;" title="Choose format, print size and resolution">Export image...</button>`;
         html += `<button onclick="app.copyPlotToClipboard('upsetPlotDiv', 'UpSet plot')" style="font-size:10px;padding:2px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:#f9fafb;" title="Copy this as an image to the clipboard, ready to paste into an email or slide">Copy</button>`;
         html += `</div>`;
@@ -2365,6 +2366,34 @@ class CorrelationExplorer {
 
         Plotly.newPlot('upsetPlotDiv', traces, layout, {
             responsive: false, displayModeBar: false
+        }).then((gd) => {
+            // Clicking a bar is the natural way to say "give me these cell
+            // lines". A bar IS a filter: exactly the genes with a filled dot
+            // altered, and the rest not. Applying it to the grid rather than
+            // straight to the list means it lands where the other picks live,
+            // so it is visible and removable once this plot is closed.
+            gd.on('plotly_click', (ev) => {
+                const pt = ev?.points?.[0];
+                if (!pt || pt.data?.type !== 'bar') return;
+                const combo = sorted[pt.pointNumber];
+                if (!combo) return;
+                const bits = combo.key.split('');
+                const want = {};
+                bits.forEach((b, i) => { want[upsetGenes[i].gene] = b === '1' ? 'mut' : 'wt'; });
+                const cur = this._oncoprintFilters || {};
+                // Clicking the bar that is already applied takes it off again.
+                const same = Object.keys(want).length === Object.keys(cur).filter(k => cur[k] !== 'none').length
+                    && Object.entries(want).every(([g, v]) => cur[g] === v);
+                this._oncoprintFilters = same ? {} : want;
+                this._oncoprintFilterKinds = this._oncoprintFilterKinds || {};
+                if (!same) Object.keys(want).forEach(g => { this._oncoprintFilterKinds[g] = this._oncoprintKind || 'hotspot'; });
+                this._oncoprintSyncFilters?.();
+                const names = bits.map((b, i) => b === '1' ? upsetGenes[i].gene : null).filter(Boolean);
+                this.showCopyNotification?.(same
+                    ? 'Filter removed.'
+                    : `${combo.count} cell line${combo.count === 1 ? '' : 's'}: ${names.length ? names.join(' + ') + ' altered' : 'none of these genes altered'}${names.length < upsetGenes.length ? ', the rest wild-type' : ''}. Shown in the grid behind this plot.`);
+                this._showUpsetPlot();
+            });
         });
 
         // Close on Escape. One handler for the life of the popup, replaced
@@ -3377,7 +3406,7 @@ class CorrelationExplorer {
             // Browser-scoped picks are not part of the analysis cohort, so
             // they have no business in the parameters box.
             if (filters.length > 0 && this._gridFilterOrigin !== 'clb') {
-                const parts = filters.map(([gene, state]) => `${gene} ${state === 'mut' ? 'Mut' : 'WT'}`);
+                const parts = filters.map(([gene, state]) => `${gene} ${this._gridStateWord(state)}`);
                 label.innerHTML = `Grid filter: ${parts.join(', ')} <span style="font-size:9px;color:#9ca3af;">(click to clear)</span>`;
                 label.style.display = '';
                 label.onclick = () => { this._oncoprintClearAll(); };
@@ -3623,9 +3652,18 @@ class CorrelationExplorer {
     _cellLinePassesOncoprintFilters(cellLine, filterList = this._activeOncoprintFilters) {
         if (!filterList || filterList.length === 0) return true;
         for (const { gene, state, kind } of filterList) {
-            const isMut = this._oncoprintRowHit(gene, cellLine, kind || 'hotspot');
-            if (state === 'mut' && !isMut) return false;
-            if (state === 'wt' && isMut) return false;
+            const k = kind || 'hotspot';
+            // Hotspot picks can name a copy count ('1' / '2') as well as the
+            // plain altered / wild-type pair. Fusions and copy-number events
+            // have no such levels, so they stay on the two-way test.
+            if (k === 'hotspot' && (state === '1' || state === '2' || state === '1+2')) {
+                const lvl = this.mutations?.geneData?.[gene]?.mutations?.[cellLine] || 0;
+                if (!this._mutLevelPasses(state, lvl)) return false;
+                continue;
+            }
+            const isMut = this._oncoprintRowHit(gene, cellLine, k);
+            if ((state === 'mut' || state === 'altered') && !isMut) return false;
+            if ((state === 'wt' || state === '0') && isMut) return false;
         }
         return true;
     }
@@ -9435,7 +9473,7 @@ class CorrelationExplorer {
         if (this._activeOncoprintFilters && this._activeOncoprintFilters.length > 0) {
             for (const f of this._activeOncoprintFilters) {
                 if (!shownGenes.has(f.gene)) {
-                    mutFilterParts.push(`${f.gene} ${f.state === 'mut' ? 'Mut' : 'WT'}`);
+                    mutFilterParts.push(`${f.gene} ${this._gridStateWord(f.state)}`);
                     shownGenes.add(f.gene);
                 }
             }
@@ -9728,7 +9766,7 @@ class CorrelationExplorer {
             const shown = new Set([mr.hotspotGene, mr.additionalHotspot].filter(Boolean));
             for (const f of this._activeOncoprintFilters) {
                 if (!shown.has(f.gene)) {
-                    allMutFilters.push(`${f.gene} ${f.state === 'mut' ? 'Mut' : 'WT'}`);
+                    allMutFilters.push(`${f.gene} ${this._gridStateWord(f.state)}`);
                     shown.add(f.gene);
                 }
             }
@@ -10162,7 +10200,7 @@ class CorrelationExplorer {
             const shown = new Set([mr.hotspotGene, mr.additionalHotspot, mr.additionalTransGene].filter(Boolean));
             for (const f of this._activeOncoprintFilters) {
                 if (!shown.has(f.gene)) {
-                    filterInfo.push(`${f.gene} ${f.state === 'mut' ? 'Mut' : 'WT'}`);
+                    filterInfo.push(`${f.gene} ${this._gridStateWord(f.state)}`);
                 }
             }
         }
@@ -13111,7 +13149,7 @@ Results:
             if (translocGene) shown.add(translocGene);
             for (const f of this._activeOncoprintFilters) {
                 if (!shown.has(f.gene)) {
-                    parts.push(`${f.gene} ${f.state === 'mut' ? 'Mut' : 'WT'}`);
+                    parts.push(`${f.gene} ${this._gridStateWord(f.state)}`);
                     shown.add(f.gene);
                 }
             }
@@ -17339,7 +17377,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
         // The scatter's own grid picks are cohort filters too, so the title
         // names them alongside the rest.
-        (this._scatterGridActive || []).forEach(f => filterParts.push(`${f.gene} ${f.state === 'mut' ? 'Mut' : 'WT'}`));
+        (this._scatterGridActive || []).forEach(f => filterParts.push(`${f.gene} ${this._gridStateWord(f.state)}`));
         // A gate used as a filter is a cohort filter like the rest, so the
         // line above the plot names it too.
         if (this._gateFilter) filterParts.push(`Gate ${this._gateFilter.gate} (${this._gateFilter.n} cell lines)`);
@@ -19067,7 +19105,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (mutFilterGene && mutFilterLevel !== 'all') parts.push(`${mutFilterGene}: ${mutFilterLevel}`);
         if (transFilterGene) parts.push(`Fusion: ${this._stripFusionFilterDecoration(transFilterGene)}`);
         if (cnFilterVal) parts.push(`CN: ${this._stripCnFilterDecoration(cnFilterVal)}`);
-        (this._scatterGridActive || []).forEach(f => parts.push(`${f.gene} ${f.state === 'mut' ? 'Mut' : 'WT'}`));
+        (this._scatterGridActive || []).forEach(f => parts.push(`${f.gene} ${this._gridStateWord(f.state)}`));
         if (this._customCellLineFilter) parts.push(`Custom: ${this._customCellLineFilter.size} CLs`);
         return { filteredData: fd, filterDesc: parts.join(' | ') };
     }
@@ -25770,9 +25808,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const filteredN = this.getGETissueFilteredData().length;
             const totalN = this.currentGeneEffect?.data?.length || 0;
             const tags = this._activeOncoprintFilters.map(f => {
-                const bg = f.state === 'mut' ? '#dcfce7' : '#fef2f2';
+                const bg = !this._gridStateIsWT(f.state) ? '#dcfce7' : '#fef2f2';
                 const color = f.state === 'mut' ? '#5d9239' : '#dc2626';
-                return `<span style="background:${bg};color:${color};padding:1px 6px;border-radius:10px;font-size:10px;">${f.gene} ${f.state === 'mut' ? 'Mut' : 'WT'}</span>`;
+                return `<span style="background:${bg};color:${color};padding:1px 6px;border-radius:10px;font-size:10px;">${f.gene} ${this._gridStateWord(f.state)}</span>`;
             }).join(' ');
             el.innerHTML = tags + ` <span style="font-size:10px;color:#6b7280;">(${filteredN}/${totalN} cell lines)</span>`;
             el.style.display = 'inline-flex';
@@ -26213,7 +26251,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             parts.push(isWT('geCnLevel') ? `${label} absent` : label);
         }
         if (this._activeOncoprintFilters?.length > 0) {
-            this._activeOncoprintFilters.forEach(f => parts.push(`${f.gene} ${f.state === 'mut' ? 'Mut' : 'WT'}`));
+            this._activeOncoprintFilters.forEach(f => parts.push(`${f.gene} ${this._gridStateWord(f.state)}`));
         }
         return parts.join(' | ');
     }
@@ -28691,7 +28729,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const filterParts = [];
             const cancerF = document.getElementById('scatterCancerFilter')?.value;
             if (cancerF) filterParts.push(`Tissue: ${cancerF}`);
-            if (this._activeOncoprintFilters) for (const f of this._activeOncoprintFilters) filterParts.push(`${f.gene} ${f.state === 'mut' ? 'Mut' : 'WT'}`);
+            if (this._activeOncoprintFilters) for (const f of this._activeOncoprintFilters) filterParts.push(`${f.gene} ${this._gridStateWord(f.state)}`);
             context = {
                 type: 'gate_comparison',
                 gene1: ci?.gene1, gene2: ci?.gene2,
@@ -28740,7 +28778,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const transGene = document.getElementById('paramTranslocationGene')?.value;
             const transLevel = document.getElementById('paramTranslocationLevel')?.value;
             if (transGene) filterParts.push(`Fusion: ${transGene} ${transLevel === '1+2' ? 'Fused' : transLevel === '0' ? 'Not fused' : `level ${transLevel}`}`);
-            if (this._activeOncoprintFilters) for (const f of this._activeOncoprintFilters) filterParts.push(`Oncoprint: ${f.gene} ${f.state === 'mut' ? 'Mut' : 'WT'}`);
+            if (this._activeOncoprintFilters) for (const f of this._activeOncoprintFilters) filterParts.push(`Oncoprint: ${f.gene} ${this._gridStateWord(f.state)}`);
             if (this._customCellLineFilter?.size) filterParts.push(`Custom CL list (n=${this._customCellLineFilter.size})`);
             const inputGenes = (this.getGeneList && this.getGeneList()) || [];
             context = {
@@ -34048,6 +34086,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             + `</div>`;
     }
 
+    // How a grid pick reads in a chip or a caption.
+    _gridStateWord(state) {
+        return { '1': 'Mut (1 copy)', '2': 'Mut (2 copies)', '1+2': 'Mut', mut: 'Mut', altered: 'Mut', wt: 'WT', '0': 'WT' }[state] || 'Mut';
+    }
+
+    _gridStateIsWT(state) { return state === 'wt' || state === '0'; }
+
     // Does this cell line's mutation level satisfy the chosen filter level?
     // The four levels are the ones the Cell Line Browser has always offered
     // (either copy / one copy / both copies / wild-type); the gene-effect
@@ -37941,11 +37986,22 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
         if (kind === 'grid') {
             const gene = anchorEl.dataset.gridGene;
-            return this._simpleChipMenu(anchorEl, [
-                { label: 'Keep altered lines', act: () => { this._oncoprintFilters[gene] = 'mut'; this._oncoprintSyncFilters?.(); } },
-                { label: 'Keep wild-type lines', act: () => { this._oncoprintFilters[gene] = 'wt'; this._oncoprintSyncFilters?.(); } },
-                { label: 'Remove this filter', danger: true, act: () => { delete this._oncoprintFilters[gene]; this._oncoprintSyncFilters?.(); } },
-            ], after);
+            const gKind = this._oncoprintFilterKinds?.[gene] || this._oncoprintKind || 'hotspot';
+            const cur = this._oncoprintFilters?.[gene];
+            const set = (v) => { this._oncoprintFilters[gene] = v; this._oncoprintSyncFilters?.(); };
+            // A hotspot pick can name the copy count, the same choice the
+            // filter boxes offer. Fusion and copy-number events have no levels.
+            const rows = gKind === 'hotspot' ? [
+                { label: 'Mutated (either copy)', active: cur === 'mut' || cur === '1+2', act: () => set('1+2') },
+                { label: 'One copy mutated', active: cur === '1', act: () => set('1') },
+                { label: 'Both copies mutated', active: cur === '2', act: () => set('2') },
+                { label: 'Wild-type', active: cur === 'wt' || cur === '0', act: () => set('wt') },
+            ] : [
+                { label: 'Keep altered lines', active: cur === 'mut', act: () => set('mut') },
+                { label: 'Keep wild-type lines', active: cur === 'wt', act: () => set('wt') },
+            ];
+            rows.push({ label: 'Remove this filter', danger: true, act: () => { delete this._oncoprintFilters[gene]; this._oncoprintSyncFilters?.(); } });
+            return this._simpleChipMenu(anchorEl, rows, after);
         }
         // Scatter-scoped grid picks: same menu, but against the scatter's own
         // set, so nothing here touches the analysis cohort.
@@ -38171,9 +38227,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const shown = new Set([hotspot, trans].filter(Boolean));
             for (const f of this._activeOncoprintFilters) {
                 if (!shown.has(f.gene)) {
-                    const bg = f.state === 'mut' ? '#dcfce7' : '#fef2f2';
+                    const bg = !this._gridStateIsWT(f.state) ? '#dcfce7' : '#fef2f2';
                     const color = f.state === 'mut' ? '#5d9239' : '#dc2626';
-                    parts.push(`<span class="clb-chip" data-chip="grid" data-grid-gene="${this.esc(f.gene)}" title="Click to switch side or remove" style="background:${bg};color:${color};padding:1px 6px;border-radius:10px;">${this.esc(f.gene)} ${f.state === 'mut' ? 'Mut' : 'WT'} &#9662;</span>`);
+                    parts.push(`<span class="clb-chip" data-chip="grid" data-grid-gene="${this.esc(f.gene)}" title="Click to switch side or remove" style="background:${bg};color:${color};padding:1px 6px;border-radius:10px;">${this.esc(f.gene)} ${this._gridStateWord(f.state)} &#9662;</span>`);
                 }
             }
         }
@@ -39031,7 +39087,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             if (this._activeOncoprintFilters) {
                 const shown = new Set([hotspotVal, transVal].filter(Boolean));
                 for (const f of this._activeOncoprintFilters) {
-                    if (!shown.has(f.gene)) filterParts.push(`${f.gene} ${f.state === 'mut' ? 'Mut' : 'WT'}`);
+                    if (!shown.has(f.gene)) filterParts.push(`${f.gene} ${this._gridStateWord(f.state)}`);
                 }
             }
             const filterLabel = `filtered (n=${filteredIndices.length})${filterParts.length > 0 ? ': ' + filterParts.join(', ') : ''}`;
@@ -44118,6 +44174,27 @@ ${clone.innerHTML}
                     }
                     return a2;
                 });
+                // Reserve room for the whole title stack. The margins come from
+                // the on-screen chart, where the block was shorter relative to
+                // the plot; at export size the lowest line ended up sitting on
+                // the plot edge, touching whatever was drawn at the top of it.
+                const above = layout.annotations.filter(an => an.yref === 'paper' && typeof an.y === 'number' && an.y > 1);
+                if (above.length) {
+                    layout.margin = { ...(layout.margin || {}) };
+                    const b = layout.margin.b || 60;
+                    const plotH = Math.max(80, height - (layout.margin.t || 80) - b);
+                    let need = 0;
+                    for (const an of above) {
+                        const lines = String(an.text || '').split('<br>').length;
+                        const fs = an.font?.size || 12;
+                        need = Math.max(need, (an.y - 1) * plotH + lines * fs * 1.35);
+                    }
+                    layout.margin.t = Math.max(layout.margin.t || 0, Math.ceil(need) + 12);
+                    // The second panel borrows this to keep the two plot areas
+                    // level, so it has to be the margin actually used here, not
+                    // the one the chart happens to have on screen.
+                    this._lastExportTopMargin = layout.margin.t;
+                }
             }
 
             layout.xaxis = layout.xaxis || {};
@@ -44174,12 +44251,15 @@ ${clone.innerHTML}
             // Get main plot margin for aligning gene plot
             const mainMargin = mainEl._fullLayout?.margin || { t: 80, b: 60, l: 60, r: 30 };
 
-            // Render both plots as PNG previews
+            // Render both plots as PNG previews. The main plot is rendered
+            // first so the second can borrow whatever top margin it settled on.
+            this._lastExportTopMargin = null;
             const mainImgUrl = await this._renderExportPlotToImage(mainEl, settings.mainW, settings.mainH, settings, 'png');
 
             let geneImgUrl = null;
             if (geneEl && geneEl.data) {
-                geneImgUrl = await this._renderExportPlotToImage(geneEl, settings.geneW, settings.geneH, settings, 'png', mainMargin.t);
+                geneImgUrl = await this._renderExportPlotToImage(geneEl, settings.geneW, settings.geneH, settings, 'png',
+                    this._lastExportTopMargin || mainMargin.t);
             }
 
             previewArea.innerHTML = '';
@@ -48148,27 +48228,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const app = window.app;
     if (!app?._makeDraggable) return;
 
-    // The hand-built overlays have no .modal-header, but they all share the
-    // same shape: overlay > card > title row. Listed by name rather than
-    // detected, so a layout change can't silently turn some content block into
-    // a drag handle. The genuinely full-screen ones (Cell Line Browser,
-    // Enrichr, export preview, the compare table) are left out: there is
-    // nowhere to drag them to.
-    const CUSTOM_DRAGGABLE = [
-        'changelogModal', 'inspectCorrelatesModal', 'collectionsInfoModal',
-        'selectionInspectModal', 'clbWikiModal', 'clbInfoModal'
-    ];
-
+    // Every dialog is draggable by its title row, including the hand-built
+    // overlays that have no .modal-header: they all share the same shape,
+    // overlay > card > title row. The large ones were left out before on the
+    // grounds that there is nowhere to drag them to, but on a small screen
+    // that is exactly when moving one matters.
     modals.forEach(el => {
-        let card = el.querySelector(':scope > .modal');
-        let handle = card?.querySelector(':scope > .modal-header');
-        if (!card && CUSTOM_DRAGGABLE.includes(el.id)) {
-            card = el.firstElementChild;
-            handle = card?.firstElementChild;
-            // A handle that fills the card is the content, not a title bar.
-            if (handle && handle.childElementCount > 4) handle = null;
-        }
-        if (card && handle) app._makeDraggable(card, handle);
+        let card = el.querySelector(':scope > .modal') || el.firstElementChild;
+        let handle = card?.querySelector(':scope > .modal-header') || card?.firstElementChild;
+        // A handle that fills the card is the content, not a title bar; making
+        // it draggable would swallow clicks meant for what is inside.
+        if (handle && !handle.classList.contains('modal-header') && handle.childElementCount > 4) handle = null;
+        if (card && handle && card !== handle) app._makeDraggable(card, handle);
     });
 });
 
