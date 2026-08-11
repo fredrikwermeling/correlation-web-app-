@@ -3311,18 +3311,18 @@ class CorrelationExplorer {
                 // copy-number row always previewed as 0 matches.
                 const previewKind = self._oncoprintKind || 'hotspot';
                 let matchCount = 0;
+                // The same predicate the filters themselves use, so the live
+                // count in the grid agrees with what applying it produces,
+                // copy-count picks included.
+                const previewList = activeFilters.map(([gene, state]) =>
+                    ({ gene, state, kind: self._oncoprintFilterKinds?.[gene] || previewKind }));
                 for (const cl of filteredCLs) {
-                    let passes = true;
-                    for (const [gene, state] of activeFilters) {
-                        const isMut = self._oncoprintRowHit(gene, cl, self._oncoprintFilterKinds?.[gene] || previewKind);
-                        if (state === 'mut' && !isMut) { passes = false; break; }
-                        if (state === 'wt' && isMut) { passes = false; break; }
-                    }
-                    if (passes) matchCount++;
+                    if (self._cellLinePassesOncoprintFilters(cl, previewList)) matchCount++;
                 }
-                const tags = activeFilters.map(([gene, state]) =>
-                    `<span style="display:inline-flex;align-items:center;gap:2px;padding:1px 6px;border-radius:10px;font-size:10px;background:${state === 'mut' ? '#dcfce7' : '#fef2f2'};color:${state === 'mut' ? '#5d9239' : '#dc2626'};border:1px solid ${state === 'mut' ? '#86efac' : '#fecaca'};">${gene} ${state === 'mut' ? '✓' : '✗'}<button onclick="app._oncoprintClearGene('${gene}')" style="background:none;border:none;cursor:pointer;font-size:10px;color:#999;padding:0 0 0 2px;">×</button></span>`
-                ).join('');
+                const tags = activeFilters.map(([gene, state]) => {
+                    const on = !self._gridStateIsWT(state);
+                    return `<span style="display:inline-flex;align-items:center;gap:2px;padding:1px 6px;border-radius:10px;font-size:10px;background:${on ? '#dcfce7' : '#fef2f2'};color:${on ? '#5d9239' : '#dc2626'};border:1px solid ${on ? '#86efac' : '#fecaca'};">${gene} ${self._gridStateWord(state)}<button onclick="app._oncoprintClearGene('${gene}')" style="background:none;border:none;cursor:pointer;font-size:10px;color:#999;padding:0 0 0 2px;">×</button></span>`;
+                }).join('');
                 statusEl.innerHTML = `${tags} <span style="color:#6b7280;">${matchCount}/${filteredCLs.length} CLs</span> <button onclick="app._oncoprintApplyFilters()" style="padding:5px 16px;font-size:12px;font-weight:700;background:#4c782e;color:white;border:none;border-radius:5px;cursor:pointer;box-shadow:0 2px 6px rgba(76, 120, 46,0.35);" title="Apply these include / exclude choices and close the grid">Apply &rarr;</button> <button onclick="app._oncoprintClearAll()" style="padding:2px 8px;font-size:10px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;">Clear</button>`;
             }
         };
@@ -25892,7 +25892,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const totalN = this.currentGeneEffect?.data?.length || 0;
             const tags = this._activeOncoprintFilters.map(f => {
                 const bg = !this._gridStateIsWT(f.state) ? '#dcfce7' : '#fef2f2';
-                const color = f.state === 'mut' ? '#5d9239' : '#dc2626';
+                const color = !this._gridStateIsWT(f.state) ? '#5d9239' : '#dc2626';
                 return `<span style="background:${bg};color:${color};padding:1px 6px;border-radius:10px;font-size:10px;">${f.gene} ${this._gridStateWord(f.state)}</span>`;
             }).join(' ');
             el.innerHTML = tags + ` <span style="font-size:10px;color:#6b7280;">(${filteredN}/${totalN} cell lines)</span>`;
@@ -35832,7 +35832,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
         if (this._activeOncoprintFilters?.length) {
             push('Alteration grid filters', this._activeOncoprintFilters
-                .map(f => `${f.gene} ${f.state === 'mut' ? 'altered' : 'wild-type'} (${f.kind})`).join(', '));
+                .map(f => `${f.gene} ${this._gridStateWord(f.state)} (${f.kind})`).join(', '));
         }
         push('Cell lines currently listed', String(this._clbVisibleCellLines?.length ?? ''));
         push('Cell lines ticked', String(this._clbSelectedCellLines?.size ?? ''));
@@ -37994,19 +37994,21 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // gene of the same kind is filtered on at once.
         for (const f of (this._activeOncoprintFilters || [])) {
             if (f.gene === hotGene || f.gene === fusGene) continue;
-            const on = f.state === 'mut';
-            parts.push(`<span class="clb-chip" data-chip="grid" data-grid-gene="${this.esc(f.gene)}" title="Click to switch side or remove"`
+            // A pick can name a copy count, so the chip reads its state rather
+            // than testing for one particular value.
+            const on = !this._gridStateIsWT(f.state);
+            parts.push(`<span class="clb-chip" data-chip="grid" data-grid-gene="${this.esc(f.gene)}" title="Click to change which cell lines are kept, or to remove"`
                 + ` style="background:${on ? '#dcfce7' : '#fef2f2'};color:${on ? '#5d9239' : '#dc2626'};padding:1px 6px;border-radius:10px;cursor:pointer;">`
-                + `${this.esc(f.gene)} ${on ? 'Mut' : 'WT'} &#9662;</span>`);
+                + `${this.esc(f.gene)} ${this._gridStateWord(f.state)} &#9662;</span>`);
         }
         // The scatter's own grid picks, scoped to that plot alone.
         if (ctxName === 'scatter') {
             for (const f of (this._scatterGridActive || [])) {
                 if (f.gene === hotGene || f.gene === fusGene) continue;
-                const on = f.state === 'mut';
-                parts.push(`<span class="clb-chip" data-chip="sgrid" data-grid-gene="${this.esc(f.gene)}" title="Grid pick for this scatter only. Click to switch side or remove"`
+                const on = !this._gridStateIsWT(f.state);
+                parts.push(`<span class="clb-chip" data-chip="sgrid" data-grid-gene="${this.esc(f.gene)}" title="Grid pick for this scatter only. Click to change which cell lines are kept, or to remove"`
                     + ` style="background:${on ? '#dcfce7' : '#fef2f2'};color:${on ? '#5d9239' : '#dc2626'};padding:1px 6px;border-radius:10px;cursor:pointer;">`
-                    + `${this.esc(f.gene)} ${on ? 'Mut' : 'WT'} &#9662;</span>`);
+                    + `${this.esc(f.gene)} ${this._gridStateWord(f.state)} &#9662;</span>`);
             }
         }
 
@@ -38106,11 +38108,21 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     ? filters.map(([g, state]) => ({ gene: g, state, kind: this._oncoprintFilterKinds?.[g] || gk }))
                     : null;
             };
-            return this._simpleChipMenu(anchorEl, [
-                { label: 'Keep altered lines', act: () => { (this._scatterGridMap ||= {})[gene] = 'mut'; syncScatter(); } },
-                { label: 'Keep wild-type lines', act: () => { (this._scatterGridMap ||= {})[gene] = 'wt'; syncScatter(); } },
-                { label: 'Remove this filter', danger: true, act: () => { if (this._scatterGridMap) delete this._scatterGridMap[gene]; syncScatter(); } },
-            ], after);
+            const curS = this._scatterGridMap?.[gene];
+            const sKind = this._oncoprintFilterKinds?.[gene] || this._oncoprintKind || 'hotspot';
+            const setS = (v) => { (this._scatterGridMap ||= {})[gene] = v; syncScatter(); };
+            // Same choices as every other grid chip in the app.
+            const sRows = sKind === 'hotspot' ? [
+                { label: 'Mutated (either copy)', active: curS === 'mut' || curS === '1+2', act: () => setS('1+2') },
+                { label: 'One copy mutated', active: curS === '1', act: () => setS('1') },
+                { label: 'Both copies mutated', active: curS === '2', act: () => setS('2') },
+                { label: 'Wild-type', active: curS === 'wt' || curS === '0', act: () => setS('wt') },
+            ] : [
+                { label: 'Keep altered lines', active: curS === 'mut', act: () => setS('mut') },
+                { label: 'Keep wild-type lines', active: curS === 'wt', act: () => setS('wt') },
+            ];
+            sRows.push({ label: 'Remove this filter', danger: true, act: () => { if (this._scatterGridMap) delete this._scatterGridMap[gene]; syncScatter(); } });
+            return this._simpleChipMenu(anchorEl, sRows, after);
         }
 
         const unit = spec[kind];
@@ -38329,7 +38341,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             for (const f of this._activeOncoprintFilters) {
                 if (!shown.has(f.gene)) {
                     const bg = !this._gridStateIsWT(f.state) ? '#dcfce7' : '#fef2f2';
-                    const color = f.state === 'mut' ? '#5d9239' : '#dc2626';
+                    const color = !this._gridStateIsWT(f.state) ? '#5d9239' : '#dc2626';
                     parts.push(`<span class="clb-chip" data-chip="grid" data-grid-gene="${this.esc(f.gene)}" title="Click to switch side or remove" style="background:${bg};color:${color};padding:1px 6px;border-radius:10px;">${this.esc(f.gene)} ${this._gridStateWord(f.state)} &#9662;</span>`);
                 }
             }
