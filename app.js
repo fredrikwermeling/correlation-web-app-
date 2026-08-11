@@ -20154,36 +20154,52 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
     // Pressing a gate button first asks which shape to draw: the rectangle
     // as before, or a free-hand lasso for groups a box cannot isolate.
+    // Which shape to draw the gate with. This used to be two lines of small
+    // text hanging under the button, easy to miss and easy to dismiss by
+    // accident; the choice deserves to be asked plainly, in the middle of the
+    // screen, with each option saying what it is for.
     startGateSelection(gate) {
-        const btn = document.getElementById(gate === 'A' ? 'setGateABtn' : 'setGateBBtn');
         document.getElementById('gateShapeMenu')?.remove();
-        const menu = document.createElement('div');
-        menu.id = 'gateShapeMenu';
-        menu.style.cssText = 'position:absolute; z-index:10002; background:#fff; border:1px solid #d1d5db; border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,0.15); padding:4px; display:flex; flex-direction:column; gap:2px;';
-        const opt = (label, mode) => {
+        const colour = gate === 'A' ? '#2563eb' : '#dc2626';
+        const overlay = document.createElement('div');
+        overlay.id = 'gateShapeMenu';
+        overlay.style.cssText = 'position:fixed; inset:0; z-index:10002; background:rgba(17,24,39,0.28); display:flex; align-items:center; justify-content:center;';
+        const card = document.createElement('div');
+        card.style.cssText = 'background:#fff; border-radius:10px; box-shadow:0 12px 40px rgba(0,0,0,0.28); padding:18px 20px; width:min(420px, calc(100vw - 40px));';
+        card.innerHTML = `<div style="font-size:14px; font-weight:600; color:#374151; margin-bottom:3px;">Draw gate <span style="color:${colour};">${gate}</span></div>`
+            + `<div style="font-size:11px; color:#6b7280; margin-bottom:12px;">Pick a shape, then drag it over the cell lines you want.</div>`;
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; gap:10px;';
+        const opt = (glyph, label, blurb, mode) => {
             const b = document.createElement('button');
             b.type = 'button';
-            b.textContent = label;
-            b.style.cssText = 'border:none; background:none; text-align:left; padding:4px 12px; cursor:pointer; border-radius:4px; font-size:11px; color:#374151; white-space:nowrap;';
-            b.onmouseenter = () => { b.style.background = '#f3f4f6'; };
-            b.onmouseleave = () => { b.style.background = 'none'; };
-            b.onclick = () => { menu.remove(); this._armGateDraw(gate, mode); };
+            b.style.cssText = 'flex:1; border:1px solid #d1d5db; background:#fff; border-radius:8px; padding:12px 10px; cursor:pointer; text-align:center; font-family:inherit;';
+            b.innerHTML = `<div style="font-size:22px; line-height:1; color:${colour}; margin-bottom:6px;">${glyph}</div>`
+                + `<div style="font-size:12px; font-weight:600; color:#374151;">${label}</div>`
+                + `<div style="font-size:10px; color:#9ca3af; margin-top:2px;">${blurb}</div>`;
+            b.onmouseenter = () => { b.style.borderColor = colour; b.style.background = '#f9fafb'; };
+            b.onmouseleave = () => { b.style.borderColor = '#d1d5db'; b.style.background = '#fff'; };
+            b.onclick = () => { close(); this._armGateDraw(gate, mode); };
             return b;
         };
-        menu.appendChild(opt('▭ Rectangle', 'rect'));
-        menu.appendChild(opt('✎ Lasso', 'lasso'));
-        const r = btn.getBoundingClientRect();
-        menu.style.left = (r.left + window.scrollX) + 'px';
-        menu.style.top = (r.bottom + window.scrollY + 4) + 'px';
-        document.body.appendChild(menu);
-        setTimeout(() => {
-            const dismiss = (ev) => {
-                if (menu.contains(ev.target)) return;
-                menu.remove();
-                document.removeEventListener('click', dismiss);
-            };
-            document.addEventListener('click', dismiss);
-        }, 0);
+        row.appendChild(opt('\u25ad', 'Rectangle', 'drag a box', 'rect'));
+        row.appendChild(opt('\u270e', 'Lasso', 'draw around them', 'lasso'));
+        card.appendChild(row);
+        const cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.textContent = 'Cancel';
+        cancel.style.cssText = 'margin-top:12px; border:none; background:none; color:#6b7280; font-size:11px; cursor:pointer; padding:0; font-family:inherit;';
+        cancel.onclick = () => close();
+        card.appendChild(cancel);
+        overlay.appendChild(card);
+        const close = () => {
+            overlay.remove();
+            document.removeEventListener('keydown', onKey);
+        };
+        const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+        document.addEventListener('keydown', onKey);
+        document.body.appendChild(overlay);
     }
 
     _armGateDraw(gate, mode) {
@@ -36639,6 +36655,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             });
         });
 
+        // Reset beside the filters does the same as the toolbar one.
+        document.getElementById('clbResetActiveFilters')?.addEventListener('click', () => {
+            document.getElementById('clbResetFilters')?.click();
+        });
         document.getElementById('clbResetFilters').addEventListener('click', () => {
             document.getElementById('clbSearch').value = '';
             document.getElementById('clbTissueFilter').value = '';
@@ -38282,6 +38302,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const total = this.metadata?.cellLines?.length || 0;
             el.innerHTML = parts.join(' ');
             el.style.display = 'flex';
+            // The box is always on screen, so its "none" note steps aside
+            // rather than the whole row appearing and shifting the layout.
+            const note = document.getElementById('clbNoFiltersNote');
+            if (note) note.style.display = 'none';
             el.querySelectorAll('[data-chip]').forEach(chip => {
                 chip.addEventListener('click', (e) => {
                     if (e.target.closest('[data-clear-collection]')) return;  // the × has its own handler
@@ -38300,6 +38324,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             });
         } else {
             el.innerHTML = '';
+            const note = document.getElementById('clbNoFiltersNote');
+            if (note) note.style.display = '';
         }
     }
 

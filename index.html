@@ -1762,21 +1762,14 @@
         /* When there are chips, set the row apart from the controls above it so
            it does not read as another line of label text. */
         .clb-active-filters:not(:empty) {
-            margin-top: 6px;
-            padding: 5px 7px;
-            background: #f8faf7;
-            border: 1px solid #e5e7eb;
+            margin-top: 0;
+            padding: 0;
+            background: transparent;
+            border: 0;
             border-radius: 6px;
         }
-        .clb-active-filters:not(:empty)::before {
-            content: 'Active:';
-            font-size: 9px;
-            font-weight: 700;
-            letter-spacing: 0.04em;
-            text-transform: uppercase;
-            color: #6b7280;
-            margin-right: 1px;
-        }
+        /* The box above carries the heading now, so the row does not repeat it. */
+        .clb-active-filters:not(:empty)::before { content: none; }
         .clb-content {
             display: flex;
             min-height: 300px;
@@ -4469,7 +4462,20 @@
               <button id="clbCollectionsInfoBtn" class="btn btn-outline btn-sm clb-icon-btn" title="What each quick filter includes, and the rule used to decide membership">?</button>
 
 
-              <div id="clbActiveFilters" class="clb-active-filters"></div>
+              <!-- Always present, like the scatter's: the row stays put whether
+                   or not anything is filtered, so nothing jumps as chips come
+                   and go, and Reset is where the filters are rather than at the
+                   far end of the toolbar. -->
+              <div id="clbActiveFiltersBox" style="width:100%; margin-top:6px; padding:5px 7px; background:#f8faf7; border:1px solid #e5e7eb; border-radius:5px;">
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                  <span style="font-size:10px; font-weight:600; color:#6b7280; text-transform:uppercase; letter-spacing:0.03em;">Active filters</span>
+                  <button id="clbResetActiveFilters" class="btn btn-outline btn-sm" style="font-size:10px; padding:1px 8px;" title="Clear every filter: tissue, subtype, disease, sex, alterations, grid picks, quick filters and pasted lists">Reset</button>
+                </div>
+                <div style="display:flex; gap:4px; flex-wrap:wrap; align-items:center; min-height:16px; margin-top:3px;">
+                  <div id="clbActiveFilters" class="clb-active-filters"></div>
+                  <span id="clbNoFiltersNote" style="font-size:9px; color:#9ca3af;">none</span>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -4684,6 +4690,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v87_35"></script>
+    <script src="app.js?v=v87_36"></script>
 </body>
 </html>
