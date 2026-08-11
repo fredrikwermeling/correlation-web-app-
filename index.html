@@ -2656,12 +2656,11 @@
                     </button>
                     <div id="geneCountDisplay" style="margin-top: 8px;"></div>
                     <div id="geneValidationDisplay" style="margin-top: 8px;"></div>
-                    <!-- The cell-line subset a gate (or a pasted list) leaves in
-                         force used to sit in the Parameters card, where it was
-                         easy to miss. It belongs at the end of the gene set,
-                         next to Run, with a rule above it so it reads as its own
-                         thing rather than more gene input. -->
-                    <div class="form-group" id="analysisSubsetGroup" style="display: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--gray-200);"></div>
+                    <!-- Active cohort filters, at the end of the gene set next to
+                         Run. The rule sits BELOW it: what comes after is a
+                         different concern (ranking), and a rule above as well
+                         doubled up with the one the block above already draws. -->
+                    <div class="form-group" id="analysisSubsetGroup" style="display: none; margin-top: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--gray-200);"></div>
                     <div id="analysisStatus"></div>
                     </div> <!-- end card-content -->
                 </div>
@@ -4673,6 +4672,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v87_24"></script>
+    <script src="app.js?v=v87_25"></script>
 </body>
 </html>

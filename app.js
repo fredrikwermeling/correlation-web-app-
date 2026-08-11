@@ -16814,41 +16814,46 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (!box) return;
         const chips = [];
         const val = (id) => document.getElementById(id)?.value || '';
+        const fire = (id) => { const e = document.getElementById(id); if (e) e.dispatchEvent(new Event('change', { bubbles: true })); };
         const add = (label, clear, title) => chips.push({ label, clear, title });
 
+        // Tissue, subtype and disease are one nested choice, not three. Three
+        // chips reading "Lung", "Non-Small Cell Lung Cancer" and "Lung
+        // Adenocarcinoma" describe a single selection and invite the reader to
+        // remove a middle level that cannot be removed on its own.
         const lin = val('lineageFilter');
-        if (lin) add(lin, () => { const e = document.getElementById('lineageFilter'); e.value = ''; e.dispatchEvent(new Event('change', { bubbles: true })); }, 'Tissue');
         const sub = val('subLineageFilter');
-        if (sub) add(sub, () => { const e = document.getElementById('subLineageFilter'); e.value = ''; e.dispatchEvent(new Event('change', { bubbles: true })); }, 'Subtype');
         const dis = this._paramDiseaseMulti?.length ? this._paramDiseaseMulti.join(' + ') : val('paramOncotreeFilter');
-        if (dis && dis !== '__mr_multi__') add(dis, () => {
-            this._paramDiseaseMulti = [];
-            const e = document.getElementById('paramOncotreeFilter'); if (e) { e.value = ''; e.dispatchEvent(new Event('change', { bubbles: true })); }
-        }, 'Disease');
+        const path = [lin, sub, (dis && dis !== '__mr_multi__') ? dis : ''].filter(Boolean);
+        if (path.length) {
+            add(path[path.length - 1], () => this._clearLocationFilters(), path.join(' \u203a '));
+        }
         const hs = val('paramHotspotGene');
-        if (hs) {
-            const lvl = val('paramHotspotLevel');
-            add(`${hs} ${lvl === '0' ? 'WT' : 'mutated'}`, () => { const e = document.getElementById('paramHotspotGene'); e.value = ''; e.dispatchEvent(new Event('change', { bubbles: true })); }, 'Mutation');
-        }
+        if (hs) add(`${hs} ${val('paramHotspotLevel') === '0' ? 'WT' : 'mutated'}`,
+            () => { const e = document.getElementById('paramHotspotGene'); e.value = ''; fire('paramHotspotGene'); }, 'Mutation');
         const tg = val('paramTranslocationGene');
-        if (tg) {
-            const lvl = val('paramTranslocationLevel');
-            add(`${tg} ${lvl === '0' ? 'not fused' : 'fused'}`, () => { const e = document.getElementById('paramTranslocationGene'); e.value = ''; e.dispatchEvent(new Event('change', { bubbles: true })); }, 'Fusion');
-        }
-        if (this.excludedTissues?.size) add(`${this.excludedTissues.size} tissue${this.excludedTissues.size > 1 ? 's' : ''} excluded`, null, 'Excluded');
+        if (tg) add(`${tg} ${val('paramTranslocationLevel') === '0' ? 'not fused' : 'fused'}`,
+            () => { const e = document.getElementById('paramTranslocationGene'); e.value = ''; fire('paramTranslocationGene'); }, 'Fusion');
+        const cn = val('paramCnFilter');
+        if (cn) add(`${cn} ${val('paramCnLevel') || 'altered'}`,
+            () => { const e = document.getElementById('paramCnFilter'); e.value = ''; fire('paramCnFilter'); }, 'Copy number');
+        if (this.excludedTissues?.size) add(`${this.excludedTissues.size} tissue${this.excludedTissues.size > 1 ? 's' : ''} excluded`,
+            () => { this.excludedTissues = new Set(); document.querySelectorAll('#tissueExcludeList input[type="checkbox"]').forEach(cb => { cb.checked = false; }); this._markMutationRunStale?.(); }, 'Excluded');
+        if (this._customCellLineFilter?.size) add(`${this._customCellLineFilter.size} pasted cell line${this._customCellLineFilter.size === 1 ? '' : 's'}`,
+            () => this.clearCustomCellLineFilter?.(), 'Cell line list');
         const nSub = this._analysisCellLineSubset?.size || 0;
-        if (nSub) add(this._analysisSubsetLabel || `${nSub} cell lines`, () => {
-            this.clearAnalysisCellLineSubset();
-            this.showCopyNotification?.('Back to all cell lines. Run the analysis again to update it.');
-        }, 'Cell lines');
+        if (nSub) add(this._analysisSubsetLabel || `${nSub} cell lines`,
+            () => this.clearAnalysisCellLineSubset(), 'Cell lines');
 
         if (!chips.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
         box.style.display = '';
-        box.innerHTML = `<div class="param-section-heading">Active filters</div>`
+        box.innerHTML = `<div style="display:flex; align-items:baseline; justify-content:space-between; gap:8px;">`
+            + `<span class="param-section-heading">Active filters</span>`
+            + `<button type="button" id="activeFiltersClearAll" style="border:none; background:none; padding:0; font-size:10px; color:var(--green-700); text-decoration:underline; cursor:pointer;">Remove all</button></div>`
             + `<div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;">`
-            + chips.map((c, i) => `<span title="${this.esc(c.title)}" style="display:inline-flex; align-items:center; gap:5px; font-size:11px; background:#f0fdf4; border:1px solid #86c26f; color:#4c782e; border-radius:12px; padding:2px ${c.clear ? '4px' : '10px'} 2px 10px;">`
+            + chips.map((c, i) => `<span title="${this.esc(c.title)}" style="display:inline-flex; align-items:center; gap:5px; font-size:11px; background:#f0fdf4; border:1px solid #86c26f; color:#4c782e; border-radius:12px; padding:2px 4px 2px 10px;">`
                 + `${this.esc(c.label)}`
-                + (c.clear ? `<button type="button" data-chip="${i}" title="Remove this filter" style="border:none; background:#dcfce7; color:#4c782e; border-radius:50%; width:16px; height:16px; line-height:1; cursor:pointer; font-size:12px; padding:0;">&times;</button>` : '')
+                + `<button type="button" data-chip="${i}" title="Remove" style="border:none; background:#dcfce7; color:#4c782e; border-radius:50%; width:16px; height:16px; line-height:1; cursor:pointer; font-size:12px; padding:0;">&times;</button>`
                 + `</span>`).join('')
             + `</div>`;
         box.querySelectorAll('button[data-chip]').forEach(b => {
@@ -16857,6 +16862,27 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 if (c?.clear) { c.clear(); this._renderAnalysisSubsetChip(); }
             });
         });
+        box.querySelector('#activeFiltersClearAll')?.addEventListener('click', () => {
+            chips.forEach(c => { try { c.clear(); } catch (e) {} });
+            this._renderAnalysisSubsetChip();
+        });
+    }
+
+    // Clearing the tissue / subtype / disease trio goes through the app's own
+    // clearing path, not just the three selects: that path also removes the
+    // green "Disease: ..." note beside the lineage box, which otherwise stayed
+    // behind claiming a filter that was no longer applied.
+    _clearLocationFilters() {
+        this._paramDiseaseMulti = null;
+        try { this.applyTissueBreakdownSelection([]); } catch (e) {}
+        ['lineageFilter', 'subLineageFilter', 'paramOncotreeFilter'].forEach(id => {
+            const e = document.getElementById(id);
+            if (e) e.value = '';
+        });
+        document.querySelector('#lineageFilterGroup .tb-override-label')?.remove();
+        this.updateSubLineageFilter?.();
+        const lf = document.getElementById('lineageFilter');
+        if (lf) lf.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
     applyCustomCellLineFilter() {
