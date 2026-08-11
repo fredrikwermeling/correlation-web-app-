@@ -16969,6 +16969,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             () => { const e = document.getElementById('paramCnFilter'); e.value = ''; fire('paramCnFilter'); }, 'Copy number');
         if (this.excludedTissues?.size) add(`${this.excludedTissues.size} tissue${this.excludedTissues.size > 1 ? 's' : ''} excluded`,
             () => { this.excludedTissues = new Set(); document.querySelectorAll('#tissueExcludeList input[type="checkbox"]').forEach(cb => { cb.checked = false; }); this._markMutationRunStale?.(); }, 'Excluded');
+        // Picks made from an alteration grid, when they apply to the analysis.
+        if (this._gridAppliesToAnalysis?.()) {
+            for (const f of (this._activeOncoprintFilters || [])) {
+                add(`${f.gene} ${this._gridStateWord(f.state)}`,
+                    () => { delete this._oncoprintFilters[f.gene]; this._oncoprintSyncFilters?.(); },
+                    'Picked from the alteration grid');
+            }
+        }
         if (this._customCellLineFilter?.size) add(`${this._customCellLineFilter.size} pasted cell line${this._customCellLineFilter.size === 1 ? '' : 's'}`,
             () => this.clearCustomCellLineFilter?.(), 'Cell line list');
         const nSub = this._analysisCellLineSubset?.size || 0;

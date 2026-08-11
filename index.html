@@ -2525,7 +2525,7 @@
                             </select>
                             <button type="button" class="btn btn-outline btn-sm clb-icon-btn" id="paramGridHotspotBtn" title="Mutation grid for the cell lines currently selected, click a gene to require it mutated or wild-type">&#9638;</button>
                         </div>
-                        <div id="oncoprintFilterLabel" style="display:none; font-size:11px; color:#5d9239; margin-top:4px; cursor:pointer;" title="Click to clear oncoprint filters"></div>
+                        <!-- Grid picks are listed with every other filter beside Run. -->
                     </div>
 
                     <div class="form-group" id="paramCnFilterGroup" style="display: none;">
@@ -2556,7 +2556,10 @@
                             </select>
                             <button type="button" class="btn btn-outline btn-sm clb-icon-btn" id="paramGridFusionBtn" title="Fusion grid for the cell lines currently selected, click a gene to require it fused or not fused">&#9638;</button>
                         </div>
-                        <div id="paramActiveFilters" class="clb-active-filters" style="display:none;"></div>
+                        <!-- Retired: the one place filters are listed is the Active
+                             filters box at the end of the gene set, beside Run.
+                             Two lists of the same filters in two boxes was the
+                             confusion this replaced. -->
                         <div style="background: #fef3c7; border: 1px solid #f59e0b; border-radius: 4px; padding: 4px 6px; margin-top: 4px; font-size: 9px; color: #92400e;">
                             Selecting for genetic alterations can introduce unintended bias in analysis.
                             <span onclick="const d=this.nextElementSibling; d.style.display = d.style.display==='none'?'block':'none';" style="display:inline-flex; align-items:center; justify-content:center; width:13px; height:13px; border-radius:50%; background:#f59e0b; color:#fff; font-weight:700; font-size:9px; cursor:pointer; vertical-align:middle;" title="More about this bias">?</span>
@@ -4690,6 +4693,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v87_37"></script>
+    <script src="app.js?v=v87_38"></script>
 </body>
 </html>
