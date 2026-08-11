@@ -1089,15 +1089,22 @@
         #geneValidationDisplay .status-box * {
             font-family: 'Open Sans', -apple-system, BlinkMacSystemFont, sans-serif;
         }
+        /* Layout only. The amber below belongs to the warning case; applying
+           it to every box in here meant the success line ("All N genes found")
+           came out cream and amber while every other success message in the
+           app is green. */
         #geneValidationDisplay .status-box {
             font-size: 12px;
             line-height: 1.5;
-            color: #374151;
-            background: #fffdf7;
-            border-left-color: #f0b429;
             padding: 10px 12px;
         }
-        #geneValidationDisplay .status-box strong { font-weight: 600; color: #92400e; }
+        #geneValidationDisplay .status-box.status-warning {
+            color: var(--gray-700, #374151);
+            background: #fffdf7;
+            border-left-color: #f0b429;
+        }
+        #geneValidationDisplay .status-box.status-warning strong { font-weight: 600; color: #92400e; }
+        #geneValidationDisplay .status-box.status-success strong { font-weight: 600; color: var(--green-800); }
         #geneValidationDisplay .btn { font-size: 11px; }
 
         .status-warning {
@@ -2489,7 +2496,6 @@
                     <!-- A cell-line subset handed over by the browser's inspect.
                          Hidden until one is active; removable from here so it
                          cannot stay applied without the user knowing. -->
-                    <div class="form-group" id="analysisSubsetGroup" style="display: none;"></div>
 
                     <div class="form-group" id="lineageFilterGroup" style="display: none;">
                         <!-- Section heading, peer to "Genetic alterations" below. The
@@ -2672,6 +2678,12 @@
                     </button>
                     <div id="geneCountDisplay" style="margin-top: 8px;"></div>
                     <div id="geneValidationDisplay" style="margin-top: 8px;"></div>
+                    <!-- The cell-line subset a gate (or a pasted list) leaves in
+                         force used to sit in the Parameters card, where it was
+                         easy to miss. It belongs at the end of the gene set,
+                         next to Run, with a rule above it so it reads as its own
+                         thing rather than more gene input. -->
+                    <div class="form-group" id="analysisSubsetGroup" style="display: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--gray-200);"></div>
                     <div id="analysisStatus"></div>
                     </div> <!-- end card-content -->
                 </div>
@@ -4672,6 +4684,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v87_20"></script>
+    <script src="app.js?v=v87_21"></script>
 </body>
 </html>

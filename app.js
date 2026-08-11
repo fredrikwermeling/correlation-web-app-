@@ -11171,7 +11171,7 @@ class CorrelationExplorer {
                 label: label,
                 size: nodeSize,
                 shape: isGrowthRate ? 'diamond' : 'dot',
-                font: { size: fontSize, color: this._netLabelColor || '#333', face: this._netFontFamily || 'Arial, sans-serif' },
+                font: this._netFont(fontSize),
                 color: {
                     background: isGrowthRate ? '#9333ea' : this._netNodeColor || (this.results.mode === 'design' ?
                         (isInput ? '#6ba544' : '#b2dd95') : '#6ba544'),
@@ -11223,7 +11223,7 @@ class CorrelationExplorer {
                         id: gene,
                         label: label,
                         size: nodeSize,
-                        font: { size: fontSize, color: this._netLabelColor || '#999', face: this._netFontFamily || 'Arial, sans-serif' },
+                        font: this._netFont(fontSize, this._netLabelColor || '#999'),
                         color: { background: '#d1d5db', border: '#000000' },
                         borderWidth: document.getElementById('networkNodeBorder')?.checked === false ? 0 : 2,
                         borderWidthSelected: 3,
@@ -11264,13 +11264,10 @@ class CorrelationExplorer {
                     max: 60,
                     label: { enabled: false }
                 },
-                font: {
-                    size: fontSize,
-                    color: '#333',
-                    // Labels may carry <b>/<i> markup (gene names default to
-                    // italics, toggleable in Settings).
-                    multi: 'html'
-                }
+                // Labels may carry <b>/<i> markup (gene names default to
+                // italics, toggleable in Settings), so the bold / italic
+                // variants must be given the same size as the plain font.
+                font: this._netFont(fontSize, '#333')
             },
             edges: {
                 smooth: false
@@ -12066,7 +12063,7 @@ class CorrelationExplorer {
             nodeUpdates.push({
                 id: node.id,
                 size: nodeSize,
-                font: { size: fontSize, color: this._netLabelColor || '#333', face: this._netFontFamily || 'Arial, sans-serif' }
+                font: this._netFont(fontSize)
             });
         });
         this.networkData.nodes.update(nodeUpdates);
@@ -12243,7 +12240,7 @@ class CorrelationExplorer {
         this.networkData.nodes.forEach(node => {
             const update = {
                 id: node.id,
-                font: { size: fontSize, color: labelColor, face: fontFamily }
+                font: this._netFont(fontSize, labelColor, fontFamily)
             };
             // Only override color if user explicitly changed it from default
             // Skip gray nodes (#d1d5db) and preserve input (#6ba544) vs correlated (#b2dd95) distinction
@@ -16436,7 +16433,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 if (subEl && existingSubtype && [...subEl.options].some(o => o.value === existingSubtype)) {
                     subEl.value = existingSubtype;
                 }
-            } else if (paramLineageFilter && lineages.includes(paramLineageFilter)) {
+            } else if (!keep && paramLineageFilter && lineages.includes(paramLineageFilter)) {
+                // Only seed from the analysis on a FRESH open. `keep` means the
+                // user is editing the view they are already looking at, and
+                // there an empty filter is a filter they deliberately cleared,
+                // not an unset one. Re-seeding it made a cleared tissue spring
+                // back every time the axes were changed and Update pressed.
                 cancerFilter.value = paramLineageFilter;
                 this.updateScatterSubtypeFilter();
                 const paramSubtype = document.getElementById('subLineageFilter')?.value;
@@ -16477,6 +16479,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const hotspotSelect = document.getElementById('hotspotGene');
         const mutFilterGeneSelect = document.getElementById('mutationFilterGene');
         const cellLinesInPlot = new Set(plotData.map(d => d.cellLineId));
+        // Read before the options are rebuilt below, which discards the value.
+        const keptHotspot = hotspotSelect?.value || '';
 
         if (this.mutations?.genes?.length > 0) {
             hotspotSelect.innerHTML = '<option value="">Select gene...</option>';
@@ -16488,8 +16492,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 hotspotSelect.innerHTML += `<option value="${g}">${g} (${count} mut)</option>`;
                 mutFilterGeneSelect.innerHTML += `<option value="${g}">${g} (${count} mut)</option>`;
             });
-            // Pre-select the hotspot gene from parameters if it exists
-            if (paramHotspotGene && this.mutations.genes.includes(paramHotspotGene)) {
+            // Pre-select the hotspot gene from parameters, but again only when
+            // arriving fresh: on an in-place Update the user's own choice, or
+            // their choice to have none, wins.
+            if (keep && keptHotspot && this.mutations.genes.includes(keptHotspot)) {
+                hotspotSelect.value = keptHotspot;
+            } else if (!keep && paramHotspotGene && this.mutations.genes.includes(paramHotspotGene)) {
                 hotspotSelect.value = paramHotspotGene;
             }
             document.getElementById('mutationBox').style.display = 'block';
@@ -33639,6 +33647,24 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         };
     }
 
+    // Node label font for vis-network. With multi:'html' enabled, vis renders
+    // <b> and <i> spans from SEPARATE sub-configs (bold / ital / boldital)
+    // whose size does NOT inherit from font.size and defaults to 14. Gene
+    // names are italic by default, so every label was quietly drawn at 14 no
+    // matter where the size slider sat. The variants are spelled out here so
+    // the slider governs all of them.
+    _netFont(size, color, face) {
+        const f = face || this._netFontFamily || 'Arial, sans-serif';
+        const c = color || this._netLabelColor || '#333';
+        return {
+            size, color: c, face: f, multi: 'html',
+            bold: { size, color: c, face: f, mod: 'bold' },
+            ital: { size, color: c, face: f, mod: 'italic' },
+            boldital: { size, color: c, face: f, mod: 'bold italic' },
+            mono: { size, color: c, face: 'monospace', mod: '' }
+        };
+    }
+
     // Curated virus-transformation record for a cell line, or null. The
     // wording everywhere is "confirmed ... transformed": Cellosaurus records
     // what a line was transformed BY, and no record simply means none exists.
@@ -42085,7 +42111,139 @@ ${clone.innerHTML}
     // line in the panel; 'lineage' keeps only those sharing a lineage with the
     // selection, which takes tissue of origin out of the comparison.
     setGEInspectScope(scope) {
-        this._geInspectScope = scope === 'lineage' ? 'lineage' : 'all';
+        const known = ['all', 'lineage', 'group', 'custom'];
+        this._geInspectScope = known.includes(scope) ? scope : 'all';
+        // The two explicit layers open their own chooser; the two implicit
+        // ones put it away again.
+        this._geInspectPanel = (scope === 'group' || scope === 'custom') ? scope : null;
+        this.inspectSelectionGE();
+    }
+
+    // Pick the comparison group by tissue / subtype / disease. Each level is
+    // optional and they combine, so "Lung" alone, or "Lung + Adenocarcinoma",
+    // are both valid answers to "compared with what".
+    toggleGEInspectGroup(level, value) {
+        const g = this._geInspectGroup = this._geInspectGroup || { lineages: new Set(), sublineages: new Set(), diseases: new Set() };
+        const set = g[level];
+        if (!set) return;
+        if (set.has(value)) set.delete(value); else set.add(value);
+        this._geInspectScope = 'group';
+        this._geInspectPanel = 'group';
+        this.inspectSelectionGE();
+    }
+
+    clearGEInspectGroup() {
+        this._geInspectGroup = { lineages: new Set(), sublineages: new Set(), diseases: new Set() };
+        this._geInspectScope = 'all';
+        this._geInspectPanel = null;
+        this.inspectSelectionGE();
+    }
+
+    toggleGEInspectBranch(lineage) {
+        this._geInspectOpen = this._geInspectOpen || new Set();
+        if (this._geInspectOpen.has(lineage)) this._geInspectOpen.delete(lineage);
+        else this._geInspectOpen.add(lineage);
+        this.inspectSelectionGE();
+    }
+
+    // The chooser for the two explicit comparison layers. Rendered only when
+    // its button has been pressed, so the header stays as short as it was for
+    // anyone who never needs it.
+    _geInspectScopePanel() {
+        const mode = this._geInspectPanel;
+        if (mode !== 'group' && mode !== 'custom') return '';
+        const box = (inner) => `<div style="margin-top:6px; padding:8px 10px; border:1px solid #e5e7eb; border-radius:5px; background:#fafafa;">${inner}</div>`;
+
+        if (mode === 'custom') {
+            const note = this._geInspectCustomNote || '';
+            return box(
+                `<div style="font-size:10px; color:#6b7280; margin-bottom:4px;">Paste cell line names, one per line or comma separated. The selection itself is excluded automatically.</div>`
+                + `<textarea id="geInspectCustomList" rows="3" placeholder="HeLa, A549, MCF7\u2026" style="width:100%; box-sizing:border-box; font-size:11px; padding:5px 7px; border:1px solid #d1d5db; border-radius:4px; resize:vertical;">${this.esc(this._geInspectCustomRaw || '')}</textarea>`
+                + `<div style="margin-top:5px; display:flex; gap:6px; align-items:center;">`
+                + `<button type="button" onclick="app._geInspectCustomRaw=document.getElementById('geInspectCustomList').value; app.applyGEInspectCustomList();" style="font-size:10px; padding:2px 10px; border:1px solid #6ba544; background:#f0fdf4; color:#4c782e; font-weight:600; border-radius:4px; cursor:pointer;">Use this list</button>`
+                + `<button type="button" onclick="app._geInspectCustomRaw=''; app.clearGEInspectCustomList();" style="font-size:10px; padding:2px 8px; border:1px solid #d1d5db; background:#fff; color:#6b7280; border-radius:4px; cursor:pointer;">Clear</button>`
+                + (note ? `<span style="font-size:10px; color:${this._geInspectCustom?.size ? '#4c782e' : '#b45309'};">${this.esc(note)}</span>` : '')
+                + `</div>`);
+        }
+
+        const g = this._geInspectGroup || { lineages: new Set(), sublineages: new Set(), diseases: new Set() };
+        const open = this._geInspectOpen || new Set();
+        const tree = this._geInspectTreeData();
+        const tick = (on) => on ? '\u2611' : '\u2610';
+        const row = (depth, checked, label, count, onclick, extra) =>
+            `<div style="padding:1px 0 1px ${depth * 14}px; display:flex; align-items:center; gap:5px; white-space:nowrap;">`
+            + (extra || '')
+            + `<span onclick="${onclick}" style="cursor:pointer; color:${checked ? '#4c782e' : '#374151'}; font-weight:${checked ? '600' : '400'};">`
+            + `${tick(checked)} ${this.esc(label)} <span style="color:#9ca3af; font-weight:400;">n=${count}</span></span></div>`;
+
+        let html = '';
+        for (const [lin, L] of [...tree.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+            const isOpen = open.has(lin);
+            const caret = `<span onclick="app.toggleGEInspectBranch('${this.esc(lin).replace(/'/g, "\\'")}')" style="cursor:pointer; color:#9ca3af; width:10px; display:inline-block;">${isOpen ? '\u25be' : '\u25b8'}</span>`;
+            html += row(0, g.lineages.has(lin), lin, L.n, `app.toggleGEInspectGroup('lineages','${this.esc(lin).replace(/'/g, "\\'")}')`, caret);
+            if (!isOpen) continue;
+            for (const [sub, S] of [...L.subs.entries()].sort((a, b) => b[1].n - a[1].n)) {
+                html += row(1, g.sublineages.has(sub), sub, S.n, `app.toggleGEInspectGroup('sublineages','${this.esc(sub).replace(/'/g, "\\'")}')`, `<span style="width:10px; display:inline-block;"></span>`);
+                for (const [dis, dn] of [...S.diseases.entries()].sort((a, b) => b[1] - a[1])) {
+                    html += row(2, g.diseases.has(dis), dis, dn, `app.toggleGEInspectGroup('diseases','${this.esc(dis).replace(/'/g, "\\'")}')`, `<span style="width:10px; display:inline-block;"></span>`);
+                }
+            }
+        }
+        return box(
+            `<div style="font-size:10px; color:#6b7280; margin-bottom:4px;">Tick any tissue, subtype or disease. Ticks at different levels add up, so you can compare against several groups at once. Click the arrow to open a branch.</div>`
+            + `<div style="max-height:180px; overflow:auto; font-size:11px; background:#fff; border:1px solid #e5e7eb; border-radius:4px; padding:5px 7px;">${html}</div>`
+            + `<div style="margin-top:5px;"><button type="button" onclick="app.clearGEInspectGroup()" style="font-size:10px; padding:2px 8px; border:1px solid #d1d5db; background:#fff; color:#6b7280; border-radius:4px; cursor:pointer;">Clear picks</button></div>`);
+    }
+
+    // Tissue -> subtype -> disease over the whole panel, with counts, built
+    // once per render. The picker is multi-select at every level because the
+    // right comparison group is often "these three diseases", not one branch.
+    _geInspectTreeData() {
+        const tree = new Map();
+        for (const cl of this.metadata.cellLines) {
+            const lin = this.getCellLineLineage(cl) || 'Unknown';
+            const sub = this.getCellLineSublineage(cl) || '';
+            const dis = this.cellLineMetadata?.oncotreeSubtype?.[cl] || '';
+            let L = tree.get(lin);
+            if (!L) tree.set(lin, L = { n: 0, subs: new Map() });
+            L.n++;
+            if (!sub) continue;
+            let S = L.subs.get(sub);
+            if (!S) L.subs.set(sub, S = { n: 0, diseases: new Map() });
+            S.n++;
+            if (!dis || dis === sub) continue;
+            S.diseases.set(dis, (S.diseases.get(dis) || 0) + 1);
+        }
+        return tree;
+    }
+
+    // Compare against a list of cell lines the user pastes in, for the case
+    // where the right comparison group is not any of the annotation's own
+    // groupings (a published panel, a set from a collaborator, last year's
+    // experiment).
+    applyGEInspectCustomList() {
+        const parsed = this._parseCustomCellLineInput('geInspectCustomList');
+        if (!parsed || !parsed.matched.size) {
+            this._geInspectCustom = null;
+            this._geInspectCustomNote = parsed
+                ? `None of the ${parsed.total} name${parsed.total === 1 ? '' : 's'} matched a cell line in the panel.`
+                : 'Paste some cell line names first.';
+        } else {
+            this._geInspectCustom = parsed.matched;
+            this._geInspectCustomNote = parsed.unmatched.length
+                ? `${parsed.matched.size} matched. Not recognised: ${parsed.unmatched.slice(0, 8).join(', ')}${parsed.unmatched.length > 8 ? ` and ${parsed.unmatched.length - 8} more` : ''}.`
+                : `${parsed.matched.size} cell line${parsed.matched.size === 1 ? '' : 's'} matched.`;
+        }
+        this._geInspectScope = 'custom';
+        this._geInspectPanel = 'custom';
+        this.inspectSelectionGE();
+    }
+
+    clearGEInspectCustomList() {
+        this._geInspectCustom = null;
+        this._geInspectCustomNote = '';
+        this._geInspectScope = 'all';
+        this._geInspectPanel = null;
         this.inspectSelectionGE();
     }
 
@@ -42112,12 +42270,28 @@ ${clone.innerHTML}
         // would drop every gene.
         const minSel = Math.min(3, selected.length);
 
-        const scope = this._geInspectScope === 'lineage' ? 'lineage' : 'all';
+        let scope = ['lineage', 'group', 'custom'].includes(this._geInspectScope) ? this._geInspectScope : 'all';
+        // A chooser that has not been answered yet compares against everything,
+        // rather than against nothing.
+        if (scope === 'custom' && !this._geInspectCustom?.size) scope = 'all';
+        const grp = this._geInspectGroup || { lineages: new Set(), sublineages: new Set(), diseases: new Set() };
+        const grpEmpty = !grp.lineages.size && !grp.sublineages.size && !grp.diseases.size;
+        if (scope === 'group' && grpEmpty) scope = 'all';
         // The lineages the selection spans. Comparing within them answers
         // "what is special about these lines for their tissue" rather than
         // "how does this tissue differ from every other tissue".
         const selLineages = new Set(selected.map(cl => this.getCellLineLineage(cl)).filter(Boolean));
-        const inScope = (cl) => scope === 'all' || selLineages.has(this.getCellLineLineage(cl));
+        const inScope = (cl) => {
+            if (scope === 'all') return true;
+            if (scope === 'lineage') return selLineages.has(this.getCellLineLineage(cl));
+            if (scope === 'custom') return this._geInspectCustom.has(cl);
+            // Ticks at different levels are a union, not an intersection:
+            // ticking "Lung" and "Mantle Cell Lymphoma" means compare against
+            // both, which is what picking two things in a tree looks like.
+            return grp.lineages.has(this.getCellLineLineage(cl))
+                || grp.sublineages.has(this.getCellLineSublineage(cl))
+                || grp.diseases.has(this.cellLineMetadata?.oncotreeSubtype?.[cl] || '\u0000');
+        };
 
         const cellLines = this.metadata.cellLines;
         const clIndexOf = new Map(cellLines.map((cl, i) => [cl, i]));
@@ -42198,6 +42372,8 @@ ${clone.innerHTML}
             ? `${selWord} vs the other ${nRestGE.toLocaleString()} in ${lineageText}`
             : `${selWord} vs the other ${nRestGE.toLocaleString()}`;
         const sub = document.getElementById('selectionInspectSubtitle');
+        const _g = this._geInspectGroup || { lineages: new Set(), sublineages: new Set(), diseases: new Set() };
+        const grpCount = _g.lineages.size + _g.sublineages.size + _g.diseases.size;
         const btn = (val, label, title) => `<button type="button" onclick="app.setGEInspectScope('${val}')" title="${title}" style="font-size:10px; padding:2px 8px; border:1px solid ${scope === val ? '#6ba544' : '#d1d5db'}; background:${scope === val ? '#f0fdf4' : '#fff'}; color:${scope === val ? '#4c782e' : '#374151'}; font-weight:${scope === val ? '700' : '400'}; border-radius:4px; cursor:pointer;">${label}</button>`;
         sub.innerHTML = (fromFilter
                 ? `<b>Nothing was ticked, so this compares the ${selected.length} cell lines your filters currently leave showing.</b> `
@@ -42212,7 +42388,11 @@ ${clone.innerHTML}
             + `<span style="color:#6b7280;">Compare with:</span>`
             + btn('all', `All other cell lines`, 'Every other cell line in the panel')
             + btn('lineage', `Same lineage only (${lineageText})`, 'Only cell lines from the same tissue of origin, which takes lineage out of the comparison')
-            + `</div>`;
+            + btn('group', `Pick tissues / diseases\u2026${grpCount ? ` (${grpCount})` : ''}`, 'Choose the comparison group yourself, at tissue, subtype or disease level. Ticks combine, so you can compare against several at once')
+            + btn('custom', `My own list\u2026${this._geInspectCustom?.size ? ` (${this._geInspectCustom.size})` : ''}`, 'Compare against a list of cell lines you paste in, for when the right group is not one of the annotation\'s own')
+            + `<span style="color:#9ca3af; font-size:10px;">now comparing against ${nRestGE.toLocaleString()}</span>`
+            + `</div>`
+            + this._geInspectScopePanel();
 
         const exprNote = this.expressionLoaded
             ? `Difference in mRNA level, log2(TPM+1). A difference of 1 is a two-fold change. Compared against ${exprOtherN.toLocaleString()} other cell lines.`
@@ -42324,6 +42504,22 @@ ${clone.innerHTML}
         this.showCopyNotification?.(`Exported ${byGene.size.toLocaleString()} genes`);
     }
 
+    // The numbers already on the hovered row, restated above the gene
+    // description so one box answers both "what is this gene" and "what is it
+    // doing in this comparison".
+    _geInspectRowFactsHtml(tr) {
+        const cells = [...tr.querySelectorAll('td')].map(td => td.textContent.trim());
+        if (cells.length < 4) return '';
+        const unit = tr.closest('#geRightBody') ? 'mRNA, log\u2082(TPM+1)' : 'gene effect';
+        const q = cells[4];
+        return `<div style="margin:2px 0 5px; padding:4px 7px; background:#f6f8f4; border-radius:4px; color:#374151;">`
+            + `<b>In this comparison</b> (${unit}): selection <b>${this.esc(cells[1])}</b>, `
+            + `compared group <b>${this.esc(cells[2])}</b>, difference `
+            + `<b style="color:${parseFloat(cells[3]) < 0 ? '#dc2626' : '#2563eb'};">${this.esc(cells[3])}</b>`
+            + (q && q !== '-' ? `, q ${this.esc(q)}` : '')
+            + `</div>`;
+    }
+
     _renderGEInspectTables() {
         if (!this._geInspectResults) return;
         const { rows, selected } = this._geInspectResults;
@@ -42410,8 +42606,25 @@ ${clone.innerHTML}
                         lineage: insLins.length === 1 ? insLins[0] : '',
                     });
                 });
-                tr.addEventListener('mouseenter', () => tr.style.background = '#f0fdf4');
-                tr.addEventListener('mouseleave', () => tr.style.background = '');
+                tr.addEventListener('mouseenter', () => {
+                    tr.style.background = '#f0fdf4';
+                    // What the gene actually is, without leaving the table. A
+                    // short delay so running the cursor down the list does not
+                    // fire a lookup per row.
+                    clearTimeout(this._geInspectHoverTimer);
+                    this._geInspectHoverTimer = setTimeout(() => {
+                        const r = tr.getBoundingClientRect();
+                        // Read the gene here: the click handler's `gene` is
+                        // scoped to that callback, not to the row.
+                        this.showGeneTooltip({ clientX: r.right - 60, clientY: r.bottom },
+                            tr.dataset.gene, undefined, this._geInspectRowFactsHtml(tr));
+                    }, 260);
+                });
+                tr.addEventListener('mouseleave', () => {
+                    tr.style.background = '';
+                    clearTimeout(this._geInspectHoverTimer);
+                    this._geInspectHoverTimer = setTimeout(() => this.hideGeneTooltip(), 200);
+                });
             });
             // Column-header sort clicks.
             document.querySelectorAll('#geLeftBody th.ge-sortable, #geRightBody th.ge-sortable').forEach(th => {
