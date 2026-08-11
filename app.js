@@ -17456,6 +17456,37 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             // legend doubles as a per-tissue (or per-subtype) r table. Below
             // 3 points r is noise, so it is left off there.
             const groupR = (arr) => this._groupLegendStat(arr);
+            let _lf = this._savedScatterTextSettings?.legendSize || 17;
+            // Entries are laid out in fixed columns, so the width follows from
+            // the columns rather than being guessed at first and the columns
+            // derived back from it. Guessing produced entries wider than the
+            // box they sit in, which Plotly then cut off at the edge.
+            const _statMode = document.getElementById('colorByLegendStat')?.value || 'none';
+            const _statLen = _statMode === 'none' ? 0 : (_statMode === 'r' ? 8 : 16);
+            const _N_COL = 6;
+            const _shownCats = picked3 ? colorByCategories.filter(c => picked3.has(c)) : colorByCategories;
+            const _widthNames = picked3 ? [..._shownCats, this.OTHER_GROUP_LABEL] : _shownCats;
+            const _maxName = _widthNames.reduce((m, c) => Math.max(m, String(c).length), 0);
+            // An entry may never be wider than the row it sits in, or the
+            // longest names run off the left and right edges.
+            const _rowW = Math.max(200, (this.currentInspect?.plotWidth
+                || parseInt(document.getElementById('plotWidth')?.value, 10) || 400));
+            const _ADV = 0.6;   // monospace advance, in ems
+            const _widthFor = (nameCols, font) => Math.round((nameCols + 1 + _N_COL + _statLen) * font * _ADV + 30);
+            let _nameCols = Math.min(Math.max(_maxName, 8), 28);
+            let _entryW = _widthFor(_nameCols, _lf);
+            // Shrink the text first, then the name column, until it fits.
+            if (_entryW > _rowW) {
+                _lf = Math.max(9, Math.floor(_lf * _rowW / _entryW));
+                _entryW = _widthFor(_nameCols, _lf);
+            }
+            while (_entryW > _rowW && _nameCols > 8) {
+                _nameCols -= 1;
+                _entryW = _widthFor(_nameCols, _lf);
+            }
+            this._colorByLegendFont = _lf;
+            this._colorByLegendNameCols = _nameCols;
+            this._colorByLegendEntryW = Math.min(470, Math.max(_entryW, 120));
             if (picked3) {
                 const restData = [];
                 colorByCategories.filter(c => !picked3.has(c)).forEach(c => restData.push(...categoryMap[c]));
@@ -17480,24 +17511,6 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             // count + group r) so entries never overlap; long subtype names end
             // up ~1 per row, short ones share a row. Plotly under-measures Open
             // Sans, so we pad generously.
-            let _lf = this._savedScatterTextSettings?.legendSize || 17;
-            const _maxLabel = colorByCategories.reduce((m, c) => Math.max(m, (`${c} (${categoryMap[c].length}, r=-0.00)`).length), 0);
-            // An entry may never be wider than the row it sits in, or the
-            // longest names run off the left and right edges. Where the widest
-            // label still would not fit, the legend text shrinks (to a floor)
-            // rather than being cut off.
-            const _rowW = Math.max(200, (this.currentInspect?.plotWidth
-                || parseInt(document.getElementById('plotWidth')?.value, 10) || 400));
-            let _entryW = Math.max(150, Math.round(_maxLabel * _lf * 0.55 + 36));
-            if (_entryW > _rowW) {
-                const shrunk = Math.max(9, Math.floor(_lf * _rowW / _entryW));
-                if (shrunk < _lf) {
-                    _lf = shrunk;
-                    _entryW = Math.max(120, Math.round(_maxLabel * _lf * 0.55 + 36));
-                }
-            }
-            this._colorByLegendFont = _lf;
-            this._colorByLegendEntryW = Math.min(470, Math.min(_entryW, _rowW));
             colorByCategories.forEach((cat, i) => {
                 const catData = categoryMap[cat];
                 const color = colorByColors[i % colorByColors.length];
@@ -20404,17 +20417,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // made a full legend unreadable. Alignment only holds in a monospaced
     // face, so the colour-by legend asks for one (see _legendFontFamily).
     _legendLabel(name, n, statTail) {
-        const entryW = this._colorByLegendEntryW || 400;
-        const font = this._colorByLegendFont || 17;
-        // Monospace advance is close to 0.6 em.
-        const cols = Math.max(14, Math.floor((entryW - 30) / (font * 0.6)));
         const stat = statTail || '';
         const nCell = `n=${n}`;
-        // The n column has a FIXED width. Sizing the name field from the
-        // actual length of this row's n made every row's name field a
-        // different width, so the numbers still failed to line up.
+        // Column widths are decided once when the legend is sized, so every
+        // row uses the same ones and the numbers line up.
         const N_COL = 6;
-        const nameCols = Math.max(8, cols - N_COL - stat.length - 1);
+        const nameCols = this._colorByLegendNameCols || 14;
         const short = name.length > nameCols
             ? name.slice(0, Math.max(4, nameCols - 1)).trimEnd() + '\u2026'
             : name.padEnd(nameCols, ' ');
