@@ -811,14 +811,17 @@ class CorrelationExplorer {
         const _dv = (document.querySelector('script[src*="app.js"]')?.src.split('?v=')[1]) || '';
         const dfetch = (path) => fetch(_dv ? `${path}?v=${_dv}` : path);
 
-        const [metadataRes, cellLineRes, mutationsRes, orthologsRes, translocationsRes, damagingMutRes, growthRateRes, drugRes, clinicalFusionsRes, inferredSubtypesRes, globalSigRes, corumRes, reactomeRes, hlaCnRes, lehmannRes, clinicalCnRes, validatedFusionsRes, functionalLossRes, curatedFusionsRes, problematicRes, virusRes] = await Promise.all([
+        const [metadataRes, cellLineRes, mutationsRes, orthologsRes, translocationsRes, damagingMutRes, growthRateRes, drugRes, clinicalFusionsRes, inferredSubtypesRes, globalSigRes, corumRes, reactomeRes, hlaCnRes, lehmannRes, clinicalCnRes, validatedFusionsRes, functionalLossRes, curatedFusionsRes, problematicRes, virusRes, cnArtefactRes] = await Promise.all([
             dfetch('web_data/metadata.json'),
             dfetch('web_data/cellLineMetadata.json'),
             dfetch('web_data/mutations.json'),
             dfetch('web_data/orthologs.json'),
             dfetch('web_data/translocations.json').catch(() => null),
             dfetch('web_data/damaging_mutations.json').catch(() => null),
-            Promise.resolve(null), // growth_rate.json disabled (v.54)
+            // Re-enabled: the file covers every cell line in the cohort, and
+            // proliferation is the standard alternative explanation for a
+            // dependency, so it belongs on an axis rather than nowhere.
+            dfetch('web_data/growth_rate.json').catch(() => null),
             dfetch('web_data/drug_response.json').catch(() => null),
             dfetch('web_data/clinical_fusions.json').catch(() => null),
             dfetch('web_data/inferred_subtypes.json').catch(() => null),
@@ -832,7 +835,8 @@ class CorrelationExplorer {
             dfetch('web_data/functional_loss.json').catch(() => null),
             dfetch('web_data/curated_fusions.json').catch(() => null),
             dfetch('web_data/problematic_lines.json').catch(() => null),
-            dfetch('web_data/virus_status.json').catch(() => null)
+            dfetch('web_data/virus_status.json').catch(() => null),
+            dfetch('web_data/cn_artefact.json').catch(() => null)
         ]);
 
         this.metadata = await metadataRes.json();
@@ -911,6 +915,11 @@ class CorrelationExplorer {
         if (virusRes && virusRes.ok) {
             try { this.virusStatus = await virusRes.json(); }
             catch (e) { this.virusStatus = null; }
+        }
+        // Genes whose CRISPR score tracks their own copy number.
+        if (cnArtefactRes && cnArtefactRes.ok) {
+            try { this.cnArtefact = await cnArtefactRes.json(); }
+            catch (e) { this.cnArtefact = null; }
         }
         if (translocationsRes && translocationsRes.ok) {
             this.translocations = await translocationsRes.json();
@@ -6302,8 +6311,21 @@ class CorrelationExplorer {
             geDataTypeEl.addEventListener('change', () => {
                 const labelEl = document.getElementById('geneEffectLabel');
                 if (labelEl) labelEl.textContent = geDataTypeEl.value === 'expr' ? 'Expression:' : 'Gene Effect:';
-                const gene = document.getElementById('geneEffectSearch').value.trim().toUpperCase() || this.currentGeneEffectGene;
-                if (!gene) return;
+                // The popout keeps the gene in one of two places depending on
+                // how it was opened: currentGeneEffect.gene for the normal
+                // view, currentGeneEffectGene for mutation inspect. Reading
+                // only the second meant that arriving here by double-clicking
+                // a network node left this switch doing nothing at all.
+                const gene = document.getElementById('geneEffectSearch').value.trim().toUpperCase()
+                    || (this.geneEffectViewMode === 'mutation'
+                        ? this.currentGeneEffectGene
+                        : this.currentGeneEffect?.gene)
+                    || this.currentGeneEffectGene
+                    || this.currentGeneEffect?.gene;
+                if (!gene) {
+                    this.showCopyNotification?.('Open a gene first, then switch the measure.');
+                    return;
+                }
                 if (this.geneEffectViewMode === 'mutation' && this.mutationResults) {
                     // Stay in the mutation-inspect layout and redraw it in the new
                     // measure. Dropping back to the standalone by-tissue view threw
@@ -6312,7 +6334,11 @@ class CorrelationExplorer {
                     this._mutAnalysisMetric = geDataTypeEl.value === 'expr' ? 'expr' : 'ge';
                     this.showGeneEffectDistribution(gene);
                 } else {
-                    this.showGeneEffectAnalysis(gene, this.currentGEView || 'tissue');
+                    // Pass the chosen measure through. Re-opening without it
+                    // sent the popout back to gene effect on the way, so the
+                    // switch appeared to do nothing at all.
+                    this.showGeneEffectAnalysis(gene, this.currentGEView || 'tissue',
+                        { dataType: geDataTypeEl.value === 'expr' ? 'expr' : 'ge' });
                 }
             });
         }
@@ -8770,7 +8796,10 @@ class CorrelationExplorer {
 
         // Analyze each gene
         let nSkippedMinN = 0;
+        const _cov = this._geneCoverage(), _minCov = this._minGeneCoverage();
         for (let geneIdx = 0; geneIdx < this.nGenes; geneIdx++) {
+            // Thinly-measured genes are dropped before any work is done on them.
+            if (_minCov && _cov[geneIdx] < _minCov) continue;
             const gene = this.geneNames[geneIdx];
 
             // Get gene effect values for each group
@@ -8935,7 +8964,10 @@ class CorrelationExplorer {
         }
 
         let nSkippedMinN = 0;
+        const _cov = this._geneCoverage(), _minCov = this._minGeneCoverage();
         for (let geneIdx = 0; geneIdx < this.nGenes; geneIdx++) {
+            // Thinly-measured genes are dropped before any work is done on them.
+            if (_minCov && _cov[geneIdx] < _minCov) continue;
             const gene = this.geneNames[geneIdx];
 
             const wtEffects = this.getGeneEffectsForCells(geneIdx, wtCellIndices);
@@ -10720,8 +10752,14 @@ class CorrelationExplorer {
             // Analysis mode: correlate genes within the list
             targetGenes = geneList;
         } else {
-            // Design mode: correlate against all genes
-            targetGenes = Array.from(this.geneIndex.keys());
+            // Design mode: correlate against all genes, minus any measured in
+            // too few cell lines to be worth ranking. Genes the user typed are
+            // never dropped: they asked for those specifically.
+            const _cov = this._geneCoverage(), _minCov = this._minGeneCoverage();
+            const _asked = new Set(geneList.map(g => String(g).toUpperCase()));
+            targetGenes = Array.from(this.geneIndex.keys()).filter(g =>
+                !_minCov || _asked.has(String(g).toUpperCase())
+                || _cov[this.geneIndex.get(g)] >= _minCov);
         }
 
         // Get gene data for input genes
@@ -14740,6 +14778,22 @@ ${filterText ? `<text x="${width / 2}" y="${headerH / 2}" dominant-baseline="mid
             const layout = { ...f.figure.layout, width, height, autosize: false };
             layout.plot_bgcolor = background === 'transparent' ? 'rgba(0,0,0,0)' : '#ffffff';
             layout.paper_bgcolor = background === 'transparent' ? 'rgba(0,0,0,0)' : '#ffffff';
+            // The stored figure is a snapshot from when the gate was drawn, so
+            // text settings changed afterwards never reached it: the gate panel
+            // kept its old fonts while the other panel followed the controls.
+            // Re-apply the current ones on the way out.
+            const sts = this._savedScatterTextSettings;
+            if (sts) {
+                if (sts.legendSize) layout.legend = { ...(layout.legend || {}), font: { ...((layout.legend || {}).font || {}), size: sts.legendSize } };
+                if (sts.xTickSize) layout.xaxis = { ...(layout.xaxis || {}), tickfont: { size: sts.xTickSize } };
+                if (sts.yTickSize) layout.yaxis = { ...(layout.yaxis || {}), tickfont: { size: sts.yTickSize } };
+                if (sts.xLabelFontSize) layout.xaxis = { ...(layout.xaxis || {}), title: { ...((layout.xaxis || {}).title || {}), font: { size: sts.xLabelFontSize } } };
+                if (sts.yLabelFontSize) layout.yaxis = { ...(layout.yaxis || {}), title: { ...((layout.yaxis || {}).title || {}), font: { size: sts.yLabelFontSize } } };
+                if (sts.fontFamily) layout.font = { ...(layout.font || {}), family: sts.fontFamily };
+                if (sts.markerSize && Array.isArray(f.figure.data)) {
+                    f.figure.data.forEach(t => { if (t.marker) t.marker.size = sts.markerSize; });
+                }
+            }
             // Borrow the exported chart's margins so the two plot areas line
             // up. The filtered chart carries an extra subtitle line (the gate),
             // which would otherwise push its panel lower than the gate plot's.
@@ -17916,7 +17970,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (sts) {
             layout.xaxis.tickfont = { size: sts.xTickSize };
             layout.yaxis.tickfont = { size: sts.yTickSize };
-            layout.legend.font = { size: sts.legendSize };
+            // Merge, do not replace: the colour-by legend sets a monospaced
+            // family so its columns line up, and assigning a fresh object here
+            // dropped it, so applying any text setting broke the alignment.
+            layout.legend.font = Object.assign({}, layout.legend.font, { size: sts.legendSize });
             if (sts.fontFamily) layout.font = { family: sts.fontFamily };
             if (sts.markerSize) {
                 traces.forEach(t => { if (t.marker) t.marker.size = sts.markerSize; });
@@ -25726,8 +25783,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
     }
 
-    showGeneEffectAnalysis(gene, view = 'tissue') {
-        this.openGeneEffectModal(gene, view);
+    showGeneEffectAnalysis(gene, view = 'tissue', opts = {}) {
+        this.openGeneEffectModal(gene, view, opts);
     }
 
     _showIndependentAnalysis(valueMap, label) {
@@ -26216,6 +26273,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         const data = this.getGETissueFilteredData();
         const gene = this.currentGeneEffect.gene;
+        // Only meaningful for the knockout measure; expression has no such artefact.
+        const _artEl = document.getElementById('geArtefactWarning');
+        if (_artEl) {
+            const html = (this._geDataType === 'expr' || document.getElementById('geDataType')?.value === 'expr')
+                ? '' : this._cnArtefactWarningHtml(gene);
+            _artEl.innerHTML = html;
+            _artEl.style.display = html ? 'block' : 'none';
+        }
 
         // Detect data type from gene name
         const isGrowth = gene === 'Growth Rate';
@@ -29787,14 +29852,36 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 "Step 2 - Confirm scope: If the question names a disease, subtype, or gene-defined subset narrower than the stratification groups available in `extras`, define that subset explicitly by cell line FIRST and test it as a group, using `questionScope` if present. Do not answer a subgroup question from marginal summaries computed at a coarser granularity: a question can read as specific ('is IPO5 interesting in CLL') and still not be self-contained, because the cohort it names is not a group the file defines. Skip this step only when the question's cohort is already the export's cohort. If the question is instead open-ended ('explain the variability', 'what drives X'), present the overview with 2-3 candidate angles and ask which to pursue.",
                 "Step 2b - Before concluding a subgroup effect is ABSENT, check whether the precomputed scans could have detected it at that scope. topCorrelates / topCoessentials / topExpressionCorrelates are cohort-wide (see `scanScope`); an effect confined to a few lines is invisible in them by construction. Recompute inside the group, and score the group against extras.groupContrastNull for its size and against focalGeneRankAmongGenes, rather than eyeballing per-line percentiles: one line at the 6th percentile is unremarkable, four lines all there is not.",
                 "Step 3b - Name the gaps: if answering the question properly would need something in `notIncluded` (drug response, growth rate, genome-wide copy number, viral transformation status, cell lines outside this cohort), say so plainly and tell the user which export would supply it. Do not treat an absent layer as a negative result.",
+                "Step 3c - Write for the person, not the file: the reader has not seen this file and does not know its field names. Translate every internal name into plain language before it reaches your reply, and lead with the biological answer rather than the evidence trail.",
                 "Step 3 - Deep analysis: Work data-first. Use the precomputed extras (focalGeneTissueSummary for per-tissue/subtype means, focalGeneMutationSummary for driver-mutation effects) before scanning the matrix gene-by-gene. Characterize unbiased genome-wide hits and annotate by pathway before testing hypothesis-driven candidate gene lists. After finding one explanatory model, actively search for alternative or complementary axes. Report all major signals, not just the first plausible one."
             ],
             context,
             aiInstructions: (
-                'BEFORE DOING ANY ANALYSIS, open your reply with these two short paragraphs:\n\n' +
-                '1) A one-line description of what the user was looking at. Derive it from the `context` field, `type` tells you the view, `description` is a ready-to-use summary, and `gene1/gene2/xType/yType/filters/gateA/gateB/etc.` give the specifics. xType/yType codes: "ge" = gene effect, "expr" = expression.\n\n' +
-                '2) "You asked:" followed by a verbatim quote of the `question` field. If `question` is missing or empty, skip this paragraph.\n\n' +
-                'Then proceed with the analysis per `_analysisInstructions`. Keep the write-up brief: lead with the biological answer in a short paragraph, support it with the two or three most decisive checks, and leave out routine confirmations and intermediate numbers unless the user asks for the full workings.'
+                'WHO YOU ARE TALKING TO: a cancer researcher who exported this file from a tool called Correlate and attached it. '
+                + 'They have NOT read it and cannot see inside it. They do not know what any field in it is called. '
+                + 'Never mention a field name, a key, or a section of this file in your reply. Not `questionScope`, not `focalGeneZWithinLine`, '
+                + 'not `meanGeneEffectPercentile`, not `scanScope`, not `extras`, not "the variance warning", not "the export". '
+                + 'Every one of those is a note to you, not to them. Say what it MEANS in ordinary words instead. '
+                + 'For example, do not write "meanGeneEffectPercentile is 26 / 94 / 10"; write "these cell lines are not unusually sick in the screen overall". '
+                + 'Do not write "questionScope matched 4 lines"; write "four chronic lymphocytic leukemia lines are in this data: MEC1, PGA1, CI and WAOSEL".\n\n'
+                + 'OPEN YOUR REPLY WITH A SHORT PARAGRAPH, no heading, that does three things in plain language, so they can check you are looking at what they think you are:\n'
+                + '  (a) what they were looking at when they exported (use `context.description` and the genes / filters, said as a sentence);\n'
+                + '  (b) how much data came with it (how many cell lines, and that it carries gene effect and expression for them);\n'
+                + '  (c) their question, quoted back. If `question` is empty, say instead that no question came with the file.\n\n'
+                + 'THEN: if they asked a question, answer THAT question first, in a short paragraph a colleague would understand, '
+                + 'before any numbers or workings. If they asked nothing, give ONE headline finding and ONE caveat, two sentences in total. '
+                + 'Leave comparisons with other groups, related genes and mechanism until after they say what they want. Then STOP and ask. '
+                + 'Packing a full analysis into fewer sentences is not the same as stopping.\n\n'
+                + 'THROUGHOUT: numbers support the answer, they are not the answer. Give the two or three that matter, each with what it means '
+                + '("about a two-fold difference", "this would happen by chance roughly once in a thousand times"). Round them, '
+                + 'but never round up across a whole number when it flatters the result: 2.8x is "nearly three times", not "three times". '
+                + 'When two different calculations happen to agree, say they are two different checks rather than merging them into one figure. '
+                + 'Name cell lines and genes, not indices. If something important is missing from the file, say what you would need and how they can get it, '
+                + 'in terms of what they would click, not what the file lacks. If a caution applies (a small group, a gene measured in few lines, '
+                + 'a score that tracks copy number), state it as a plain sentence about how much weight to put on the result.\n\n'
+                + 'WHEN RECOMMENDING WHICH CELL LINES TO WORK WITH: do not rank them on the raw score alone. Check whether the gene also stands out '
+                + 'against everything else measured in that same line. A line whose raw number matches the others but which ranks unremarkably '
+                + 'within its own screen is the weaker choice, and saying so is more useful than a bare ordering.'
             ),
             cellLineOrder: cellLines,
             cellLineMetadata: clMeta
@@ -33927,6 +34014,70 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             boldital: { size, color: c, face: f, mod: 'bold italic' },
             mono: { size, color: c, face: 'monospace', mod: '' }
         };
+    }
+
+    // The best-known false signal in a CRISPR screen: in an amplified region
+    // every cut is lethal regardless of what the gene does, so the gene looks
+    // essential wherever it is amplified. Chronos corrects much of this but not
+    // all of it. A strongly negative correlation between a gene's effect and
+    // its own copy number is the signature. Computed here rather than taken
+    // from a list, because DepMap does not ship one in these files.
+    // Read from a small precomputed table rather than measured on the spot:
+    // the copy-number matrix is a 60 MB lazy load, and making a warning depend
+    // on it meant the warning almost never appeared. scripts/build_cn_artefact.py
+    // does the pass offline; only genes that show the pattern are listed.
+    _cnArtefactScore(gene) {
+        const hit = this.cnArtefact?.genes?.[(gene || '').toUpperCase()];
+        return hit || null;
+    }
+
+    // Shown beside a gene whose score tracks its own copy number.
+    _cnArtefactWarningHtml(gene) {
+        const a = this._cnArtefactScore(gene);
+        if (!a || a.r > -0.25) return '';
+        const strong = a.r <= -0.4;
+        return `<div style="margin:6px 0 0; padding:6px 10px; font-size:11px; line-height:1.45; border-radius:5px; `
+            + `background:${strong ? '#fffbeb' : '#f9fafb'}; border:1px solid ${strong ? '#fcd34d' : '#e5e7eb'}; `
+            + `border-left:3px solid ${strong ? '#d97706' : '#9ca3af'}; color:${strong ? '#92400e' : '#4b5563'};">`
+            + `<b>${strong ? '\u26a0 ' : ''}This gene's score follows its copy number</b> `
+            + `(r = ${a.r.toFixed(2)} across ${a.n} cell lines). In amplified regions every cut is lethal whatever the gene does, `
+            + `so a gene can look essential simply for sitting in an amplification. Check the copy number of the lines driving the effect before reading this as a dependency.`
+            + `</div>`;
+    }
+
+    // How many cell lines each gene is actually measured in, across the whole
+    // dataset. 26Q1 added genes screened in only a handful of lines; their
+    // correlations and group differences rest on almost no data yet they rank
+    // near the top of every list, because small samples produce large numbers.
+    // Computed once on demand: one pass over the matrix, then cached.
+    _geneCoverage() {
+        if (this._geneCoverageCache) return this._geneCoverageCache;
+        const n = new Uint16Array(this.nGenes);
+        for (let g = 0; g < this.nGenes; g++) {
+            const off = g * this.nCellLines;
+            let c = 0;
+            for (let i = 0; i < this.nCellLines; i++) {
+                const v = this.geneEffects[off + i];
+                if (!isNaN(v) && v !== -999) c++;
+            }
+            n[g] = c;
+        }
+        this._geneCoverageCache = n;
+        return n;
+    }
+
+    _minGeneCoverage() {
+        const v = parseInt(document.getElementById('minGeneCoverage')?.value, 10);
+        return Number.isFinite(v) && v > 0 ? v : 0;
+    }
+
+    // True when a gene is measured widely enough to be worth ranking. Always
+    // true when the threshold is 0, so the old behaviour is one field away.
+    _geneHasEnoughCoverage(geneIdx, cov, minCov) {
+        if (!minCov) return true;
+        const c = cov || this._geneCoverage();
+        const m = minCov || this._minGeneCoverage();
+        return c[geneIdx] >= m;
     }
 
     // Curated virus-transformation record for a cell line, or null. The
@@ -42430,6 +42581,28 @@ ${clone.innerHTML}
         this.inspectSelectionGE();
     }
 
+    // Say so, loudly, when the groups being compared are much smaller than the
+    // groups that were picked. Not every cell line has a CRISPR screen, so a
+    // comparison of 48 against 12 can quietly become 27 against 3, and at that
+    // size a difference means very little.
+    _geCoverageWarningHtml(cov) {
+        if (!cov) return '';
+        const lost = (cov.selNominal - cov.selMeasured) + (cov.othNominal - cov.othMeasured);
+        const tiny = cov.selMeasured < 5 || cov.othMeasured < 5;
+        const bigDrop = cov.selMeasured < cov.selNominal * 0.7 || cov.othMeasured < cov.othNominal * 0.7;
+        if (!lost || (!tiny && !bigDrop)) return '';
+        const bits = [];
+        if (cov.selMeasured < cov.selNominal) bits.push(`${cov.selMeasured} of your ${cov.selNominal}`);
+        if (cov.othMeasured < cov.othNominal) bits.push(`${cov.othMeasured} of the ${cov.othNominal} compared with`);
+        return `<div style="margin-top:6px; padding:6px 10px; border-radius:5px; font-size:11px; line-height:1.45; `
+            + `background:${tiny ? '#fffbeb' : '#f9fafb'}; border:1px solid ${tiny ? '#fcd34d' : '#e5e7eb'}; `
+            + `border-left:3px solid ${tiny ? '#d97706' : '#9ca3af'}; color:${tiny ? '#92400e' : '#4b5563'};">`
+            + `<b>${tiny ? '\u26a0 ' : ''}Only ${bits.join(' and ')} cell lines have a CRISPR screen.</b> `
+            + `The numbers below are computed on those, not on everything selected`
+            + (tiny ? `, and a group this small will produce large differences by chance alone. Treat it as a look, not a result.` : `.`)
+            + `</div>`;
+    }
+
     // The chooser for the two explicit comparison layers. Rendered only when
     // its button has been pressed, so the header stays as short as it was for
     // anyone who never needs it.
@@ -42608,7 +42781,9 @@ ${clone.innerHTML}
 
         // CRISPR gene effect, straight from the GE matrix.
         const geRows = [];
+        const _cov = this._geneCoverage(), _minCov = this._minGeneCoverage();
         for (let g = 0; g < this.nGenes; g++) {
+            if (_minCov && _cov[g] < _minCov) continue;
             const off = g * this.nCellLines;
             let sSum = 0, sSq = 0, sN = 0;
             for (const ci of selIdx) {
@@ -42659,7 +42834,23 @@ ${clone.innerHTML}
             if (canTest) this._addBHQValues(exprRows);
         }
 
-        this._geInspectResults = { rows: geRows, exprRows, selected };
+        // How many cell lines were ACTUALLY compared. Selecting 48 lines and
+        // comparing against 12 can silently come down to 27 vs 3 once lines
+        // without a CRISPR screen drop out, and a headline of "48 vs 12" then
+        // describes a comparison that never happened. The median across genes
+        // is the typical n behind each row.
+        const _medOf = (arr, key) => {
+            if (!arr.length) return 0;
+            const v = arr.map(r => r[key]).sort((a, b) => a - b);
+            return v[v.length >> 1];
+        };
+        const geCoverage = {
+            selNominal: selected.length,
+            othNominal: otherIdx.length,
+            selMeasured: _medOf(geRows, 'nSel'),
+            othMeasured: _medOf(geRows, 'nOther')
+        };
+        this._geInspectResults = { rows: geRows, exprRows, selected, geCoverage };
         this._activeSelectionInspect = { kind: 'ge' };
         const saveBtn = document.getElementById('selectionInspectSave');
         if (saveBtn) saveBtn.style.display = '';
@@ -42673,10 +42864,17 @@ ${clone.innerHTML}
         const lineageText = lineageNames.length === 1 ? lineageNames[0]
             : lineageNames.length <= 3 ? lineageNames.join(', ')
             : `${lineageNames.length} lineages`;
-        const selWord = `${selected.length} ${fromFilter ? 'filtered' : 'selected'} cell line${selected.length === 1 ? '' : 's'}`;
+        // The title states what was measured, not what was picked, when the two
+        // differ: those are the numbers the statistics actually rest on.
+        const cov = geCoverage;
+        const shortSel = cov.selMeasured < cov.selNominal;
+        const shortOth = cov.othMeasured < cov.othNominal;
+        const selWord = `${selected.length} ${fromFilter ? 'filtered' : 'selected'} cell line${selected.length === 1 ? '' : 's'}`
+            + (shortSel ? ` (${cov.selMeasured} screened)` : '');
+        const othWord = `${nRestGE.toLocaleString()}` + (shortOth ? ` (${cov.othMeasured} screened)` : '');
         document.getElementById('selectionInspectTitle').textContent = scope === 'lineage'
-            ? `${selWord} vs the other ${nRestGE.toLocaleString()} in ${lineageText}`
-            : `${selWord} vs the other ${nRestGE.toLocaleString()}`;
+            ? `${selWord} vs the other ${othWord} in ${lineageText}`
+            : `${selWord} vs the other ${othWord}`;
         const sub = document.getElementById('selectionInspectSubtitle');
         const _g = this._geInspectGroup || { lineages: new Set(), sublineages: new Set(), diseases: new Set() };
         const grpCount = _g.lineages.size + _g.sublineages.size + _g.diseases.size;
@@ -42699,6 +42897,7 @@ ${clone.innerHTML}
             + btn('custom', `My own list\u2026${this._geInspectCustom?.size ? ` (${this._geInspectCustom.size})` : ''}`, 'Compare against a list of cell lines you paste in, for when the right group is not one of the annotation\'s own')
             + `<span style="color:#9ca3af; font-size:10px;">now comparing against ${nRestGE.toLocaleString()}</span>`
             + `</div>`
+            + this._geCoverageWarningHtml(cov)
             + this._geInspectScopePanel();
 
         const exprNote = this.expressionLoaded
@@ -42818,12 +43017,16 @@ ${clone.innerHTML}
         const cells = [...tr.querySelectorAll('td')].map(td => td.textContent.trim());
         if (cells.length < 4) return '';
         const unit = tr.closest('#geRightBody') ? 'mRNA, log\u2082(TPM+1)' : 'gene effect';
-        const q = cells[4];
+        // Columns: gene, mean(sel), mean(rest), delta, n, [q]. Read q by name
+        // rather than by a fixed index, which the n column shifted.
+        const nCell = (cells[4] || '').replace(/[^\d/]/g, '');
+        const q = cells[5];
         return `<div style="margin:2px 0 5px; padding:4px 7px; background:#f6f8f4; border-radius:4px; color:#374151;">`
             + `<b>In this comparison</b> (${unit}): selection <b>${this.esc(cells[1])}</b>, `
             + `compared group <b>${this.esc(cells[2])}</b>, difference `
             + `<b style="color:${parseFloat(cells[3]) < 0 ? '#dc2626' : '#2563eb'};">${this.esc(cells[3])}</b>`
             + (q && q !== '-' ? `, q ${this.esc(q)}` : '')
+            + (nCell ? `<br><span style="color:#6b7280;">Measured in ${this.esc(nCell)} cell lines (selection / compared group)</span>` : '')
             + `</div>`;
     }
 
@@ -42976,12 +43179,21 @@ ${clone.innerHTML}
         const fmtQ = (v) => (v == null || isNaN(v)) ? '-'
             : v < 0.001 ? v.toExponential(1)
             : v.toFixed(3);
+        // How many cell lines each row actually rests on. Not every line has a
+        // screen, so a comparison billed as 48 against 12 can come down to
+        // 27 against 3 for a particular gene, and without this the row looks
+        // as solid as any other.
+        const cov = this._geInspectResults?.geCoverage;
+        const nomSel = cov?.selNominal || 0, nomOth = cov?.othNominal || 0;
+        const thin = (r) => (nomSel && r.nSel < nomSel * 0.7) || (nomOth && r.nOther < nomOth * 0.7)
+            || r.nSel < 5 || r.nOther < 5;
         const trows = rows.map(r => `
             <tr class="si-row" data-gene="${this.esc(r.gene)}" style="cursor:pointer;">
                 <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; font-weight:600; color:#4c782e;">${r.gene}</td>
                 <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; text-align:center;">${fmt(r.meanSel)}</td>
                 <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; text-align:center; color:#6b7280;">${fmt(r.meanOther)}</td>
                 <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; text-align:center; font-weight:600; color:${r.delta < 0 ? '#dc2626' : '#2563eb'};">${fmt(r.delta)}</td>
+                <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; text-align:center; font-size:10px; color:${thin(r) ? '#b45309' : '#9ca3af'}; font-weight:${thin(r) ? '600' : '400'};" title="${thin(r) ? 'Fewer cell lines than the groups suggest: only these had a screen for this gene' : 'Cell lines behind this row'}">${thin(r) ? '\u26a0 ' : ''}${r.nSel}/${r.nOther}</td>
                 ${hasQ ? `<td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; text-align:center; color:${r.q != null && r.q < 0.05 ? '#374151' : '#9ca3af'};">${fmtQ(r.q)}</td>` : ''}
             </tr>`).join('');
         return `<table style="width:100%; border-collapse:collapse; font-size:11px;">
@@ -42990,6 +43202,7 @@ ${clone.innerHTML}
                 ${th(side === 'right' ? 'Mean expr (sel)' : 'Mean GE (sel)', 'meanSel')}
                 ${th(side === 'right' ? 'Mean expr (rest)' : 'Mean GE (rest)', 'meanOther')}
                 ${th('Δ', 'delta')}
+                ${th('n', 'nSel')}
                 ${hasQ ? th('q', 'q') : ''}
             </tr></thead>
             <tbody>${trows}</tbody>
@@ -43841,6 +44054,29 @@ ${clone.innerHTML}
                 layout.title = { text: layout.title };
             }
             layout.title.font = { ...(layout.title.font || {}), size: settings.titleFont };
+
+            // The scatter's heading, subtitle and axis labels are draggable
+            // ANNOTATIONS, not layout.title, so the font fields above never
+            // reached them: changing Title font moved nothing. They also sit at
+            // offsets worked out from the on-screen height, which stop being
+            // right the moment the export renders at another size, and that is
+            // what drove the heading and the statistics lines into each other.
+            const _oldH = plotEl._fullLayout?.height || height;
+            if (Array.isArray(layout.annotations)) {
+                layout.annotations = layout.annotations.map(an => {
+                    const a2 = { ...an };
+                    const role = a2._tsRole;
+                    if (role === 'title' && settings.titleFont) a2.font = { ...(a2.font || {}), size: settings.titleFont };
+                    if (role === 'subtitle' && settings.titleFont) a2.font = { ...(a2.font || {}), size: Math.max(8, Math.round(settings.titleFont * 0.72)) };
+                    if ((role === 'xlabel' || role === 'ylabel') && settings.axisFont) a2.font = { ...(a2.font || {}), size: settings.axisFont };
+                    // Offsets above the plot are a pixel gap expressed in paper
+                    // units of the old height; rescale so the gap survives.
+                    if (a2.yref === 'paper' && typeof a2.y === 'number' && a2.y > 1 && _oldH && height) {
+                        a2.y = 1 + (a2.y - 1) * (_oldH / height);
+                    }
+                    return a2;
+                });
+            }
 
             layout.xaxis = layout.xaxis || {};
             layout.xaxis.title = layout.xaxis.title || {};

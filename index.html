@@ -2463,6 +2463,14 @@
                                 <button onclick="app.adjustNumber('minCellLines', 5)" style="font-size:11px; padding:0 6px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer;">+</button>
                             </div>
                         </div>
+                        <div class="form-group" id="minGeneCoverageGroup" style="flex:1;">
+                            <label class="form-label" style="font-size:11px; margin-bottom:2px;" title="Some genes are screened in only a handful of cell lines across the whole dataset. Their statistics rest on very little data yet they surface near the top of every ranking. Genes measured in fewer cell lines than this are left out. Set to 0 to include everything.">Gene needs data in: <span style="cursor:help; color:#9ca3af;">?</span></label>
+                            <div style="display:flex; gap:3px; align-items:center;">
+                                <button onclick="app.adjustNumber('minGeneCoverage', -25)" style="font-size:11px; padding:0 6px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer;">−</button>
+                                <input type="number" id="minGeneCoverage" class="form-control" value="100" min="0" max="1200" step="25" title="Minimum cell lines a gene must be measured in, across the whole dataset" style="flex:1; min-width:0; font-size:12px; padding:3px 6px; text-align:center;">
+                                <button onclick="app.adjustNumber('minGeneCoverage', 25)" style="font-size:11px; padding:0 6px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer;">+</button>
+                            </div>
+                        </div>
                         <div class="form-group" id="pValueThresholdGroup" style="display:none; flex:1;">
                             <label class="form-label" style="font-size:11px; margin-bottom:2px;" title="Genes enter the results table only when at least one of their comparisons is below this threshold. The looser p < 0.05 box above the table then narrows the view to genes significant on the primary mutant-vs-WT comparison.">P-value cutoff (table): <span style="cursor:help; color:#9ca3af;">?</span></label>
                             <input type="text" inputmode="decimal" id="pValueThreshold" class="form-control" value="0.001" title="Genes enter the results table only when at least one comparison is below this threshold" style="width:100%; font-size:12px; padding:3px 6px;">
@@ -3103,6 +3111,7 @@
                                     <option value="ge">GE</option>
                                     <option value="expr">Expr</option>
                                     <option value="cn">CN</option>
+                                    <option value="growth" title="CRISPR-inferred proliferation rate. Needs no gene: it is a property of the cell line.">Growth</option>
                                 </select>
                                 <button class="btn btn-outline btn-sm" id="inspectSwapAxes" style="font-size: 11px; padding: 2px 6px; min-width: 26px;" title="Swap X and Y axes (gene names + data types)">&#8644;</button>
                                 <input type="text" id="inspectGeneY" class="form-control" style="flex: 1 1 70px; min-width: 60px; font-size: 12px; padding: 3px 8px;" placeholder="Y gene">
@@ -3110,6 +3119,7 @@
                                     <option value="ge">GE</option>
                                     <option value="expr">Expr</option>
                                     <option value="cn">CN</option>
+                                                                    <option value="growth" title="CRISPR-inferred proliferation rate. Needs no gene: it is a property of the cell line.">Growth</option>
                                 </select>
                                 <button class="btn btn-primary btn-sm" id="updateInspectGenes" style="font-size: 11px; padding: 3px 12px; min-width: 92px; font-weight: 600;">Update</button>
                                 <button class="btn btn-outline btn-sm" id="inspectFindCorrelatesBtn" style="font-size: 11px; padding: 3px 12px; min-width: 92px; color:#5d9239; border-color:#6ba544;" title="Find top GE and Expression correlates of the X-axis gene across the currently-filtered cell lines. Click a result to put it on the Y axis.">Find correlates</button>
@@ -3540,6 +3550,8 @@
                         <div id="geZeroLineControl" class="mobile-hide" style="display: none; margin-bottom: 6px; font-size: 11px;">
                             <label style="cursor:pointer; color:#374151;"><input type="checkbox" id="geShowZeroLine" checked style="margin:0 4px 0 0; vertical-align:middle;" onchange="app.showGeneEffectDistribution(app.currentGeneEffectGene)"> Zero line</label>
                         </div>
+                        <!-- Warning that this gene's score tracks its own copy number. -->
+                        <div id="geArtefactWarning" style="display:none;"></div>
                         <div id="geChartHint" class="mobile-hide" style="display:none; font-size: 9px; color: #b0b0b0; margin-bottom: 4px;">Adjust graph size with Width/Height sliders. Change fonts with Aa. Drag title or axis labels to reposition if they overlap.</div>
                         <!-- Placeholder: single source of truth for "no plot yet". Visibility owned by _updateGEPlaceholderVisibility(). -->
                         <div id="gePlotPlaceholder" style="display:flex; align-items:center; justify-content:center; min-height:400px; color:#6b7280; font-size:14px; text-align:center; padding:40px;">
@@ -4672,6 +4684,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v87_28"></script>
+    <script src="app.js?v=v87_30"></script>
 </body>
 </html>
