@@ -3442,48 +3442,23 @@ class CorrelationExplorer {
         document.getElementById('oncoprintPopup')?.remove();
     }
 
-    // Say what cohort the app is working on, always, from every screen.
-    // Filters set in one feature stay in force in the others by design, but
-    // that was invisible: results looked wrong, the app read as stale, and a
-    // page reload appeared to be the cure. Naming the cohort in one fixed
-    // place removes the mystery without taking the behaviour away.
-    _updateGlobalCohortBar() {
-        const bar = document.getElementById('globalCohortBar');
-        const txt = document.getElementById('globalCohortText');
-        const btn = document.getElementById('globalCohortReset');
-        if (!bar || !txt) return;
-        let desc = '';
-        try { desc = (this._composeNetworkFilterText(true) || '').replace(/^Filters:\s*/, ''); } catch (e) { desc = ''; }
-        // A gate used as a filter narrows the cohort as much as any dropdown.
-        if (this._gateFilter?.label) desc = desc ? `${desc} \u00b7 gate: ${this._gateFilter.label}` : `gate: ${this._gateFilter.label}`;
-        if (desc) {
-            txt.textContent = `Cohort everywhere in the app: ${desc}`;
-            bar.classList.add('is-filtered');
-            if (btn) btn.style.display = '';
-        } else {
-            txt.textContent = 'Cohort: all cell lines (any filter you set is named here).';
-            bar.classList.remove('is-filtered');
-            if (btn) btn.style.display = 'none';
-        }
-    }
-
-    // Any control anywhere can change the cohort, so the bar refreshes off a
-    // single delegated listener rather than a call at each of ~40 sites.
+    // Any control anywhere can change the cohort, so the active-filter chips
+    // refresh off a single delegated listener rather than a call at each of
+    // ~40 sites. (An earlier version of this also drove a bar in the Options
+    // box claiming to describe the whole app; it was in the wrong place and
+    // the claim was wrong, since the Cell Line Browser has its own filters.)
     _setupGlobalCohortBar() {
         const refresh = () => {
             // A timer, not requestAnimationFrame: rAF is suspended while the
-            // tab is in the background, which would leave the bar describing a
-            // cohort that has since changed.
+            // tab is in the background, which would leave the chips describing
+            // filters that have since changed.
             if (this._cohortBarPending) return;
             this._cohortBarPending = true;
-            setTimeout(() => { this._cohortBarPending = false; this._updateGlobalCohortBar(); }, 0);
+            setTimeout(() => { this._cohortBarPending = false; this._renderAnalysisSubsetChip(); }, 0);
         };
         document.addEventListener('change', refresh, true);
         document.addEventListener('click', refresh, true);
-        document.getElementById('globalCohortReset')?.addEventListener('click', () => {
-            document.getElementById('resetAppBtn')?.click();
-        });
-        this._updateGlobalCohortBar();
+        this._renderAnalysisSubsetChip();
     }
 
     // Reset all starts as a quiet outline button like its Options neighbours;
@@ -11104,6 +11079,7 @@ class CorrelationExplorer {
         const edgeWidthBase = parseInt(document.getElementById('netEdgeWidth').value);
         const nodeSize = parseInt(document.getElementById('netNodeSize').value);
         const fontSize = parseInt(document.getElementById('netFontSize').value);
+        this._netAppliedFontPx = fontSize;
 
         // Create edges
         this.results.correlations.forEach((c, idx) => {
@@ -14771,6 +14747,37 @@ ${filterText ? `<text x="${width / 2}" y="${headerH / 2}" dominant-baseline="mid
         if (!this.network) return;
         try { this.network.redraw(); } catch (e) {}
         try { this.network.fit({ animation: false }); } catch (e) {}
+        this._matchLabelsToFontSlider();
+    }
+
+    // Make the font slider mean what it says. vis draws labels in world units,
+    // so zooming out to fit the whole network shrinks the text with it: at a
+    // typical fit of 0.79 a "20" label reached the screen at 16 px, which is
+    // why the network kept reading as small however the slider was set. The
+    // label size is scaled back up by the same factor so 20 on the slider is
+    // 20 on screen, then the view is re-fitted once (once, not in a loop) so
+    // the now-wider labels are not cut off at the edges.
+    _matchLabelsToFontSlider() {
+        if (!this.network || !this.networkData?.nodes) return;
+        const slider = parseInt(document.getElementById('netFontSize')?.value, 10) || 20;
+        let scale = 0;
+        try { scale = this.network.getScale(); } catch (e) { return; }
+        if (!scale || !isFinite(scale)) return;
+        // Cap the boost: on a very large network full compensation would give
+        // labels wider than the clusters they name.
+        const target = Math.round(Math.min(slider / scale, slider * 1.8));
+        if (Math.abs(target - this._netAppliedFontPx) < 0.5) return;
+        this._netAppliedFontPx = target;
+        try {
+            const ds = this.networkData.nodes;
+            const updates = ds.getIds().map(id => {
+                const n = ds.get(id);
+                return { id, font: this._netFont(target, n?.font?.color, n?.font?.face) };
+            });
+            ds.update(updates);
+            this.network.redraw();
+            this.network.fit({ animation: false });
+        } catch (e) {}
     }
 
     // Slide freshly dropped nodes off any parked (physics-less) gene they
@@ -16718,24 +16725,58 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         this._renderAnalysisSubsetChip();
     }
 
+    // Everything narrowing the cohort the next Run will use, as removable
+    // chips at the end of the gene set, next to the button that uses them.
+    // The filters live in several different boxes further up, so before this
+    // the only way to know what was applied was to go and look at each one.
     _renderAnalysisSubsetChip() {
         const box = document.getElementById('analysisSubsetGroup');
         if (!box) return;
-        const n = this._analysisCellLineSubset?.size || 0;
-        if (!n) { box.style.display = 'none'; box.innerHTML = ''; return; }
-        box.style.display = '';
-        box.innerHTML = `
-            <div class="param-section-heading">Cell line subset</div>
-            <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-                <span style="display:inline-flex; align-items:center; gap:6px; font-size:11px; background:#f0fdf4; border:1px solid #86c26f; color:#4c782e; border-radius:12px; padding:2px 4px 2px 10px;">
-                    ${this.esc(this._analysisSubsetLabel)}
-                    <button type="button" id="analysisSubsetClear" title="Use all cell lines again" style="border:none; background:#dcfce7; color:#4c782e; border-radius:50%; width:16px; height:16px; line-height:1; cursor:pointer; font-size:12px; padding:0;">&times;</button>
-                </span>
-            </div>
-            <div style="font-size:10px; color:#9ca3af; margin-top:3px;">Only these cell lines are analyzed. Any lineage or alteration filter narrows within them.</div>`;
-        document.getElementById('analysisSubsetClear')?.addEventListener('click', () => {
+        const chips = [];
+        const val = (id) => document.getElementById(id)?.value || '';
+        const add = (label, clear, title) => chips.push({ label, clear, title });
+
+        const lin = val('lineageFilter');
+        if (lin) add(lin, () => { const e = document.getElementById('lineageFilter'); e.value = ''; e.dispatchEvent(new Event('change', { bubbles: true })); }, 'Tissue');
+        const sub = val('subLineageFilter');
+        if (sub) add(sub, () => { const e = document.getElementById('subLineageFilter'); e.value = ''; e.dispatchEvent(new Event('change', { bubbles: true })); }, 'Subtype');
+        const dis = this._paramDiseaseMulti?.length ? this._paramDiseaseMulti.join(' + ') : val('paramOncotreeFilter');
+        if (dis && dis !== '__mr_multi__') add(dis, () => {
+            this._paramDiseaseMulti = [];
+            const e = document.getElementById('paramOncotreeFilter'); if (e) { e.value = ''; e.dispatchEvent(new Event('change', { bubbles: true })); }
+        }, 'Disease');
+        const hs = val('paramHotspotGene');
+        if (hs) {
+            const lvl = val('paramHotspotLevel');
+            add(`${hs} ${lvl === '0' ? 'WT' : 'mutated'}`, () => { const e = document.getElementById('paramHotspotGene'); e.value = ''; e.dispatchEvent(new Event('change', { bubbles: true })); }, 'Mutation');
+        }
+        const tg = val('paramTranslocationGene');
+        if (tg) {
+            const lvl = val('paramTranslocationLevel');
+            add(`${tg} ${lvl === '0' ? 'not fused' : 'fused'}`, () => { const e = document.getElementById('paramTranslocationGene'); e.value = ''; e.dispatchEvent(new Event('change', { bubbles: true })); }, 'Fusion');
+        }
+        if (this.excludedTissues?.size) add(`${this.excludedTissues.size} tissue${this.excludedTissues.size > 1 ? 's' : ''} excluded`, null, 'Excluded');
+        const nSub = this._analysisCellLineSubset?.size || 0;
+        if (nSub) add(this._analysisSubsetLabel || `${nSub} cell lines`, () => {
             this.clearAnalysisCellLineSubset();
             this.showCopyNotification?.('Back to all cell lines. Run the analysis again to update it.');
+        }, 'Cell lines');
+
+        if (!chips.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+        box.style.display = '';
+        box.innerHTML = `<div class="param-section-heading">Active filters</div>`
+            + `<div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;">`
+            + chips.map((c, i) => `<span title="${this.esc(c.title)}" style="display:inline-flex; align-items:center; gap:5px; font-size:11px; background:#f0fdf4; border:1px solid #86c26f; color:#4c782e; border-radius:12px; padding:2px ${c.clear ? '4px' : '10px'} 2px 10px;">`
+                + `${this.esc(c.label)}`
+                + (c.clear ? `<button type="button" data-chip="${i}" title="Remove this filter" style="border:none; background:#dcfce7; color:#4c782e; border-radius:50%; width:16px; height:16px; line-height:1; cursor:pointer; font-size:12px; padding:0;">&times;</button>` : '')
+                + `</span>`).join('')
+            + `</div>`
+            + `<div style="font-size:10px; color:#9ca3af; margin-top:3px;">These narrow the cell lines used by the gene set and mutation analyses, and carry into a scatter or gene effect opened from the network. The Cell Line Browser has its own filters. They stay set until removed.</div>`;
+        box.querySelectorAll('button[data-chip]').forEach(b => {
+            b.addEventListener('click', () => {
+                const c = chips[parseInt(b.dataset.chip, 10)];
+                if (c?.clear) { c.clear(); this._renderAnalysisSubsetChip(); }
+            });
         });
     }
 
@@ -17323,7 +17364,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                         text: restData.map(d => `${d.cellLineName}<br>${this.cellLineMetadata?.primaryDisease?.[d.cellLineId] || d.lineage || 'Unknown'}`),
                         hovertemplate: '%{text}<br>x: %{x:.3f}<br>y: %{y:.3f}<extra></extra>',
                         marker: { color: '#d1d5db', size: 8, opacity: 0.55 },
-                        name: `${this.OTHER_GROUP_LABEL} (${restData.length}${groupR(restData)})`,
+                        name: this._legendLabel(this.OTHER_GROUP_LABEL, restData.length, groupR(restData)),
                         legendgroup: this.OTHER_GROUP_LABEL,
                         showlegend: true
                     });
@@ -17364,7 +17405,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     text: catData.map(d => `${d.cellLineName}<br>${cat}`),
                     hovertemplate: '%{text}<br>x: %{x:.3f}<br>y: %{y:.3f}<extra></extra>',
                     marker: CorrelationExplorer.categoryMarker(i, 10, 0.8),
-                    name: this._legendLabel(cat, `(${catData.length}${groupR(catData)})`),
+                    name: this._legendLabel(cat, catData.length, groupR(catData)),
                     legendgroup: cat,
                     showlegend: true
                 });
@@ -17725,7 +17766,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 bgcolor: 'white',
                 bordercolor: '#ddd',
                 borderwidth: 1,
-                font: { size: this._colorByLegendFont || 17 },
+                // Monospace: the entries are laid out in columns and only a
+                // fixed-width face keeps them under each other.
+                font: { size: this._colorByLegendFont || 17, family: 'Roboto Mono, ui-monospace, monospace' },
+                title: { text: this._legendTitleText(colorByCategory), font: { size: Math.max(9, (this._colorByLegendFont || 17) - 3), color: '#6b7280' }, side: 'top' },
                 tracegroupgap: 0,
                 entrywidth: this._colorByLegendEntryW || 120,
                 entrywidthmode: 'pixels'
@@ -20229,33 +20273,58 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // when groups separate by level rather than by trend. Median is offered
     // because one extreme cell line moves a small group's mean a long way.
     _groupLegendStat(arr) {
-        const mode = document.getElementById('colorByLegendStat')?.value || 'r';
+        const mode = document.getElementById('colorByLegendStat')?.value || 'none';
         if (mode === 'none' || !arr || !arr.length) return '';
         const xs = arr.map(d => d.x).filter(v => v != null && !isNaN(v));
         const ys = arr.map(d => d.y).filter(v => v != null && !isNaN(v));
         if (!xs.length || !ys.length) return '';
-        const fmt = (v) => Math.abs(v) >= 100 ? v.toFixed(0) : Math.abs(v) >= 10 ? v.toFixed(1) : v.toFixed(2);
-        if (mode === 'mean') {
-            const mx = xs.reduce((a, b) => a + b, 0) / xs.length;
-            const my = ys.reduce((a, b) => a + b, 0) / ys.length;
-            return `, x\u0304=${fmt(mx)}, y\u0304=${fmt(my)}`;
-        }
-        if (mode === 'median') {
+        // Same width for every value, sign included, so the columns line up
+        // whether a number is negative or not.
+        const fmt = (v) => (v < 0 ? '' : ' ') + (Math.abs(v) >= 100 ? v.toFixed(0) : Math.abs(v) >= 10 ? v.toFixed(1) : v.toFixed(2));
+        if (mode === 'mean' || mode === 'median') {
             const med = (a) => { const v = [...a].sort((p, q) => p - q); const h = v.length >> 1; return v.length % 2 ? v[h] : (v[h - 1] + v[h]) / 2; };
-            return `, x\u0303=${fmt(med(xs))}, y\u0303=${fmt(med(ys))}`;
+            const avg = (a) => a.reduce((p, q) => p + q, 0) / a.length;
+            const f = mode === 'mean' ? avg : med;
+            return `  x${fmt(f(xs))}  y${fmt(f(ys))}`;
         }
         // r needs a few points before it means anything.
-        if (arr.length < 3) return '';
+        if (arr.length < 3) return '        ';
         const r = this.pearsonWithSlope(arr.map(d => d.x), arr.map(d => d.y)).correlation;
-        return isNaN(r) ? '' : `, r=${r.toFixed(2)}`;
+        return isNaN(r) ? '        ' : `  r${fmt(r)}`;
     }
 
-    _legendLabel(name, suffix) {
+    // One legend entry, laid out in fixed-width columns so the numbers sit
+    // under each other and can be read down the list. Variable-length tissue
+    // names otherwise scattered every value to its own position, which is what
+    // made a full legend unreadable. Alignment only holds in a monospaced
+    // face, so the colour-by legend asks for one (see _legendFontFamily).
+    _legendLabel(name, n, statTail) {
         const entryW = this._colorByLegendEntryW || 400;
         const font = this._colorByLegendFont || 17;
-        const budget = Math.max(8, Math.floor((entryW - 42) / (font * 0.55)) - (suffix.length + 1));
-        const short = name.length > budget ? name.slice(0, Math.max(4, budget - 1)).trimEnd() + '…' : name;
-        return `${short} ${suffix}`;
+        // Monospace advance is close to 0.6 em.
+        const cols = Math.max(14, Math.floor((entryW - 30) / (font * 0.6)));
+        const stat = statTail || '';
+        const nCell = `n=${n}`;
+        // The n column has a FIXED width. Sizing the name field from the
+        // actual length of this row's n made every row's name field a
+        // different width, so the numbers still failed to line up.
+        const N_COL = 6;
+        const nameCols = Math.max(8, cols - N_COL - stat.length - 1);
+        const short = name.length > nameCols
+            ? name.slice(0, Math.max(4, nameCols - 1)).trimEnd() + '\u2026'
+            : name.padEnd(nameCols, ' ');
+        return `${short} ${nCell.padStart(N_COL)}${stat}`;
+    }
+
+    // Header over the colour-by legend saying what its columns are, so the
+    // numbers are not left to be guessed at.
+    _legendTitleText(mode) {
+        const stat = document.getElementById('colorByLegendStat')?.value || 'none';
+        const what = mode === 'subtype' ? 'Subtype' : mode === 'disease' ? 'Disease' : 'Tissue';
+        if (stat === 'r') return `${what} \u00b7 n \u00b7 r (within group)`;
+        if (stat === 'mean') return `${what} \u00b7 n \u00b7 average x, y`;
+        if (stat === 'median') return `${what} \u00b7 n \u00b7 median x, y`;
+        return `${what} \u00b7 n`;
     }
 
     // The group a cell line belongs to for "Color by", at whichever level of
@@ -36278,7 +36347,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         document.getElementById('clbExportGenesBtn')?.addEventListener('click', () => this.exportCellLineBrowserGenesCSV());
         document.getElementById('clbExportListBtn')?.addEventListener('click', () => this.exportCellLineListOnScreen('csv'));
         document.getElementById('clbCopyListBtn')?.addEventListener('click', () => this.exportCellLineListOnScreen('copy'));
-        document.getElementById('clbInspectGEBtn')?.addEventListener('click', () => this.inspectSelectionGE());
+        document.getElementById('clbInspectGEBtn')?.addEventListener('click', () => {
+            // Opening Inspect is a fresh start. Carrying the last session's
+            // comparison choice over meant reopening it with "my own list"
+            // already selected, which reads as the app being stuck.
+            this._resetGEInspectScope();
+            this.inspectSelectionGE();
+        });
         document.getElementById('clbInspectCorrBtn')?.addEventListener('click', () => this.inspectSelectionCorrelations());
         document.getElementById('clbCopyNamesBtn')?.addEventListener('click', () => this.copyCellLineNames());
         // Save / Open the selection-inspect results so a 5–10 min correlation
@@ -42138,6 +42213,17 @@ ${clone.innerHTML}
     // Which cell lines the selection is measured against. 'all' is every other
     // line in the panel; 'lineage' keeps only those sharing a lineage with the
     // selection, which takes tissue of origin out of the comparison.
+    // Everything the comparison chooser remembers, back to its opening state.
+    _resetGEInspectScope() {
+        this._geInspectScope = 'all';
+        this._geInspectPanel = null;
+        this._geInspectGroup = { lineages: new Set(), sublineages: new Set(), diseases: new Set() };
+        this._geInspectOpen = new Set();
+        this._geInspectCustom = null;
+        this._geInspectCustomRaw = '';
+        this._geInspectCustomNote = '';
+    }
+
     setGEInspectScope(scope) {
         const known = ['all', 'lineage', 'group', 'custom'];
         this._geInspectScope = known.includes(scope) ? scope : 'all';
@@ -42167,10 +42253,11 @@ ${clone.innerHTML}
         this.inspectSelectionGE();
     }
 
-    toggleGEInspectBranch(lineage) {
+    // Key is a lineage, or "lineage\u0000subtype" for the second level.
+    toggleGEInspectBranch(key) {
         this._geInspectOpen = this._geInspectOpen || new Set();
-        if (this._geInspectOpen.has(lineage)) this._geInspectOpen.delete(lineage);
-        else this._geInspectOpen.add(lineage);
+        if (this._geInspectOpen.has(key)) this._geInspectOpen.delete(key);
+        else this._geInspectOpen.add(key);
         this.inspectSelectionGE();
     }
 
@@ -42185,42 +42272,52 @@ ${clone.innerHTML}
         if (mode === 'custom') {
             const note = this._geInspectCustomNote || '';
             return box(
-                `<div style="font-size:10px; color:#6b7280; margin-bottom:4px;">Paste cell line names, one per line or comma separated. The selection itself is excluded automatically.</div>`
-                + `<textarea id="geInspectCustomList" rows="3" placeholder="HeLa, A549, MCF7\u2026" style="width:100%; box-sizing:border-box; font-size:11px; padding:5px 7px; border:1px solid #d1d5db; border-radius:4px; resize:vertical;">${this.esc(this._geInspectCustomRaw || '')}</textarea>`
-                + `<div style="margin-top:5px; display:flex; gap:6px; align-items:center;">`
-                + `<button type="button" onclick="app._geInspectCustomRaw=document.getElementById('geInspectCustomList').value; app.applyGEInspectCustomList();" style="font-size:10px; padding:2px 10px; border:1px solid #6ba544; background:#f0fdf4; color:#4c782e; font-weight:600; border-radius:4px; cursor:pointer;">Use this list</button>`
-                + `<button type="button" onclick="app._geInspectCustomRaw=''; app.clearGEInspectCustomList();" style="font-size:10px; padding:2px 8px; border:1px solid #d1d5db; background:#fff; color:#6b7280; border-radius:4px; cursor:pointer;">Clear</button>`
+                `<div style="font-size:10px; color:#6b7280; margin-bottom:4px;">One name per line, or comma separated. Any number of names. Cell lines already in the selection are left out of the comparison automatically.</div>`
+                + `<textarea id="geInspectCustomList" rows="6" placeholder="A549\nMCF7\nHEPG2" style="width:100%; box-sizing:border-box; font-size:11px; padding:5px 7px; border:1px solid #d1d5db; border-radius:4px; resize:vertical;">${this.esc(this._geInspectCustomRaw || '')}</textarea>`
+                + `<div style="margin-top:5px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">`
+                + `<button type="button" class="btn btn-sm btn-outline" style="font-size:10px; padding:2px 10px; border-color:#6ba544; color:#4c782e;" onclick="app._geInspectCustomRaw=document.getElementById('geInspectCustomList').value; app.applyGEInspectCustomList();">Use this list</button>`
+                + `<button type="button" class="btn btn-sm btn-outline" style="font-size:10px; padding:2px 8px;" onclick="app._geInspectCustomRaw=''; app.clearGEInspectCustomList();">Clear</button>`
                 + (note ? `<span style="font-size:10px; color:${this._geInspectCustom?.size ? '#4c782e' : '#b45309'};">${this.esc(note)}</span>` : '')
                 + `</div>`);
         }
 
+        // Same shape as the tissue breakdown popup the rest of the app uses:
+        // a table with real checkboxes, a caret to open a branch, and a count
+        // column, indented one level per tier.
         const g = this._geInspectGroup || { lineages: new Set(), sublineages: new Set(), diseases: new Set() };
         const open = this._geInspectOpen || new Set();
         const tree = this._geInspectTreeData();
-        const tick = (on) => on ? '\u2611' : '\u2610';
-        const row = (depth, checked, label, count, onclick, extra) =>
-            `<div style="padding:1px 0 1px ${depth * 14}px; display:flex; align-items:center; gap:5px; white-space:nowrap;">`
-            + (extra || '')
-            + `<span onclick="${onclick}" style="cursor:pointer; color:${checked ? '#4c782e' : '#374151'}; font-weight:${checked ? '600' : '400'};">`
-            + `${tick(checked)} ${this.esc(label)} <span style="color:#9ca3af; font-weight:400;">n=${count}</span></span></div>`;
-
-        let html = '';
-        for (const [lin, L] of [...tree.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+        const esc = (v) => this.esc(v).replace(/'/g, '&#39;');
+        let rows = '';
+        for (const [lin, L] of [...tree.entries()].sort((a, b) => b[1].n - a[1].n)) {
             const isOpen = open.has(lin);
-            const caret = `<span onclick="app.toggleGEInspectBranch('${this.esc(lin).replace(/'/g, "\\'")}')" style="cursor:pointer; color:#9ca3af; width:10px; display:inline-block;">${isOpen ? '\u25be' : '\u25b8'}</span>`;
-            html += row(0, g.lineages.has(lin), lin, L.n, `app.toggleGEInspectGroup('lineages','${this.esc(lin).replace(/'/g, "\\'")}')`, caret);
+            const hasSubs = L.subs.size > 0;
+            rows += `<tr class="gis-row" style="cursor:pointer;" onmouseenter="this.style.background='#f3f4f6'" onmouseleave="this.style.background=''">
+                <td style="padding:3px 8px;"><input type="checkbox" class="gis-check"${g.lineages.has(lin) ? ' checked' : ''} onclick="event.stopPropagation(); app.toggleGEInspectGroup('lineages','${esc(lin)}')"></td>
+                <td style="padding:3px 4px; color:#1f2937;" onclick="app.toggleGEInspectBranch('${esc(lin)}')">${hasSubs ? `<span style="font-size:9px; color:#9ca3af; margin-right:2px;">${isOpen ? '\u25bc' : '\u25b6'}</span>` : '<span style="margin-right:9px;"></span>'}${this.esc(lin)}</td>
+                <td style="padding:3px 8px; text-align:right; color:#6b7280;">${L.n}</td></tr>`;
             if (!isOpen) continue;
             for (const [sub, S] of [...L.subs.entries()].sort((a, b) => b[1].n - a[1].n)) {
-                html += row(1, g.sublineages.has(sub), sub, S.n, `app.toggleGEInspectGroup('sublineages','${this.esc(sub).replace(/'/g, "\\'")}')`, `<span style="width:10px; display:inline-block;"></span>`);
+                const hasDis = S.diseases.size > 0;
+                const subOpen = open.has(lin + '\u0000' + sub);
+                rows += `<tr style="background:#fafafa; cursor:pointer;" onmouseenter="this.style.background='#f0f0f0'" onmouseleave="this.style.background='#fafafa'">
+                    <td style="padding:2px 8px 2px 16px;"><input type="checkbox" class="gis-check"${g.sublineages.has(sub) ? ' checked' : ''} onclick="event.stopPropagation(); app.toggleGEInspectGroup('sublineages','${esc(sub)}')"></td>
+                    <td style="padding:2px 4px 2px 8px; font-size:11px; color:#6b7280;" onclick="app.toggleGEInspectBranch('${esc(lin)}\u0000${esc(sub)}')">${hasDis ? `<span style="font-size:8px; color:#9ca3af; margin-right:2px;">${subOpen ? '\u25bc' : '\u25b6'}</span>` : '<span style="margin-right:8px;"></span>'}${this.esc(sub)}</td>
+                    <td style="padding:2px 8px; text-align:right; color:#9ca3af; font-size:11px;">${S.n}</td></tr>`;
+                if (!subOpen) continue;
                 for (const [dis, dn] of [...S.diseases.entries()].sort((a, b) => b[1] - a[1])) {
-                    html += row(2, g.diseases.has(dis), dis, dn, `app.toggleGEInspectGroup('diseases','${this.esc(dis).replace(/'/g, "\\'")}')`, `<span style="width:10px; display:inline-block;"></span>`);
+                    rows += `<tr style="background:#f5f5f4; cursor:pointer;" onmouseenter="this.style.background='#ececeb'" onmouseleave="this.style.background='#f5f5f4'">
+                        <td style="padding:2px 8px 2px 24px;"><input type="checkbox" class="gis-check"${g.diseases.has(dis) ? ' checked' : ''} onclick="event.stopPropagation(); app.toggleGEInspectGroup('diseases','${esc(dis)}')"></td>
+                        <td style="padding:2px 4px 2px 14px; font-size:10px; color:#9ca3af;">${this.esc(dis)}</td>
+                        <td style="padding:2px 8px; text-align:right; color:#9ca3af; font-size:10px;">${dn}</td></tr>`;
                 }
             }
         }
         return box(
-            `<div style="font-size:10px; color:#6b7280; margin-bottom:4px;">Tick any tissue, subtype or disease. Ticks at different levels add up, so you can compare against several groups at once. Click the arrow to open a branch.</div>`
-            + `<div style="max-height:180px; overflow:auto; font-size:11px; background:#fff; border:1px solid #e5e7eb; border-radius:4px; padding:5px 7px;">${html}</div>`
-            + `<div style="margin-top:5px;"><button type="button" onclick="app.clearGEInspectGroup()" style="font-size:10px; padding:2px 8px; border:1px solid #d1d5db; background:#fff; color:#6b7280; border-radius:4px; cursor:pointer;">Clear picks</button></div>`);
+            `<div style="font-size:10px; color:#6b7280; margin-bottom:4px;">Tick any tissue, subtype or disease. Ticks add up, so several groups can be compared against at once. Click a name to open the level below it.</div>`
+            + `<div style="max-height:200px; overflow:auto; background:#fff; border:1px solid #e5e7eb; border-radius:4px;">`
+            + `<table style="width:100%; border-collapse:collapse; font-size:11px;">${rows}</table></div>`
+            + `<div style="margin-top:5px;"><button type="button" class="btn btn-sm btn-outline" style="font-size:10px; padding:2px 8px;" onclick="app.clearGEInspectGroup()">Clear picks</button></div>`);
     }
 
     // Tissue -> subtype -> disease over the whole panel, with counts, built

@@ -845,18 +845,6 @@
         /* The filter inputs in box 1 were set at the same weight and size as the
            headings, so the eye landed on "Search hotspot gene..." rather than on
            the sections themselves. Shrink the controls so the headings lead. */
-        #globalCohortBar {
-            display: flex; align-items: baseline; gap: 8px;
-            margin-top: 8px; padding: 4px 8px; min-height: 22px;
-            border-left: 3px solid var(--gray-200); background: #fafafa;
-            border-radius: 3px; font-size: 11px; color: #6b7280; line-height: 1.35;
-        }
-        #globalCohortBar.is-filtered { border-left-color: var(--green-500, #5d9239); background: #f3f8ef; color: #374151; }
-        #globalCohortText { flex: 1; min-width: 0; overflow-wrap: anywhere; }
-        #globalCohortReset {
-            flex: 0 0 auto; background: none; border: none; padding: 0;
-            color: var(--green-700, #3f6b25); font-size: 11px; text-decoration: underline; cursor: pointer;
-        }
         #lineageFilterGroup .form-control,
         #subLineageFilterGroup .form-control,
         #paramHotspotFilterGroup .form-control,
@@ -2312,16 +2300,6 @@
                              actually something to reset (results or filters). -->
                         <button class="btn btn-outline btn-sm" id="resetAppBtn" style="color:var(--green-700); border-color:var(--green-400);" title="Clear the current genes, parameters and results and start over">Reset all</button>
                     </div>
-                    <!-- Filters set in one part of the app stay in force in the
-                         others, which is correct but invisible: a cohort narrowed
-                         in the browser silently narrowed the next analysis too,
-                         and the app read as "stuck" until it was reloaded. This
-                         line always says what the current cohort is. Always
-                         rendered, so nothing shifts when filters appear. -->
-                    <div id="globalCohortBar" title="The cell lines every part of the app is currently working on. Filters stay in force when you move between features, so this line always says what is applied.">
-                        <span id="globalCohortText">Cohort: all cell lines</span>
-                        <button type="button" id="globalCohortReset" style="display:none;">reset</button>
-                    </div>
                     <!-- Load state stays on the homepage even though the sources
                          moved to the Reference Data modal, so it's still obvious
                          when the app is ready. -->
@@ -3278,11 +3256,11 @@
                                      questions; where the groups differ in level
                                      rather than in trend, the average or the median
                                      of each axis says more. -->
-                                <select id="colorByLegendStat" class="form-control" style="display:none; font-size:9px; padding:1px 3px; margin-top:2px;" title="What to show beside each group name in the legend">
-                                    <option value="r">Legend: r</option>
-                                    <option value="mean">Legend: x/y average</option>
-                                    <option value="median">Legend: x/y median</option>
-                                    <option value="none">Legend: count only</option>
+                                <select id="colorByLegendStat" class="form-control" style="display:none; font-size:9px; padding:1px 3px; margin-top:2px;" title="What each group states in the legend beside its size">
+                                    <option value="none" selected>Legend: n only</option>
+                                    <option value="r">Legend: n + r</option>
+                                    <option value="mean">Legend: n + x/y average</option>
+                                    <option value="median">Legend: n + x/y median</option>
                                 </select>
                                 <!-- Chosen groups, each removable without reopening the picker. -->
                                 <div id="colorByChips" style="display:none; margin-top:3px; flex-wrap:wrap; gap:3px;"></div>
@@ -4695,6 +4673,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v87_22"></script>
+    <script src="app.js?v=v87_23"></script>
 </body>
 </html>
