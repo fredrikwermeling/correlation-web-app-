@@ -2298,19 +2298,25 @@ class CorrelationExplorer {
 
         // Determine which bar matches the active oncoprint filter selection
         const oncoFilters = Object.entries(this._oncoprintFilters || {}).filter(([, v]) => v !== 'none');
-        const barColors = sorted.map(s => {
-            if (oncoFilters.length === 0) return '#3b82f6';
-            const bits = s.key.split('');
-            let matches = true;
-            for (const [gene, state] of oncoFilters) {
-                const idx = upsetGenes.findIndex(g => g.gene === gene);
-                if (idx < 0) continue;
-                const isMut = bits[idx] === '1';
-                if (state === 'mut' && !isMut) { matches = false; break; }
-                if (state === 'wt' && isMut) { matches = false; break; }
-            }
-            return matches ? '#5d9239' : '#cbd5e1';
-        });
+        // Recomputed rather than rebuilt when a bar is clicked: a full redraw
+        // re-picks which genes the plot shows from the active filters, so the
+        // whole chart restructured under the click. Only the colours change.
+        const computeBarColors = () => {
+            const active = Object.entries(this._oncoprintFilters || {}).filter(([, v]) => v !== 'none');
+            return sorted.map(s => {
+                if (active.length === 0) return '#3b82f6';
+                const bits = s.key.split('');
+                let matches = true;
+                for (const [gene, state] of active) {
+                    const idx = upsetGenes.findIndex(g => g.gene === gene);
+                    if (idx < 0) continue;
+                    const isMut = bits[idx] === '1';
+                    if (!this._mutLevelPasses(state === 'mut' ? '1+2' : state, isMut ? 1 : 0)) { matches = false; break; }
+                }
+                return matches ? '#5d9239' : '#cbd5e1';
+            });
+        };
+        const barColors = computeBarColors();
 
         const traces = [{
             // An invisible full-height bar behind each real one. A combination
@@ -2415,7 +2421,16 @@ class CorrelationExplorer {
                 this.showCopyNotification?.(same
                     ? 'Filter removed.'
                     : `${combo.count} cell line${combo.count === 1 ? '' : 's'}: ${names.length ? names.join(' + ') + ' altered' : 'none of these genes altered'}${names.length < upsetGenes.length ? ', the rest wild-type' : ''}. Shown in the grid behind this plot.`);
-                this._showUpsetPlot();
+                // Just recolour: the chosen bar goes green and the rest gray,
+                // and every bar stays where it was.
+                const cols = computeBarColors();
+                try {
+                    Plotly.restyle(gd, {
+                        'marker.color': [cols],
+                        'marker.line.color': [cols.map(c => c === '#5d9239' ? '#4c782e' : 'transparent')],
+                        'marker.line.width': [cols.map(c => c === '#5d9239' ? 2 : 0)],
+                    }, [1]);
+                } catch (e) {}
             });
         });
 
