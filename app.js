@@ -2115,7 +2115,9 @@ class CorrelationExplorer {
         // Genes come from the setup dialog when the user picked them there.
         // Otherwise fall back to the active oncoprint filters, then to the top
         // genes by count.
-        const activeFilters = Object.entries(this._oncoprintFilters || {}).filter(([, v]) => v !== 'none');
+        // Same scope as the grid this was opened from, so an UpSet raised from
+        // the scatter is built around the scatter's own picks.
+        const activeFilters = Object.entries(this._gridFilterMap() || {}).filter(([, v]) => v !== 'none');
         const hotspotGene = document.getElementById('mutationHotspotSelect')?.value;
         const chosenGenes = this._upsetSelectedGenes;
         let upsetGenes, upsetLabel;
@@ -2297,12 +2299,12 @@ class CorrelationExplorer {
         });
 
         // Determine which bar matches the active oncoprint filter selection
-        const oncoFilters = Object.entries(this._oncoprintFilters || {}).filter(([, v]) => v !== 'none');
+        const oncoFilters = Object.entries(this._gridFilterMap() || {}).filter(([, v]) => v !== 'none');
         // Recomputed rather than rebuilt when a bar is clicked: a full redraw
         // re-picks which genes the plot shows from the active filters, so the
         // whole chart restructured under the click. Only the colours change.
         const computeBarColors = () => {
-            const active = Object.entries(this._oncoprintFilters || {}).filter(([, v]) => v !== 'none');
+            const active = Object.entries(this._gridFilterMap() || {}).filter(([, v]) => v !== 'none');
             return sorted.map(s => {
                 if (active.length === 0) return '#3b82f6';
                 const bits = s.key.split('');
@@ -2402,14 +2404,26 @@ class CorrelationExplorer {
                 const bits = combo.key.split('');
                 const want = {};
                 bits.forEach((b, i) => { want[upsetGenes[i].gene] = b === '1' ? 'mut' : 'wt'; });
-                const cur = this._oncoprintFilters || {};
+                // Write to whichever pick-set this grid belongs to. The scatter
+                // keeps its own, deliberately, so that picks made there do not
+                // reach into the analysis cohort; going straight to the main
+                // set meant an UpSet opened from the scatter filtered the wrong
+                // thing and left the scatter unchanged.
+                const map = this._gridFilterMap();
+                const cur = map || {};
                 // Clicking the bar that is already applied takes it off again.
                 const same = Object.keys(want).length === Object.keys(cur).filter(k => cur[k] !== 'none').length
                     && Object.entries(want).every(([g, v]) => cur[g] === v);
-                this._oncoprintFilters = same ? {} : want;
+                Object.keys(cur).forEach(k => { delete cur[k]; });
+                if (!same) Object.assign(cur, want);
                 this._oncoprintFilterKinds = this._oncoprintFilterKinds || {};
                 if (!same) Object.keys(want).forEach(g => { this._oncoprintFilterKinds[g] = this._oncoprintKind || 'hotspot'; });
-                this._oncoprintSyncFilters?.();
+                this._gridSyncScope();
+                // Repaint whatever the picks now govern.
+                try {
+                    if (this._oncoprintContext === 'scatter') this.updateInspectPlot?.();
+                    else this.renderCellLineList?.();
+                } catch (e) {}
                 // Show the pick in the grid this plot came from, so it can be
                 // adjusted there before it is applied to the list.
                 // Redraw the grid this plot came from, so the pick shows there
