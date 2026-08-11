@@ -390,7 +390,7 @@ class CorrelationExplorer {
     // Filter/setting controls captured for "Open in new tab" so the new tab
     // reproduces the same view (not just the gene/pair).
     _GE_NEWTAB_CONTROLS() { return ['geDataType', 'geHotspotGeneSelect', 'geTissueFilter', 'geSubtypeFilter', 'geOncotreeFilter', 'geHotspotFilter', 'geHotspotLevel', 'geFusionFilter', 'geFusionLevel', 'geCnFilter', 'geCnLevel', 'geMinGroupSize', 'geCellLineSearch']; }
-    _SCATTER_NEWTAB_CONTROLS() { return ['inspectGeneX', 'inspectGeneY', 'xAxisDataType', 'yAxisDataType', 'showCorrelationLine', 'showZeroLines', 'scatterDotColor', 'scatterXmin', 'scatterXmax', 'scatterYmin', 'scatterYmax', 'scatterCancerFilter', 'scatterSubtypeFilter', 'scatterOncotreeFilter', 'mutationFilterGene', 'mutationFilterLevel', 'translocationFilterGene', 'translocationFilterLevel', 'scatterCnFilter', 'scatterCnLevel', 'scatterFontSize', 'hotspotGene', 'hotspotMode', 'translocationGene', 'translocationMode', 'colorByCategory', 'colorByPicked', 'scatterCellSearch', 'customCellLineFilter', 'scatterWhiteBg']; }
+    _SCATTER_NEWTAB_CONTROLS() { return ['inspectGeneX', 'inspectGeneY', 'xAxisDataType', 'yAxisDataType', 'showCorrelationLine', 'showZeroLines', 'scatterDotColor', 'scatterXmin', 'scatterXmax', 'scatterYmin', 'scatterYmax', 'scatterCancerFilter', 'scatterSubtypeFilter', 'scatterOncotreeFilter', 'mutationFilterGene', 'mutationFilterLevel', 'translocationFilterGene', 'translocationFilterLevel', 'scatterCnFilter', 'scatterCnLevel', 'scatterFontSize', 'hotspotGene', 'hotspotMode', 'translocationGene', 'translocationMode', 'colorByCategory', 'colorByPicked', 'colorByLegendStat', 'scatterCellSearch', 'customCellLineFilter', 'scatterWhiteBg']; }
     _CA_NEWTAB_CONTROLS() { return ['caTissueFilter', 'caSubtypeFilter', 'caOncotreeFilter', 'caHotspotFilter', 'caHotspotLevel', 'caFusionFilter', 'caFusionLevel', 'caCnFilter', 'caCnLevel', 'caCellLineSearch']; }
 
     // Snapshot the underlying analysis/network so a new tab can rebuild the
@@ -5994,6 +5994,9 @@ class CorrelationExplorer {
         });
         document.getElementById('scatterCellSearch').addEventListener('input', () => this.updateInspectPlot());
         document.getElementById('scatterWhiteBg')?.addEventListener('change', () => this.updateInspectPlot());
+        // Changing what the legend states only relabels the traces, but the
+        // labels are built during the redraw, so the plot is redrawn.
+        document.getElementById('colorByLegendStat')?.addEventListener('change', () => this.updateInspectPlot());
         document.getElementById('colorByCategory').addEventListener('change', () => {
             // Picks belong to the mode they were made in: tissue names and
             // subtype names are different lists.
@@ -16625,7 +16628,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         set('translocationFilterGene', ''); set('translocationFilterLevel', '1+2');
         set('translocationGene', ''); set('translocationMode', 'color');
         set('scatterCnFilter', ''); set('scatterCnLevel', 'altered');
-        set('colorByCategory', ''); set('colorByPicked', '');
+        set('colorByCategory', ''); set('colorByPicked', ''); set('colorByLegendStat', 'r');
         set('customCellLineFilter', '');
         set('scatterCellSearch', '');
         this._customCellLineFilter = null;
@@ -17306,11 +17309,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             // Each legend entry carries the group's own correlation, so the
             // legend doubles as a per-tissue (or per-subtype) r table. Below
             // 3 points r is noise, so it is left off there.
-            const groupR = (arr) => {
-                if (arr.length < 3) return '';
-                const r = this.pearsonWithSlope(arr.map(d => d.x), arr.map(d => d.y)).correlation;
-                return isNaN(r) ? '' : `, r=${r.toFixed(2)}`;
-            };
+            const groupR = (arr) => this._groupLegendStat(arr);
             if (picked3) {
                 const restData = [];
                 colorByCategories.filter(c => !picked3.has(c)).forEach(c => restData.push(...categoryMap[c]));
@@ -20224,6 +20223,33 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // the plot edge. Shorten the name itself (keeping the count and r, which
     // are what the entry is read for) and mark it with an ellipsis; the full
     // name stays on the chip above the plot and in the hover.
+    // What a group's legend entry says beside its count. r answers "does the
+    // relationship hold inside this group"; the average or median of each axis
+    // answers "where does this group sit", which is the more useful reading
+    // when groups separate by level rather than by trend. Median is offered
+    // because one extreme cell line moves a small group's mean a long way.
+    _groupLegendStat(arr) {
+        const mode = document.getElementById('colorByLegendStat')?.value || 'r';
+        if (mode === 'none' || !arr || !arr.length) return '';
+        const xs = arr.map(d => d.x).filter(v => v != null && !isNaN(v));
+        const ys = arr.map(d => d.y).filter(v => v != null && !isNaN(v));
+        if (!xs.length || !ys.length) return '';
+        const fmt = (v) => Math.abs(v) >= 100 ? v.toFixed(0) : Math.abs(v) >= 10 ? v.toFixed(1) : v.toFixed(2);
+        if (mode === 'mean') {
+            const mx = xs.reduce((a, b) => a + b, 0) / xs.length;
+            const my = ys.reduce((a, b) => a + b, 0) / ys.length;
+            return `, x\u0304=${fmt(mx)}, y\u0304=${fmt(my)}`;
+        }
+        if (mode === 'median') {
+            const med = (a) => { const v = [...a].sort((p, q) => p - q); const h = v.length >> 1; return v.length % 2 ? v[h] : (v[h - 1] + v[h]) / 2; };
+            return `, x\u0303=${fmt(med(xs))}, y\u0303=${fmt(med(ys))}`;
+        }
+        // r needs a few points before it means anything.
+        if (arr.length < 3) return '';
+        const r = this.pearsonWithSlope(arr.map(d => d.x), arr.map(d => d.y)).correlation;
+        return isNaN(r) ? '' : `, r=${r.toFixed(2)}`;
+    }
+
     _legendLabel(name, suffix) {
         const entryW = this._colorByLegendEntryW || 400;
         const font = this._colorByLegendFont || 17;
@@ -35136,6 +35162,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const mode = document.getElementById('colorByCategory')?.value;
         const on = mode === 'tissue' || mode === 'subtype' || mode === 'disease';
         btn.style.display = on ? '' : 'none';
+        const statSel = document.getElementById('colorByLegendStat');
+        if (statSel) statSel.style.display = on ? '' : 'none';
         const raw = (document.getElementById('colorByPicked')?.value || '').trim();
         if (raw === '*') btn.textContent = 'Groups: all';
         else if (raw === 'none') btn.textContent = 'Groups: none';
