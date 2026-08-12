@@ -247,6 +247,7 @@ class CorrelationExplorer {
             await this.loadData();
             this.setupUI();
             this._setupGlobalCohortBar();
+            this._guardNetworkKeysFromInputs();
             this.hideLoading();
             // URL-hash deep links, open a specific view directly so
             // external apps (greenlisted / mouseclb / lab pages) can
@@ -3606,6 +3607,30 @@ class CorrelationExplorer {
     // ~40 sites. (An earlier version of this also drove a bar in the Options
     // box claiming to describe the whole app; it was in the wrong place and
     // the claim was wrong, since the Cell Line Browser has its own filters.)
+    // The network pans on the arrow keys and listens for them on the WINDOW, so
+    // that it works without clicking the canvas first. The cost was that the
+    // same keys reached it while the caret sat in a search box: the text cursor
+    // stayed put and the network slid about behind the dialog instead.
+    //
+    // This must be a CAPTURE listener on the window, registered before the
+    // network binds its own. A capture listener on document, which is what the
+    // page had, fires after the window's and so can never get in front of it.
+    _guardNetworkKeysFromInputs() {
+        const NAV = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
+            'PageUp', 'PageDown', 'Home', 'End']);
+        window.addEventListener('keydown', (e) => {
+            if (!NAV.has(e.key)) return;
+            const el = e.target;
+            if (!el) return;
+            const editable = el.tagName === 'INPUT' || el.tagName === 'TEXTAREA'
+                || el.tagName === 'SELECT' || el.isContentEditable;
+            if (!editable) return;
+            // The field still receives the key, so the caret moves as it should;
+            // only the network is kept from acting on it.
+            e.stopPropagation();
+        }, true);
+    }
+
     _setupGlobalCohortBar() {
         const refresh = () => {
             // A timer, not requestAnimationFrame: rAF is suspended while the
@@ -11494,7 +11519,11 @@ class CorrelationExplorer {
                 hover: true,
                 tooltipDelay: 100,
                 navigationButtons: true,
-                keyboard: true
+                // Bound to the window on purpose: that is what lets the arrow
+                // keys pan the network without clicking the canvas first.
+                // _guardNetworkKeysFromInputs() is what keeps those same keys
+                // out of the network while the caret is in a text box.
+                keyboard: { enabled: true, bindToWindow: true }
             }
         };
 
