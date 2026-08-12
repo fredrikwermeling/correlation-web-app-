@@ -812,7 +812,7 @@ class CorrelationExplorer {
         const _dv = (document.querySelector('script[src*="app.js"]')?.src.split('?v=')[1]) || '';
         const dfetch = (path) => fetch(_dv ? `${path}?v=${_dv}` : path);
 
-        const [metadataRes, cellLineRes, mutationsRes, orthologsRes, translocationsRes, damagingMutRes, growthRateRes, drugRes, clinicalFusionsRes, inferredSubtypesRes, globalSigRes, corumRes, reactomeRes, hlaCnRes, lehmannRes, clinicalCnRes, validatedFusionsRes, functionalLossRes, curatedFusionsRes, problematicRes, virusRes, cnArtefactRes] = await Promise.all([
+        const [metadataRes, cellLineRes, mutationsRes, orthologsRes, translocationsRes, damagingMutRes, growthRateRes, drugRes, clinicalFusionsRes, inferredSubtypesRes, globalSigRes, corumRes, reactomeRes, hlaCnRes, lehmannRes, clinicalCnRes, validatedFusionsRes, functionalLossRes, curatedFusionsRes, problematicRes, virusRes, cnArtefactRes, derivativeRes] = await Promise.all([
             dfetch('web_data/metadata.json'),
             dfetch('web_data/cellLineMetadata.json'),
             dfetch('web_data/mutations.json'),
@@ -837,7 +837,8 @@ class CorrelationExplorer {
             dfetch('web_data/curated_fusions.json').catch(() => null),
             dfetch('web_data/problematic_lines.json').catch(() => null),
             dfetch('web_data/virus_status.json').catch(() => null),
-            dfetch('web_data/cn_artefact.json').catch(() => null)
+            dfetch('web_data/cn_artefact.json').catch(() => null),
+            dfetch('web_data/derivative_lines.json').catch(() => null)
         ]);
 
         this.metadata = await metadataRes.json();
@@ -921,6 +922,12 @@ class CorrelationExplorer {
         if (cnArtefactRes && cnArtefactRes.ok) {
             try { this.cnArtefact = await cnArtefactRes.json(); }
             catch (e) { this.cnArtefact = null; }
+        }
+        // Lines that are another line after a drug. The pair is the whole
+        // point of those lines, and nothing said which was which.
+        if (derivativeRes && derivativeRes.ok) {
+            try { this.derivativeLines = await derivativeRes.json(); }
+            catch (e) { this.derivativeLines = null; }
         }
         if (translocationsRes && translocationsRes.ok) {
             this.translocations = await translocationsRes.json();
@@ -4277,9 +4284,18 @@ class CorrelationExplorer {
 
     getCellLineName(cellLineId) {
         if (this.cellLineMetadata && this.cellLineMetadata.strippedCellLineName) {
-            return this.cellLineMetadata.strippedCellLineName[cellLineId] ||
-                   this.cellLineMetadata.cellLineName?.[cellLineId] ||
-                   cellLineId;
+            const stripped = this.cellLineMetadata.strippedCellLineName[cellLineId];
+            const full = this.cellLineMetadata.cellLineName?.[cellLineId];
+            // DepMap's stripped name is the full name with punctuation removed,
+            // and for at least one line it also loses a character: RVH421_DAB_R
+            // arrives stripped as RVH42DABR, which reads as a line called
+            // RVH-42 that does not exist. Where the two disagree on more than
+            // punctuation, strip the full name here instead of trusting theirs.
+            if (stripped && full) {
+                const ours = String(full).toUpperCase().replace(/[^A-Z0-9]/g, '');
+                if (ours !== String(stripped).toUpperCase()) return ours;
+            }
+            return stripped || full || cellLineId;
         }
         return cellLineId;
     }
@@ -33979,6 +33995,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 category: 'Viral transformation',
                 description: '<b>Inclusion:</b> Cellosaurus records the line as transformed by hepatitis B virus, typically hepatocellular carcinoma lines carrying integrated HBV. <b>Why it matters:</b> integration is mutagenic and the HBx protein drives a transcriptional programme of its own, so these lines carry a different biology from HBV-unrelated liver lines. <b>Caveat:</b> absence from this list means no curated record, not an HBV-negative result.'
             },
+            drug_selected_pairs: {
+                label: 'Drug-selected line with its parent',
+                category: 'Matched pairs',
+                description: '<b>Inclusion:</b> both members of every matched pair in the panel, a parental line and a version of it carried through a drug until it grew in that drug (A-375 with A-375_DAB_R, and so on), plus one engineered knockdown pair. <b>Why it matters:</b> these are the same line twice, not two lines. Anything they differ in is the treatment; anything they share is the background they both came from, which is what makes them the cleanest resistance comparison the panel offers. <b>Read the other way round,</b> a pair not recognised as a pair is the most misleading thing in the panel: a striking difference between two cell lines that are the same cell line.',
+            },
+            drug_selected_derivative: {
+                label: 'Drug-selected derivative only (no parents)',
+                category: 'Matched pairs',
+                description: '<b>Inclusion:</b> only the treated member of each pair, the line selected under a drug, without the parental line beside it. <b>Use it</b> to ask what these lines have in common; use the paired collection to ask what the treatment did.',
+            },
             problematic_identity: {
                 label: 'Identity disputed (contaminated / misidentified)',
                 category: 'Provenance',
@@ -34829,6 +34855,125 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             + 'Lines without this mark have no such record, which is not the same as being free of the virus.';
     }
 
+    // Where a cell line came from, and what it is a version of. Everything
+    // here is provenance rather than measurement, and it is the part most
+    // likely to change how a result is read: a resistant derivative and its
+    // parent are one line twice, a disputed line may not be the line the
+    // label says, and a name that lost a character in the pipeline looks like
+    // a line that does not exist. Returns '' when there is nothing to say, so
+    // the section is not rendered at all.
+    _wikiHistoryHtml(cellLineId, { rrid, name } = {}) {
+        const bits = [];
+        const esc = (t) => this.esc(t);
+
+        // What the panel calls it, when that is not what the source calls it.
+        const full = this.cellLineMetadata?.cellLineName?.[cellLineId] || '';
+        const depmapStripped = this.cellLineMetadata?.strippedCellLineName?.[cellLineId] || '';
+        const ourStripped = String(full).toUpperCase().replace(/[^A-Z0-9]/g, '');
+        if (full && depmapStripped && ourStripped !== String(depmapStripped).toUpperCase()) {
+            bits.push(`<p style="margin:0 0 8px;"><b>Name.</b> The catalogue name is <b>${esc(full)}</b>. `
+                + `DepMap's own shortened form of it, <code>${esc(depmapStripped)}</code>, is not simply that name with the `
+                + `punctuation removed, a character has been lost somewhere in the pipeline, so it reads as a different line. `
+                + `This app shows <code>${esc(ourStripped)}</code> instead, derived from the full name. `
+                + `If you are matching against DepMap files by name, expect their spelling, not this one.</p>`);
+        }
+
+        // Treated / parental relationship.
+        const d = this._derivativePairs(cellLineId);
+        if (d) {
+            const nm = (id) => esc(this.getCellLineName(id) || id);
+            if (d.role === 'derivative') {
+                const p = d.pairs[0];
+                bits.push(`<p style="margin:0 0 8px;"><b>Derived line.</b> This is <b>${nm(p.parent)}</b> after `
+                    + `${esc(p.agents.join(' and '))}`
+                    + (p.relationship === 'drug-resistant' ? ', carried in the drug until it grew in it' : '')
+                    + `. Treat the two as one line in two states: a difference between them is the treatment, `
+                    + `and a property they share is the background they both came from, not a finding about resistance.</p>`);
+            } else {
+                bits.push(`<p style="margin:0 0 8px;"><b>Parental line.</b> The panel also carries `
+                    + `${d.pairs.length === 1 ? 'a treated version' : d.pairs.length + ' treated versions'} of this line: `
+                    + d.pairs.map(p => `<b>${nm(p.derivative)}</b> (${esc(p.agents.join(' and '))})`).join(', ')
+                    + `. Compared against ${d.pairs.length === 1 ? 'it' : 'them'}, everything except the treatment is held constant.</p>`);
+            }
+        }
+
+        // Identity disputes, which Cellosaurus curates and which change what a
+        // result about this line means.
+        const prob = this.problematicLines?.byCellLine?.[cellLineId];
+        if (prob) {
+            bits.push(`<p style="margin:0 0 8px;"><b>Identity.</b> ${esc(prob.note || prob.summary || 'This line carries a curated provenance flag.')}`
+                + ` Read any result from this line against that record before relying on it.</p>`);
+        }
+
+        // Confirmed viral transformation belongs to the line's history too.
+        const virus = this._virusAgents(cellLineId);
+        if (virus) {
+            bits.push(`<p style="margin:0 0 8px;"><b>Established by viral transformation.</b> `
+                + esc(virus.map(h => `${h.name} (${h.agent})`).join('; '))
+                + `. Viral oncoproteins override host pathways, so this line can behave as though a tumour suppressor `
+                + `is lost while its sequence says otherwise.</p>`);
+        }
+
+        if (!bits.length) return '';
+
+        const links = [];
+        if (rrid) links.push(`<a href="https://www.cellosaurus.org/${esc(rrid)}" target="_blank" rel="noopener" style="color:#3730a3; font-weight:600;">Cellosaurus ${esc(rrid)} &#8599;</a>`);
+        if (name) {
+            links.push(`<a href="https://www.dsmz.de/collection/catalog/search?q=${encodeURIComponent(name)}" target="_blank" rel="noopener" style="color:#3730a3; font-weight:600;">DSMZ &#8599;</a>`);
+            links.push(`<a href="https://pubmed.ncbi.nlm.nih.gov/?term=${encodeURIComponent(name + ' cell line')}" target="_blank" rel="noopener" style="color:#3730a3; font-weight:600;">PubMed &#8599;</a>`);
+        }
+        return bits.join('')
+            + `<div style="margin-top:6px; padding:6px 10px; background:#eef2ff; border-left:3px solid #3730a3; font-size:11px;">`
+            + `<b style="color:#3730a3;">Primary records:</b> ${links.join(' <span style="color:#9ca3af;">&middot;</span> ')}`
+            + `<div style="font-size:10px; color:#6b7280; margin-top:3px;">Cellosaurus carries the establishing publication, the parent / derivative tree and any misidentification history. Nothing on this page is fetched live.</div>`
+            + `</div>`;
+    }
+
+    // Matched treated / parental pair for a cell line, or null. Either member
+    // of a pair resolves to the same relationship, read from whichever side
+    // was asked about.
+    _derivativePairs(cellLineId) {
+        const info = this.derivativeLines?.byCellLine?.[cellLineId];
+        if (!info) return null;
+        const pairs = (this.derivativeLines.pairs || []).filter(
+            p => p.parent === cellLineId || p.derivative === cellLineId);
+        return pairs.length ? { role: info.role, pairs } : null;
+    }
+
+    // One sentence naming what this line is a version of, or what versions of
+    // it exist. Without it the resistant line and its parent sit in the list
+    // as two unrelated cell lines with similar names.
+    _derivativeNoteHtml(cellLineId) {
+        const d = this._derivativePairs(cellLineId);
+        if (!d) return '';
+        const nm = (id) => this.esc(this.getCellLineName(id) || id);
+        const link = (id) => `<a href="#" onclick="event.preventDefault();app.openCellLineWiki('${id}')" style="color:#2563eb;">${nm(id)}</a>`;
+        let body;
+        if (d.role === 'derivative') {
+            const p = d.pairs[0];
+            body = `This is <b>${nm(p.parent)}</b> after ${this.esc(p.agents.join(' and '))}`
+                + (p.relationship === 'drug-resistant' ? ', carried in the drug until it grew in it' : '')
+                + `. The same line twice, not two lines: what differs between them is the treatment, `
+                + `and what they share is the background they both came from. Parental line: ${link(p.parent)}.`;
+        } else {
+            const kids = d.pairs.map(p => `${link(p.derivative)} (${this.esc(p.agents.join(' and '))})`).join(', ');
+            body = `The panel also carries ${d.pairs.length === 1 ? 'a treated version' : `${d.pairs.length} treated versions`} `
+                + `of this line: ${kids}. Comparing this line against ${d.pairs.length === 1 ? 'it' : 'them'} `
+                + `isolates the treatment, since everything else is the same background.`;
+        }
+        return `<div style="margin:6px 0; padding:6px 9px; background:#eff6ff; border-left:3px solid #60a5fa; border-radius:3px; font-size:11px; color:#1e3a5f;">`
+            + `<b>Matched pair.</b> ${body}</div>`;
+    }
+
+    _derivativeTitle(cellLineId) {
+        const d = this._derivativePairs(cellLineId);
+        if (!d) return '';
+        const nm = (id) => this.getCellLineName(id) || id;
+        return d.role === 'derivative'
+            ? `${nm(d.pairs[0].parent)} after ${d.pairs[0].agents.join(' and ')}, selected to grow in it. The same line as its parent, treated.`
+            : `Has ${d.pairs.length} treated version${d.pairs.length === 1 ? '' : 's'} in this panel: ${d.pairs.map(p => nm(p.derivative)).join(', ')}.`;
+    }
+
     // Compute which cell lines belong to each curated collection. Called
     // once after the heavy data is loaded (by _precomputeCellLineCounts's
     // caller). Expression-based collections are skipped when expression
@@ -35497,6 +35642,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 else if (h.agent.startsWith('HPV')) mem.virus_hpv.add(cl);
                 else if (h.agent === 'HBV') mem.virus_hbv.add(cl);
             }
+        }
+
+        // Matched treated / parental pairs. Both members go in, because the
+        // pair is the point: a resistant line on its own says nothing without
+        // the line it was derived from.
+        mem.drug_selected_pairs = new Set();
+        mem.drug_selected_derivative = new Set();
+        for (const [cl, info] of Object.entries(this.derivativeLines?.byCellLine || {})) {
+            mem.drug_selected_pairs.add(cl);
+            if (info.role === 'derivative') mem.drug_selected_derivative.add(cl);
         }
 
         // Provenance flags, straight from the curated Cellosaurus scan.
@@ -39445,6 +39600,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         top += `<div class="clb-detail-id">${cellLineId}</div>`;
         // Executive summary, plain-language overview at the very top of the card.
         top += `<div class="clb-detail-section clb-keep-mobile" style="background:#f7fbf8; border:1px solid #e5e7eb; border-left:3px solid #4c782e; border-radius:6px; padding:8px 10px; margin-bottom:10px;">${this._cellLineExecutiveSummary(cellLineId, { showId: false })}</div>`;
+        // If this line is one half of a treated / parental pair, that is the
+        // first thing to know about it, above everything else on the card.
+        top += this._derivativeNoteHtml(cellLineId);
         // Wiki entry-point sits just under the executive summary so the deep-dive
         // is the first action, before the tissue / classification rows.
         top += `<div class="clb-detail-section clb-keep-mobile" style="margin-bottom:12px;">`;
@@ -42398,6 +42556,11 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
 
         body.innerHTML = summaryHtml + [
             // ── Identity ──────────────────────────────────────────────────
+            this._wikiHistoryHtml(cellLineId, { rrid, name })
+                ? section('History and provenance <span style="font-size:11px; color:#6b7280;">, where this line came from and what it is a version of</span>',
+                    this._wikiHistoryHtml(cellLineId, { rrid, name }),
+                    'Cellosaurus (SIB / ExPASy) for provenance, derivative relationships and misidentification history; DepMap Model table for the panel name.')
+                : '',
             section('Cancer classification',
                 classificationHtml,
                 'DepMap 26Q1 Model table (Oncotree lineage / subtype / code, patient-tumor features).'),
