@@ -44572,60 +44572,92 @@ ${clone.innerHTML}
         const r = this._geInspectResults;
         if (!r?.rows?.length) return;
         const shown = this._geInspectShown || {};
-        const genes = [];
-        const seen = new Set();
+
+        // One column pair per gene, one row per cell line. The first version
+        // of this was one row per gene PER cell line, which is the same
+        // numbers 400 times taller and cannot be pasted next to anything: a
+        // spreadsheet wants a cell line on a row.
+        //
+        // Genes are ordered by the size of the difference they showed, so the
+        // interesting columns are the ones you reach first, and capped, since
+        // every gene adds two columns to every row.
+        const GENE_CAP = 300;
+        const byGene = new Map();
         for (const row of [...(shown.left || []), ...(shown.right || [])]) {
-            if (!seen.has(row.gene)) { seen.add(row.gene); genes.push(row.gene); }
+            const prev = byGene.get(row.gene);
+            const mag = Math.abs(row.delta ?? 0);
+            if (prev === undefined || mag > prev) byGene.set(row.gene, mag);
         }
+        const allGenes = [...byGene.entries()].sort((a, b) => b[1] - a[1]).map(([g]) => g);
+        const genes = allGenes.slice(0, GENE_CAP);
         if (!genes.length) { this.showCopyNotification?.('No genes are showing to export.'); return; }
 
         const sides = this._geInspectSides || {};
         const selection = new Set(r.selected || []);
-        const comparison = sides.comparison || [];
-        const lines = [...(r.selected || []), ...comparison];
+        const lines = [...(r.selected || []), ...(sides.comparison || [])];
         const selLabel = sides.selLabel || 'selection';
         const cmpLabel = sides.cmpLabel || 'comparison';
 
         const geRow = new Map(this.metadata.cellLines.map((cl, i) => [cl, i]));
-        const exprCl = this.expressionMetadata?.cellLines || [];
-        const exprRow = new Map(exprCl.map((cl, i) => [cl, i]));
+        const exprRow = new Map((this.expressionMetadata?.cellLines || []).map((cl, i) => [cl, i]));
         const num = (v) => (v === undefined || v === null || isNaN(v)) ? '' : (+v).toFixed(4);
-
-        // Group labels are free text ("Same lineage (Skin)"), so anything
-        // going into a cell gets quoted rather than trusted to be comma-free.
         const q = (v) => {
             const t = String(v ?? '');
             return /[",\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
         };
-        const out = ['Gene,CellLineID,CellLineName,Group,Tissue,GeneEffect,Expression'];
+
+        // Resolve each gene once rather than per cell line, and drop the
+        // expression column for a gene nobody in this cohort has a value for,
+        // which would otherwise be an empty column on every row.
+        const cols = [];
         for (const gene of genes) {
             const gi = this.geneIndex?.get(gene.toUpperCase());
             const ei = this.expressionGeneIndex?.get(gene.toUpperCase());
-            for (const cl of lines) {
-                let ge = null, ex = null;
-                const ci = geRow.get(cl);
-                if (gi !== undefined && ci !== undefined) {
-                    const v = this.geneEffects[gi * this.nCellLines + ci];
+            const hasExpr = ei !== undefined && lines.some(cl => {
+                const eci = exprRow.get(cl);
+                return eci !== undefined && !isNaN(this.expressionData[ei * this.expressionMetadata.nCellLines + eci]);
+            });
+            cols.push({ gene, gi, ei: hasExpr ? ei : undefined });
+        }
+
+        const head = ['CellLineID', 'CellLineName', 'Group', 'Tissue'];
+        for (const c of cols) {
+            head.push(`${c.gene}_GE`);
+            if (c.ei !== undefined) head.push(`${c.gene}_expr`);
+        }
+        const out = [head.map(q).join(',')];
+        for (const cl of lines) {
+            const ci = geRow.get(cl), eci = exprRow.get(cl);
+            const cells = [
+                q(cl), q(this.getCellLineName(cl) || cl),
+                q(selection.has(cl) ? selLabel : cmpLabel),
+                q(this.getCellLineLineage(cl) || '')
+            ];
+            for (const c of cols) {
+                let ge = null;
+                if (c.gi !== undefined && ci !== undefined) {
+                    const v = this.geneEffects[c.gi * this.nCellLines + ci];
                     if (!isNaN(v) && v !== -999) ge = v;
                 }
-                const eci = exprRow.get(cl);
-                if (ei !== undefined && eci !== undefined) {
-                    const v = this.expressionData[ei * this.expressionMetadata.nCellLines + eci];
-                    if (!isNaN(v)) ex = v;
+                cells.push(num(ge));
+                if (c.ei !== undefined) {
+                    let ex = null;
+                    if (eci !== undefined) {
+                        const v = this.expressionData[c.ei * this.expressionMetadata.nCellLines + eci];
+                        if (!isNaN(v)) ex = v;
+                    }
+                    cells.push(num(ex));
                 }
-                if (ge === null && ex === null) continue;
-                out.push([
-                    q(gene), q(cl),
-                    q(this.getCellLineName(cl) || cl),
-                    q(selection.has(cl) ? selLabel : cmpLabel),
-                    q(this.getCellLineLineage(cl) || ''),
-                    num(ge), num(ex)
-                ].join(','));
             }
+            out.push(cells.join(','));
         }
+
         this.downloadFile(out.join('\n'),
             csvName(`selection_per_cell_line_${genes.length}genes_${lines.length}CLs`), 'text/csv');
-        this.showCopyNotification?.(`Exported ${genes.length} genes across ${lines.length} cell lines`);
+        const capped = allGenes.length > genes.length
+            ? `, the ${genes.length} largest differences of ${allGenes.length.toLocaleString()} showing`
+            : '';
+        this.showCopyNotification?.(`Exported ${lines.length} cell lines x ${genes.length} genes${capped}`);
     }
 
     // The numbers already on the hovered row, restated above the gene
