@@ -10704,7 +10704,11 @@ class CorrelationExplorer {
 
         Plotly.newPlot('geneEffectPlot', traces, layout, {
             responsive: true,
-            edits: { annotationPosition: true, legendPosition: true, shapePosition: true }
+            // annotationTail is what lets a placed cell-line name be dragged
+            // clear of its dot while the arrow keeps pointing at it. Without it
+            // two names landing on nearby dots simply overlapped and there was
+            // no way to separate them, which the scatter has always allowed.
+            edits: { annotationPosition: true, annotationTail: true, legendPosition: true, shapePosition: true }
         }).then(plotEl => {
             plotEl.removeAllListeners?.('plotly_relayout');
             plotEl.on('plotly_relayout', (relayoutData) => {
@@ -26742,7 +26746,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             plot_bgcolor: 'white'
         };
 
-        Plotly.newPlot('geneEffectPlot', traces, layout, { responsive: true, edits: { annotationPosition: true }, displaylogo: false, modeBarButtonsToRemove: ['lasso2d', 'select2d'] });
+        Plotly.newPlot('geneEffectPlot', traces, layout, { responsive: true, edits: { annotationPosition: true, annotationTail: true }, displaylogo: false, modeBarButtonsToRemove: ['lasso2d', 'select2d'] });
         this._attachGEGateHandler('geneEffectPlot');
         this._attachGECellInteractivity('geneEffectPlot');
 
@@ -27081,7 +27085,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         Plotly.newPlot('geneEffectHotspotPlot', traces, layout, {
             responsive: true,
-            edits: { annotationPosition: true, legendPosition: true },
+            edits: { annotationPosition: true, annotationTail: true, legendPosition: true },
             modeBarButtonsToRemove: ['lasso2d', 'select2d'],
             displaylogo: false
         });
@@ -27604,7 +27608,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 const traceOrder = this.currentGEStats.map(s => `${s.group} (n=${s.n})`).reverse();
                 const newData = traceOrder.map(name => plotEl.data.find(t => t.name === name)).filter(Boolean);
                 if (newData.length === plotEl.data.length) {
-                    Plotly.react('geneEffectPlot', newData, plotEl.layout, { responsive: true, edits: { annotationPosition: true } });
+                    Plotly.react('geneEffectPlot', newData, plotEl.layout, { responsive: true, edits: { annotationPosition: true, annotationTail: true } });
                 }
             }
         } else if (this.currentGETableMode === 'hotspot') {
@@ -28638,7 +28642,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         const geCsvMetric = this._geMetric().csv;
         if (this.currentGEView === 'tissue') {
-            csv = `Cancer_Type,N,Mean_${geCsvMetric},SD,p_value\n`;
+            // The first column is whatever the chart is grouped by, which is
+            // not always the tissue.
+            const groupHeader = this._geCompareMode ? 'Compared_Group'
+                : this._geSplitByOncotree ? 'Disease' : 'Cancer_Type';
+            csv = `${groupHeader},N,Mean_${geCsvMetric},SD,p_value\n`;
             this.currentGEStats.forEach(s => {
                 csv += `"${s.group}",${s.n},${s.mean.toFixed(2)},${s.sd.toFixed(2)},${s.pValue.toFixed(6)}\n`;
             });
@@ -30677,17 +30685,39 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (!this.currentGeneEffect) return;
 
         const gene = this.currentGeneEffect.gene;
-        const data = this.currentGeneEffect.data;
 
-        // Get sublineage info
-        let csv = `Cell_Line_ID,Cell_Line_Name,Cancer_Type,Cancer_Subtype,${this._geMetric().csv}\n`;
-
-        data.forEach(d => {
-            const subtype = this.getCellLineSublineage?.(d.cellLineId) || '';
-            csv += `"${d.cellLineId}","${d.cellLineName}","${d.lineage}","${subtype}",${d.geneEffect.toFixed(2)}\n`;
-        });
+        // Follow the chart. This used to export every cell line the gene has a
+        // value for, with a fixed Cancer_Type column, whatever the view was
+        // set to: switching the grouping to disease, or to the two sides of a
+        // comparison, or filtering the cohort, changed the picture on screen
+        // and changed nothing in the file. currentGEStats is what is drawn,
+        // group by group, so the export is built from that instead.
+        const stats = this.currentGEStats;
+        const groupHeader = this._geCompareMode ? 'Compared_Group'
+            : this._geSplitByOncotree ? 'Disease' : 'Group';
+        let csv = `Cell_Line_ID,Cell_Line_Name,${groupHeader},Cancer_Type,Cancer_Subtype,${this._geMetric().csv}\n`;
+        let n = 0;
+        if (stats?.length) {
+            for (const s of stats) {
+                for (const c of (s.cellData || [])) {
+                    const id = c.cellLineId;
+                    csv += `"${id}","${c.cellLineName}","${s.group}","${this.getCellLineLineage(id) || ''}",`
+                         + `"${this.getCellLineSublineage?.(id) || ''}",${c.geneEffect.toFixed(2)}\n`;
+                    n++;
+                }
+            }
+        } else {
+            // No grouped view has been built (the chart was never drawn), so
+            // fall back to the whole set rather than exporting an empty file.
+            for (const d of (this.currentGeneEffect.data || [])) {
+                csv += `"${d.cellLineId}","${d.cellLineName}","${d.lineage || ''}","${d.lineage || ''}",`
+                     + `"${this.getCellLineSublineage?.(d.cellLineId) || ''}",${d.geneEffect.toFixed(2)}\n`;
+                n++;
+            }
+        }
 
         this.downloadFile(csv, csvName(`gene_effect_${gene}_by_cell_line`), 'text/csv');
+        this.showCopyNotification?.(`Exported ${n.toLocaleString()} cell lines, as grouped on screen`);
     }
 
     getCellLineSublineage(cellLineId) {
@@ -37423,6 +37453,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             e.target.value = ''; // allow re-selecting the same file
         });
         document.getElementById('selectionInspectCSV')?.addEventListener('click', () => this.downloadSelectionInspectCSV());
+        document.getElementById('selectionInspectCSVCells')?.addEventListener('click', () => this.downloadSelectionInspectPerCellCSV());
         document.getElementById('selectionInspectClose')?.addEventListener('click', () => {
             document.getElementById('selectionInspectModal').style.display = 'none';
         });
@@ -43166,7 +43197,7 @@ ${clone.innerHTML}
         if (!r.exprRows) r.exprRows = [];
         const saveBtn = document.getElementById('selectionInspectSave');
         if (saveBtn) saveBtn.style.display = '';
-        ['selectionInspectCSV', 'selectionInspectAI'].forEach(id => {
+        ['selectionInspectCSV', 'selectionInspectCSVCells', 'selectionInspectAI'].forEach(id => {
             const b = document.getElementById(id);
             if (b) b.style.display = '';
         });
@@ -43738,7 +43769,7 @@ ${clone.innerHTML}
         this._activeSelectionInspect = { kind: 'ge' };
         const saveBtn = document.getElementById('selectionInspectSave');
         if (saveBtn) saveBtn.style.display = '';
-        ['selectionInspectCSV', 'selectionInspectAI'].forEach(id => {
+        ['selectionInspectCSV', 'selectionInspectCSVCells', 'selectionInspectAI'].forEach(id => {
             const b = document.getElementById(id);
             if (b) b.style.display = '';
         });
@@ -43896,6 +43927,72 @@ ${clone.innerHTML}
         this.showCopyNotification?.(`Exported ${byGene.size.toLocaleString()} genes`);
     }
 
+    // The same comparison one row per cell line rather than one row per gene.
+    // The summary export answers "how do the groups differ"; this one answers
+    // "what did each line actually do", which is what you need to see an
+    // outlier carrying a group mean, and it cannot be reconstructed from
+    // means and n. It follows the tables: the genes exported are the genes on
+    // screen, under whatever cutoffs and sort are set.
+    downloadSelectionInspectPerCellCSV() {
+        const r = this._geInspectResults;
+        if (!r?.rows?.length) return;
+        const shown = this._geInspectShown || {};
+        const genes = [];
+        const seen = new Set();
+        for (const row of [...(shown.left || []), ...(shown.right || [])]) {
+            if (!seen.has(row.gene)) { seen.add(row.gene); genes.push(row.gene); }
+        }
+        if (!genes.length) { this.showCopyNotification?.('No genes are showing to export.'); return; }
+
+        const sides = this._geInspectSides || {};
+        const selection = new Set(r.selected || []);
+        const comparison = sides.comparison || [];
+        const lines = [...(r.selected || []), ...comparison];
+        const selLabel = sides.selLabel || 'selection';
+        const cmpLabel = sides.cmpLabel || 'comparison';
+
+        const geRow = new Map(this.metadata.cellLines.map((cl, i) => [cl, i]));
+        const exprCl = this.expressionMetadata?.cellLines || [];
+        const exprRow = new Map(exprCl.map((cl, i) => [cl, i]));
+        const num = (v) => (v === undefined || v === null || isNaN(v)) ? '' : (+v).toFixed(4);
+
+        // Group labels are free text ("Same lineage (Skin)"), so anything
+        // going into a cell gets quoted rather than trusted to be comma-free.
+        const q = (v) => {
+            const t = String(v ?? '');
+            return /[",\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
+        };
+        const out = ['Gene,CellLineID,CellLineName,Group,Tissue,GeneEffect,Expression'];
+        for (const gene of genes) {
+            const gi = this.geneIndex?.get(gene.toUpperCase());
+            const ei = this.expressionGeneIndex?.get(gene.toUpperCase());
+            for (const cl of lines) {
+                let ge = null, ex = null;
+                const ci = geRow.get(cl);
+                if (gi !== undefined && ci !== undefined) {
+                    const v = this.geneEffects[gi * this.nCellLines + ci];
+                    if (!isNaN(v) && v !== -999) ge = v;
+                }
+                const eci = exprRow.get(cl);
+                if (ei !== undefined && eci !== undefined) {
+                    const v = this.expressionData[ei * this.expressionMetadata.nCellLines + eci];
+                    if (!isNaN(v)) ex = v;
+                }
+                if (ge === null && ex === null) continue;
+                out.push([
+                    q(gene), q(cl),
+                    q(this.getCellLineName(cl) || cl),
+                    q(selection.has(cl) ? selLabel : cmpLabel),
+                    q(this.getCellLineLineage(cl) || ''),
+                    num(ge), num(ex)
+                ].join(','));
+            }
+        }
+        this.downloadFile(out.join('\n'),
+            csvName(`selection_per_cell_line_${genes.length}genes_${lines.length}CLs`), 'text/csv');
+        this.showCopyNotification?.(`Exported ${genes.length} genes across ${lines.length} cell lines`);
+    }
+
     // The numbers already on the hovered row, restated above the gene
     // description so one box answers both "what is this gene" and "what is it
     // doing in this comparison".
@@ -43957,6 +44054,9 @@ ${clone.innerHTML}
             exprRows.filter(r => Math.abs(r.delta) >= rightCut && passQ(r, rightQ)),
             this._geInspectSort.right
         ).slice(0, rightN);
+        // What is on screen right now, so an export can follow the tables
+        // rather than dumping every gene that was tested.
+        this._geInspectShown = { left: leftRows, right: rightRows };
 
         // Stash the currently displayed gene lists so the Network button
         // can pull from them directly.
@@ -48394,14 +48494,14 @@ ${clone.innerHTML}
             if (idx >= 0) {
                 Plotly.relayout(plotEl, { [`annotations[${idx}].visible`]: checked });
             } else {
-                Plotly.relayout(plotEl, { 'xaxis.title.text': checked ? this._tsOriginal.xLabel : '' });
+                Plotly.relayout(plotEl, { 'xaxis.title.text': checked ? (document.getElementById('ts_xLabelText')?.value || this._tsOriginal.xLabel) : '' });
             }
         } else if (checkboxId === 'ts_yLabelVis') {
             const idx = this._tsFindAnn(plotEl, 'ylabel');
             if (idx >= 0) {
                 Plotly.relayout(plotEl, { [`annotations[${idx}].visible`]: checked });
             } else {
-                Plotly.relayout(plotEl, { 'yaxis.title.text': checked ? this._tsOriginal.yLabel : '' });
+                Plotly.relayout(plotEl, { 'yaxis.title.text': checked ? (document.getElementById('ts_yLabelText')?.value || this._tsOriginal.yLabel) : '' });
             }
         } else if (checkboxId === 'ts_panelVis') {
             // One switch for every per-panel heading in the split views.
@@ -48444,6 +48544,17 @@ ${clone.innerHTML}
         }
         const xLabel = document.getElementById('ts_xLabelText')?.value || '';
         const yLabel = document.getElementById('ts_yLabelText')?.value || '';
+        // An axis with no label starts with its visibility switch off, since
+        // there is nothing to show. Typing one in then wrote the text into a
+        // hidden label and nothing appeared, which read as the box not
+        // working. Typing a label turns its switch on.
+        for (const [text, boxId] of [[xLabel, 'ts_xLabelVis'], [yLabel, 'ts_yLabelVis']]) {
+            const box = document.getElementById(boxId);
+            if (text && box && !box.checked) {
+                box.checked = true;
+                this._tsVisible[boxId === 'ts_xLabelVis' ? 'xLabel' : 'yLabel'] = true;
+            }
+        }
 
         const titleBold = this._tsBtnActive('ts_titleText_bold');
         const titleItalic = this._tsBtnActive('ts_titleText_italic');
