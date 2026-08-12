@@ -45441,15 +45441,15 @@ ${clone.innerHTML}
         const locList = resolved.map(r => { const l = locs ? locs[r.gene.toUpperCase()] : null; return `${r.gene} = ${l?.chr || '?'} / ${l?.band || '?'}`; }).join('; ');
         const rows = [
             '# Correlate per-gene profile',
-            `Genes,${sani(resolved.map(r => r.gene).join('; '))}`,
-            `Gene location (Chr / Cytoband),${sani(locList)}`,
-            `Cell lines,${ids.length} (${source})`,
-            `Column key,${sani('GE = CRISPR gene effect; Expr = log2 TPM+1; Hotspot = 0/1/2; Damaging = 0/1; Fusion = 0/1/2; CancerCN = curated cancer-driver focal call (tier:relativeCN) only for the ~30 curated driver genes; blank otherwise; CN = relative copy number for EVERY gene (1.0 = baseline; >1 gain; <1 loss)')}`,
-            `Data source,${sani(`DepMap ${DEPMAP_VERSION} (depmap.org); please cite Tsherniak et al. Cell 2017`)}`,
-            `Date,${new Date().toISOString().slice(0, 10)}`,
+            `# Genes,${sani(resolved.map(r => r.gene).join('; '))}`,
+            `# Gene location (Chr / Cytoband),${sani(locList)}`,
+            `# Cell lines,${ids.length} (${source})`,
+            `# Column key,${sani('GE = CRISPR gene effect; Expr = log2 TPM+1; Hotspot = 0/1/2; Damaging = 0/1; Fusion = 0/1/2; CancerCN = curated cancer-driver focal call (tier:relativeCN) only for the ~30 curated driver genes; blank otherwise; CN = relative copy number for EVERY gene (1.0 = baseline; >1 gain; <1 loss)')}`,
+            `# Data source,${sani(`DepMap ${DEPMAP_VERSION} (depmap.org); please cite Tsherniak et al. Cell 2017`)}`,
+            `# Date,${new Date().toISOString().slice(0, 10)}`,
             ''
         ];
-        rows.push(header.join(','));
+        const body = [];
         for (const cl of ids) {
             const ci = clIndexOf.get(cl);
             const cnMap = this._cnEventMapForCellLine(cl);
@@ -45474,8 +45474,27 @@ ${clone.innerHTML}
                 const cnv = this.getCnValue(r.gene, cl);
                 row.push(!isNaN(cnv) ? cnv.toFixed(3) : '');
             });
-            rows.push(row.join(','));
+            body.push(row);
         }
+
+        // A column blank on every row is noise: with a single gene that is not
+        // on the curated copy-number panel, CancerCN_<gene> came out empty for
+        // all 11 lines and read as missing data rather than as a column that
+        // does not apply. The identity columns are always kept.
+        const KEEP_FIRST = 5;
+        const dropped = [];
+        for (let c = header.length - 1; c >= KEEP_FIRST; c--) {
+            if (body.some(r => String(r[c] ?? '') !== '')) continue;
+            dropped.push(header[c]);
+            header.splice(c, 1);
+            for (const r of body) r.splice(c, 1);
+        }
+        if (dropped.length) {
+            rows.splice(rows.length - 1, 0,
+                `# Columns omitted (no value for any cell line here),${sani(dropped.reverse().join('; '))}`);
+        }
+        rows.push(header.join(','));
+        for (const r of body) rows.push(r.join(','));
 
         const date = new Date().toISOString().slice(0, 10);
         const nGenes = resolved.length;
