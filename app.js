@@ -923,8 +923,9 @@ class CorrelationExplorer {
             try { this.cnArtefact = await cnArtefactRes.json(); }
             catch (e) { this.cnArtefact = null; }
         }
-        // Lines that are another line after a drug. The pair is the whole
-        // point of those lines, and nothing said which was which.
+        // Lines derived from another line in the panel, by a drug or by a
+        // knockdown. The pair is the whole point of those lines, and nothing
+        // said which was which.
         if (derivativeRes && derivativeRes.ok) {
             try { this.derivativeLines = await derivativeRes.json(); }
             catch (e) { this.derivativeLines = null; }
@@ -31002,9 +31003,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 const inCohort = new Set(cellLines);
                 const pairs = this.derivativeLines.pairs.filter(pr => inCohort.has(pr.parent) || inCohort.has(pr.derivative));
                 if (pairs.length) {
-                    exportData.dataStructure.matchedPairs = 'Cell lines that are another line in this panel after a drug, with that parental line.';
+                    exportData.dataStructure.matchedPairs = 'Cell lines derived from another line in this panel, with that parental line. relationship distinguishes a drug-resistant line from a gene knockdown.';
                     exportData.matchedPairs = {
-                        _readMe: 'Cell lines that are another line in this panel after a drug, paired with that parental line. Treat a pair as one line in two states: a difference between them is the treatment, and a property they share is the background they both came from. A pair read as two independent cell lines is the most misleading comparison the panel offers. Note that these derived lines carry CRISPR and expression data but were NOT put through the drug screen, so do not expect before-and-after sensitivity for a pair even when drugResponse is present.',
+                        _readMe: 'Cell lines derived from another line in this panel, paired with that parental line. `relationship` says which kind: "drug-resistant" means the line was grown in the compounds in `agents` until it survived them; "gene-knockdown" means the genes in `genesTargeted` were knocked down in it, which is NOT a drug exposure. `change` states it in words. Treat a pair as one line in two states: a difference between them is what that change did, and a property they share is the background they both came from. A pair read as two independent cell lines is the most misleading comparison the panel offers. These derived lines carry CRISPR and expression data but were NOT put through the drug screen, so do not expect before-and-after sensitivity for a pair even when drugResponse is present. The relationship is read off the DepMap name, not from a curated field.',
                         pairs
                     };
                 }
@@ -34448,14 +34449,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 description: '<b>Inclusion:</b> Cellosaurus records the line as transformed by hepatitis B virus, typically hepatocellular carcinoma lines carrying integrated HBV. <b>Why it matters:</b> integration is mutagenic and the HBx protein drives a transcriptional programme of its own, so these lines carry a different biology from HBV-unrelated liver lines. <b>Caveat:</b> absence from this list means no curated record, not an HBV-negative result.'
             },
             drug_selected_pairs: {
-                label: 'Drug-selected line with its parent',
+                label: 'Derived line with its parent',
                 category: 'Matched pairs',
-                description: '<b>Inclusion:</b> both members of every matched pair in the panel, a parental line and a version of it carried through a drug until it grew in that drug (A-375 with A-375_DAB_R, and so on), plus one engineered knockdown pair. <b>Why it matters:</b> these are the same line twice, not two lines. Anything they differ in is the treatment; anything they share is the background they both came from, which is what makes them the cleanest resistance comparison the panel offers. <b>Read the other way round,</b> a pair not recognised as a pair is the most misleading thing in the panel: a striking difference between two cell lines that are the same cell line.',
+                description: '<b>Inclusion:</b> both members of every matched pair in the panel. Eight pairs are a parental line beside a version of it grown in a drug until it survived it (A-375 with A-375_DAB_R, and so on); one is a parental line beside a version with a gene knocked down in it (A549 with A549_CRAF_KD, a RAF1 knockdown, not a drug exposure). <b>Why it matters:</b> these are the same line twice, not two lines. Anything they differ in is what that change did; anything they share is the background they both came from, which is what makes them the cleanest comparison the panel offers. <b>Read the other way round,</b> a pair not recognised as a pair is the most misleading thing in the panel: a striking difference between two cell lines that are the same cell line. The relationship is read off the DepMap name, not from a curated field.',
             },
             drug_selected_derivative: {
-                label: 'Drug-selected derivative only (no parents)',
+                label: 'Derived lines only (no parents)',
                 category: 'Matched pairs',
-                description: '<b>Inclusion:</b> only the treated member of each pair, the line selected under a drug, without the parental line beside it. <b>Use it</b> to ask what these lines have in common; use the paired collection to ask what the treatment did.',
+                description: '<b>Inclusion:</b> only the derived member of each pair, without the parental line beside it. <b>Use it</b> to ask what these lines have in common; use the paired collection to ask what the change did to each one.',
             },
             problematic_identity: {
                 label: 'Identity disputed (contaminated / misidentified)',
@@ -35338,15 +35339,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const nm = (id) => esc(this.getCellLineName(id) || id);
             if (d.role === 'derivative') {
                 const p = d.pairs[0];
-                bits.push(`<p style="margin:0 0 8px;"><b>Grown from ${nm(p.parent)}</b> under `
-                    + `${esc(p.agents.join(' and '))}`
-                    + (p.relationship === 'drug-resistant' ? ' until it survived the drug' : '')
-                    + `. Treat the two as one line in two states: a difference between them is what the treatment did, `
-                    + `and something they share is the background they started from, not a finding about resistance.</p>`);
+                bits.push(`<p style="margin:0 0 8px;"><b>Derived from ${nm(p.parent)}</b>, which ${esc(p.change)}. `
+                    + `Treat the two as one line in two states: a difference between them is what that change did, `
+                    + `and something they share is the background they started from, not a finding about it.</p>`);
             } else {
-                bits.push(`<p style="margin:0 0 8px;"><b>Resistant versions of this line are in the panel:</b> `
-                    + d.pairs.map(p => `<b>${nm(p.derivative)}</b> (${esc(p.agents.join(' and '))})`).join(', ')
-                    + `. They started as these cells, so anything that differs is what the treatment did.</p>`);
+                bits.push(`<p style="margin:0 0 8px;"><b>Lines derived from this one are in the panel:</b> `
+                    + d.pairs.map(p => `<b>${nm(p.derivative)}</b> (${esc(p.changeShort || '')})`).join(', ')
+                    + `. They started as these cells, so anything that differs is what that change did.</p>`);
             }
         }
 
@@ -35401,17 +35400,25 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (!d) return '';
         const nm = (id) => this.esc(this.getCellLineName(id) || id);
         const link = (id) => `<a href="#" onclick="event.preventDefault();app.openCellLineWiki('${id}')" style="color:#2563eb;">${nm(id)}</a>`;
+        // A line grown in a drug and a line with a gene knocked down are not
+        // the same experiment, and calling both "treated" got A549_CRAF_KD
+        // described as a drug exposure when it is a RAF1 knockdown.
+        const kdOnly = d.pairs.every(p => p.relationship === 'gene-knockdown');
         let head, body;
         if (d.role === 'derivative') {
             const p = d.pairs[0];
-            head = p.relationship === 'drug-resistant' ? 'Made resistant' : 'Engineered line';
-            body = `Grown from ${link(p.parent)} under ${this.esc(p.agents.join(' and '))}`
-                + (p.relationship === 'drug-resistant' ? ' until it survived the drug.' : '.')
-                + ` Compare the two to see what the treatment changed.`;
+            head = p.relationship === 'gene-knockdown' ? 'Knockdown line'
+                : p.relationship === 'drug-resistant' ? 'Made resistant' : 'Derived line';
+            body = p.relationship === 'gene-knockdown'
+                ? `${link(p.parent)} with ${this.esc(p.genesTargeted.join(' and '))} knocked down. `
+                  + `Compare the two to see what losing it did.`
+                : `Grown from ${link(p.parent)} in ${this.esc(p.agents.join(' and '))}`
+                  + (p.relationship === 'drug-resistant' ? ' until it survived it.' : '.')
+                  + ` Compare the two to see what the drug changed.`;
         } else {
-            head = 'Has resistant versions';
-            body = `${d.pairs.map(p => `${link(p.derivative)} (${this.esc(p.agents.join(' and '))})`).join(', ')}. `
-                + `Same starting cells, so a difference is the treatment.`;
+            head = kdOnly ? 'Has a knockdown version' : 'Has derived versions';
+            body = `${d.pairs.map(p => `${link(p.derivative)} (${this.esc(p.changeShort || '')})`).join(', ')}. `
+                + `Same starting cells, so a difference is what that change did.`;
         }
         return `<div style="margin:6px 0; padding:6px 9px; background:#eff6ff; border-left:3px solid #60a5fa; border-radius:3px; font-size:11px; color:#1e3a5f;">`
             + `<b>${head}.</b> ${body}</div>`;
@@ -35422,8 +35429,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (!d) return '';
         const nm = (id) => this.getCellLineName(id) || id;
         return d.role === 'derivative'
-            ? `Grown from ${nm(d.pairs[0].parent)} under ${d.pairs[0].agents.join(' and ')}.`
-            : `Resistant versions in this panel: ${d.pairs.map(p => nm(p.derivative)).join(', ')}.`;
+            ? `${nm(d.pairs[0].parent)} that ${d.pairs[0].change}.`
+            : `Derived from this line: ${d.pairs.map(p => `${nm(p.derivative)} (${p.changeShort})`).join(', ')}.`;
     }
 
     // Compute which cell lines belong to each curated collection. Called
