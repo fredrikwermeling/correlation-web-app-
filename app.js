@@ -2418,23 +2418,18 @@ class CorrelationExplorer {
                 if (!same) Object.assign(cur, want);
                 this._oncoprintFilterKinds = this._oncoprintFilterKinds || {};
                 if (!same) Object.keys(want).forEach(g => { this._oncoprintFilterKinds[g] = this._oncoprintKind || 'hotspot'; });
-                this._gridSyncScope();
-                // Repaint whatever the picks now govern.
-                try {
-                    if (this._oncoprintContext === 'scatter') this.updateInspectPlot?.();
-                    else this.renderCellLineList?.();
-                } catch (e) {}
+                // Select, do not apply. Applying straight away narrowed the
+                // cohort under the grid, which then redrew with far fewer genes
+                // and took the choice out of the user's hands. The picks now
+                // land in the grid exactly as if its squares had been ticked,
+                // and Apply there is what carries them through.
+                try { this._oncoprintRepaint?.(); } catch (e) {}
                 // Show the pick in the grid this plot came from, so it can be
                 // adjusted there before it is applied to the list.
-                // Redraw the grid this plot came from, so the pick shows there
-                // and can be adjusted before it is carried back to the list.
-                try {
-                    if (document.getElementById('oncoprintPopup')) this.showOncoprint(this._oncoprintContext, this._oncoprintKind);
-                } catch (e) {}
                 const names = bits.map((b, i) => b === '1' ? upsetGenes[i].gene : null).filter(Boolean);
                 this.showCopyNotification?.(same
-                    ? 'Filter removed.'
-                    : `${combo.count} cell line${combo.count === 1 ? '' : 's'}: ${names.length ? names.join(' + ') + ' altered' : 'none of these genes altered'}${names.length < upsetGenes.length ? ', the rest wild-type' : ''}. Shown in the grid behind this plot.`);
+                    ? 'Selection cleared in the grid.'
+                    : `${combo.count} cell line${combo.count === 1 ? '' : 's'}: ${names.length ? names.join(' + ') + ' altered' : 'none of these genes altered'}${names.length < upsetGenes.length ? ', the rest wild-type' : ''}. Selected in the grid, press Apply there to use it.`);
                 // Just recolour: the chosen bar goes green and the rest gray,
                 // and every bar stays where it was.
                 const cols = computeBarColors();
@@ -3340,6 +3335,10 @@ class CorrelationExplorer {
         };
 
         drawOncoprint();
+        // Repaint the grid and its pending count without applying anything.
+        // The UpSet plot uses this so a bar click SELECTS in the grid, leaving
+        // Apply to the user, the same as ticking the squares by hand.
+        this._oncoprintRepaint = drawOncoprint;
 
         // Tell the user the grid runs wider than the pane, and keep it current
         // as they scroll.
@@ -4847,9 +4846,13 @@ class CorrelationExplorer {
         // dispute, so it is stated as such and kept quiet.
         if (p.settled) return 'The cancer type shown here is the corrected one. Its earlier classification was different.';
         const hedge = p.hedged ? ' This is reported as likely rather than settled.' : '';
+        // What is on record is that a problem has been REPORTED, which is not
+        // the same as this stock being wrong. Saying "this may not be the cell
+        // line its name says" reads as a verdict on the vial in the user's
+        // freezer, which nobody here is in a position to give.
         return (p.kind === 'identity'
-            ? 'This may not be the cell line its name says, so a result from it may belong to a different line.'
-            : 'The recorded cancer type for this cell line is disputed, so it may sit in the wrong tissue group.') + hedge;
+            ? 'This cell line has been reported as incorrectly labelled or cross-contaminated. Open it for the full record.'
+            : 'The recorded cancer type for this cell line has been disputed in the literature. Open it for the full record.') + hedge;
     }
 
     _problemDetail(p) {
@@ -4862,8 +4865,8 @@ class CorrelationExplorer {
         const p = this._problemFlag(cellLine);
         if (!p) return '';
         const lead = p.kind === 'identity'
-            ? 'This cell line may not be what its name says'
-            : 'The recorded cancer type for this cell line is disputed';
+            ? 'Reported as incorrectly labelled or cross-contaminated'
+            : 'Recorded cancer type has been disputed';
         return full ? `${lead}. ${this._problemDetail(p)}` : `${p.category}`;
     }
 
@@ -37711,7 +37714,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             // not put a marker beside every name.
             const prob = probFlag && !probFlag.settled ? probFlag : null;
             const probStr = prob
-                ? `<span style="color:#d97706; margin-right:3px; flex-shrink:0; cursor:help;" title="${this.esc(this._problemPlain(prob))} Open the cell line for the Cellosaurus record.">&#9888;</span>`
+                ? `<span style="color:#d97706; margin-right:3px; flex-shrink:0; cursor:help;" title="${this.esc(this._problemPlain(prob))}">&#9888;</span>`
                 : '';
             // Curated viral transformation. Marked, never used to hide a line:
             // the mark says a record exists, its absence says nothing.
