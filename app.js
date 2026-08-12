@@ -28899,6 +28899,29 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // The block an assistant is told to write. Deliberately line-based and
     // forgiving: order does not matter, unknown keys are reported rather than
     // silently dropped, and anything absent keeps its current setting.
+    // The layers `include:` can name. The parser accepts every word in
+    // `words`; the exported file documents `adds` so a reader knows what each
+    // one is worth asking for. One list, so the two cannot drift apart.
+    _aiRequestLayers() {
+        return [
+            { key: 'drugResponse', canonical: 'drug-response',
+              words: ['drug-response', 'drug response', 'drugresponse', 'prism'],
+              adds: 'Measured sensitivity to each compound as area under the dose-response curve, per cell line, with the compound target and mechanism. Lower means more easily killed. A separate screen from CRISPR covering fewer lines, and the derived lines in matchedPairs were never put through it.' },
+            { key: 'fullCopyNumber', canonical: 'copy-number',
+              words: ['copy-number', 'copy number', 'copynumber', 'cn'],
+              adds: 'Relative copy number for every gene in the matrices, not only the focal one, where 1.0 is diploid. Use it to ask whether a dependency sits in an amplification or a loss; pair it with a region in `genes:` to compare a gene against its neighbours.' },
+            { key: 'viralTransformation', canonical: 'virus',
+              words: ['virus', 'viral', 'virus-status'],
+              adds: 'Which cell lines are recorded as transformed by a virus, and by which. Absence is not evidence of absence.' },
+            { key: 'identityWarnings', canonical: 'identity',
+              words: ['identity', 'identity-warnings', 'str'],
+              adds: 'Curated flags for lines whose identity is disputed, or which are filed under the wrong disease.' },
+            { key: 'derivativePairs', canonical: 'matched-pairs',
+              words: ['matched-pairs', 'matched pairs', 'pairs', 'derivatives'],
+              adds: 'Cell lines that are another line in the panel after a drug or a gene knockdown, paired with that parental line. The cleanest before-and-after the panel offers.' }
+        ];
+    }
+
     _aiRequestSyntax() {
         return [
             'CORRELATE-REQUEST v1',
@@ -28918,13 +28941,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     _parseAIRequest(text, base) {
         const settings = JSON.parse(JSON.stringify(base || this._aiCustomDefaults()));
         const applied = [], ignored = [];
-        const LAYER_WORDS = {
-            'drug-response': 'drugResponse', 'drug response': 'drugResponse', 'drugresponse': 'drugResponse', 'prism': 'drugResponse',
-            'copy-number': 'fullCopyNumber', 'copy number': 'fullCopyNumber', 'copynumber': 'fullCopyNumber', 'cn': 'fullCopyNumber',
-            'virus': 'viralTransformation', 'viral': 'viralTransformation', 'virus-status': 'viralTransformation',
-            'identity': 'identityWarnings', 'identity-warnings': 'identityWarnings', 'str': 'identityWarnings',
-            'matched-pairs': 'derivativePairs', 'matched pairs': 'derivativePairs', 'pairs': 'derivativePairs', 'derivatives': 'derivativePairs'
-        };
+        const LAYER_WORDS = {};
+        for (const l of this._aiRequestLayers()) for (const w of l.words) LAYER_WORDS[w] = l.key;
         const nameToId = this._buildCellLineNameToIdMap ? this._buildCellLineNameToIdMap() : new Map();
         for (const raw of String(text || '').split(/\r?\n/)) {
             const line = raw.trim();
@@ -30812,13 +30830,31 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 viralTransformation: 'Cellosaurus records which cell lines were transformed by a virus (EBV, HPV16/18, HBV, KSHV, HTLV-1). Those calls are NOT in this file. They matter because viral oncoproteins override host pathways: an HPV-transformed line behaves as p53- and RB-deficient whatever its TP53 and RB1 sequence says, and an EBV-immortalised lymphoblastoid line is not a tumor line at all. The app shows the status on each cell line, and "Confirmed virus-transformed" is one of its curated collections. Note that absence of a record is not evidence a line is free of the virus.',
                 identityWarnings: 'Cellosaurus identity / contamination flags and STR profiles are NOT here. A handful of lines in DepMap are misidentified; the app shows a warning triangle on those.',
                 neverInThisApp: 'Proteomics, methylation, metabolomics and drug-combination screens are not part of this app at all. DepMap publishes some of them separately; they cannot be exported from here.',
-                howToAskForMore: {
-                    _readMe: 'Everything listed above except neverInThisApp CAN be exported, it simply was not this time. The app has a Custom export for AI dialog (Options > Other > Custom export for AI) which carries any of it, and that dialog takes a pasted request block. So if answering the question properly needs a layer this file lacks, do not stop at saying so: write the block below into your reply and tell the user to paste it into that box, which sets every control at once.',
-                    whereToFindIt: 'In the app: Options > Other > Custom export for AI. Paste into the box headed "Or paste what an assistant asked for", press Apply request, then Export.',
+                howToAskForMore: (() => {
+                    const layers = this._aiRequestLayers();
+                    const present = layers.filter(l => custom?.layers?.[l.key]).map(l => l.canonical);
+                    const tissues = [...new Set(Object.values(this.cellLineMetadata?.lineage || {}).filter(Boolean))].sort();
+                    return {
+                    _readMe: 'Everything listed above except neverInThisApp CAN be exported, it simply was not this time. The app has a Custom export for AI dialog (Options > Other > Custom export for AI) which carries any of it, and that dialog takes a pasted request block. So if answering the question properly needs something this file lacks, do not stop at saying so: write the block below into your reply, in a code fence, and tell the user to paste it into that box, which sets every control at once. Everything you need to write a valid one is in this section: the keys, what each layer adds, the tissue names that resolve, and what this file already carries so you do not ask for it twice.',
+                    whereToFindIt: 'In the app: Options > Other > Custom export for AI. Paste into the box headed "Or paste what an assistant asked for", press Apply request, then Export. The dialog reports what it understood and what it could not use.',
                     syntax: this._aiRequestSyntax(),
                     example: 'CORRELATE-REQUEST v1\ncohort: tissue:Skin\ngenes: BRAF, NRAS, MITF, SOX10\ngene-limit: all\ninclude: drug-response, matched-pairs\ndrugs: BRAF, MEK\nquestion: does BRAF dependency track measured BRAF-inhibitor sensitivity?',
-                    notes: 'One instruction per line, order does not matter, and anything you leave out is left as the dialog currently has it, so write every line that matters to you rather than relying on what a previous export set. `cohort` takes view, all, a group (tissue:Skin, disease:Melanoma, subtype:...), or a list of cell line names, and these can be mixed. `genes` takes auto or a list of symbols; naming genes is what makes room for every cell line and every extra layer at once. `include` takes any of: drug-response, copy-number, virus, identity, matched-pairs. drug-response brings the whole 89-compound panel across every indication unless a `drugs:` line names compounds, targets or mechanisms to keep. Ask only for what the question needs: a file carrying everything is slower to read and may be too large to attach.'
-                },
+                    keys: {
+                        cohort: 'view (whatever the app is showing at the time, so say what to open), all (every cell line in the release), a group written as tissue:<name> / disease:<name> / subtype:<name>, or a comma-separated list of cell line names or IDs. Groups and names can be mixed on one line. Names are matched ignoring punctuation and case, so MEC-1 and MEC1 both resolve; anything that does not resolve is reported back rather than dropped.',
+                        genes: 'auto (the app chooses), a comma-separated list of symbols, or a cytoband or chromosome arm such as 16q or 16q22, which expands to every gene there. Naming genes is the lever that matters for size: a file about a dozen genes can carry every cell line and every layer at once, where an automatic one cannot.',
+                        'gene-limit': 'a number of genes per matrix, or "all" for no limit and no variance filter. Use "all" whenever you have named the genes, since the list is already the limit.',
+                        'scan-size': 'how many rows each precomputed correlation scan carries. Raise it when you want the tail of a scan rather than its head.',
+                        include: `any of: ${layers.map(l => l.canonical).join(', ')}. Ask only for what the question needs.`,
+                        drugs: 'compound names, targets or mechanisms to keep, matched as substrings against all four. Without it, drug-response carries the whole panel across every indication, which is rarely what a targeted question needs.',
+                        question: 'the question to carry with the file, so the next reader starts where you left off.'
+                    },
+                    whatEachLayerAdds: Object.fromEntries(layers.map(l => [l.canonical, l.adds])),
+                    alreadyInThisFile: present.length ? present : 'none of the optional layers',
+                    tissueNamesThatResolve: tissues,
+                    diseaseAndSubtypeNames: 'Not listed here, there are too many. Take them from cellLineMetadata in this file: `subtype` is the disease group and `oncotreeSubtype` the finer label, and either is a legal value for disease: or subtype:. Matching ignores case and accepts a partial name, so disease:Melanoma takes cutaneous, acral and mucosal melanoma alike. Anything that resolves to no cell lines is reported back rather than silently ignored.',
+                    notes: 'One instruction per line, order does not matter, and anything you leave out is left as the dialog currently has it, so write every line that matters rather than relying on what a previous export set. Ask only for what the question needs: a file carrying everything is slower to read and may be too large to attach. If the question is about where a gene sits relative to its neighbours, name a region in `genes:` as well, since copy number is only carried for the genes in the matrices.'
+                    };
+                })(),
             },
             _instructions: [
                 'CRISPR gene effect: negative = essential for cell survival. 0 = no effect.',
@@ -30869,9 +30905,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 + 'Name cell lines and genes, not indices. If something important is missing from the file, say what you would need and how they can get it, '
                 + 'in terms of what they would click, not what the file lacks. If a caution applies (a small group, a gene measured in few lines, '
                 + 'a score that tracks copy number), state it as a plain sentence about how much weight to put on the result.\n\n'
-                + 'IF THE FILE LACKS SOMETHING THE QUESTION NEEDS: `notIncluded.howToAskForMore` gives the exact block to write '
-                + 'and where to paste it. Put that block in your reply, in a code fence, and say in one sentence what it will add and why. '
-                + 'Ask only for what the question needs. Do not do this when the file already answers the question.\n\n'
+                + 'IF THE FILE LACKS SOMETHING THE QUESTION NEEDS: `notIncluded.howToAskForMore` carries the request syntax, what each layer adds, '
+                + 'the tissue names that resolve, what this file already has, and where to paste the result. Everything needed to write a valid '
+                + 'request is there, so write one rather than describing what you would want: put the block in your reply, in a code fence, and say '
+                + 'in one sentence what it will add and why. Name only what the question needs. Do not do this when the file already answers it.\n\n'
                 + 'WHEN RECOMMENDING WHICH CELL LINES TO WORK WITH: do not rank them on the raw score alone. Check whether the gene also stands out '
                 + 'against everything else measured in that same line. A line whose raw number matches the others but which ranks unremarkably '
                 + 'within its own screen is the weaker choice, and saying so is more useful than a bare ordering.'
