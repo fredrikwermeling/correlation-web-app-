@@ -6730,7 +6730,8 @@ class CorrelationExplorer {
             correlations: 'Correlation analysis, input gene set',
             clusters: 'Cluster network, correlation network',
             exprCorrelates: 'Expression correlates, target gene',
-            wiki: 'Cell line wiki, one cell line'
+            wiki: 'Cell line wiki, one cell line',
+            clb: 'Cell Line Browser, the cell lines listed'
         };
         // What each source adds on top of the shared matrices, so the dialog
         // names the actual contents rather than "source-specific extras".
@@ -6743,7 +6744,8 @@ class CorrelationExplorer {
             correlations: 'the correlation table for your input gene set, with r, slope and n per pair',
             clusters: 'the network edges above the cutoff, the cluster assignments, and the gene-effect values for every gene in the network',
             exprCorrelates: 'the expression-versus-gene-effect correlations for the target gene',
-            wiki: 'every section of the wiki for this cell line, including the alterations, pathway read-out, dependencies and drug response'
+            wiki: 'every section of the wiki for this cell line, including the alterations, pathway read-out, dependencies and drug response',
+            clb: 'the cell lines the browser is currently showing, with their alterations, signatures and gene-effect data'
         };
 
         const aiShowDialog = (source) => {
@@ -6794,6 +6796,7 @@ class CorrelationExplorer {
         });
 
         // Wire all eight source entry points to the same dialog.
+        document.getElementById('clbExportAIBtn')?.addEventListener('click', () => aiShowDialog('clb'));
         document.getElementById('geAnalyzeWithAI')?.addEventListener('click', () => aiShowDialog('ge'));
         document.getElementById('scatterAnalyzeWithAI')?.addEventListener('click', () => aiShowDialog('scatter'));
         document.getElementById('mutAnalyzeWithAI')?.addEventListener('click', () => aiShowDialog('mutation'));
@@ -26279,10 +26282,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         document.getElementById('geHotspotFilter').value = '';
         document.getElementById('geFusionFilter').value = '';
         const geCnClear = document.getElementById('geCnFilter'); if (geCnClear) geCnClear.value = '';
-        // Grid picks are filters too.
-        this._oncoprintFilters = {};
-        this._activeOncoprintFilters = null;
-        this._oncoprintSyncFilters?.();
+        // Grid picks are filters too, but the map holding them is SHARED with
+        // the cell line browser and the analysis. Clearing it here wiped picks
+        // the user had made elsewhere: clicking a gene in the browser's inspect
+        // opens this popout, which reset them, and they were gone on the way
+        // back. Only picks made in this popout are this popout's to clear.
+        if (this._gridFilterOrigin !== 'clb') {
+            this._oncoprintFilters = {};
+            this._activeOncoprintFilters = null;
+            this._oncoprintSyncFilters?.();
+        }
         document.getElementById('gePvalueFilter').checked = false;
         this.clearGEGates();
         this._indivGeneOrder = null;
@@ -28540,6 +28549,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (source === 'selection') {
             return this._geInspectResults?.selected || [];
         }
+        if (source === 'clb') {
+            const ticked = [...(this._clbSelectedCellLines || [])];
+            return ticked.length ? ticked : [...(this._clbVisibleCellLines || [])];
+        }
 
         if (source === 'ge') {
             // Mutation inspect mode, currentGeneEffectData is already filter-aware
@@ -28999,6 +29012,23 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 annotations.sort((a, b) => a.cluster - b.cluster);
                 if (annotations.length) extras.clusterAnnotations = annotations;
             }
+        } else if (source === 'clb') {
+            const ticked = (this._clbSelectedCellLines?.size || 0);
+            const bits = [];
+            const v = (id) => document.getElementById(id)?.value || '';
+            if (v('clbTissueFilter')) bits.push(v('clbTissueFilter'));
+            if (v('clbSubtypeFilter')) bits.push(v('clbSubtypeFilter'));
+            if (v('clbOncotreeFilter')) bits.push(v('clbOncotreeFilter'));
+            for (const f of (this._activeOncoprintFilters || [])) bits.push(`${f.gene} ${this._gridStateWord(f.state)}`);
+            context = {
+                type: 'cell_line_browser',
+                selection: ticked ? `${ticked} cell lines ticked` : 'everything the filters leave showing',
+                filters: bits.join(' \u00b7 ') || 'none',
+                plotType: 'cell_line_list', stratification: 'none'
+            };
+            description = ticked
+                ? `${ticked} cell lines picked out in the Cell Line Browser.`
+                : `The cell lines the Cell Line Browser is showing${bits.length ? ` (${bits.join(' \u00b7 ')})` : ''}.`;
         } else if (source === 'wiki') {
             const cl = this._wikiCellLineId;
             const name = cl ? (this.getCellLineName(cl) || cl) : '?';
