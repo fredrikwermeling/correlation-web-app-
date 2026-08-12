@@ -28864,6 +28864,21 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         };
     }
 
+    // Every gene whose cytoband starts with the given band or arm, so "16q"
+    // takes the whole arm and "16q22" just that band. Needs gene_locations,
+    // which is loaded on demand by the copy-number work.
+    _genesInBand(band) {
+        const locs = this.geneLocations;
+        if (!locs) return [];
+        const want = String(band).toUpperCase();
+        const out = [];
+        for (const [gene, info] of Object.entries(locs)) {
+            const b = String(info?.band || '').toUpperCase();
+            if (b && (b === want || b.startsWith(want))) out.push(gene);
+        }
+        return out;
+    }
+
     // Cell lines belonging to a named tissue / subtype / disease, matched
     // case-insensitively and by prefix, so "melanoma" finds "Melanoma" and
     // "Cutaneous Melanoma" alike.
@@ -28888,7 +28903,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         return [
             'CORRELATE-REQUEST v1',
             'cohort: view | all | tissue:<name> | disease:<name> | <comma-separated cell line names or IDs>',
-            'genes: auto | <comma-separated gene symbols>',
+            'genes: auto | <comma-separated gene symbols> | a cytoband or arm such as 16q or 16q22',
             'gene-limit: <number of genes per matrix, or "all">',
             'scan-size: <how many rows per precomputed correlation scan>',
             'include: drug-response, copy-number, virus, identity, matched-pairs',
@@ -28951,12 +28966,31 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             } else if (key === 'genes') {
                 if (/^(auto|all)$/i.test(val)) { settings.genes = 'auto'; applied.push('genes: chosen automatically'); }
                 else {
-                    const gs = items().map(g => g.toUpperCase());
+                    // A cytoband or chromosome arm names its genes. Asking
+                    // whether one gene's copy number stands out against the
+                    // rest of 16q needs the rest of 16q, and listing 384 gene
+                    // symbols by hand is not a request anyone would write.
+                    const gs = [];
+                    for (const t of items()) {
+                        const band = t.match(/^(?:chr)?(\d{1,2}|X|Y)([pq](?:\d+(?:\.\d+)?)?)$/i);
+                        if (band) {
+                            const want = (band[1] + band[2]).toUpperCase();
+                            const inBand = this._genesInBand(want);
+                            if (inBand.length) {
+                                gs.push(...inBand);
+                                applied.push(`genes: ${inBand.length} on ${want}`);
+                                continue;
+                            }
+                        }
+                        gs.push(t.toUpperCase());
+                    }
                     const known = gs.filter(g => this.geneIndex?.has(g) || this.expressionGeneIndex?.has(g));
                     const unknown = gs.filter(g => !known.includes(g));
                     if (known.length) {
-                        settings.genes = 'list'; settings.geneList = known;
-                        applied.push(`genes: ${known.length} named gene${known.length === 1 ? '' : 's'}`);
+                        settings.genes = 'list'; settings.geneList = [...new Set(known)];
+                        if (!applied.some(x => x.startsWith('genes: '))) {
+                            applied.push(`genes: ${settings.geneList.length} named gene${settings.geneList.length === 1 ? '' : 's'}`);
+                        }
                     }
                     if (unknown.length) ignored.push(`genes not found: ${unknown.slice(0, 8).join(', ')}`);
                 }
@@ -29013,9 +29047,15 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 this._syncCustomAIDialog();
                 this._setCaiNote('Back to the standard settings.');
             });
-            document.getElementById('caiApplyRequest')?.addEventListener('click', () => {
+            document.getElementById('caiApplyRequest')?.addEventListener('click', async () => {
                 const text = document.getElementById('caiRequest')?.value || '';
                 if (!text.trim()) { this._setCaiNote('Nothing to apply, the box is empty.'); return; }
+                // A band in the request resolves against the location table,
+                // which is otherwise only fetched when copy number is used.
+                if (/\b(?:chr)?(?:\d{1,2}|[XY])[pq]\d*/i.test(text)) {
+                    this._setCaiNote('Looking up the genes in that region\u2026');
+                    try { await this.loadGeneLocations(); } catch (e) { /* falls back to plain symbols */ }
+                }
                 const { settings, applied, ignored } = this._parseAIRequest(text, this._readCustomAIDialog());
                 this._aiCustom = settings;
                 this._syncCustomAIDialog();
@@ -29026,13 +29066,33 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             });
             document.getElementById('caiExport')?.addEventListener('click', async () => {
                 this._aiCustom = this._readCustomAIDialog();
-                dlg.style.display = 'none';
+                const c = this._aiCustom;
+                // Check the cohort BEFORE closing anything. Closing first and
+                // letting the exporter bail wrote its complaint into the other
+                // dialog's status line, which is not on screen, so a request
+                // that could not work simply produced nothing.
+                const n = c.cohort === 'all' ? (this.metadata?.cellLines?.length || 0)
+                    : c.cohort === 'list' ? (c.cohortList || []).length
+                    : this._getAICellLines(this._aiExportSource || 'ge').length;
+                if (!n) {
+                    this._setCaiNote(c.cohort === 'view'
+                        ? 'Nothing is open, so "what the current view shows" is empty. Choose "Every cell line", name some, or open a view first.'
+                        : 'That leaves no cell lines. Check the names, or choose "Every cell line".');
+                    return;
+                }
                 const q = document.getElementById('aiQuestion');
-                if (q) q.value = this._aiCustom.question || '';
+                if (q) q.value = c.question || '';
+                const btn = document.getElementById('caiExport');
+                if (btn) { btn.disabled = true; btn.textContent = 'Exporting\u2026'; }
                 try {
-                    await this.exportFullAIAnalysis({ custom: this._aiCustom });
+                    // The dialog stays up so its status line can report
+                    // progress, and so the settings are still there to adjust
+                    // if the file is not what was wanted.
+                    const ok = await this.exportFullAIAnalysis({ custom: c });
+                    if (ok !== false) setTimeout(() => { dlg.style.display = 'none'; }, 1200);
                 } finally {
-                    this._aiCustom.active = false;
+                    c.active = false;
+                    if (btn) { btn.disabled = false; btn.textContent = 'Export'; }
                 }
             });
         }
@@ -29060,9 +29120,17 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         check('caiIdentity', c.layers.identityWarnings);
         check('caiPairs', c.layers.derivativePairs);
         set('caiDrugs', (c.drugFilter || []).join(', '));
+        const view = this._getAICellLines(this._aiExportSource || 'ge').length;
+        // Put the count on the option itself, so an empty view is visible
+        // before pressing Export rather than after.
+        const viewRadio = document.querySelector('input[name="caiCohort"][value="view"]');
+        if (viewRadio?.parentElement) {
+            viewRadio.parentElement.lastChild.textContent = view
+                ? ` What the current view shows (${view.toLocaleString()})`
+                : ' What the current view shows (nothing open)';
+        }
         const status = document.getElementById('caiStatus');
         if (status) {
-            const view = this._getAICellLines(this._aiExportSource || 'ge').length;
             status.textContent = c.cohort === 'all'
                 ? `${(this.metadata?.cellLines?.length || 0).toLocaleString()} cell lines`
                 : c.cohort === 'list'
@@ -29108,7 +29176,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Settings from the custom dialog, when it was the one that asked.
         const custom = opts.custom && opts.custom.active ? opts.custom : null;
         const statusEl = document.getElementById('aiExportStatus');
-        const setStatus = (msg) => { if (statusEl) statusEl.textContent = msg; };
+        const setStatus = (msg) => {
+            if (statusEl) statusEl.textContent = msg;
+            // The custom dialog drives this too, and its own status line is
+            // the only one on screen then: the standard dialog is closed, so
+            // progress and, worse, "No cell lines to export" went nowhere.
+            if (custom) {
+                const c = document.getElementById('caiStatus');
+                if (c) c.textContent = msg;
+            }
+        };
         setStatus('Collecting data...');
 
         // Normalize source aliases (Phase 3, same exporter for all 8 sources).
@@ -29121,7 +29198,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (custom.cohort === 'all') allCLs = (this.metadata?.cellLines || []).slice();
             else if (custom.cohort === 'list' && custom.cohortList?.length) allCLs = [...new Set(custom.cohortList)];
         }
-        if (!allCLs.length) { setStatus('No cell lines to export.'); return; }
+        if (!allCLs.length) {
+            setStatus(custom && custom.cohort === 'view'
+                ? 'No cell lines: nothing is open, so "what the current view shows" is empty. Pick "Every cell line", name some, or open a view first.'
+                : 'No cell lines to export.');
+            return false;
+        }
 
         // Phase 1, no hard cell-line cap. The new tiers keep the file
         // shippable up to ~1500 cell lines by tightening the matrix filters,
@@ -31175,6 +31257,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (topCorrelates) infoParts.push(`${topCorrelates.length} correlates`);
         infoParts.push(`${sizeMB} MB`);
         setStatus(`Exported: ${infoParts.join(', ')}`);
+        return true;
     }
 
     downloadGECellLineCSV() {
