@@ -6766,9 +6766,13 @@ class CorrelationExplorer {
             this.filterGETable(e.target.value);
         });
         document.getElementById('geExpandFullBtn')?.addEventListener('click', () => {
-            // Un-condense the gene-effect popout in place (keeps it on top of the
-            // wiki) so the filters + stats table become visible.
-            document.getElementById('geneEffectModal').classList.remove('ge-condensed');
+            // Toggle, not a one-way door. It used to un-condense and then hide
+            // itself, so the chart-only view it was opened in could not be got
+            // back without closing the popout and clicking the gene again.
+            const m = document.getElementById('geneEffectModal');
+            const nowCondensed = !m.classList.contains('ge-condensed');
+            m.classList.toggle('ge-condensed', nowCondensed);
+            this._syncGeExpandBtn();
             this.switchGeneEffectView(this.currentGEView || 'tissue');
         });
         document.getElementById('downloadGeneEffectPNG')?.addEventListener('click', () => this.downloadGeneEffectChartPNG());
@@ -25700,12 +25704,28 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         });
         const condensed = (opts && opts.condensed != null) ? opts.condensed : (topZ >= 1200);
         geModalEl.classList.toggle('ge-condensed', condensed);
+        // Opened over something else, so there is a compact view worth going
+        // back to and the button stays available in both states.
+        geModalEl.dataset.canCondense = condensed ? '1' : '0';
+        this._syncGeExpandBtn();
         geModalEl.style.zIndex = condensed ? String(topZ + 10) : '1200';
         geModalEl.style.display = 'flex';
         this._updateGeOncoprintLabel();
 
         // Render the selected view
         this.switchGeneEffectView(view);
+    }
+
+    // Keep the expand / compact button saying what it will do next.
+    _syncGeExpandBtn() {
+        const btn = document.getElementById('geExpandFullBtn');
+        const m = document.getElementById('geneEffectModal');
+        if (!btn || !m) return;
+        const isCondensed = m.classList.contains('ge-condensed');
+        btn.innerHTML = isCondensed ? '&#10530; Full view' : '&#10529; Chart only';
+        btn.title = isCondensed
+            ? 'Show the full analysis: filters and the statistics table'
+            : 'Back to the chart on its own, without the filters and table';
     }
 
     switchGeneEffectView(view) {
@@ -43895,6 +43915,11 @@ ${clone.innerHTML}
                     <option value="welch">Welch's t (means)</option>
                     <option value="rank">Rank sum (order)</option>
                 </select>
+                <span style="display:inline-flex; align-items:center; gap:5px; margin-left:4px;">
+                    <label for="geInspectSearch" style="font-weight:600; color:#374151;">Find gene</label>
+                    <input type="text" id="geInspectSearch" placeholder="e.g. BRAF, SOX10" title="Show these genes in both tables whatever the cutoffs are set to. Separate several with commas or spaces." style="width:150px; font-size:11px; padding:2px 6px; border:1px solid #d1d5db; border-radius:3px;">
+                    <button type="button" id="geInspectSearchClear" title="Clear" style="border:1px solid #d1d5db; border-radius:3px; background:#f9fafb; cursor:pointer; padding:1px 6px; line-height:1.4; display:none;">&times;</button>
+                </span>
                 <span id="geInspectStatNote" style="color:#6b7280;"></span>
             </div>
             <div style="display:flex; gap:18px; flex-wrap:wrap; align-items:flex-start;">
@@ -43938,6 +43963,19 @@ ${clone.innerHTML}
         document.getElementById('geRightNetwork')?.addEventListener('click', () => this._launchGENetwork('right'));
         document.getElementById('geLeftEnrichr')?.addEventListener('click', (e) => this._launchGEEnrichr('left', e.currentTarget));
         document.getElementById('geRightEnrichr')?.addEventListener('click', (e) => this._launchGEEnrichr('right', e.currentTarget));
+        const searchEl = document.getElementById('geInspectSearch');
+        if (searchEl) {
+            searchEl.addEventListener('input', () => {
+                const clr = document.getElementById('geInspectSearchClear');
+                if (clr) clr.style.display = searchEl.value.trim() ? '' : 'none';
+                renderSides();
+            });
+            document.getElementById('geInspectSearchClear')?.addEventListener('click', () => {
+                searchEl.value = '';
+                document.getElementById('geInspectSearchClear').style.display = 'none';
+                renderSides();
+            });
+        }
         const testSel = document.getElementById('geInspectTest');
         if (testSel) {
             testSel.value = this._geInspectTest === 'rank' ? 'rank' : 'welch';
@@ -44725,14 +44763,27 @@ ${clone.innerHTML}
                             : 'Needs at least three cell lines to test';
         });
         const passQ = (r, cut) => !anyQ || cut >= 1 || (r.q != null && r.q <= cut);
-        const leftRows = applySort(
-            rows.filter(r => Math.abs(r.delta) >= leftCut && passQ(r, leftQ)),
-            this._geInspectSort.left
-        ).slice(0, leftN);
-        const rightRows = applySort(
-            exprRows.filter(r => Math.abs(r.delta) >= rightCut && passQ(r, rightQ)),
-            this._geInspectSort.right
-        ).slice(0, rightN);
+
+        // Looking up a named gene is a different question from browsing the
+        // strongest differences, and a search that returned nothing because
+        // the gene sits under the cutoffs would be useless: the cutoffs are
+        // ignored while searching, and the hint says so.
+        const terms = (document.getElementById('geInspectSearch')?.value || '')
+            .split(/[\s,;]+/).map(t => t.trim().toUpperCase()).filter(Boolean);
+        const matches = (r) => terms.some(t => r.gene.toUpperCase().includes(t));
+
+        const leftRows = terms.length
+            ? applySort(rows.filter(matches), this._geInspectSort.left).slice(0, leftN)
+            : applySort(
+                rows.filter(r => Math.abs(r.delta) >= leftCut && passQ(r, leftQ)),
+                this._geInspectSort.left
+            ).slice(0, leftN);
+        const rightRows = terms.length
+            ? applySort(exprRows.filter(matches), this._geInspectSort.right).slice(0, rightN)
+            : applySort(
+                exprRows.filter(r => Math.abs(r.delta) >= rightCut && passQ(r, rightQ)),
+                this._geInspectSort.right
+            ).slice(0, rightN);
         // What is on screen right now, so an export can follow the tables
         // rather than dumping every gene that was tested.
         this._geInspectShown = { left: leftRows, right: rightRows };
@@ -44743,6 +44794,11 @@ ${clone.innerHTML}
         this._geInspectResults.rightDisplayed = rightRows;
 
         const hint = (shown, cut, q, all, side) => {
+            if (terms.length) {
+                return shown
+                    ? `${shown} of ${all.length.toLocaleString()} genes match ${terms.join(', ')}. The cutoffs above are ignored while you are searching, so a gene below them still shows.`
+                    : `Nothing here matches ${terms.join(', ')}. Genes measured in too few of these cell lines were never tested, so they cannot appear.`;
+            }
             let t = `${shown} of ${all.length.toLocaleString()} genes shown (|Δ| ≥ ${cut.toFixed(2)}`
                   + (anyQ && q < 1 ? `, q ≤ ${q}` : '') + `). Click a column to sort.`;
             // Two cutoffs can each pass plenty while their overlap is empty,

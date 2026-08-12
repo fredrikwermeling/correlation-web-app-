@@ -2066,7 +2066,11 @@
         #geneEffectModal.ge-condensed #geInlineCompareTable,
         #geneEffectModal.ge-condensed #geGateCompareSection { display: none !important; }
         #geneEffectModal.ge-condensed #geChartContainer { flex: 1 1 100% !important; }
-        #geneEffectModal:not(.ge-condensed) #geExpandFullBtn { display: none; }
+        /* The button is a toggle wherever a compact view makes sense, which is
+           when this popout was opened over another modal (the browser, the
+           wiki). On a top-level popout there is nothing to be compact for, so
+           it stays hidden once expanded. */
+        #geneEffectModal:not(.ge-condensed):not([data-can-condense="1"]) #geExpandFullBtn { display: none; }
         /* ---- Phone / narrow-screen scaling (<=640px) ----
            Optimised for the popouts where the analysis happens (Cell Line
            Browser, Gene Effect, Correlation Analysis, scatter Inspect): give
@@ -3678,7 +3682,7 @@
                     <span style="display:inline-flex; align-items:center; gap:6px; white-space:nowrap;"><span style="font-size: 12px; color: #6b7280;">Export Chart:</span>
                     <button class="btn btn-outline btn-sm mobile-hide" id="downloadGeneEffectPNG" title="Export the chart, choose PNG / SVG / TIFF / PDF / PowerPoint in the popup">Export image...</button>
                     <button class="btn btn-outline btn-sm mobile-hide" onclick="app.copyPlotToClipboard('geneEffectPlot', 'Chart')" title="Copy this as an image to the clipboard, ready to paste into an email or slide">Copy</button>
-                    <button class="btn btn-sm btn-outline" id="geExpandFullBtn" title="Show the full analysis (filters + statistics table)" style="font-size:11px;">⤢ Full view</button>
+                    <button class="btn btn-sm btn-outline" id="geExpandFullBtn" title="Show the full analysis (filters + statistics table)" style="font-size:11px;">&#10530; Full view</button>
                     </span>
                     <span style="display:inline-flex; align-items:center; gap:6px; white-space:nowrap; margin-left: 10px;"><span style="font-size: 12px; color: #6b7280;">Export CSV:</span>
                     <button class="btn btn-outline btn-sm" id="downloadGETableCSV" title="Download the table above as a CSV file">By Group</button>
@@ -4770,6 +4774,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v87_64"></script>
+    <script src="app.js?v=v87_65"></script>
 </body>
 </html>
