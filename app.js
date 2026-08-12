@@ -26457,6 +26457,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
     _getGEFilterDescription() {
         const parts = [];
+        // In the two-sided comparison none of these are applied (the two
+        // groups are the cohort), so listing them would name filters that are
+        // not doing anything. The subtitle read "n=50 | BRAF Mut" over a chart
+        // where BRAF Mut had been ignored.
+        if (this._geCompareMode && this._geCompareSides) return '';
         const tissue = document.getElementById('geTissueFilter')?.value;
         const subtype = document.getElementById('geSubtypeFilter')?.value;
         const hotspot = document.getElementById('geHotspotFilter')?.value;
@@ -26486,11 +26491,18 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     getGETissueFilteredData() {
         if (!this.currentGeneEffect) return [];
         let data = this.currentGeneEffect.data;
-        // Comparing the two sides means those cell lines and no others; the
-        // lineage controls below would otherwise cut across both groups.
+        // Comparing the two sides means those cell lines and NO OTHERS, and
+        // nothing further is applied on top. The set was already being
+        // restricted here, but every filter below then ran as well, and a
+        // filter inherited from the cell line browser silently gutted one
+        // side: a browser filtered to BRAF-mutant lines left the 45 selected
+        // untouched (they are all mutant, that is what selected them) and cut
+        // the 30 they were compared against down to the 5 that happened to be
+        // mutant too. The chart then disagreed with the table it was opened
+        // from, which is how this was noticed.
         if (this._geCompareMode && this._geCompareSides) {
             const keep = new Set([...this._geCompareSides.selection, ...this._geCompareSides.comparison]);
-            data = data.filter(d => keep.has(d.cellLineId));
+            return data.filter(d => keep.has(d.cellLineId));
         }
         const tissueFilter = document.getElementById('geTissueFilter')?.value;
         if (tissueFilter) {
