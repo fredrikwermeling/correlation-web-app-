@@ -23636,8 +23636,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (meta.graphType === 'expr_correlate' && meta.targetGene) {
             if (meta.gene && meta.targetGene) {
                 this.openInspect({ gene1: meta.targetGene, gene2: meta.gene, correlation: null });
+                return;
             }
-            return;
+            // Missing the partner gene: fall through to the summary below
+            // rather than returning here, which looked like nothing happened.
         }
 
         // Wiki screenshot → reopen the cell line wiki for that line.
@@ -29067,6 +29069,32 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 annotations.sort((a, b) => a.cluster - b.cluster);
                 if (annotations.length) extras.clusterAnnotations = annotations;
             }
+        } else if (source === 'selection') {
+            const sel = this._geInspectResults?.selected || [];
+            const cov = this._geInspectResults?.geCoverage;
+            const sides = this._geInspectSides;
+            context = {
+                type: 'cell_line_selection',
+                nSelected: sel.length,
+                comparedWith: sides?.cmpLabel || 'all other cell lines',
+                nCompared: cov?.othNominal ?? null,
+                screenedSelected: cov?.selMeasured ?? null,
+                screenedCompared: cov?.othMeasured ?? null,
+                plotType: 'selection_vs_rest', stratification: 'none'
+            };
+            description = `${sel.length} cell lines picked out in the Cell Line Browser, compared with ${sides?.cmpLabel || 'all other cell lines'}.`;
+            const rows = this._geInspectResults?.rows || [];
+            if (rows.length) {
+                extras = extras || {};
+                extras.selectionDifferential = rows
+                    .slice()
+                    .sort((x, y) => Math.abs(y.delta) - Math.abs(x.delta))
+                    .slice(0, 200)
+                    .map(r => ({ gene: r.gene, meanSelection: parseFloat(r.meanSel.toFixed(3)),
+                        meanCompared: parseFloat(r.meanOther.toFixed(3)),
+                        difference: parseFloat(r.delta.toFixed(3)),
+                        nSelection: r.nSel, nCompared: r.nOther, q: r.q ?? null }));
+            }
         } else if (source === 'clb') {
             const ticked = (this._clbSelectedCellLines?.size || 0);
             const bits = [];
@@ -29124,6 +29152,17 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                         pValue: r.p
                     }))
                 };
+            }
+        }
+        // Every source above sets `context`, except any that falls through the
+        // chain, which then threw here and the export died with a message
+        // about `description`. A view with no branch of its own still deserves
+        // a file, so it gets a plain one naming what it is.
+        if (!context) {
+            context = { type: source || 'unknown', plotType: 'unspecified', stratification: 'none' };
+            if (!description) {
+                const n = cellLines.length;
+                description = `${n} cell line${n === 1 ? '' : 's'} from the ${source || 'current'} view.`;
             }
         }
         context.description = description;
