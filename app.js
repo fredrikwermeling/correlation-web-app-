@@ -28811,8 +28811,26 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 identityWarnings: false,
                 derivativePairs: false
             },
+            drugFilter: [],
             question: ''
         };
+    }
+
+    // Cell lines belonging to a named tissue / subtype / disease, matched
+    // case-insensitively and by prefix, so "melanoma" finds "Melanoma" and
+    // "Cutaneous Melanoma" alike.
+    _cellLinesInGroup(kind, want) {
+        const md = this.cellLineMetadata;
+        if (!md) return [];
+        const field = kind === 'tissue' || kind === 'lineage' ? md.lineage
+            : kind === 'subtype' ? (md.subtype || md.primaryDisease)
+            : (md.oncotreeSubtype || md.primaryDisease);
+        if (!field) return [];
+        const w = String(want).toLowerCase();
+        return (this.metadata?.cellLines || []).filter(cl => {
+            const v = String(field[cl] || '').toLowerCase();
+            return v === w || v.includes(w);
+        });
     }
 
     // The block an assistant is told to write. Deliberately line-based and
@@ -28821,11 +28839,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     _aiRequestSyntax() {
         return [
             'CORRELATE-REQUEST v1',
-            'cohort: view | all | <comma-separated cell line names or IDs>',
+            'cohort: view | all | tissue:<name> | disease:<name> | <comma-separated cell line names or IDs>',
             'genes: auto | <comma-separated gene symbols>',
             'gene-limit: <number of genes per matrix, or "all">',
             'scan-size: <how many rows per precomputed correlation scan>',
             'include: drug-response, copy-number, virus, identity, matched-pairs',
+            'drugs: <compound names or targets to keep, e.g. BRAF; omit for all 89>',
             'question: <the question to carry with the file>'
         ].join('\n');
     }
@@ -28856,14 +28875,28 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 if (/^view$/i.test(val) || /^current$/i.test(val)) { settings.cohort = 'view'; applied.push('cohort: the current view'); }
                 else if (/^all$/i.test(val)) { settings.cohort = 'all'; applied.push('cohort: every cell line'); }
                 else {
-                    const ids = [], missed = [];
+                    const ids = [], missed = [], groupsNamed = [];
                     for (const t of items()) {
+                        // tissue:Skin / disease:Melanoma / subtype:... resolve to
+                        // a group. Naming a group was the one thing the syntax
+                        // could not express, so a reader wanting "skin lines
+                        // only" had to enumerate all 75 by hand.
+                        const grp = t.match(/^(tissue|lineage|subtype|disease)\s*[:=]\s*(.+)$/i);
+                        if (grp) {
+                            const kind = grp[1].toLowerCase(), want = grp[2].trim().toLowerCase();
+                            const got = this._cellLinesInGroup(kind, want);
+                            if (got.length) { ids.push(...got); groupsNamed.push(`${got.length} ${grp[2].trim()} lines`); }
+                            else missed.push(t);
+                            continue;
+                        }
                         const id = /^ACH-\d+$/i.test(t) ? t.toUpperCase() : nameToId.get(t.toUpperCase());
                         if (id) ids.push(id); else missed.push(t);
                     }
                     if (ids.length) {
-                        settings.cohort = 'list'; settings.cohortList = ids;
-                        applied.push(`cohort: ${ids.length} named cell line${ids.length === 1 ? '' : 's'}`);
+                        settings.cohort = 'list'; settings.cohortList = [...new Set(ids)];
+                        applied.push('cohort: ' + (groupsNamed.length
+                            ? groupsNamed.join(' plus ')
+                            : `${settings.cohortList.length} named cell line${settings.cohortList.length === 1 ? '' : 's'}`));
                     }
                     if (missed.length) ignored.push(`cell lines not found: ${missed.slice(0, 8).join(', ')}`);
                 }
@@ -28901,6 +28934,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     const layer = LAYER_WORDS[t.toLowerCase()];
                     if (layer) { settings.layers[layer] = false; applied.push(`exclude: ${t}`); }
                     else ignored.push(`unknown layer: ${t}`);
+                }
+            } else if (key === 'drugs' || key === 'compounds') {
+                settings.drugFilter = items();
+                if (settings.drugFilter.length) {
+                    settings.layers.drugResponse = true;
+                    applied.push(`drugs: only those matching ${settings.drugFilter.join(', ')}`);
                 }
             } else if (key === 'question') {
                 settings.question = val; applied.push('question carried over');
@@ -28972,6 +29011,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         check('caiVirus', c.layers.viralTransformation);
         check('caiIdentity', c.layers.identityWarnings);
         check('caiPairs', c.layers.derivativePairs);
+        set('caiDrugs', (c.drugFilter || []).join(', '));
         const status = document.getElementById('caiStatus');
         if (status) {
             const view = this._getAICellLines(this._aiExportSource || 'ge').length;
@@ -28988,9 +29028,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const checked = (id) => !!document.getElementById(id)?.checked;
         const pick = (name) => document.querySelector(`input[name="${name}"]:checked`)?.value;
         const nameToId = this._buildCellLineNameToIdMap ? this._buildCellLineNameToIdMap() : new Map();
-        const cohortIds = val('caiCohortList').split(/[\n,;\t]+/).map(x => x.trim()).filter(Boolean)
-            .map(t => /^ACH-\d+$/i.test(t) ? t.toUpperCase() : nameToId.get(t.toUpperCase()))
-            .filter(Boolean);
+        const cohortIds = [];
+        for (const t of val('caiCohortList').split(/[\n,;\t]+/).map(x => x.trim()).filter(Boolean)) {
+            const grp = t.match(/^(tissue|lineage|subtype|disease)\s*[:=]\s*(.+)$/i);
+            if (grp) { cohortIds.push(...this._cellLinesInGroup(grp[1].toLowerCase(), grp[2].trim())); continue; }
+            const id = /^ACH-\d+$/i.test(t) ? t.toUpperCase() : nameToId.get(t.toUpperCase());
+            if (id) cohortIds.push(id);
+        }
         const capRaw = val('caiGeneCap').trim();
         return {
             active: true,
@@ -29007,6 +29051,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 identityWarnings: checked('caiIdentity'),
                 derivativePairs: checked('caiPairs')
             },
+            drugFilter: val('caiDrugs').split(/[\n,;\t]+/).map(x => x.trim()).filter(Boolean),
             question: val('caiQuestion').trim()
         };
     }
@@ -29026,7 +29071,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         let allCLs = this._getAICellLines(source);
         if (custom) {
             if (custom.cohort === 'all') allCLs = (this.metadata?.cellLines || []).slice();
-            else if (custom.cohort === 'list' && custom.cohortList?.length) allCLs = custom.cohortList.slice();
+            else if (custom.cohort === 'list' && custom.cohortList?.length) allCLs = [...new Set(custom.cohortList)];
         }
         if (!allCLs.length) { setStatus('No cell lines to export.'); return; }
 
@@ -29074,7 +29119,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (custom && custom.geneCap !== null && custom.geneCap !== undefined) {
             if (custom.geneCap === 0) {
                 geCutoff = 0; exprMeanMin = -Infinity; exprSdMin = -Infinity; geneCap = Infinity;
-                tierLabel = 'chosen in the custom export: every gene, no variance filter and no cap';
+                tierLabel = 'chosen in the custom export: no variance filter and no cap (any narrowing of the matrices comes from a named gene list, see customExport.genes)';
             } else {
                 geneCap = custom.geneCap;
                 tierLabel = `chosen in the custom export: up to ${custom.geneCap.toLocaleString()} genes per matrix`
@@ -30105,7 +30150,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                         overallMean: parseFloat(overallMean.toFixed(3)),
                         overallSd: parseFloat(overallSd.toFixed(3)),
                         n: allValues.length,
-                        _readMe: 'zVsOverall is the group mean in units of the SPREAD ACROSS CELL LINES, which is not a significance test. Score a group with selectivityZ + focalGeneRankAmongGenes where they are present, and calibrate a small group against extras.groupContrastNull. lowN groups are kept deliberately: a flagged small group is less dangerous than a missing one.',
+                        _readMe: 'byTissue, bySubtype and byOncotreeSubtype are three separate passes, NOT a nesting: a line has an Oncotree subtype only where one was recorded, so the finer groups routinely sum to far less than the coarser group containing them, and the shortfall is unlabelled lines rather than a contradiction. zVsOverall is the group mean in units of the SPREAD ACROSS CELL LINES, which is not a significance test. Score a group with selectivityZ + focalGeneRankAmongGenes where they are present, and calibrate a small group against extras.groupContrastNull. lowN groups are kept deliberately: a flagged small group is less dangerous than a missing one.',
                         byTissue: tissueSummary,
                         bySubtype: subtypeSummary,
                         byOncotreeSubtype: oncoSummary
@@ -30641,8 +30686,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     _readMe: 'Everything listed above except neverInThisApp CAN be exported, it simply was not this time. The app has a Custom export for AI dialog (Options > Other > Custom export for AI) which carries any of it, and that dialog takes a pasted request block. So if answering the question properly needs a layer this file lacks, do not stop at saying so: write the block below into your reply and tell the user to paste it into that box, which sets every control at once.',
                     whereToFindIt: 'In the app: Options > Other > Custom export for AI. Paste into the box headed "Or paste what an assistant asked for", press Apply request, then Export.',
                     syntax: this._aiRequestSyntax(),
-                    example: 'CORRELATE-REQUEST v1\ncohort: all\ngenes: BRAF, NRAS, MITF, SOX10\ngene-limit: all\ninclude: drug-response, matched-pairs\nquestion: does BRAF dependency track measured BRAF-inhibitor sensitivity?',
-                    notes: 'One instruction per line, order does not matter, anything you leave out keeps its current setting. `cohort` takes view, all, or a list of cell line names. `genes` takes auto or a list of symbols; naming genes is what makes room for every cell line and every extra layer at once. `include` takes any of: drug-response, copy-number, virus, identity, matched-pairs. Ask only for what the question needs: a file carrying everything is slower to read and may be too large to attach.'
+                    example: 'CORRELATE-REQUEST v1\ncohort: tissue:Skin\ngenes: BRAF, NRAS, MITF, SOX10\ngene-limit: all\ninclude: drug-response, matched-pairs\ndrugs: BRAF, MEK\nquestion: does BRAF dependency track measured BRAF-inhibitor sensitivity?',
+                    notes: 'One instruction per line, order does not matter, and anything you leave out is left as the dialog currently has it, so write every line that matters to you rather than relying on what a previous export set. `cohort` takes view, all, a group (tissue:Skin, disease:Melanoma, subtype:...), or a list of cell line names, and these can be mixed. `genes` takes auto or a list of symbols; naming genes is what makes room for every cell line and every extra layer at once. `include` takes any of: drug-response, copy-number, virus, identity, matched-pairs. drug-response brings the whole 89-compound panel across every indication unless a `drugs:` line names compounds, targets or mechanisms to keep. Ask only for what the question needs: a file carrying everything is slower to read and may be too large to attach.'
                 },
             },
             _instructions: [
@@ -30865,7 +30910,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 cellLines: custom.cohort === 'all' ? 'every cell line in the release'
                     : custom.cohort === 'list' ? `${cellLines.length} named cell lines`
                     : 'the cohort the exported view was showing',
-                genes: custom.genes === 'list' ? `${custom.geneList.length} named genes (plus the focal gene where there is one)` : 'chosen automatically',
+                genes: custom.genes === 'list'
+                    ? `only the ${Object.keys(geMatrix).length} genes in the matrices below, from a list of ${custom.geneList.length} names given at export time plus any co-essential partners added so their scores can be checked. The matrices are narrow BY REQUEST, not truncated.`
+                    : 'chosen automatically',
                 geneLimit: custom.geneCap === 0 ? 'none' : (custom.geneCap || 'set by cohort size'),
                 scanSize: _scanTop,
                 extraLayers: Object.entries(custom.layers).filter(([, on]) => on).map(([k]) => k)
@@ -30874,9 +30921,17 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (custom.layers.drugResponse && this.drugResponse?.compounds?.length) {
                 const inCohort = new Set(cellLines);
                 exportData.drugResponse = {
-                    _readMe: 'Measured drug sensitivity as area under the dose-response curve. LOWER auc means the line was killed more easily; around 1.0 means the compound did essentially nothing. Only cell lines in this file are listed, and a line absent from a compound was not screened against it. This is a different screen from the CRISPR data and covers a different, smaller set of lines.',
+                    _readMe: 'Measured drug sensitivity as area under the dose-response curve. LOWER auc means the line was killed more easily; around 1.0 means the compound did essentially nothing. Only cell lines in this file are listed, and a line absent from a compound was not screened against it. This is a different screen from the CRISPR data and covers a different, smaller set of lines, so a line present in the gene-effect matrix is often absent here, INCLUDING the lab-derived resistant lines in matchedPairs, which were never put through it.',
+                    compoundsIncluded: (custom.drugFilter || []).length
+                        ? `only compounds matching ${custom.drugFilter.join(', ')}, out of the ${this.drugResponse.compounds.length} in the panel`
+                        : `the whole ${this.drugResponse.compounds.length}-compound panel, across every indication, not only compounds related to the genes in this file. A request can narrow it with a "drugs:" line.`,
                     source: this.drugResponse.dataSource || 'DepMap PRISM Repurposing',
-                    compounds: this.drugResponse.compounds.map(c => {
+                    compounds: this.drugResponse.compounds.filter(c => {
+                        const want = custom.drugFilter || [];
+                        if (!want.length) return true;
+                        const hay = `${c.name} ${c.target || ''} ${c.moa || ''} ${c.indication || ''}`.toUpperCase();
+                        return want.some(w => hay.includes(String(w).toUpperCase()));
+                    }).map(c => {
                         const auc = {};
                         for (const [cl, v] of Object.entries(c.auc || {})) if (inCohort.has(cl)) auc[cl] = v;
                         return { name: c.name, target: c.target, moa: c.moa, indication: c.indication,
@@ -30930,7 +30985,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     if (rec) p[cl] = { kind: rec.kind, category: rec.category, note: rec.note, rrid: rec.rrid, settled: rec.settled };
                 }
                 exportData.identityWarnings = {
-                    _readMe: 'Curated Cellosaurus provenance flags. "identity" means the line may not be the line its name says, usually cross-contamination; "classification" means the line is real but was filed under the wrong disease. Lines absent from this list carry no such flag.',
+                    _readMe: 'Curated Cellosaurus provenance flags. "identity" means the line may not be the line its name says, usually cross-contamination; "classification" means the line is real but was filed under the wrong disease. `settled` true means the record states the problem as established fact; false means the source hedges it (\'probably\', \'may be\'), so the doubt is about the claim itself, not about how widely it has been adopted. Lines absent from this list carry no such flag.',
                     byCellLine: p
                 };
                 delete exportData.notIncluded.identityWarnings;
@@ -30942,7 +30997,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 if (pairs.length) {
                     exportData.dataStructure.matchedPairs = 'Cell lines that are another line in this panel after a drug, with that parental line.';
                     exportData.matchedPairs = {
-                        _readMe: 'Cell lines that are another line in this panel after a drug, paired with that parental line. Treat a pair as one line in two states: a difference between them is the treatment, and a property they share is the background they both came from. A pair read as two independent cell lines is the most misleading comparison the panel offers.',
+                        _readMe: 'Cell lines that are another line in this panel after a drug, paired with that parental line. Treat a pair as one line in two states: a difference between them is the treatment, and a property they share is the background they both came from. A pair read as two independent cell lines is the most misleading comparison the panel offers. Note that these derived lines carry CRISPR and expression data but were NOT put through the drug screen, so do not expect before-and-after sensitivity for a pair even when drugResponse is present.',
                         pairs
                     };
                 }
@@ -30981,6 +31036,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (!exportData.extras && exportData.dataStructure) delete exportData.dataStructure.extras;
             // Same again one level down: document the extras keys this file
             // carries and no others.
+            // _method was deliberately duplicated at schema level for views
+            // with no extras. Where extras exists it carries the same block,
+            // and shipping both is dead weight a reader has to notice and skip.
+            if (exportData.extras?._method && exportData.dataStructure?._method) delete exportData.dataStructure._method;
             if (exportData.extras && exportData.dataStructure) {
                 const doc = {};
                 for (const k of Object.keys(exportData.extras)) {

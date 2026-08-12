@@ -4688,7 +4688,7 @@
             <label><input type="radio" name="caiCohort" value="all"> Every cell line</label>
             <label><input type="radio" name="caiCohort" value="list"> Only these:</label>
           </div>
-          <textarea id="caiCohortList" rows="2" placeholder="Names or IDs, separated by commas or line breaks" style="width:100%; margin-top:4px; border:1px solid #d1d5db; border-radius:4px; padding:4px 6px; font-size:11px; box-sizing:border-box;"></textarea>
+          <textarea id="caiCohortList" rows="2" placeholder="Names or IDs, or a group: tissue:Skin, disease:Melanoma" style="width:100%; margin-top:4px; border:1px solid #d1d5db; border-radius:4px; padding:4px 6px; font-size:11px; box-sizing:border-box;"></textarea>
 
           <div style="font-weight:600; margin:12px 0 4px;">Genes</div>
           <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
@@ -4708,6 +4708,7 @@
           <div style="font-weight:600; margin:12px 0 4px;">Also include <span style="font-weight:400; color:#6b7280;">(the standard export leaves these out)</span></div>
           <div style="display:flex; flex-direction:column; gap:3px;">
             <label><input type="checkbox" id="caiDrug"> Drug sensitivity, PRISM Repurposing AUC per line</label>
+            <div style="margin:1px 0 2px 20px;"><input type="text" id="caiDrugs" placeholder="Only these compounds, targets or mechanisms (e.g. BRAF, MEK). Leave empty for all 89." style="width:100%; border:1px solid #d1d5db; border-radius:4px; padding:2px 6px; font-size:11px; box-sizing:border-box;"></div>
             <label><input type="checkbox" id="caiCn"> Copy number for every gene, not only the focal one</label>
             <label><input type="checkbox" id="caiVirus"> Confirmed virus transformation</label>
             <label><input type="checkbox" id="caiIdentity"> Disputed identity and misclassification records</label>
@@ -4765,6 +4766,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v87_57"></script>
+    <script src="app.js?v=v87_58"></script>
 </body>
 </html>
