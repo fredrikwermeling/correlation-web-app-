@@ -2123,7 +2123,25 @@ class CorrelationExplorer {
         const chosenGenes = this._upsetSelectedGenes;
         let upsetGenes, upsetLabel;
         if (chosenGenes && chosenGenes.length >= 2) {
-            upsetGenes = chosenGenes.map(name => data.topGenes.find(g => g.gene === name)).filter(Boolean);
+            // A gene named in a saved file may not be in the grid's current top
+            // list: restoring applies the saved picks, which narrows the cohort,
+            // and the most-altered genes of that smaller set are different ones.
+            // Build the missing entries from the matrix rather than dropping
+            // them, or the plot silently refuses to open.
+            const fromMatrix = (name) => {
+                const src = this._oncoprintKind === 'fusion' ? this.translocations?.geneData
+                    : this._oncoprintKind === 'cn' ? null
+                    : (this.mutations?.geneData || this.damagingMutations?.geneData);
+                const muts = src?.[name]?.mutations;
+                if (!muts) return null;
+                const cls = data.allFilteredCLs || data.sortedCLs || [];
+                let n = 0;
+                for (const cl of cls) if (muts[cl] > 0) n++;
+                return { gene: name, n, muts };
+            };
+            upsetGenes = chosenGenes
+                .map(name => data.topGenes.find(g => g.gene === name) || fromMatrix(name))
+                .filter(Boolean);
             upsetLabel = upsetGenes.length <= 4
                 ? upsetGenes.map(g => g.gene).join(', ')
                 : `${upsetGenes.length} genes`;
@@ -24083,6 +24101,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // Rebuilds the oncoprint (and the UpSet on top of it) from a saved file.
     async _restoreOncoprintMeta(meta) {
         const c = meta.cohort || {};
+        // A grid saved from the Cell Line Browser draws on the browser's own
+        // list of cell lines, so the browser has to be open or the grid has no
+        // cohort behind it and comes up empty. It is opened FIRST because
+        // opening it clears the filter state this method is about to restore.
+        if (c.context === 'clb' && document.getElementById('cellLineBrowserModal')?.style.display !== 'flex') {
+            try { this.openCellLineBrowser(); } catch (e) {}
+            await new Promise(r => setTimeout(r, 400));
+        }
         const set = (id, v) => {
             const el = document.getElementById(id);
             if (el && v != null) el.value = v;
