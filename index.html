@@ -2285,6 +2285,7 @@
                                 <button class="options-menu-item" id="modeMutationBtn" title="Split the cohort into altered vs wild-type lines for a chosen gene and rank the genes whose gene effect differs most">Mutation analysis</button>
                                 <button class="options-menu-item" id="showGeneEffectDirect">Gene Effect</button>
                                 <button class="options-menu-item" id="showCorrelationDirect">Correlation</button>
+                                <button class="options-menu-item" id="customAIExportBtn" title="Build a file for a language model with exactly the data you choose, including layers the standard export leaves out. An assistant reading a standard export can write the settings for you.">Custom export for AI&hellip;</button>
                                 <label class="options-menu-item" for="restoreFromExportInput" title="Open a Correlate metadata file (.correlate.json, saved alongside every image export) to recreate the figure. Older SVG/PNG exports with embedded settings also work.">Open saved figure...</label>
                             </div>
                         </div>
@@ -4664,6 +4665,75 @@
          of any source view (gene effect modal, scatter inspect, mutation
          analysis, correlation modal, etc.). All 8 ".json.gz" / "Export for
          AI" buttons open this same dialog. -->
+
+    <!-- Custom Export for AI. Everything the standard export decides for you,
+         decided explicitly instead, plus a box that takes the request block an
+         assistant writes after reading a standard export. -->
+    <div id="customAIDialog" style="display:none; position:fixed; inset:0; z-index:2600; background:rgba(0,0,0,0.5); justify-content:center; align-items:flex-start; padding:40px 20px; overflow-y:auto;">
+      <div style="background:#fff; max-width:640px; width:100%; border-radius:8px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.35);">
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border-bottom:1px solid #e5e7eb;">
+          <span style="font-weight:600; color:#374151; font-size:14px;">Custom export for AI</span>
+          <button id="customAIClose" style="background:none; border:none; font-size:22px; cursor:pointer; line-height:1; color:#6b7280;">&times;</button>
+        </div>
+        <div style="padding:14px 18px; font-size:12px; color:#374151;">
+          <p style="margin:0 0 10px; color:#6b7280; font-size:11px; line-height:1.5;">
+            The standard export decides what a view is worth carrying. Here you decide. If an assistant
+            has read a standard export and asked for more, paste what it wrote into the box at the
+            bottom and every setting below is filled in for you.
+          </p>
+
+          <div style="font-weight:600; margin:10px 0 4px;">Cell lines</div>
+          <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
+            <label><input type="radio" name="caiCohort" value="view" checked> What the current view shows</label>
+            <label><input type="radio" name="caiCohort" value="all"> Every cell line</label>
+            <label><input type="radio" name="caiCohort" value="list"> Only these:</label>
+          </div>
+          <textarea id="caiCohortList" rows="2" placeholder="Names or IDs, separated by commas or line breaks" style="width:100%; margin-top:4px; border:1px solid #d1d5db; border-radius:4px; padding:4px 6px; font-size:11px; box-sizing:border-box;"></textarea>
+
+          <div style="font-weight:600; margin:12px 0 4px;">Genes</div>
+          <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
+            <label><input type="radio" name="caiGenes" value="auto" checked> Chosen automatically</label>
+            <label><input type="radio" name="caiGenes" value="list"> Only these:</label>
+          </div>
+          <textarea id="caiGeneList" rows="2" placeholder="Gene symbols, separated by commas or line breaks" style="width:100%; margin-top:4px; border:1px solid #d1d5db; border-radius:4px; padding:4px 6px; font-size:11px; box-sizing:border-box;"></textarea>
+          <div style="display:flex; gap:14px; align-items:center; margin-top:6px; flex-wrap:wrap;">
+            <label title="How many genes each matrix may carry. Leave empty to let the cohort size decide, or enter 0 for no limit at all. Larger files answer more, but a very large one may not attach.">Gene limit
+              <input type="number" id="caiGeneCap" min="0" max="20000" step="500" placeholder="auto" style="width:80px; margin-left:4px; border:1px solid #d1d5db; border-radius:4px; padding:2px 4px; font-size:11px;">
+            </label>
+            <label title="How many rows each precomputed correlation scan carries.">Scan size
+              <input type="number" id="caiScanTop" min="5" max="500" step="5" value="30" style="width:70px; margin-left:4px; border:1px solid #d1d5db; border-radius:4px; padding:2px 4px; font-size:11px;">
+            </label>
+          </div>
+
+          <div style="font-weight:600; margin:12px 0 4px;">Also include <span style="font-weight:400; color:#6b7280;">(the standard export leaves these out)</span></div>
+          <div style="display:flex; flex-direction:column; gap:3px;">
+            <label><input type="checkbox" id="caiDrug"> Drug sensitivity, PRISM Repurposing AUC per line</label>
+            <label><input type="checkbox" id="caiCn"> Copy number for every gene, not only the focal one</label>
+            <label><input type="checkbox" id="caiVirus"> Confirmed virus transformation</label>
+            <label><input type="checkbox" id="caiIdentity"> Disputed identity and misclassification records</label>
+            <label><input type="checkbox" id="caiPairs"> Treated / parental line pairs</label>
+          </div>
+
+          <div style="font-weight:600; margin:12px 0 4px;">Question</div>
+          <textarea id="caiQuestion" rows="2" placeholder="What should the assistant answer?" style="width:100%; border:1px solid #d1d5db; border-radius:4px; padding:4px 6px; font-size:11px; box-sizing:border-box;"></textarea>
+
+          <div style="font-weight:600; margin:14px 0 4px;">Or paste what an assistant asked for</div>
+          <textarea id="caiRequest" rows="4" placeholder="CORRELATE-REQUEST v1&#10;cohort: all&#10;genes: auto&#10;include: drug-response, copy-number&#10;question: ..." style="width:100%; border:1px solid #d1d5db; border-radius:4px; padding:4px 6px; font-size:11px; font-family:ui-monospace, monospace; box-sizing:border-box;"></textarea>
+          <div style="display:flex; gap:8px; align-items:center; margin-top:5px;">
+            <button class="btn btn-outline btn-sm" id="caiApplyRequest" style="font-size:11px;">Apply request</button>
+            <span id="caiRequestNote" style="font-size:10px; color:#6b7280;"></span>
+          </div>
+
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-top:16px; padding-top:12px; border-top:1px solid #e5e7eb;">
+            <span id="caiStatus" style="font-size:11px; color:#6b7280;"></span>
+            <span style="display:flex; gap:8px;">
+              <button class="btn btn-outline btn-sm" id="caiReset" style="font-size:11px;">Reset</button>
+              <button class="btn btn-sm" id="caiExport" style="font-size:11px; background:#6ba544; color:#fff;">Export</button>
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
     <div id="aiAnalysisDialog" style="display:none; position:fixed; inset:0; z-index:2500; background:rgba(0,0,0,0.5); justify-content:center; align-items:flex-start; padding:60px 20px; overflow-y:auto;">
       <div style="background:#fff; max-width:560px; width:100%; border-radius:8px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.35);">
         <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border-bottom:1px solid #e5e7eb;">
@@ -4695,6 +4765,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v87_56"></script>
+    <script src="app.js?v=v87_57"></script>
 </body>
 </html>

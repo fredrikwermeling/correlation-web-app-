@@ -28789,7 +28789,231 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         return { checked: true, visibleTitle: title.trim().slice(0, 160), genes, matchesVisibleTitle: missingFromTitle.length === 0, missingFromTitle };
     }
 
-    async exportFullAIAnalysis() {
+    // ===== Custom Export for AI ===============================================
+    // The regular export decides for you what a view is worth carrying. This
+    // lets the decision be made explicitly, and, more to the point, lets the
+    // assistant reading a file ask for what it turned out to need: the file
+    // tells it the request syntax, it writes a block, the block is pasted
+    // here and sets every control at once.
+
+    _aiCustomDefaults() {
+        return {
+            cohort: 'view',          // view | all | list
+            cohortList: [],
+            genes: 'auto',           // auto | list
+            geneList: [],
+            geneCap: null,           // null = whatever the cohort size implies
+            scanTop: 30,
+            layers: {
+                drugResponse: false,
+                fullCopyNumber: false,
+                viralTransformation: false,
+                identityWarnings: false,
+                derivativePairs: false
+            },
+            question: ''
+        };
+    }
+
+    // The block an assistant is told to write. Deliberately line-based and
+    // forgiving: order does not matter, unknown keys are reported rather than
+    // silently dropped, and anything absent keeps its current setting.
+    _aiRequestSyntax() {
+        return [
+            'CORRELATE-REQUEST v1',
+            'cohort: view | all | <comma-separated cell line names or IDs>',
+            'genes: auto | <comma-separated gene symbols>',
+            'gene-limit: <number of genes per matrix, or "all">',
+            'scan-size: <how many rows per precomputed correlation scan>',
+            'include: drug-response, copy-number, virus, identity, matched-pairs',
+            'question: <the question to carry with the file>'
+        ].join('\n');
+    }
+
+    // Parse that block. Returns { settings, applied[], ignored[] } so the user
+    // is told what was understood, rather than a dialog silently rearranging
+    // itself.
+    _parseAIRequest(text, base) {
+        const settings = JSON.parse(JSON.stringify(base || this._aiCustomDefaults()));
+        const applied = [], ignored = [];
+        const LAYER_WORDS = {
+            'drug-response': 'drugResponse', 'drug response': 'drugResponse', 'drugresponse': 'drugResponse', 'prism': 'drugResponse',
+            'copy-number': 'fullCopyNumber', 'copy number': 'fullCopyNumber', 'copynumber': 'fullCopyNumber', 'cn': 'fullCopyNumber',
+            'virus': 'viralTransformation', 'viral': 'viralTransformation', 'virus-status': 'viralTransformation',
+            'identity': 'identityWarnings', 'identity-warnings': 'identityWarnings', 'str': 'identityWarnings',
+            'matched-pairs': 'derivativePairs', 'matched pairs': 'derivativePairs', 'pairs': 'derivativePairs', 'derivatives': 'derivativePairs'
+        };
+        const nameToId = this._buildCellLineNameToIdMap ? this._buildCellLineNameToIdMap() : new Map();
+        for (const raw of String(text || '').split(/\r?\n/)) {
+            const line = raw.trim();
+            if (!line || /^correlate-request/i.test(line) || line.startsWith('#')) continue;
+            const m = line.match(/^([A-Za-z][A-Za-z \-_]*)\s*[:=]\s*(.*)$/);
+            if (!m) { ignored.push(line.slice(0, 60)); continue; }
+            const key = m[1].trim().toLowerCase().replace(/[ _]+/g, '-');
+            const val = m[2].trim();
+            const items = () => val.split(/[,;]+/).map(x => x.trim()).filter(Boolean);
+            if (key === 'cohort') {
+                if (/^view$/i.test(val) || /^current$/i.test(val)) { settings.cohort = 'view'; applied.push('cohort: the current view'); }
+                else if (/^all$/i.test(val)) { settings.cohort = 'all'; applied.push('cohort: every cell line'); }
+                else {
+                    const ids = [], missed = [];
+                    for (const t of items()) {
+                        const id = /^ACH-\d+$/i.test(t) ? t.toUpperCase() : nameToId.get(t.toUpperCase());
+                        if (id) ids.push(id); else missed.push(t);
+                    }
+                    if (ids.length) {
+                        settings.cohort = 'list'; settings.cohortList = ids;
+                        applied.push(`cohort: ${ids.length} named cell line${ids.length === 1 ? '' : 's'}`);
+                    }
+                    if (missed.length) ignored.push(`cell lines not found: ${missed.slice(0, 8).join(', ')}`);
+                }
+            } else if (key === 'genes') {
+                if (/^(auto|all)$/i.test(val)) { settings.genes = 'auto'; applied.push('genes: chosen automatically'); }
+                else {
+                    const gs = items().map(g => g.toUpperCase());
+                    const known = gs.filter(g => this.geneIndex?.has(g) || this.expressionGeneIndex?.has(g));
+                    const unknown = gs.filter(g => !known.includes(g));
+                    if (known.length) {
+                        settings.genes = 'list'; settings.geneList = known;
+                        applied.push(`genes: ${known.length} named gene${known.length === 1 ? '' : 's'}`);
+                    }
+                    if (unknown.length) ignored.push(`genes not found: ${unknown.slice(0, 8).join(', ')}`);
+                }
+            } else if (key === 'gene-limit' || key === 'gene-cap') {
+                if (/^all$/i.test(val)) { settings.geneCap = 0; applied.push('gene limit: none'); }
+                else {
+                    const nRaw = parseInt(val.replace(/[^0-9]/g, ''), 10);
+                    if (nRaw > 0) { settings.geneCap = nRaw; applied.push(`gene limit: ${nRaw.toLocaleString()} per matrix`); }
+                    else ignored.push(line.slice(0, 60));
+                }
+            } else if (key === 'scan-size' || key === 'scan-top' || key === 'top') {
+                const nRaw = parseInt(val.replace(/[^0-9]/g, ''), 10);
+                if (nRaw > 0) { settings.scanTop = Math.min(500, nRaw); applied.push(`scan size: top ${settings.scanTop}`); }
+                else ignored.push(line.slice(0, 60));
+            } else if (key === 'include' || key === 'add' || key === 'layers') {
+                for (const t of items()) {
+                    const layer = LAYER_WORDS[t.toLowerCase()];
+                    if (layer) { settings.layers[layer] = true; applied.push(`include: ${t}`); }
+                    else ignored.push(`unknown layer: ${t}`);
+                }
+            } else if (key === 'exclude' || key === 'drop') {
+                for (const t of items()) {
+                    const layer = LAYER_WORDS[t.toLowerCase()];
+                    if (layer) { settings.layers[layer] = false; applied.push(`exclude: ${t}`); }
+                    else ignored.push(`unknown layer: ${t}`);
+                }
+            } else if (key === 'question') {
+                settings.question = val; applied.push('question carried over');
+            } else {
+                ignored.push(line.slice(0, 60));
+            }
+        }
+        return { settings, applied, ignored };
+    }
+
+    openCustomAIExport() {
+        const dlg = document.getElementById('customAIDialog');
+        if (!dlg) return;
+        this._aiCustom = this._aiCustom || this._aiCustomDefaults();
+        this._syncCustomAIDialog();
+        dlg.style.display = 'flex';
+        if (!dlg.dataset.wired) {
+            dlg.dataset.wired = '1';
+            document.getElementById('customAIClose')?.addEventListener('click', () => { dlg.style.display = 'none'; });
+            dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.style.display = 'none'; });
+            document.getElementById('caiReset')?.addEventListener('click', () => {
+                this._aiCustom = this._aiCustomDefaults();
+                this._syncCustomAIDialog();
+                this._setCaiNote('Back to the standard settings.');
+            });
+            document.getElementById('caiApplyRequest')?.addEventListener('click', () => {
+                const text = document.getElementById('caiRequest')?.value || '';
+                if (!text.trim()) { this._setCaiNote('Nothing to apply, the box is empty.'); return; }
+                const { settings, applied, ignored } = this._parseAIRequest(text, this._readCustomAIDialog());
+                this._aiCustom = settings;
+                this._syncCustomAIDialog();
+                const bits = [];
+                if (applied.length) bits.push(`Set ${applied.length}: ${applied.join('; ')}.`);
+                if (ignored.length) bits.push(`Could not use: ${ignored.join('; ')}.`);
+                this._setCaiNote(bits.join(' ') || 'Nothing recognised in that block.');
+            });
+            document.getElementById('caiExport')?.addEventListener('click', async () => {
+                this._aiCustom = this._readCustomAIDialog();
+                dlg.style.display = 'none';
+                const q = document.getElementById('aiQuestion');
+                if (q) q.value = this._aiCustom.question || '';
+                try {
+                    await this.exportFullAIAnalysis({ custom: this._aiCustom });
+                } finally {
+                    this._aiCustom.active = false;
+                }
+            });
+        }
+    }
+
+    _setCaiNote(text) {
+        const el = document.getElementById('caiRequestNote');
+        if (el) el.textContent = text;
+    }
+
+    _syncCustomAIDialog() {
+        const c = this._aiCustom || this._aiCustomDefaults();
+        const set = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
+        const check = (id, v) => { const e = document.getElementById(id); if (e) e.checked = !!v; };
+        document.querySelectorAll('input[name="caiCohort"]').forEach(r => { r.checked = r.value === c.cohort; });
+        document.querySelectorAll('input[name="caiGenes"]').forEach(r => { r.checked = r.value === c.genes; });
+        set('caiCohortList', (c.cohortList || []).map(id => this.getCellLineName(id) || id).join(', '));
+        set('caiGeneList', (c.geneList || []).join(', '));
+        set('caiGeneCap', c.geneCap === 0 ? 0 : (c.geneCap || ''));
+        set('caiScanTop', c.scanTop || 30);
+        set('caiQuestion', c.question || '');
+        check('caiDrug', c.layers.drugResponse);
+        check('caiCn', c.layers.fullCopyNumber);
+        check('caiVirus', c.layers.viralTransformation);
+        check('caiIdentity', c.layers.identityWarnings);
+        check('caiPairs', c.layers.derivativePairs);
+        const status = document.getElementById('caiStatus');
+        if (status) {
+            const view = this._getAICellLines(this._aiExportSource || 'ge').length;
+            status.textContent = c.cohort === 'all'
+                ? `${(this.metadata?.cellLines?.length || 0).toLocaleString()} cell lines`
+                : c.cohort === 'list'
+                    ? `${(c.cohortList || []).length} cell lines`
+                    : `${view.toLocaleString()} cell lines from the current view`;
+        }
+    }
+
+    _readCustomAIDialog() {
+        const val = (id) => document.getElementById(id)?.value || '';
+        const checked = (id) => !!document.getElementById(id)?.checked;
+        const pick = (name) => document.querySelector(`input[name="${name}"]:checked`)?.value;
+        const nameToId = this._buildCellLineNameToIdMap ? this._buildCellLineNameToIdMap() : new Map();
+        const cohortIds = val('caiCohortList').split(/[\n,;\t]+/).map(x => x.trim()).filter(Boolean)
+            .map(t => /^ACH-\d+$/i.test(t) ? t.toUpperCase() : nameToId.get(t.toUpperCase()))
+            .filter(Boolean);
+        const capRaw = val('caiGeneCap').trim();
+        return {
+            active: true,
+            cohort: pick('caiCohort') || 'view',
+            cohortList: cohortIds,
+            genes: pick('caiGenes') || 'auto',
+            geneList: val('caiGeneList').split(/[\n,;\t ]+/).map(x => x.trim().toUpperCase()).filter(Boolean),
+            geneCap: capRaw === '' ? null : Math.max(0, parseInt(capRaw, 10) || 0),
+            scanTop: Math.max(5, Math.min(500, parseInt(val('caiScanTop'), 10) || 30)),
+            layers: {
+                drugResponse: checked('caiDrug'),
+                fullCopyNumber: checked('caiCn'),
+                viralTransformation: checked('caiVirus'),
+                identityWarnings: checked('caiIdentity'),
+                derivativePairs: checked('caiPairs')
+            },
+            question: val('caiQuestion').trim()
+        };
+    }
+
+    async exportFullAIAnalysis(opts = {}) {
+        // Settings from the custom dialog, when it was the one that asked.
+        const custom = opts.custom && opts.custom.active ? opts.custom : null;
         const statusEl = document.getElementById('aiExportStatus');
         const setStatus = (msg) => { if (statusEl) statusEl.textContent = msg; };
         setStatus('Collecting data...');
@@ -28799,7 +29023,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (source === 'mutations') source = 'mutation';
         if (source === 'gate') source = 'gates';
 
-        const allCLs = this._getAICellLines(source);
+        let allCLs = this._getAICellLines(source);
+        if (custom) {
+            if (custom.cohort === 'all') allCLs = (this.metadata?.cellLines || []).slice();
+            else if (custom.cohort === 'list' && custom.cohortList?.length) allCLs = custom.cohortList.slice();
+        }
         if (!allCLs.length) { setStatus('No cell lines to export.'); return; }
 
         // Phase 1, no hard cell-line cap. The new tiers keep the file
@@ -28840,6 +29068,20 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             geCutoff = 0.5; exprMeanMin = 3.0; exprSdMin = 1.0; geneCap = 2500;
             tierLabel = 'GE |val|>0.5 (essentials); expression mean>3.0 OR sd>1.0; up to 2 500 genes per matrix; mutations / fusions / LoF / signatures full';
         }
+        // A chosen gene limit replaces the one the cohort size implies, and
+        // choosing "all" drops both the limit and the variance filter, which
+        // is the only way to ask about a gene the tier would have dropped.
+        if (custom && custom.geneCap !== null && custom.geneCap !== undefined) {
+            if (custom.geneCap === 0) {
+                geCutoff = 0; exprMeanMin = -Infinity; exprSdMin = -Infinity; geneCap = Infinity;
+                tierLabel = 'chosen in the custom export: every gene, no variance filter and no cap';
+            } else {
+                geneCap = custom.geneCap;
+                tierLabel = `chosen in the custom export: up to ${custom.geneCap.toLocaleString()} genes per matrix`
+                    + (geCutoff > 0 ? `, variance filter GE |val|>${geCutoff} kept` : ', no variance filter');
+            }
+        }
+        const _scanTop = custom?.scanTop || 30;
         const includeExpr = this.expressionLoaded;
 
         // Source-specific extras populated by the per-source branches below.
@@ -29507,7 +29749,21 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             geCandidates.length = geneCap;
         }
         const geMatrix = {};
+        const _addGeneToGeMatrixLater = [];
         for (const c of geCandidates) geMatrix[c.gene] = c.vals;
+        // A named gene list narrows the matrix to those genes, which is what
+        // makes a file about twelve genes small enough to carry every cell
+        // line and every extra layer at once.
+        const _wantGenes = (custom && custom.genes === 'list' && custom.geneList?.length)
+            ? new Set(custom.geneList.map(g => g.toUpperCase())) : null;
+        if (_wantGenes) {
+            for (const g of Object.keys(geMatrix)) {
+                if (!_wantGenes.has(g.toUpperCase()) && g.toUpperCase() !== focalGene && g.toUpperCase() !== focalGene2) delete geMatrix[g];
+            }
+            // Asked-for genes the variance filter had dropped are added back:
+            // being asked for is the whole point.
+            for (const g of _wantGenes) _addGeneToGeMatrixLater.push(g);
+        }
 
         // Phase 1, expression matrix with the new OR-not-AND filter:
         // include the gene if mean ≥ exprMeanMin OR sd ≥ exprSdMin (was AND).
@@ -29554,7 +29810,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     if (!isNaN(stats.correlation)) correlates.push({ gene: this.expressionMetadata.genes[gi], r: parseFloat(stats.correlation.toFixed(4)), n: x.length });
                 }
                 correlates.sort((a, b) => Math.abs(b.r) - Math.abs(a.r));
-                topCorrelates = correlates.slice(0, 30);
+                topCorrelates = correlates.slice(0, _scanTop);
             }
         }
 
@@ -29603,7 +29859,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                             }
                         }
                         exprCorrs.sort((a, b) => Math.abs(b.r) - Math.abs(a.r));
-                        topExpressionCorrelates = exprCorrs.slice(0, 30);
+                        topExpressionCorrelates = exprCorrs.slice(0, _scanTop);
                     } else {
                         topExpressionCorrelates = []; // focal expression invariant, emit empty
                     }
@@ -29653,7 +29909,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     if (!isNaN(stats.correlation)) coess.push({ gene: this.metadata.genes[gi], r: parseFloat(stats.correlation.toFixed(4)), n: x.length });
                 }
                 coess.sort((a, b) => Math.abs(b.r) - Math.abs(a.r));
-                topCoessentials = coess.slice(0, 30);
+                topCoessentials = coess.slice(0, _scanTop);
             }
         }
 
@@ -29674,6 +29930,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             }
             geMatrix[name] = vals;
         };
+        for (const g of _addGeneToGeMatrixLater) _addGeneToGeMatrix(g);
         if (topCoessentials && topCoessentials.length > 0) {
             for (const c of topCoessentials) _addGeneToGeMatrix(c.gene);
         }
@@ -29744,6 +30001,25 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             }
             exprMatrix = {};
             for (const c of exprCandidates) exprMatrix[c.gene] = c.vals;
+            if (_wantGenes) {
+                for (const g of Object.keys(exprMatrix)) {
+                    if (!_wantGenes.has(g.toUpperCase())) delete exprMatrix[g];
+                }
+                // Same add-back on this side: a named gene the expression
+                // variance filter dropped is still a gene that was asked for.
+                const emap = new Map(this.expressionMetadata.cellLines.map((cl, i) => [cl, i]));
+                for (const g of _wantGenes) {
+                    if (exprMatrix[g]) continue;
+                    const gi = this.expressionMetadata.genes.indexOf(g);
+                    if (gi < 0) continue;
+                    exprMatrix[g] = cellLines.map(cl => {
+                        const ei = emap.get(cl);
+                        if (ei === undefined) return null;
+                        const v = this.expressionData[gi * this.expressionMetadata.nCellLines + ei];
+                        return isNaN(v) ? null : parseFloat(v.toFixed(3));
+                    });
+                }
+            }
         }
 
         // Phase 1, snapshot dropped from gzipped exports. The AI was told to
@@ -30360,7 +30636,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 rawFusionCalls: 'Only curated / validated driver fusions are here. The full raw RNA-seq fusion output (largely passengers and read-through artefacts) is NOT.',
                 viralTransformation: 'Cellosaurus records which cell lines were transformed by a virus (EBV, HPV16/18, HBV, KSHV, HTLV-1). Those calls are NOT in this file. They matter because viral oncoproteins override host pathways: an HPV-transformed line behaves as p53- and RB-deficient whatever its TP53 and RB1 sequence says, and an EBV-immortalised lymphoblastoid line is not a tumor line at all. The app shows the status on each cell line, and "Confirmed virus-transformed" is one of its curated collections. Note that absence of a record is not evidence a line is free of the virus.',
                 identityWarnings: 'Cellosaurus identity / contamination flags and STR profiles are NOT here. A handful of lines in DepMap are misidentified; the app shows a warning triangle on those.',
-                neverInThisApp: 'Proteomics, methylation, metabolomics and drug-combination screens are not part of this app at all. DepMap publishes some of them separately; they cannot be exported from here.'
+                neverInThisApp: 'Proteomics, methylation, metabolomics and drug-combination screens are not part of this app at all. DepMap publishes some of them separately; they cannot be exported from here.',
+                howToAskForMore: {
+                    _readMe: 'Everything listed above except neverInThisApp CAN be exported, it simply was not this time. The app has a Custom export for AI dialog (Options > Other > Custom export for AI) which carries any of it, and that dialog takes a pasted request block. So if answering the question properly needs a layer this file lacks, do not stop at saying so: write the block below into your reply and tell the user to paste it into that box, which sets every control at once.',
+                    whereToFindIt: 'In the app: Options > Other > Custom export for AI. Paste into the box headed "Or paste what an assistant asked for", press Apply request, then Export.',
+                    syntax: this._aiRequestSyntax(),
+                    example: 'CORRELATE-REQUEST v1\ncohort: all\ngenes: BRAF, NRAS, MITF, SOX10\ngene-limit: all\ninclude: drug-response, matched-pairs\nquestion: does BRAF dependency track measured BRAF-inhibitor sensitivity?',
+                    notes: 'One instruction per line, order does not matter, anything you leave out keeps its current setting. `cohort` takes view, all, or a list of cell line names. `genes` takes auto or a list of symbols; naming genes is what makes room for every cell line and every extra layer at once. `include` takes any of: drug-response, copy-number, virus, identity, matched-pairs. Ask only for what the question needs: a file carrying everything is slower to read and may be too large to attach.'
+                },
             },
             _instructions: [
                 'CRISPR gene effect: negative = essential for cell survival. 0 = no effect.',
@@ -30370,7 +30653,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 'Inferred functional loss: integrated CN+mutation+expression call from DepMap, catches deletion-driven tumor-suppressor losses (CDKN2A homo-del, RB1 deep deletion) that the damaging-mutation matrix alone misses.',
                 `Data tier: ${tierLabel}.`,
                 'Use cellLineOrder as the shared index for geneEffect and expression arrays.',
-                'Read `notIncluded` before concluding that something is missing from the data: it lists what this file leaves out and how the user can fetch it.'
+                'Read `notIncluded` before concluding that something is missing from the data: it lists what this file leaves out, and `notIncluded.howToAskForMore` gives the exact block to write so the user can export it.'
             ],
             _analysisInstructions: [
                 { when: 'focal', text: "Step 0 - Sanity check: Look for extras.focalGeneVarianceWarning. If present, the focal gene sits in screen noise in this cohort, top genome-wide correlations will be noise-driven. Read the warning aloud to the user, suggest stratification or a wider cohort, and treat any pattern hunting in this export as exploratory, not load-bearing." },
@@ -30411,6 +30694,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 + 'Name cell lines and genes, not indices. If something important is missing from the file, say what you would need and how they can get it, '
                 + 'in terms of what they would click, not what the file lacks. If a caution applies (a small group, a gene measured in few lines, '
                 + 'a score that tracks copy number), state it as a plain sentence about how much weight to put on the result.\n\n'
+                + 'IF THE FILE LACKS SOMETHING THE QUESTION NEEDS: `notIncluded.howToAskForMore` gives the exact block to write '
+                + 'and where to paste it. Put that block in your reply, in a code fence, and say in one sentence what it will add and why. '
+                + 'Ask only for what the question needs. Do not do this when the file already answers the question.\n\n'
                 + 'WHEN RECOMMENDING WHICH CELL LINES TO WORK WITH: do not rank them on the raw score alone. Check whether the gene also stands out '
                 + 'against everything else measured in that same line. A line whose raw number matches the others but which ranks unremarkably '
                 + 'within its own screen is the weaker choice, and saying so is more useful than a bare ordering.'
@@ -30564,6 +30850,104 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             }
         }
         if (exportSelfCheck) exportData._exportSelfCheck = exportSelfCheck;
+        if (custom?.cohort === 'all') delete exportData.notIncluded.cellLinesOutsideCohort;
+
+        // Layers the standard export leaves out, added because they were asked
+        // for. Each one also strikes its own line from `notIncluded`, so the
+        // file never says a section is missing while carrying it.
+        if (custom) {
+            exportData.dataStructure.customExport = 'What was chosen in the Custom export for AI dialog, so the contents of this file can be read against the choices that produced it.';
+            if (custom.layers.drugResponse) exportData.dataStructure.drugResponse = 'Measured drug sensitivity per cell line as area under the dose-response curve, plus each compound\'s target and mechanism. Lower auc means more easily killed.';
+            if (custom.layers.viralTransformation) exportData.dataStructure.viralTransformation = 'Curated records of what a cell line was transformed BY. Absence is not evidence of absence.';
+            if (custom.layers.identityWarnings) exportData.dataStructure.identityWarnings = 'Curated provenance flags: a line that may not be what its name says, or one filed under the wrong disease.';
+            exportData.customExport = {
+                _readMe: 'This file was built from the Custom export for AI dialog rather than the standard export, so its contents were chosen deliberately. What follows is what was chosen.',
+                cellLines: custom.cohort === 'all' ? 'every cell line in the release'
+                    : custom.cohort === 'list' ? `${cellLines.length} named cell lines`
+                    : 'the cohort the exported view was showing',
+                genes: custom.genes === 'list' ? `${custom.geneList.length} named genes (plus the focal gene where there is one)` : 'chosen automatically',
+                geneLimit: custom.geneCap === 0 ? 'none' : (custom.geneCap || 'set by cohort size'),
+                scanSize: _scanTop,
+                extraLayers: Object.entries(custom.layers).filter(([, on]) => on).map(([k]) => k)
+            };
+
+            if (custom.layers.drugResponse && this.drugResponse?.compounds?.length) {
+                const inCohort = new Set(cellLines);
+                exportData.drugResponse = {
+                    _readMe: 'Measured drug sensitivity as area under the dose-response curve. LOWER auc means the line was killed more easily; around 1.0 means the compound did essentially nothing. Only cell lines in this file are listed, and a line absent from a compound was not screened against it. This is a different screen from the CRISPR data and covers a different, smaller set of lines.',
+                    source: this.drugResponse.dataSource || 'DepMap PRISM Repurposing',
+                    compounds: this.drugResponse.compounds.map(c => {
+                        const auc = {};
+                        for (const [cl, v] of Object.entries(c.auc || {})) if (inCohort.has(cl)) auc[cl] = v;
+                        return { name: c.name, target: c.target, moa: c.moa, indication: c.indication,
+                                 cohortMean: c.mean, cohortSd: c.sd, nScreenedOverall: c.nCells, auc };
+                    }).filter(c => Object.keys(c.auc).length)
+                };
+                delete exportData.notIncluded.drugResponse;
+            }
+
+            if (custom.layers.fullCopyNumber && typeof this.getCnValue === 'function') {
+                try { if (!this.cnLoaded && this.loadCnData) await this.loadCnData(); } catch (e) { /* optional layer */ }
+                if (this.cnLoaded) {
+                    setStatus('Adding copy number...');
+                    await new Promise(r => setTimeout(r, 20));
+                    const cn = {};
+                    for (const gene of Object.keys(geMatrix)) {
+                        const row = [];
+                        let any = false;
+                        for (const cl of cellLines) {
+                            const v = this.getCnValue(gene, cl);
+                            if (v == null || isNaN(v)) row.push(null);
+                            else { row.push(Math.round(v * 100) / 100); any = true; }
+                        }
+                        if (any) cn[gene] = row;
+                    }
+                    if (Object.keys(cn).length) {
+                        exportData.copyNumber = cn;
+                        exportData.dataStructure.copyNumber = 'Object keyed by gene name, arrays aligned to cellLineOrder, DepMap relative copy number where 1.0 is diploid. Covers the same genes as the geneEffect matrix. Gene effect is already copy-number corrected by DepMap, so use this to ask whether a dependency sits in an amplification, not to re-correct the scores.';
+                        delete exportData.notIncluded.fullCopyNumber;
+                    }
+                }
+            }
+
+            if (custom.layers.viralTransformation && this.virusStatus?.byCellLine) {
+                const v = {};
+                for (const cl of cellLines) {
+                    const hits = this.virusStatus.byCellLine[cl];
+                    if (hits?.length) v[cl] = hits.map(h => ({ agent: h.agent, name: h.name, note: h.note || undefined }));
+                }
+                exportData.viralTransformation = {
+                    _readMe: 'Curated Cellosaurus records of what a line was transformed BY. A line listed here is CONFIRMED transformed by that agent; a line NOT listed simply has no such record, which is not evidence it is free of the virus. Viral oncoproteins override host pathways, so an HPV line behaves as p53- and RB-deficient whatever its sequence says.',
+                    byCellLine: v
+                };
+                delete exportData.notIncluded.viralTransformation;
+            }
+
+            if (custom.layers.identityWarnings && this.problematicLines?.byCellLine) {
+                const p = {};
+                for (const cl of cellLines) {
+                    const rec = this.problematicLines.byCellLine[cl];
+                    if (rec) p[cl] = { kind: rec.kind, category: rec.category, note: rec.note, rrid: rec.rrid, settled: rec.settled };
+                }
+                exportData.identityWarnings = {
+                    _readMe: 'Curated Cellosaurus provenance flags. "identity" means the line may not be the line its name says, usually cross-contamination; "classification" means the line is real but was filed under the wrong disease. Lines absent from this list carry no such flag.',
+                    byCellLine: p
+                };
+                delete exportData.notIncluded.identityWarnings;
+            }
+
+            if (custom.layers.derivativePairs && this.derivativeLines?.pairs) {
+                const inCohort = new Set(cellLines);
+                const pairs = this.derivativeLines.pairs.filter(pr => inCohort.has(pr.parent) || inCohort.has(pr.derivative));
+                if (pairs.length) {
+                    exportData.dataStructure.matchedPairs = 'Cell lines that are another line in this panel after a drug, with that parental line.';
+                    exportData.matchedPairs = {
+                        _readMe: 'Cell lines that are another line in this panel after a drug, paired with that parental line. Treat a pair as one line in two states: a difference between them is the treatment, and a property they share is the background they both came from. A pair read as two independent cell lines is the most misleading comparison the panel offers.',
+                        pairs
+                    };
+                }
+            }
+        }
 
         // Say up front which of the optional sections this particular file
         // actually carries, and drop the documentation for the ones it does
@@ -30573,7 +30957,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         {
             const OPTIONAL = ['topCorrelates', 'topCoessentials', 'topExpressionCorrelates',
                 'cellLineGroups', 'extras', 'questionScope', 'scanScope', 'geneEffect',
-                'expression', 'cellLineMetadata', 'assayNotes', 'focalGeneAlterations'];
+                'expression', 'cellLineMetadata', 'assayNotes', 'focalGeneAlterations',
+                'customExport', 'drugResponse', 'copyNumber', 'viralTransformation',
+                'identityWarnings', 'matchedPairs'];
             const present = OPTIONAL.filter(k => {
                 const v = exportData[k];
                 return v != null && (typeof v !== 'object' || Object.keys(v).length > 0);
@@ -37093,6 +37479,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         });
 
         // Direct Correlation button
+        document.getElementById('customAIExportBtn')?.addEventListener('click', () => {
+            document.getElementById('optionsOtherMenu')?.style.setProperty('display', 'none');
+            this.openCustomAIExport();
+        });
         document.getElementById('showCorrelationDirect')?.addEventListener('click', () => {
             document.getElementById('inspectModal').classList.add('active');
             // Set default plot size if empty
