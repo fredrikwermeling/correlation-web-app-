@@ -11199,6 +11199,13 @@ class CorrelationExplorer {
     // Abramowitz & Stegun 26.2.17 normal-CDF approximation. The precomputed
     // scans shipped r and n only, and a reader asking "is this real" had no
     // way to get from one to the other inside the file.
+    // How long the pointer has to rest before an information tooltip appears.
+    // These were set per call site and drifted from 150ms to 450ms, so the
+    // network fired almost on contact while the same kind of box elsewhere
+    // waited. One value, long enough that sweeping across a dense chart does
+    // not throw popups.
+    get _HOVER_DELAY() { return 650; }
+
     _pearsonP(r, n) {
         if (r === null || r === undefined || isNaN(r) || !(n > 2) || Math.abs(r) >= 0.9999) return null;
         const t = r * Math.sqrt(n - 2) / Math.sqrt(1 - r * r);
@@ -11826,7 +11833,7 @@ class CorrelationExplorer {
             // doesn't fire a gene-info request per node passed over.
             this._networkTooltipTimer = setTimeout(() => {
                 this.showGeneTooltip(domEvent, nodeId, undefined, this._nodeFactsHtml(nodeId));
-            }, 150);
+            }, this._HOVER_DELAY);
         });
         this.network.on('blurNode', () => {
             clearTimeout(this._networkTooltipTimer);
@@ -12740,7 +12747,7 @@ class CorrelationExplorer {
                     // tooltip both fired on hover and overlapped, now the
                     // why-context is folded into the single custom tooltip.
                     this.showGeneTooltip(e, el.dataset.gene, el.dataset.why || null);
-                }, 400);
+                }, this._HOVER_DELAY);
             });
             el.addEventListener('mouseleave', () => {
                 clearTimeout(this._tooltipTimer);
@@ -22799,7 +22806,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (!md) return;
             const ev = { clientX: eventData.event?.clientX, clientY: eventData.event?.clientY };
             clearTimeout(scatterHoverTimer);
-            scatterHoverTimer = setTimeout(() => this.showCellLineTooltip(ev, md.cellLineId, 'Click to mark · Shift-click to open its Wiki'), 450);
+            scatterHoverTimer = setTimeout(() => this.showCellLineTooltip(ev, md.cellLineId, 'Click to mark · Shift-click to open its Wiki'), this._HOVER_DELAY);
         });
         hoverEl.on('plotly_unhover', () => { clearTimeout(scatterHoverTimer); this.hideCellLineTooltip(); });
 
@@ -31898,7 +31905,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (typeof id !== 'string' || !id) return;
             const ev = { clientX: eventData.event?.clientX, clientY: eventData.event?.clientY };
             clearTimeout(hoverTimer);
-            hoverTimer = setTimeout(() => this.showCellLineTooltip(ev, id, hint), 450);
+            hoverTimer = setTimeout(() => this.showCellLineTooltip(ev, id, hint), this._HOVER_DELAY);
         });
         el.on('plotly_unhover', () => { clearTimeout(hoverTimer); this.hideCellLineTooltip(); });
     }
@@ -35062,6 +35069,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             'virus_transformed', 'virus_ebv', 'virus_hpv', 'virus_hbv',
             // Provenance
             'problematic_identity', 'problematic_classification',
+            // Matched treated / parental pairs
+            'drug_selected_pairs', 'drug_selected_derivative',
             // Genome instability
             'wgd_positive', 'high_aneuploidy',
             // Expression phenotype
@@ -35329,16 +35338,15 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const nm = (id) => esc(this.getCellLineName(id) || id);
             if (d.role === 'derivative') {
                 const p = d.pairs[0];
-                bits.push(`<p style="margin:0 0 8px;"><b>Derived line.</b> This is <b>${nm(p.parent)}</b> after `
+                bits.push(`<p style="margin:0 0 8px;"><b>Grown from ${nm(p.parent)}</b> under `
                     + `${esc(p.agents.join(' and '))}`
-                    + (p.relationship === 'drug-resistant' ? ', carried in the drug until it grew in it' : '')
-                    + `. Treat the two as one line in two states: a difference between them is the treatment, `
-                    + `and a property they share is the background they both came from, not a finding about resistance.</p>`);
+                    + (p.relationship === 'drug-resistant' ? ' until it survived the drug' : '')
+                    + `. Treat the two as one line in two states: a difference between them is what the treatment did, `
+                    + `and something they share is the background they started from, not a finding about resistance.</p>`);
             } else {
-                bits.push(`<p style="margin:0 0 8px;"><b>Parental line.</b> The panel also carries `
-                    + `${d.pairs.length === 1 ? 'a treated version' : d.pairs.length + ' treated versions'} of this line: `
+                bits.push(`<p style="margin:0 0 8px;"><b>Resistant versions of this line are in the panel:</b> `
                     + d.pairs.map(p => `<b>${nm(p.derivative)}</b> (${esc(p.agents.join(' and '))})`).join(', ')
-                    + `. Compared against ${d.pairs.length === 1 ? 'it' : 'them'}, everything except the treatment is held constant.</p>`);
+                    + `. They started as these cells, so anything that differs is what the treatment did.</p>`);
             }
         }
 
@@ -35393,21 +35401,20 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (!d) return '';
         const nm = (id) => this.esc(this.getCellLineName(id) || id);
         const link = (id) => `<a href="#" onclick="event.preventDefault();app.openCellLineWiki('${id}')" style="color:#2563eb;">${nm(id)}</a>`;
-        let body;
+        let head, body;
         if (d.role === 'derivative') {
             const p = d.pairs[0];
-            body = `This is <b>${nm(p.parent)}</b> after ${this.esc(p.agents.join(' and '))}`
-                + (p.relationship === 'drug-resistant' ? ', carried in the drug until it grew in it' : '')
-                + `. The same line twice, not two lines: what differs between them is the treatment, `
-                + `and what they share is the background they both came from. Parental line: ${link(p.parent)}.`;
+            head = p.relationship === 'drug-resistant' ? 'Made resistant' : 'Engineered line';
+            body = `Grown from ${link(p.parent)} under ${this.esc(p.agents.join(' and '))}`
+                + (p.relationship === 'drug-resistant' ? ' until it survived the drug.' : '.')
+                + ` Compare the two to see what the treatment changed.`;
         } else {
-            const kids = d.pairs.map(p => `${link(p.derivative)} (${this.esc(p.agents.join(' and '))})`).join(', ');
-            body = `The panel also carries ${d.pairs.length === 1 ? 'a treated version' : `${d.pairs.length} treated versions`} `
-                + `of this line: ${kids}. Comparing this line against ${d.pairs.length === 1 ? 'it' : 'them'} `
-                + `isolates the treatment, since everything else is the same background.`;
+            head = 'Has resistant versions';
+            body = `${d.pairs.map(p => `${link(p.derivative)} (${this.esc(p.agents.join(' and '))})`).join(', ')}. `
+                + `Same starting cells, so a difference is the treatment.`;
         }
         return `<div style="margin:6px 0; padding:6px 9px; background:#eff6ff; border-left:3px solid #60a5fa; border-radius:3px; font-size:11px; color:#1e3a5f;">`
-            + `<b>Matched pair.</b> ${body}</div>`;
+            + `<b>${head}.</b> ${body}</div>`;
     }
 
     _derivativeTitle(cellLineId) {
@@ -35415,8 +35422,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (!d) return '';
         const nm = (id) => this.getCellLineName(id) || id;
         return d.role === 'derivative'
-            ? `${nm(d.pairs[0].parent)} after ${d.pairs[0].agents.join(' and ')}, selected to grow in it. The same line as its parent, treated.`
-            : `Has ${d.pairs.length} treated version${d.pairs.length === 1 ? '' : 's'} in this panel: ${d.pairs.map(p => nm(p.derivative)).join(', ')}.`;
+            ? `Grown from ${nm(d.pairs[0].parent)} under ${d.pairs[0].agents.join(' and ')}.`
+            : `Resistant versions in this panel: ${d.pairs.map(p => nm(p.derivative)).join(', ')}.`;
     }
 
     // Compute which cell lines belong to each curated collection. Called
@@ -38069,7 +38076,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (!link) return;
             this._clbGeneTooltipTimer = setTimeout(() => {
                 this.showGeneTooltip(e, link.dataset.gene, link.dataset.why || null);
-            }, 400);
+            }, this._HOVER_DELAY);
         }, true);
         geneLists.addEventListener('mouseleave', (e) => {
             const link = e.target.closest('.clb-gene-link');
@@ -38095,7 +38102,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (!link) return;
             this._clbGeneTooltipTimer = setTimeout(() => {
                 this.showGeneTooltip(e, link.dataset.gene, link.dataset.why || null);
-            }, 400);
+            }, this._HOVER_DELAY);
         }, true);
         detailTop.addEventListener('mouseleave', (e) => {
             const link = e.target.closest('.gene-hover');
@@ -44727,7 +44734,7 @@ ${clone.innerHTML}
                         // scoped to that callback, not to the row.
                         this.showGeneTooltip({ clientX: r.right - 60, clientY: r.bottom },
                             tr.dataset.gene, undefined, this._geInspectRowFactsHtml(tr));
-                    }, 260);
+                    }, this._HOVER_DELAY);
                 });
                 tr.addEventListener('mouseleave', () => {
                     tr.style.background = '';
