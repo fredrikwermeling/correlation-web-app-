@@ -25919,7 +25919,17 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         this._geCompareSides = (compareSides?.selection?.length && compareSides?.comparison?.length)
             ? compareSides : null;
         this._geCompareMode = false;
-        this._syncGeScopeToggle?.();
+        if (this._geCompareSides) {
+            // Open on the comparison the table was built from. Clicking a gene
+            // in a "my list vs my other list" inspect used to land on the
+            // by-tissue chart, which answers a different question from the one
+            // on screen. setGeScopeMode does the rest: it clears the tissue
+            // filters the two sides span and redraws. The toggle still
+            // switches back to any of the lineage views.
+            this.setGeScopeMode('compare');
+        } else {
+            this._syncGeScopeToggle?.();
+        }
     }
 
     _applyParamFiltersToGEModal() {
@@ -26579,8 +26589,18 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const pFilterTissue = document.getElementById('gePvalueFilter')?.checked;
         const filteredStats = pFilterTissue ? stats.filter(s => s.pValue < 0.05) : stats;
 
-        // Sort by median gene effect for chart display
-        filteredStats.sort((a, b) => a.mean - b.mean);
+        // Sort by median gene effect for chart display. The exception is the
+        // two-group comparison opened from a cell line inspect: there the rows
+        // are "your selection" and "what you compared it with", and ordering
+        // them by mean flipped them whenever the direction of the difference
+        // flipped, so the same two groups swapped places from gene to gene.
+        // They keep the order the table uses instead.
+        if (cmpSel && this._geCompareSides) {
+            const rank = { [this._geCompareSides.selLabel]: 0, [this._geCompareSides.cmpLabel]: 1 };
+            filteredStats.sort((a, b) => (rank[a.group] ?? 2) - (rank[b.group] ?? 2));
+        } else {
+            filteredStats.sort((a, b) => a.mean - b.mean);
+        }
         this.currentGEStats = filteredStats;
 
         // Metric label for hover (matches the axis/title). Determined up
@@ -43191,6 +43211,14 @@ ${clone.innerHTML}
             </div>`;
 
         document.getElementById('selectionInspectBody').innerHTML = `
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:11px; margin-bottom:8px; padding-bottom:7px; border-bottom:1px solid #eef2f7;">
+                <label for="geInspectTest" style="font-weight:600; color:#374151;">Test</label>
+                <select id="geInspectTest" style="font-size:11px; padding:2px 6px; border:1px solid #d1d5db; border-radius:3px; background:#fff;" title="Welch's t compares the means and is punished by spread, which bites hardest on small groups. The rank test asks only whether one group sits above the other, so a clean separation survives a wide spread, but it cannot resolve very small groups at all.">
+                    <option value="welch">Welch's t (means)</option>
+                    <option value="rank">Rank sum (order)</option>
+                </select>
+                <span id="geInspectStatNote" style="color:#6b7280;"></span>
+            </div>
             <div style="display:flex; gap:18px; flex-wrap:wrap; align-items:flex-start;">
                 ${col('Left', 'CRISPR gene effect',
                       'Difference in knockout effect. Negative means the selected lines depend on the gene more than the rest.',
@@ -43232,7 +43260,41 @@ ${clone.innerHTML}
         document.getElementById('geRightNetwork')?.addEventListener('click', () => this._launchGENetwork('right'));
         document.getElementById('geLeftEnrichr')?.addEventListener('click', (e) => this._launchGEEnrichr('left', e.currentTarget));
         document.getElementById('geRightEnrichr')?.addEventListener('click', (e) => this._launchGEEnrichr('right', e.currentTarget));
+        const testSel = document.getElementById('geInspectTest');
+        if (testSel) {
+            testSel.value = this._geInspectTest === 'rank' ? 'rank' : 'welch';
+            testSel.addEventListener('change', () => {
+                this._geInspectTest = testSel.value === 'rank' ? 'rank' : 'welch';
+                // The p-values are computed in the scan, so changing the test
+                // re-runs it rather than re-filtering what is already here.
+                this.inspectSelectionGE();
+            });
+        }
+        this._renderGEStatNote();
         renderSides();
+    }
+
+    // What the numbers in this table can and cannot show at the current group
+    // sizes. A comparison of three lines against three can never produce a
+    // rank-test p below 0.1, so a q cutoff of 0.05 empties the table for a
+    // reason that has nothing to do with the biology, and nothing on screen
+    // said so.
+    _renderGEStatNote() {
+        const el = document.getElementById('geInspectStatNote');
+        if (!el) return;
+        const cov = this._geInspectResults?.geCoverage;
+        if (!cov) { el.textContent = ''; return; }
+        const n1 = cov.selMeasured || 0, n2 = cov.othMeasured || 0;
+        const floor = this._rankTestFloor(n1, n2);
+        const bits = [`${n1} vs ${n2} lines with a screen`];
+        if (this._geInspectTest === 'rank') {
+            bits.push(floor > 0.001
+                ? `the strongest result possible at these sizes is p = ${floor < 0.01 ? floor.toExponential(1) : floor.toFixed(3)}, so a stricter cutoff than that will show nothing whatever the difference`
+                : 'group sizes are large enough for the rank test to resolve small p-values');
+        } else if (n1 < 6 || n2 < 6) {
+            bits.push('with groups this small a t-test is punished by ordinary spread; the rank test asks only whether one group sits above the other, though it cannot resolve very small groups either');
+        }
+        el.textContent = bits.join(' · ');
     }
 
     // Selection inspect: what is different about the cell lines you picked.
@@ -43255,6 +43317,57 @@ ${clone.innerHTML}
     // Welch's t-test from running sums, so 18,000 genes can be tested without
     // building an array per gene. Same result as welchTTest(), which needs the
     // values materialised.
+    //
+    // Mann-Whitney U (Wilcoxon rank sum), normal approximation with a tie
+    // correction and a continuity correction. Offered alongside Welch's t
+    // because a t-test on a handful of lines is punished by any reasonable
+    // spread, while a clear separation in rank order survives it.
+    _mannWhitneyP(sv, ov) {
+        const n1 = sv.length, n2 = ov.length;
+        if (n1 < 1 || n2 < 1) return { p: 1, u: NaN };
+        const all = new Array(n1 + n2);
+        for (let i = 0; i < n1; i++) all[i] = { v: sv[i], a: 1 };
+        for (let i = 0; i < n2; i++) all[n1 + i] = { v: ov[i], a: 0 };
+        all.sort((x, y) => x.v - y.v);
+        // Midranks for ties, and sum(t^3 - t) for the variance correction.
+        let r1 = 0, tieSum = 0;
+        for (let i = 0; i < all.length;) {
+            let j = i;
+            while (j + 1 < all.length && all[j + 1].v === all[i].v) j++;
+            const rank = (i + j) / 2 + 1;
+            const t = j - i + 1;
+            if (t > 1) tieSum += t * t * t - t;
+            for (let k = i; k <= j; k++) if (all[k].a === 1) r1 += rank;
+            i = j + 1;
+        }
+        const u1 = r1 - n1 * (n1 + 1) / 2;
+        const n = n1 + n2;
+        const mu = n1 * n2 / 2;
+        const sd2 = (n1 * n2 / 12) * ((n + 1) - tieSum / (n * (n - 1)));
+        if (!(sd2 > 0)) return { p: 1, u: u1 };
+        const z = (Math.abs(u1 - mu) - 0.5) / Math.sqrt(sd2);
+        return { p: Math.min(1, 2 * (1 - this._normalCdf(Math.max(0, z)))), u: u1, z };
+    }
+
+    _normalCdf(z) {
+        // Abramowitz & Stegun 26.2.17.
+        const t = 1 / (1 + 0.2316419 * Math.abs(z));
+        const d = 0.3989422804014327 * Math.exp(-z * z / 2);
+        const p = d * t * (0.31938153 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
+        return z >= 0 ? 1 - p : p;
+    }
+
+    // The smallest two-sided p a rank test can EVER produce at these group
+    // sizes, 2 / C(n1+n2, n1). With 3 against 3 that is 0.1, so a q filter at
+    // 0.05 can never be met however cleanly the groups separate, and the
+    // table looks empty for a reason that has nothing to do with the biology.
+    _rankTestFloor(n1, n2) {
+        if (n1 < 1 || n2 < 1) return 1;
+        let logC = 0;
+        for (let i = 1; i <= n1; i++) logC += Math.log(n2 + i) - Math.log(i);
+        return Math.min(1, 2 * Math.exp(-logC));
+    }
+
     _welchFromSums(sSum, sSq, sN, oSum, oSq, oN) {
         if (sN < 2 || oN < 2) return { p: 1, t: NaN };
         const mS = sSum / sN, mO = oSum / oN;
@@ -43535,23 +43648,32 @@ ${clone.innerHTML}
         // CRISPR gene effect, straight from the GE matrix.
         const geRows = [];
         const _cov = this._geneCoverage(), _minCov = this._minGeneCoverage();
+        // Welch's t is the default. On a handful of lines it is punished by
+        // any reasonable spread even when the two groups separate cleanly, so
+        // the rank test is offered as an alternative; it needs the values
+        // themselves, not just their sums.
+        const useRank = this._geInspectTest === 'rank';
         for (let g = 0; g < this.nGenes; g++) {
             if (_minCov && _cov[g] < _minCov) continue;
             const off = g * this.nCellLines;
             let sSum = 0, sSq = 0, sN = 0;
+            const sv = useRank ? [] : null;
             for (const ci of selIdx) {
                 const v = this.geneEffects[off + ci];
-                if (!isNaN(v) && v !== -999) { sSum += v; sSq += v * v; sN++; }
+                if (!isNaN(v) && v !== -999) { sSum += v; sSq += v * v; sN++; if (sv) sv.push(v); }
             }
             if (sN < minSel) continue;
             let oSum = 0, oSq = 0, oN = 0;
+            const ov = useRank ? [] : null;
             for (const ci of otherIdx) {
                 const v = this.geneEffects[off + ci];
-                if (!isNaN(v) && v !== -999) { oSum += v; oSq += v * v; oN++; }
+                if (!isNaN(v) && v !== -999) { oSum += v; oSq += v * v; oN++; if (ov) ov.push(v); }
             }
             if (oN < 3) continue;
             const mS = sSum / sN, mO = oSum / oN;
-            const p = canTest ? this._welchFromSums(sSum, sSq, sN, oSum, oSq, oN).p : null;
+            const p = !canTest ? null
+                : useRank ? this._mannWhitneyP(sv, ov).p
+                : this._welchFromSums(sSum, sSq, sN, oSum, oSq, oN).p;
             geRows.push({ gene: this.geneNames[g], meanSel: mS, meanOther: mO, delta: mS - mO, nSel: sN, nOther: oN, p });
         }
         if (canTest) this._addBHQValues(geRows);
@@ -43580,13 +43702,17 @@ ${clone.innerHTML}
             for (let g = 0; g < genes.length; g++) {
                 const off = g * nC;
                 let sSum = 0, sSq = 0, sN = 0;
-                for (const ci of selE) { const v = this.expressionData[off + ci]; if (!isNaN(v)) { sSum += v; sSq += v * v; sN++; } }
+                const sv = useRank ? [] : null;
+                for (const ci of selE) { const v = this.expressionData[off + ci]; if (!isNaN(v)) { sSum += v; sSq += v * v; sN++; if (sv) sv.push(v); } }
                 if (sN < minSel) continue;
                 let oSum = 0, oSq = 0, oN = 0;
-                for (const ci of othE) { const v = this.expressionData[off + ci]; if (!isNaN(v)) { oSum += v; oSq += v * v; oN++; } }
+                const ov = useRank ? [] : null;
+                for (const ci of othE) { const v = this.expressionData[off + ci]; if (!isNaN(v)) { oSum += v; oSq += v * v; oN++; if (ov) ov.push(v); } }
                 if (oN < 3) continue;
                 const mS = sSum / sN, mO = oSum / oN;
-                const p = canTest ? this._welchFromSums(sSum, sSq, sN, oSum, oSq, oN).p : null;
+                const p = !canTest ? null
+                    : useRank ? this._mannWhitneyP(sv, ov).p
+                    : this._welchFromSums(sSum, sSq, sN, oSum, oSq, oN).p;
                 exprRows.push({ gene: genes[g], meanSel: mS, meanOther: mO, delta: mS - mO, nSel: sN, nOther: oN, p });
             }
             if (canTest) this._addBHQValues(exprRows);
@@ -43644,7 +43770,9 @@ ${clone.innerHTML}
             + `For every gene, its average across your selection minus its average across the cell lines it is compared with. `
             + `Both columns are sorted by the size of that difference, so genes that are higher and lower in your selection appear together. `
             + (canTest
-                ? `Welch's t-test per gene, q is that p-value after Benjamini-Hochberg across all genes tested. `
+                ? (this._geInspectTest === 'rank'
+                    ? `Wilcoxon rank sum per gene, which asks whether one group sits above the other rather than how far apart their means are, and q is that p-value after Benjamini-Hochberg across all genes tested. `
+                    : `Welch's t-test per gene, q is that p-value after Benjamini-Hochberg across all genes tested. `)
                 : `<b>With fewer than three cell lines there is no spread to test</b>, so differences are shown without p or q. `)
             + `Click a gene to open it; Network builds a correlation network from the genes listed.`
             + `<div style="margin-top:6px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">`
