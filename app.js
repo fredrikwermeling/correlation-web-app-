@@ -48084,7 +48084,11 @@ const MODAL_IDS = [
     'referenceDataModal', 'inspectModal', 'geneEffectModal', 'corrAnalysisModal',
     'exportOptionsModal', 'infographicModal', 'changelogModal', 'inspectCorrelatesModal',
     'collectionsInfoModal', 'selectionInspectModal', 'mutCompareModal', 'enrichrModal',
-    'clbWikiModal', 'clbInfoModal', 'cellLineBrowserModal', 'exportPreviewModal'
+    'clbWikiModal', 'clbInfoModal', 'cellLineBrowserModal', 'exportPreviewModal',
+    // The AI export dialog opens over whichever view raised it, so being able
+    // to slide it aside and read what is underneath matters as much here as
+    // anywhere else.
+    'aiAnalysisDialog'
 ];
 
 // Explanation popouts on hover. The browser's own tooltip is slow, tiny, and
