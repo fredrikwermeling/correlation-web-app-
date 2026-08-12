@@ -26630,6 +26630,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             filteredStats.sort((a, b) => a.mean - b.mean);
         }
         this.currentGEStats = filteredStats;
+        // Keep the version that still carries each group's cell lines. The
+        // table only needs the summary rows, so currentGEStats is replaced
+        // further down by a stripped copy, and an export reading it after that
+        // point gets group names with nothing under them.
+        this._geStatsWithCells = filteredStats;
 
         // Metric label for hover (matches the axis/title). Determined up
         // here so both box and highlight traces can reference the same
@@ -27139,6 +27144,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Sort by p-value (low to high) for table
         tableStats.sort((a, b) => a.pValue - b.pValue);
         this.currentGEStats = tableStats;
+        // This chart groups by mutation status, not by the rows the by-tissue
+        // pass built, so its cell-carrying copy must not answer for this view.
+        this._geStatsWithCells = null;
 
         // Render table
         this.renderGETable(tableStats, 'hotspot');
@@ -31161,7 +31169,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // comparison, or filtering the cohort, changed the picture on screen
         // and changed nothing in the file. currentGEStats is what is drawn,
         // group by group, so the export is built from that instead.
-        const stats = this.currentGEStats;
+        const stats = this._geStatsWithCells;
         const groupHeader = this._geCompareMode ? 'Compared_Group'
             : this._geSplitByOncotree ? 'Disease' : 'Group';
         let csv = `Cell_Line_ID,Cell_Line_Name,${groupHeader},Cancer_Type,Cancer_Subtype,${this._geMetric().csv}\n`;
@@ -31176,8 +31184,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 }
             }
         } else {
-            // No grouped view has been built (the chart was never drawn), so
-            // fall back to the whole set rather than exporting an empty file.
+            // No grouped view carrying its cell lines (the chart was never
+            // drawn, or this is the by-mutation chart), so fall back to the
+            // whole set rather than exporting an empty file.
             for (const d of (this.currentGeneEffect.data || [])) {
                 csv += `"${d.cellLineId}","${d.cellLineName}","${d.lineage || ''}","${d.lineage || ''}",`
                      + `"${this.getCellLineSublineage?.(d.cellLineId) || ''}",${d.geneEffect.toFixed(2)}\n`;
@@ -44689,22 +44698,37 @@ ${clone.innerHTML}
         this._geInspectResults.leftDisplayed = leftRows;
         this._geInspectResults.rightDisplayed = rightRows;
 
-        const hint = (shown, cut, q, all) => {
+        const hint = (shown, cut, q, all, side) => {
             let t = `${shown} of ${all.length.toLocaleString()} genes shown (|Δ| ≥ ${cut.toFixed(2)}`
                   + (anyQ && q < 1 ? `, q ≤ ${q}` : '') + `). Click a column to sort.`;
             // Two cutoffs can each pass plenty while their overlap is empty,
-            // which otherwise just reads as "nothing here".
+            // which otherwise just reads as "nothing here". When nothing shows,
+            // say which cutoff is doing it and what value would let something
+            // through, rather than leaving the table blank and the reason to
+            // be worked out from two boxes further up.
             if (shown === 0 && all.length) {
-                const nD = all.filter(r => Math.abs(r.delta) >= cut).length;
+                const passD = all.filter(r => Math.abs(r.delta) >= cut);
                 const nQ = anyQ ? all.filter(r => r.q != null && r.q <= q).length : null;
-                t += ` ${nD.toLocaleString()} pass the size cutoff`
-                   + (nQ != null ? ` and ${nQ.toLocaleString()} pass q, but none pass both` : '')
-                   + `.`;
+                const biggest = all.reduce((m, r) => Math.max(m, Math.abs(r.delta)), 0);
+                // The smallest q among genes that already clear the size cutoff
+                // is the value that would show something without also relaxing
+                // the effect size, so it is the number worth quoting.
+                const bestQ = anyQ ? passD.reduce((m, r) => (r.q != null && r.q < m ? r.q : m), Infinity) : Infinity;
+                if (!passD.length && biggest > 0) {
+                    t += ` No gene reaches that size: the largest difference here is ${biggest.toFixed(2)}, so lower the |Δ| cutoff below it.`;
+                } else if (anyQ && nQ === 0 && Number.isFinite(bestQ)) {
+                    const ladder = [0.05, 0.1, 0.25, 0.5, 1].find(v => v >= bestQ) || 1;
+                    t += ` ${passD.length.toLocaleString()} genes are big enough, but none reach q ≤ ${q}, the best being ${bestQ < 0.01 ? bestQ.toExponential(1) : bestQ.toFixed(2)}.`
+                       + ` Set q to ${ladder} to see the strongest differences, and read them as exploratory.`
+                       + (this._geInspectTest !== 'rank' ? ' The rank test above often reaches a smaller q on small groups.' : '');
+                } else {
+                    t += ` ${passD.length.toLocaleString()} pass the size cutoff and ${(nQ || 0).toLocaleString()} pass q, but no gene passes both. Loosen either to see the near misses.`;
+                }
             }
             return t;
         };
-        document.getElementById('geLeftHint').textContent = hint(leftRows.length, leftCut, leftQ, rows);
-        document.getElementById('geRightHint').textContent = hint(rightRows.length, rightCut, rightQ, exprRows);
+        document.getElementById('geLeftHint').textContent = hint(leftRows.length, leftCut, leftQ, rows, 'left');
+        document.getElementById('geRightHint').textContent = hint(rightRows.length, rightCut, rightQ, exprRows, 'right');
         document.getElementById('geLeftBody').innerHTML = this._buildGEInspectTable(leftRows, 'left');
         document.getElementById('geRightBody').innerHTML = this._buildGEInspectTable(rightRows, 'right');
 
@@ -48720,8 +48744,18 @@ ${clone.innerHTML}
             panels: panelAnns.length > 0 && panelAnns[0].visible !== false
         };
         const panelSize = panelAnns[0]?.font?.size || 13;
+        // The category rows of a box plot are the trace names, which is where
+        // the group labels down the y axis come from ("My list (n=4)"). They
+        // were the one piece of text on the chart with no way to edit it.
+        const ROW_LABEL_MAX = 24;
+        const boxRows = (plotEl.data || [])
+            .map((t, i) => ({ i, name: t.name, type: t.type }))
+            .filter(t => t.type === 'box' && t.name)
+            .slice(0, ROW_LABEL_MAX);
+
         // Store original texts for restore
-        this._tsOriginal = { titleText, subtitleText, subtitleSize, xLabel, yLabel, usesAnnotationTitle };
+        this._tsOriginal = { titleText, subtitleText, subtitleSize, xLabel, yLabel, usesAnnotationTitle,
+            rowLabels: boxRows.map(r => ({ i: r.i, name: r.name })) };
 
         const sizeRow = (label, id, val, min, max, toggleId, visible) => `
             <div style="display:flex; align-items:center; margin-bottom:5px; gap:4px;">
@@ -48773,6 +48807,10 @@ ${clone.innerHTML}
             ${textRow('X Axis', 'ts_xLabelText', xLabel)}
             ${textRow('Y Axis', 'ts_yLabelText', yLabel)}
             ${panelAnns.map((a, i) => textRow(`Panel ${i + 1}`, `ts_panelText${i}`, stripHtml(a.text))).join('')}
+            ${boxRows.length ? `<div style="font-weight:600;margin:10px 0 4px;color:#1f2937;font-size:11px;">Row labels <span style="font-weight:400;color:#6b7280;">, the groups down the axis</span></div>` : ''}
+            ${boxRows.map((r, k) => textRow(`Row ${k + 1}`, `ts_rowLabel${k}`, r.name)).join('')}
+            ${(plotEl.data || []).filter(t => t.type === 'box' && t.name).length > ROW_LABEL_MAX
+                ? `<div style="font-size:10px;color:#9ca3af;margin:-2px 0 5px;">Showing the first ${ROW_LABEL_MAX} rows.</div>` : ''}
             <div style="border-top:1px solid #e5e7eb;margin:6px 0;"></div>
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
                 <span style="font-weight:600;color:#1f2937;font-size:11px;">Scale All</span>
@@ -49168,6 +49206,30 @@ ${clone.innerHTML}
                 if (box.dataset.tsOriginal !== undefined && box.value !== box.dataset.tsOriginal) ann.text = box.value;
             });
         }
+        // Row labels are the box traces' own names, so they are restyled
+        // rather than written into the layout. Only boxes whose text actually
+        // changed are touched, so renaming one row leaves the rest alone.
+        {
+            const rows = this._tsOriginal?.rowLabels || [];
+            const idx = [], names = [];
+            rows.forEach((r, k) => {
+                const box = document.getElementById(`ts_rowLabel${k}`);
+                if (!box || box.value === r.name) return;
+                idx.push(r.i); names.push(box.value);
+            });
+            if (idx.length) {
+                try {
+                    Plotly.restyle(plotEl, { name: names }, idx);
+                    // Keep the baseline in step, or every later keystroke
+                    // re-sends the same rename against a stale original.
+                    idx.forEach((traceIdx, k) => {
+                        const rec = rows.find(r => r.i === traceIdx);
+                        if (rec) rec.name = names[k];
+                    });
+                } catch (e) { /* a redraw can outrun the panel; harmless */ }
+            }
+        }
+
         const xLabel = document.getElementById('ts_xLabelText')?.value || '';
         const yLabel = document.getElementById('ts_yLabelText')?.value || '';
         // An axis with no label starts with its visibility switch off, since

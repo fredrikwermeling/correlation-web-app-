@@ -3675,13 +3675,15 @@
                         <option value="primary">This lineage, by primary disease</option>
                         <option value="disease">This lineage, by disease</option>
                     </select>
-                    <span style="font-size: 12px; color: #6b7280; margin-right: 5px;">Export Chart:</span>
+                    <span style="display:inline-flex; align-items:center; gap:6px; white-space:nowrap;"><span style="font-size: 12px; color: #6b7280;">Export Chart:</span>
                     <button class="btn btn-outline btn-sm mobile-hide" id="downloadGeneEffectPNG" title="Export the chart, choose PNG / SVG / TIFF / PDF / PowerPoint in the popup">Export image...</button>
                     <button class="btn btn-outline btn-sm mobile-hide" onclick="app.copyPlotToClipboard('geneEffectPlot', 'Chart')" title="Copy this as an image to the clipboard, ready to paste into an email or slide">Copy</button>
                     <button class="btn btn-sm btn-outline" id="geExpandFullBtn" title="Show the full analysis (filters + statistics table)" style="font-size:11px;">⤢ Full view</button>
-                    <span style="font-size: 12px; color: #6b7280; margin-left: 15px; margin-right: 5px;">Export CSV:</span>
+                    </span>
+                    <span style="display:inline-flex; align-items:center; gap:6px; white-space:nowrap; margin-left: 10px;"><span style="font-size: 12px; color: #6b7280;">Export CSV:</span>
                     <button class="btn btn-outline btn-sm" id="downloadGETableCSV" title="Download the table above as a CSV file">By Group</button>
                     <button class="btn btn-outline btn-sm" id="downloadGECellLineCSV" title="Download the per-cell-line values behind this view as a CSV file">By Cell Line</button>
+                    </span>
                     <span style="border-left: 1px solid #d1d5db; height: 20px; margin: 0 4px;"></span>
                     <button class="btn btn-outline btn-sm" id="geAnalyzeWithAI" style="font-size:11px;" title="Package this view as one compressed file for a language model: gene effect, expression and mutation data plus the settings, with a description of every field">Export for AI</button>
                     <button class="btn btn-sm" id="toggleExprCorrelatesBtn" style="background: #6ba544; color: white; display: none;">Expression Correlates</button>
@@ -3915,12 +3917,14 @@
 
                 <!-- Download buttons (whole row hidden on phones, no exporting on the phone app) -->
                 <div class="mobile-hide" style="margin-top: 15px; display: flex; gap: 10px; flex-wrap: wrap; padding-top: 15px; border-top: 1px solid #e5e7eb;">
-                    <span style="font-size: 12px; color: #6b7280; margin-right: 5px;">Export Chart:</span>
+                    <span style="display:inline-flex; align-items:center; gap:6px; white-space:nowrap;"><span style="font-size: 12px; color: #6b7280;">Export Chart:</span>
                     <button class="btn btn-outline btn-sm mobile-hide" id="downloadCorrAnalysisPNG" title="Export the chart, choose PNG / SVG / TIFF / PDF / PowerPoint in the popup">Export image...</button>
                     <button class="btn btn-outline btn-sm mobile-hide" onclick="app.copyPlotToClipboard(app._caView === 'tissue' ? 'corrAnalysisTissuePlot' : 'corrAnalysisHotspotPlot', 'Chart')" title="Copy this as an image to the clipboard, ready to paste into an email or slide">Copy</button>
-                    <span style="font-size: 12px; color: #6b7280; margin-left: 15px; margin-right: 5px;">Export CSV:</span>
+                    </span>
+                    <span style="display:inline-flex; align-items:center; gap:6px; white-space:nowrap; margin-left: 10px;"><span style="font-size: 12px; color: #6b7280;">Export CSV:</span>
                     <button class="btn btn-outline btn-sm" id="downloadCorrAnalysisCSV" title="Download the table above as a CSV file">By Group</button>
                     <button class="btn btn-outline btn-sm" id="downloadCACellLineCSV" title="Download the per-cell-line values behind this view as a CSV file">By Cell Line</button>
+                    </span>
                 </div>
             </div>
         </div>
@@ -4766,6 +4770,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v87_60"></script>
+    <script src="app.js?v=v87_61"></script>
 </body>
 </html>
