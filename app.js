@@ -16982,6 +16982,33 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         return this._cellLineNameToId;
     }
 
+    // Matcher for the scatter's highlight box. It used to ask whether the
+    // typed text appeared anywhere in the name, so a two-letter line name
+    // matched every line containing those two letters: "CI" is a real CLL
+    // line, and it pulled in NCIH1650 and 94 others alongside it.
+    //
+    // Punctuation and spacing are still ignored on both sides, so "MEC-1"
+    // finds MEC1 and "RVH-421" finds RVH421. What changed is that a SHORT
+    // term now has to be the name, or start it, rather than merely appear
+    // somewhere inside it. Four characters or more is specific enough to be
+    // worth finding mid-name, which keeps "H1650" working for NCIH1650.
+    _highlightMatcher(terms) {
+        const norm = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+        const keys = [];
+        for (const t of (terms || [])) {
+            const key = norm(t);
+            if (key) keys.push(key);
+        }
+        if (!keys.length) return () => false;
+        return (name, id) => {
+            const n = norm(name), i = norm(id);
+            return keys.some(k =>
+                n === k || i === k
+                || (k.length >= 2 && n.startsWith(k))
+                || (k.length >= 4 && n.includes(k)));
+        };
+    }
+
     _parseCustomCellLineInput(textareaId) {
         const el = document.getElementById(textareaId);
         if (!el) return null;
@@ -17417,8 +17444,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const subtypeFilter = document.getElementById('scatterSubtypeFilter').value;
         const mutFilterGene = document.getElementById('mutationFilterGene').value;
         const mutFilterLevel = document.getElementById('mutationFilterLevel').value;
+        // Commas and semicolons separate names too: pasting a list from a
+        // paper is the common case, and it rarely arrives one per line.
         const searchTerms = document.getElementById('scatterCellSearch').value
-            .split('\n').map(s => s.trim().toUpperCase()).filter(s => s);
+            .split(/[\n,;\t]+/).map(s => s.trim().toUpperCase()).filter(s => s);
         const fontSize = parseInt(document.getElementById('scatterFontSize')?.value) || 5;
         const hotspotGene = document.getElementById('hotspotGene').value;
         const hotspotMode = document.getElementById('hotspotMode').value;
@@ -17552,6 +17581,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
 
     renderSinglePanelPlot(filteredData, gene1, gene2, hotspotGene, hotspotMode, searchTerms, fontSize, filterDesc = '', transOverlayGene = '', transOverlayMode = 'none', colorByCategory = '') {
+        const _hlMatch = this._highlightMatcher(searchTerms);
         // Calculate stats for each mutation group
         const wt = filteredData.filter(d => d.mutationLevel === 0);
         const mut1 = filteredData.filter(d => d.mutationLevel === 1);
@@ -17766,10 +17796,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         // Add highlights
         const highlightData = filteredData.filter(d =>
-            searchTerms.some(term =>
-                d.cellLineName.toUpperCase().includes(term) ||
-                d.cellLineId.toUpperCase().includes(term)
-            ) || this.clickedCells.has(d.cellLineName)
+            _hlMatch(d.cellLineName, d.cellLineId) || this.clickedCells.has(d.cellLineName)
         );
         this.renderHighlightChips(highlightData.map(d => d.cellLineName));
 
@@ -18304,6 +18331,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
 
     renderThreePanelPlot(filteredData, gene1, gene2, hotspotGene, searchTerms, fontSize, filterDesc = '', isFusion = false, colorByCategory = '') {
+        const _hlMatch = this._highlightMatcher(searchTerms);
         const levelField = isFusion ? 'translocationLevel' : 'mutationLevel';
         const wt = filteredData.filter(d => d[levelField] === 0);
         const mut1 = filteredData.filter(d => d[levelField] === 1);
@@ -18439,10 +18467,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const xrefAxis = xaxis === 'x' ? 'x' : xaxis;
             const yrefAxis = yaxis === 'y' ? 'y' : yaxis;
             const highlightData = data.filter(d =>
-                searchTerms.some(term =>
-                    d.cellLineName.toUpperCase().includes(term) ||
-                    d.cellLineId.toUpperCase().includes(term)
-                ) || this.clickedCells.has(d.cellLineName)
+                _hlMatch(d.cellLineName, d.cellLineId) || this.clickedCells.has(d.cellLineName)
             );
 
             if (highlightData.length > 0) {
@@ -18619,10 +18644,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Collect all highlight data across panels for relayout tracking
         const allThreePanelHighlightData = [wt, mut1, mut2].flatMap(data =>
             data.filter(d =>
-                searchTerms.some(term =>
-                    d.cellLineName.toUpperCase().includes(term) ||
-                    d.cellLineId.toUpperCase().includes(term)
-                ) || this.clickedCells.has(d.cellLineName)
+                _hlMatch(d.cellLineName, d.cellLineId) || this.clickedCells.has(d.cellLineName)
             )
         );
         this.renderHighlightChips(allThreePanelHighlightData.map(d => d.cellLineName));
@@ -35858,6 +35880,27 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         syncLabel();
         select.addEventListener('change', syncLabel);
         new MutationObserver(syncLabel).observe(select, { childList: true, attributes: true, attributeFilter: ['disabled'] });
+        // Assigning `.value` from code does NOT fire `change`, so the button
+        // went on showing the old label after a Reset that had genuinely
+        // cleared the select underneath it: the disease filter read as still
+        // applied when it was not. Catch the assignment itself, which covers
+        // every reset path rather than the one that happened to be noticed.
+        const desc = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+        if (desc?.set && desc?.get) {
+            Object.defineProperty(select, 'value', {
+                configurable: true,
+                get() { return desc.get.call(this); },
+                set(v) { desc.set.call(this, v); syncLabel(); }
+            });
+        }
+        const idxDesc = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'selectedIndex');
+        if (idxDesc?.set && idxDesc?.get) {
+            Object.defineProperty(select, 'selectedIndex', {
+                configurable: true,
+                get() { return idxDesc.get.call(this); },
+                set(v) { idxDesc.set.call(this, v); syncLabel(); }
+            });
+        }
 
         let panel = null;
         const close = () => {
