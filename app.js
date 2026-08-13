@@ -2250,7 +2250,6 @@ class CorrelationExplorer {
         html += `<div style="display:flex; gap:6px; padding:6px 10px; border-top:1px solid #e5e7eb; align-items:center; flex-wrap:wrap;">`;
         html += `<label style="font-size:10px;cursor:pointer;color:#374151;"><input type="checkbox" id="upsetShowCounts" ${this._upsetShowCounts ? 'checked' : ''} onchange="app._upsetToggle('counts')" style="margin:0 3px 0 0;vertical-align:middle;"> Counts</label>`;
         html += `<label style="font-size:10px;cursor:pointer;color:#374151;"><input type="checkbox" id="upsetShowPct" ${this._upsetShowPct ? 'checked' : ''} onchange="app._upsetToggle('pct')" style="margin:0 3px 0 0;vertical-align:middle;"> %</label>`;
-        html += `<label style="font-size:10px;cursor:pointer;color:#374151;"><input type="checkbox" id="upsetShowNames" ${this._upsetShowNames ? 'checked' : ''} onchange="app._upsetToggle('names')" style="margin:0 3px 0 0;vertical-align:middle;"> Names</label>`;
         html += `<span style="border-left:1px solid #d1d5db;height:14px;"></span>`;
         html += `<span style="font-size:10px; color:#4c782e; background:#f0fdf4; border:1px solid #cdebb9; border-radius:10px; padding:2px 8px; margin-right:6px;">Click any bar to filter on that combination</span>`;
         html += `<button onclick="app._upsetExport()" style="font-size:10px;padding:2px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:#f9fafb;" title="Choose format, print size and resolution">Export image...</button>`;
@@ -2270,7 +2269,6 @@ class CorrelationExplorer {
         });
 
         // Toggle states
-        this._upsetShowNames = this._upsetShowNames || false;
         this._upsetShowCounts = this._upsetShowCounts !== false; // default true
 
         // Bar chart (top): intersection sizes
@@ -2364,10 +2362,10 @@ class CorrelationExplorer {
             x: barX, y: barY,
             type: 'bar',
             marker: { color: barColors, line: { color: barColors.map(c => c === '#5d9239' ? '#4c782e' : 'transparent'), width: barColors.map(c => c === '#5d9239' ? 2 : 0) } },
-            text: this._upsetShowNames ? barLabels : barLabels.map(() => ''),
-            textposition: 'inside',
-            textangle: -90,
-            textfont: { size: 9, color: 'white' },
+            // The combination's name used to be printable inside the bar,
+            // rotated upright in white. On a bar a few pixels wide it was
+            // unreadable and on a short one it did not fit at all; the name is
+            // already on hover and in the matrix of dots below. Removed.
             customdata: barLabels,
             hovertemplate: '%{customdata}<br>%{y} cell lines<extra></extra>',
             showlegend: false
@@ -2382,7 +2380,12 @@ class CorrelationExplorer {
             if (showCounts) parts.push(String(barY[i]));
             if (showPct) parts.push(`${(barY[i] / totalCLs * 100).toFixed(1)}%`);
             return {
-                x, y: barY[i], text: parts.join(' · '),
+                // Stacked, not run together. Side by side, "32 · 42.7%" is
+                // about fifty pixels over a bar with under thirty to itself,
+                // so every label ran into its neighbours and each one looked
+                // shifted off its own bar. One above the other halves the
+                // width and keeps each label over the bar it belongs to.
+                x, y: barY[i], text: parts.join('<br>'), align: 'center',
                 showarrow: false, font: { size: 9, color: '#374151' },
                 yanchor: 'bottom', yshift: 2
             };
@@ -2496,7 +2499,6 @@ class CorrelationExplorer {
     _upsetToggle(what) {
         if (what === 'counts') this._upsetShowCounts = !this._upsetShowCounts;
         if (what === 'pct') this._upsetShowPct = !this._upsetShowPct;
-        if (what === 'names') this._upsetShowNames = !this._upsetShowNames;
         this._showUpsetPlot();
     }
 
