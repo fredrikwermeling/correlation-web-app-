@@ -2687,7 +2687,7 @@
                 <div class="card-content" style="padding-bottom: 0;">
                 <ul class="nav-tabs">
                     <li><button class="nav-link active" data-tab="network">Network</button></li>
-                    <li><button class="nav-link" data-tab="correlations">Correlations</button></li>
+                    <li><button class="nav-link" data-tab="correlations" title="Every gene pair from your set whose correlation cleared the cutoff, with r, slope and n">Gene pairs</button></li>
                     <li><button class="nav-link" data-tab="clusters">Clusters</button></li>
                     <li><button class="nav-link" data-tab="mutation" style="display: none;" id="mutationTab">Mutation analysis</button></li>
                     <li><button class="nav-link" data-tab="synonyms" style="display: none;" id="synonymsTab">Synonyms/Orthologs</button></li>
@@ -2808,7 +2808,7 @@
                             <label class="panel-heading">View controls</label>
                             <div class="button-group-horizontal" style="margin-bottom: 4px;">
                                 <button class="btn btn-secondary" id="fitNetwork" title="Zoom and center so the whole network fits in view. Does not change the analysis.">Fit</button>
-                                <button class="btn btn-secondary" id="toggleSelectMode" title="Click nodes to add them to a selection, then open Gene Effect or Correlation Analysis for that group. Click again to leave the mode.">Select Mode</button>
+                                <button class="btn btn-secondary" id="toggleSelectMode" title="Click nodes to add them to a selection, then open Gene Effect or Correlation by group for that group. Click again to leave the mode.">Select Mode</button>
                                 <button class="btn btn-secondary" id="toggleRemoveMode" title="Click nodes to hide them from the picture. Removing a gene only changes what is drawn, not the underlying correlations. Restore All brings them back.">Remove Mode</button>
                                 <button class="btn btn-secondary" id="togglePhysics" title="Freeze the layout so nodes stop drifting and stay where you put them. Click again to let them settle freely.">Lock</button>
                             </div>
@@ -2912,7 +2912,7 @@
                                 </tr>
                             </thead>
                             <tbody id="correlationsBody">
-                                <tr><td colspan="7" style="text-align: center; color: var(--gray-500); padding: 40px;">Run analysis to view correlations</td></tr>
+                                <tr><td colspan="7" style="text-align: center; color: var(--gray-500); padding: 40px;">Run analysis to see the gene pairs</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -3800,13 +3800,17 @@
         </div>
     </div>
 
-    <!-- Correlation Analysis Modal (mirrors gene effect modal structure) -->
+    <!-- Correlation by group. One gene PAIR split by tissue or by mutation,
+         which is a different question from the Correlation plot (that pair
+         across every cell line at once) and from the Gene pairs tab (every
+         pair in the set). The three used to be called Correlation,
+         Correlation Analysis and Correlations, which nobody could keep apart. -->
     <div class="modal-overlay" id="corrAnalysisModal" style="display: none; z-index: 1200;">
         <div class="modal" id="corrAnalysisModalInner" style="max-width: 95vw; width: 1300px;">
             <div class="modal-header" style="display:flex; align-items:center; gap:10px;">
-                <h3 id="corrAnalysisTitle" style="flex:1; margin:0;">Correlation Analysis</h3>
+                <h3 id="corrAnalysisTitle" style="flex:1; margin:0;">Correlation by group</h3>
                 <button onclick="app.openCorrAnalysisInNewTab()" class="btn btn-outline btn-sm" style="font-size:11px; padding:3px 8px; color:var(--green-700); border-color:var(--green-400);" title="Open this view (same genes, filters and settings) in a new browser tab so you can keep working here">New tab &#8599;</button>
-                <button class="modal-close" id="closeCorrAnalysis" title="Close the Correlation Analysis view">&times;</button>
+                <button class="modal-close" id="closeCorrAnalysis" title="Close the Correlation by group view">&times;</button>
             </div>
             <div class="modal-body" style="padding: 15px; overflow-x: hidden;">
                 <!-- Search bar (mirrors gene effect search bar) -->
@@ -4794,6 +4798,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v87_76"></script>
+    <script src="app.js?v=v87_77"></script>
 </body>
 </html>

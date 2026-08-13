@@ -23790,10 +23790,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             'mutation_inspect': 'Mutation Inspect',
             'umap': 'UMAP Plot',
             'pca': 'PCA Plot',
-            'correlation_analysis': 'Correlation Analysis',
+            'correlation_analysis': 'Correlation by group',
             'expr_correlate': 'Expression Correlate',
             'gate_report': 'Gate Report',
-            'scatter': 'Scatter Plot'
+            'scatter': 'Correlation plot'
         };
         const label = graphLabels[meta.graphType] || meta.graphType || 'Unknown';
         const details = [];
@@ -24643,7 +24643,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         };
 
         // UI
-        document.getElementById('corrAnalysisTitle').textContent = `${g1} vs ${g2}, Correlation Analysis`;
+        document.getElementById('corrAnalysisTitle').textContent = `${g1} vs ${g2}, correlation by group`;
         document.getElementById('corrAnalysisGenes').textContent = '';
         document.getElementById('caGene1Search').value = g1;
         document.getElementById('caGene2Search').value = g2;
