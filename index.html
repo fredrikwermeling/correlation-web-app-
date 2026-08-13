@@ -3129,6 +3129,19 @@
                                 <button class="btn btn-primary btn-sm" id="updateInspectGenes" style="font-size: 11px; padding: 3px 12px; min-width: 92px; font-weight: 600;">Update</button>
                                 <button class="btn btn-outline btn-sm" id="inspectFindCorrelatesBtn" style="font-size: 11px; padding: 3px 12px; min-width: 92px; color:#5d9239; border-color:#6ba544;" title="Find top GE and Expression correlates of the X-axis gene across the currently-filtered cell lines. Click a result to put it on the Y axis.">Find correlates</button>
                             </div>
+                            <!-- Each axis on its own, in the Gene Effect view.
+                                 A point on this plot is one gene against
+                                 another; seeing either one spread across
+                                 tissues or split by mutation is the obvious
+                                 next question and previously meant retyping
+                                 the gene somewhere else. Labels carry the gene
+                                 and its measure, so the button says what it
+                                 will open. -->
+                            <div id="inspectAxisOpenRow" style="display:flex; gap:4px; align-items:center; margin-top:3px; flex-wrap:wrap;">
+                                <span style="font-size:9px; color:#9ca3af;">Open in Gene Effect:</span>
+                                <button class="btn btn-outline btn-sm" id="inspectOpenGEX" style="font-size:10px; padding:2px 8px;" title="Open the X-axis gene on its own in the Gene Effect view">X</button>
+                                <button class="btn btn-outline btn-sm" id="inspectOpenGEY" style="font-size:10px; padding:2px 8px;" title="Open the Y-axis gene on its own in the Gene Effect view">Y</button>
+                            </div>
                         </div>
 
                         <!-- Row 2: Plot Size | Axis Ranges -->
@@ -4798,6 +4811,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v87_77"></script>
+    <script src="app.js?v=v87_78"></script>
 </body>
 </html>

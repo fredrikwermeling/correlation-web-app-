@@ -16495,6 +16495,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         document.getElementById('inspectModal').classList.add('active');
         document.getElementById('inspectTitle').textContent =
             `${c.gene1} vs ${c.gene2} - By Tissue Breakdown`;
+        this._syncInspectAxisTools();
 
         // Hide the scatter plot controls (not needed for By tissue view)
         document.querySelector('.inspect-controls').style.display = 'none';
@@ -16934,6 +16935,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const typeTag = (xType !== 'ge' || yType !== 'ge') ? ` [${xLbl}/${yLbl}]` : '';
         document.getElementById('inspectTitle').textContent =
             `${c.gene1} vs ${c.gene2}${typeTag} | r=${this.formatNum(allCellsStats.correlation)}, slope=${this.formatNum(allCellsStats.slope)}, n=${plotData.length} (all cell lines)`;
+        this._syncInspectAxisTools();
 
         // Show modal and render plot
         document.getElementById('inspectModal').classList.add('active');
@@ -20105,6 +20107,55 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const yLabel = yType === 'geneset' ? 'Set' : yType === 'growth' ? 'Growth' : yType === 'expr' ? 'Expr' : 'GE';
         const typeInfo = (xType !== 'ge' || yType !== 'ge') ? ` [${xLabel}/${yLabel}]` : '';
         document.getElementById('inspectTitle').textContent = `Correlation: ${gene1} vs ${gene2}${typeInfo}`;
+        this._syncInspectAxisTools();
+    }
+
+    // Keep the "Open in Gene Effect" buttons naming the genes actually on the
+    // axes, and make the gene names in the heading hoverable for their
+    // description, the same as gene names anywhere else in the app.
+    _syncInspectAxisTools() {
+        const word = (t) => t === 'expr' ? 'mRNA' : t === 'cn' ? 'CN' : t === 'growth' ? 'growth' : t === 'geneset' ? 'set' : 'GE';
+        const ci = this.currentInspect || {};
+        const pairs = [
+            ['inspectOpenGEX', ci.gene1, ci.xType || 'ge'],
+            ['inspectOpenGEY', ci.gene2, ci.yType || 'ge']
+        ];
+        let anyShown = false;
+        for (const [id, gene, type] of pairs) {
+            const b = document.getElementById(id);
+            if (!b) continue;
+            // Growth rate belongs to the cell line, not a gene, and a gene-set
+            // score is not one gene either, so neither can be opened this way.
+            const ok = !!gene && type !== 'growth' && type !== 'geneset' && this.geneIndex?.has(String(gene).toUpperCase());
+            b.style.display = ok ? '' : 'none';
+            if (ok) {
+                anyShown = true;
+                b.textContent = `${gene} ${word(type)}`;
+                b.title = `Open ${gene} on its own in the Gene Effect view, showing ${type === 'expr' ? 'mRNA expression' : type === 'cn' ? 'copy number' : 'gene effect'} across cell lines`;
+                b.onclick = () => this.openGeneEffectModal(gene, 'tissue', { dataType: type === 'expr' ? 'expr' : 'ge' });
+            }
+        }
+        const row = document.getElementById('inspectAxisOpenRow');
+        if (row) row.style.display = anyShown ? 'flex' : 'none';
+
+        // Gene names in the heading, hoverable.
+        const t = document.getElementById('inspectTitle');
+        if (t && ci.gene1 && ci.gene2) {
+            const chip = (g) => `<span class="gene-hover" data-gene="${this.esc(g)}" style="text-decoration:underline dotted; text-underline-offset:2px; cursor:help;">${this.esc(g)}</span>`;
+            // Only the two gene names become chips; everything else in the
+            // heading (the r, the n, the filter note) is left exactly as it
+            // was. The heading comes in a few shapes, so match the pair
+            // wherever it sits rather than assuming a prefix.
+            const plain = t.textContent || '';
+            const marker = `${ci.gene1} vs ${ci.gene2}`;
+            const at = plain.indexOf(marker);
+            if (at >= 0) {
+                t.innerHTML = this.esc(plain.slice(0, at))
+                    + `${chip(ci.gene1)} vs ${chip(ci.gene2)}`
+                    + this.esc(plain.slice(at + marker.length));
+                this.attachGeneTooltips?.(t);
+            }
+        }
     }
 
     showCompareAllCancerTypes() {
@@ -25220,8 +25271,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             }];
             layout = {
                 title: { text: `${d.gene1} vs ${d.gene2}, ${group} (n=${pts.length}, r=${s.correlation.toFixed(3)})`, font: { size: 13 } },
-                xaxis: { title: `${d.gene1} (${this.currentInspect?.xType === 'geneset' ? 'Gene Set Score' : this.currentInspect?.xType === 'growth' ? 'Growth Rate' : this.currentInspect?.xType === 'expr' ? 'Expression' : 'Gene Effect'})` },
-                yaxis: { title: `${d.gene2} (${this.currentInspect?.yType === 'geneset' ? 'Gene Set Score' : this.currentInspect?.yType === 'growth' ? 'Growth Rate' : this.currentInspect?.yType === 'expr' ? 'Expression' : 'Gene Effect'})` },
+                xaxis: { title: `${d.gene1} (${this.currentInspect?.xType === 'geneset' ? 'Gene Set Score' : this.currentInspect?.xType === 'growth' ? 'Growth Rate' : this.currentInspect?.xType === 'expr' ? 'Expression, log2 TPM+1' : 'Gene Effect'})` },
+                yaxis: { title: `${d.gene2} (${this.currentInspect?.yType === 'geneset' ? 'Gene Set Score' : this.currentInspect?.yType === 'growth' ? 'Growth Rate' : this.currentInspect?.yType === 'expr' ? 'Expression, log2 TPM+1' : 'Gene Effect'})` },
                 margin: { t: 50, b: 50, l: 60, r: 30 },
                 showlegend: false,
                 paper_bgcolor: 'white',
@@ -25259,8 +25310,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             ];
             layout = {
                 title: { text: `${d.gene1} vs ${d.gene2}, ${group}<br><span style="font-size:11px">WT r=${isNaN(wtR.correlation) ? '-' : wtR.correlation.toFixed(3)}, Mut r=${isNaN(mutR.correlation) ? '-' : mutR.correlation.toFixed(3)}</span>`, font: { size: 13 } },
-                xaxis: { title: `${d.gene1} (${this.currentInspect?.xType === 'geneset' ? 'Gene Set Score' : this.currentInspect?.xType === 'growth' ? 'Growth Rate' : this.currentInspect?.xType === 'expr' ? 'Expression' : 'Gene Effect'})` },
-                yaxis: { title: `${d.gene2} (${this.currentInspect?.yType === 'geneset' ? 'Gene Set Score' : this.currentInspect?.yType === 'growth' ? 'Growth Rate' : this.currentInspect?.yType === 'expr' ? 'Expression' : 'Gene Effect'})` },
+                xaxis: { title: `${d.gene1} (${this.currentInspect?.xType === 'geneset' ? 'Gene Set Score' : this.currentInspect?.xType === 'growth' ? 'Growth Rate' : this.currentInspect?.xType === 'expr' ? 'Expression, log2 TPM+1' : 'Gene Effect'})` },
+                yaxis: { title: `${d.gene2} (${this.currentInspect?.yType === 'geneset' ? 'Gene Set Score' : this.currentInspect?.yType === 'growth' ? 'Growth Rate' : this.currentInspect?.yType === 'expr' ? 'Expression, log2 TPM+1' : 'Gene Effect'})` },
                 margin: { t: 60, b: 50, l: 60, r: 30 },
                 showlegend: true,
                 legend: (() => {
@@ -25493,6 +25544,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const allCellsStats = this.pearsonWithSlope(data.map(d => d.x), data.map(d => d.y));
         document.getElementById('inspectTitle').textContent =
             `${gene1} vs ${gene2} | r=${this.formatNum(allCellsStats.correlation)}, slope=${this.formatNum(allCellsStats.slope)}, n=${data.length} (all cell lines)`;
+        this._syncInspectAxisTools();
 
         // Show the scatter plot and hide compareTable
         document.getElementById('scatterPlot').style.display = 'block';
@@ -26927,7 +26979,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // analyzes opened before the toggle existed).
         const isExpr = this.currentGeneEffect?.dataType === 'expr' || this._geDataType === 'expr';
         const metricLabel = isExpr ? 'Expression' : 'Gene Effect';
-        const dataLabel = isGrowth ? 'Growth Rate' : isGeneSet ? `${gene}` : `${gene} ${metricLabel}`;
+        // The axis says what its numbers are; the heading above the chart does
+        // not need to repeat the unit. An expression axis reading only
+        // "DUSP4 Expression" left the reader to guess the scale, while the
+        // correlation plot beside it has always said log2 TPM+1.
+        const axisMetricLabel = isExpr ? 'Expression (log2 TPM+1)' : 'Gene Effect';
+        const dataLabel = isGrowth ? 'Growth Rate' : isGeneSet ? `${gene}` : `${gene} ${axisMetricLabel}`;
         const geTissueTitle = isGrowth ? 'Growth Rate' : isGeneSet ? gene : `${gene} ${metricLabel}`;
         const filterDesc = this._getGEFilterDescription();
         const subtitleParts = [`n=${data.length}`];
@@ -27292,7 +27349,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const layout = {
             annotations: [
                 { text: `<b>${gene} ${isGrowthHS ? 'Growth Rate' : isGeneSetHS ? 'Score' : this._geMetric().full} by genetic change</b><br><span style="font-size:11px;color:#6b7280;">n=${data.length}${this._getGEFilterDescription() ? ' | ' + this._getGEFilterDescription() : ''}${pFilter ? ' | p<0.05' : ''}</span>`, xref: 'paper', yref: 'paper', x: 0.5, y: titleY, xanchor: 'center', yanchor: 'bottom', showarrow: false, font: { size: 15 }, _tsRole: 'title' },
-                { text: `${isGrowthHS ? 'Growth Rate' : isGeneSetHS ? `${gene} Score` : `${gene} ${this._geMetric().full}`}`, xref: 'paper', yref: 'paper', x: 0.5, y: xlabelY, xanchor: 'center', yanchor: 'top', showarrow: false, font: { size: 15 }, _tsRole: 'xlabel' }
+                { text: `${isGrowthHS ? 'Growth Rate' : isGeneSetHS ? `${gene} Score` : `${gene} ${this._geMetric().axis}`}`, xref: 'paper', yref: 'paper', x: 0.5, y: xlabelY, xanchor: 'center', yanchor: 'top', showarrow: false, font: { size: 15 }, _tsRole: 'xlabel' }
             ],
             xaxis: {
                 zeroline: true,
@@ -27519,9 +27576,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     _geMetric() {
         const isExpr = (document.getElementById('geDataType')?.value === 'expr')
             || this.currentGeneEffect?.dataType === 'expr' || this._geDataType === 'expr';
+        // `axis` carries the unit and `full` does not: a chart axis has to say
+        // what its numbers are, while a menu item or a window title reading
+        // "Expression (log2 TPM+1) Analysis" is just noise.
         return isExpr
-            ? { full: 'Expression', short: 'Expr', mean: 'Mean Expression', csv: 'Expression' }
-            : { full: 'Gene Effect', short: 'GE', mean: 'Mean GE', csv: 'Gene_Effect' };
+            ? { full: 'Expression', short: 'Expr', mean: 'Mean Expression', csv: 'Expression',
+                axis: 'Expression (log2 TPM+1)' }
+            : { full: 'Gene Effect', short: 'GE', mean: 'Mean GE', csv: 'Gene_Effect',
+                axis: 'Gene Effect' };
     }
 
     showGEDetailedView(group, mode) {
@@ -34277,7 +34339,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 font: { size: 15 }
             },
             xaxis: { title: `${ctx.targetGene} Gene Effect` },
-            yaxis: { title: `${expressionGene} Expression (log TPM+1)` },
+            yaxis: { title: `${expressionGene} Expression (log2 TPM+1)` },
             showlegend: true,
             legend: (() => {
                 // Same corner-avoidance as the other scatters: pinned top-left,
