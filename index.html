@@ -2247,6 +2247,11 @@
             /* The gene box is the one thing you type into on a phone, and with
                the sections around it collapsed there is room to give it back. */
             #geneTextarea { min-height: 240px !important; font-size: 15px !important; }
+            /* "With Stats" offers manual entry or a file upload. Nobody uploads
+               a file from a phone, so the choice is not a choice: hide the
+               sub-tabs and leave manual entry, which is what the panel opens on. */
+            .stats-sub-tab { display: none !important; }
+            #stats-file { display: none !important; }
             /* A finger landing on a chart could not scroll the page. Plotly's
                drag layer swallows the touch to pan the plot, and on a phone the
                chart is most of the screen, so there was often nowhere else to
