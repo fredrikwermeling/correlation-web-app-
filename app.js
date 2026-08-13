@@ -11602,6 +11602,18 @@ class CorrelationExplorer {
             wire(head, body, { open: false });
         });
 
+        // Inspect selection: the two threshold cards. They sit above the
+        // results on a phone so "Compare with" is the first thing on screen,
+        // which means the cutoffs would otherwise push the charts down for
+        // settings that are usually left alone. Closed until asked for.
+        scope.querySelectorAll('.phone-collapse-card').forEach(box => {
+            const head = box.firstElementChild;
+            if (!head) return;
+            const body = bodyFor(box, head);
+            if (!body) return;
+            wire(head, body, { open: false });
+        });
+
         // Cell Line Browser, the Selection row: its label heads the row and the
         // controls live in one .clb-row-items beside it, which is exactly the
         // shape bodyFor wants. Collapsed by default, since a selection is made
@@ -45071,7 +45083,7 @@ ${clone.innerHTML}
             <div style="display:flex; gap:5px;">
                 <button class="btn btn-outline btn-sm" id="ge${side}Network" style="font-size:10px; padding:3px 7px; flex:1;" title="Build a correlation network from the genes listed">Network</button>
                 <button class="btn btn-outline btn-sm" id="ge${side}Enrichr" aria-haspopup="true" style="font-size:10px; padding:3px 7px; flex:1;" title="Send the genes listed to Enrichr for pathway enrichment">Enrichr &#9662;</button>
-            </div>`);
+            </div>`, '', 'phone-collapse-card');
 
         const sidebar = document.getElementById('selectionInspectSidebar');
         if (sidebar) {

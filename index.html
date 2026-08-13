@@ -2348,16 +2348,32 @@
                 flex-direction: column !important;
                 gap: 10px !important;
             }
+            /* Controls above the results: "Compare with" is the setting that
+               decides what the whole panel says, so it is the first thing on
+               screen, with the cutoffs under it as closed headings. */
             #selectionInspectSidebar {
                 flex: 1 1 auto !important;
                 width: 100% !important;
-                order: 1 !important;
+                order: 0 !important;
             }
-            #selectionInspectBody { width: 100% !important; order: 0 !important; }
+            #selectionInspectBody { width: 100% !important; order: 1 !important; }
             /* The two measures sit side by side inside the results. On one
-               column each gets the full width. */
+               column each gets the full width, and nothing may set a minimum
+               that is wider than the screen. */
             #selectionInspectBody > div { flex-direction: column !important; }
-            #selectionInspectBody [id$="Volcano"] { max-width: 100% !important; }
+            #selectionInspectBody > div > div { min-width: 0 !important; }
+            /* A square volcano at full width is as tall as the screen, which
+               left the table it belongs to below the fold and out of scale with
+               it. Sized so chart and table read as two halves of one answer. */
+            #selectionInspectBody [id$="Volcano"] { max-width: 250px !important; }
+            /* The results table has six columns and cannot be narrowed to a
+               phone, so it scrolls inside its own box rather than pushing the
+               panel wider than the screen. */
+            #selectionInspectBody [id$="Body"] { overflow-x: auto !important; }
+            #selectionInspectInner { max-width: 100vw !important; }
+            #selectionInspectModal .modal-body { overflow-x: hidden !important; }
+            /* Building a network from the listed genes is a desktop job. */
+            #geLeftNetwork, #geRightNetwork { display: none !important; }
             /* A collapsed panel should be a line of text, not an empty card.
                With its border, padding and background still drawn it took the
                room of the controls it was hiding, and three of them stacked
@@ -5107,6 +5123,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v88_11"></script>
+    <script src="app.js?v=v88_12"></script>
 </body>
 </html>
