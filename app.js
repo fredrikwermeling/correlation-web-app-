@@ -3135,8 +3135,12 @@ class CorrelationExplorer {
 
         // Build the oncoprint grid. The grid is drawn at its natural width and
         // scrolls; it is no longer squeezed to fit a fixed 500px budget.
-        const cellW = Math.max(3, Math.min(8, Math.floor(500 / sortedCLs.length)));
-        const cellH = 14;
+        // A 3-8px wide, 14px tall cell is a fine mouse target and an impossible
+        // finger one. The grid already scrolls sideways, so on a phone the cost
+        // of bigger cells is only more scrolling, which is the right trade.
+        const _oncoPhone = window.innerWidth <= 640;
+        const cellW = _oncoPhone ? 15 : Math.max(3, Math.min(8, Math.floor(500 / sortedCLs.length)));
+        const cellH = _oncoPhone ? 30 : 14;
         // Fusion names ("EWSR1-FLI1") and CN rows ("CDKN2A del") are much
         // longer than a gene symbol, and a fixed 72px pane ran them into the
         // grid. Size the pane to the widest label actually being drawn.
