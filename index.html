@@ -2106,8 +2106,32 @@
             .modal-header h3 { font-size: 0.9em !important; }
             .modal-body { padding: 8px 10px !important; -webkit-overflow-scrolling: touch; }
             .modal-footer { padding: 6px 10px !important; flex-wrap: wrap !important; }
-            .modal-body .form-control, .modal-body select, .modal-body input { font-size: 11px !important; }
-            .modal-body .btn { font-size: 11px !important; padding: 3px 8px !important; }
+            /* Controls were being SHRUNK on the one device where a finger is
+               the pointer: 11px text and 3px padding gave targets around 22px
+               tall, half of what a thumb needs. Fewer controls survive to this
+               breakpoint, so the ones that do can afford to be bigger. */
+            .modal-body .form-control, .modal-body select, .modal-body input,
+            .sidebar .form-control, .sidebar select, .sidebar input[type="text"],
+            .sidebar input[type="number"], #cellLineBrowserModal select,
+            #cellLineBrowserModal input[type="text"] {
+                font-size: 15px !important;
+                min-height: 40px !important;
+                padding: 8px 10px !important;
+            }
+            .modal-body .btn, .sidebar .btn, #cellLineBrowserModal .btn {
+                font-size: 14px !important;
+                min-height: 40px !important;
+                padding: 8px 14px !important;
+            }
+            /* The tall two-line browser buttons and the tiny stepper buttons
+               beside a number box are the exceptions: they set their own size
+               and would grow out of their rows. */
+            #cellLineBrowserModal .clb-tall-btn { min-height: 44px !important; font-size: 12px !important; }
+            .modal-body .btn.btn-sm[style*="padding:0"], .sidebar button[onclick*="adjustNumber"],
+            .sidebar button[onclick*="adjustAxis"] { min-height: 32px !important; padding: 2px 10px !important; }
+            /* Checkboxes and radios are the smallest targets of all. */
+            input[type="checkbox"], input[type="radio"] { width: 20px !important; height: 20px !important; }
+            label { line-height: 1.5 !important; }
             /* Stack the chart-beside-table layouts; chart spans full width.
                Plotly renders at a fixed pixel width, so allow horizontal pan
                instead of clipping when a chart is wider than the phone. */
@@ -2150,6 +2174,27 @@
             #downloadScatterCSV, #downloadTissueCSV, #scatterAnalyzeWithAI,
             #mutAnalyzeWithAI, #downloadSynonyms, #downloadExprCorrelatesCSV,
             #mutCompareExportCSV { display: none !important; }
+            /* What a phone is actually for here: showing someone a cell line
+               and its wiki, a gene's effect, a pair on the scatter, a mutation
+               analysis, or a network from a test gene set. Everything below
+               serves a different job and only competes for the screen.
+               - Export for AI: the file cannot be handed to an assistant from
+                 a phone in any useful way.
+               - New tab: a second tab of a dense app is not a phone gesture.
+               - Enrichr: hands off to an external site that is unusable here.
+               - Select / Remove mode: precise node picking with a fingertip.
+               - Compare all ...: wide tables that cannot be read at this width.
+               These stay on desktop; nothing is removed from the app. */
+            #networkAnalyzeWithAI, #clbExportAIBtn, #clbWikiAnalyzeWithAI,
+            #selectionInspectAI, #aiExportBtn,
+            #toggleSelectMode, #toggleRemoveMode,
+            #compareAllMutationsBtn, #compareAllTranslocationsBtn,
+            #compareAllCnBtn, #compareAllCancerTypesBtn,
+            .enrichrBtn, .js-help-export-ai { display: none !important; }
+            /* "New tab" opens a duplicate of a dense desktop view. */
+            #inspectModalInner .modal-header .btn-outline[onclick*="NewTab"],
+            #geneEffectModalInner .modal-header .btn-outline[onclick*="NewTab"],
+            #corrAnalysisModalInner .modal-header .btn-outline[onclick*="NewTab"] { display: none !important; }
         }
         /* Expression Correlates needs a mutation-analysis subgroup context, which
            the condensed popout (opened from the Cell Line Browser) doesn't have,
