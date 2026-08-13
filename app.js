@@ -44927,8 +44927,8 @@ ${clone.innerHTML}
     // into cards of the same shape the scatter inspect uses.
     _mountGEInspectUI(exprNote) {
         // One card, matching the scatter modal's control cards.
-        const card = (title, inner, extra = '') => `
-            <div style="border:1px solid #e5e7eb; border-radius:6px; padding:7px 9px; background:#fff;${extra}">
+        const card = (title, inner, extra = '', cls = '') => `
+            <div class="${cls}" style="border:1px solid #e5e7eb; border-radius:6px; padding:7px 9px; background:#fff;${extra}">
                 <div style="font-size:10px; font-weight:700; color:#6b7280; text-transform:uppercase; letter-spacing:.03em; margin-bottom:5px;">${title}</div>
                 ${inner}
             </div>`;
@@ -44971,7 +44971,7 @@ ${clone.innerHTML}
                         <option value="welch">Welch's t (means)</option>
                         <option value="rank">Rank sum (order)</option>
                     </select>
-                    <div id="geInspectStatNote" style="color:#6b7280; font-size:10px; margin-top:5px;"></div>`)
+                    <div id="geInspectStatNote" style="color:#6b7280; font-size:10px; margin-top:5px;"></div>`, '', 'mobile-hide')
                 + card('Find gene', `
                     <div style="display:flex; gap:4px; align-items:center;">
                         <input type="text" id="geInspectSearch" placeholder="e.g. BRAF, SOX10" title="Show these genes in both tables whatever the cutoffs are set to. Separate several with commas or spaces." style="flex:1; min-width:0; font-size:11px; padding:3px 5px; border:1px solid #d1d5db; border-radius:3px;">
@@ -45698,11 +45698,11 @@ ${clone.innerHTML}
         sub.innerHTML = (fromFilter
                 ? `Nothing was ticked, so this is the ${selected.length} cell lines your filters leave showing, `
                 : '')
-            + `each gene's average in the selection minus its average in the comparison group`
+            + `<span class="mobile-hide">each gene's average in the selection minus its average in the comparison group`
             + (canTest
                 ? `, tested with ${this._geInspectTest === 'rank' ? 'a Wilcoxon rank sum' : "Welch's t"} per gene and q from Benjamini-Hochberg`
                 : `. Fewer than three cell lines means no spread to test, so there is no p or q`)
-            + `. <a href="#" id="geInspectHelpLink" style="color:#5d9239;">How to read this</a>`;
+            + `. </span><a href="#" id="geInspectHelpLink" style="color:#5d9239;">How to read this</a>`;
         document.getElementById('geInspectHelpLink')?.addEventListener('click', (e) => {
             e.preventDefault();
             this._showGEInspectHelp();

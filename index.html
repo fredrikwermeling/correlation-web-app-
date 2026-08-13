@@ -2338,6 +2338,26 @@
                 font-size: 13px !important;
                 padding: 6px 16px !important;
             }
+            /* Inspect selection was still two columns on a phone: a 236px
+               sidebar of control cards beside the results, which put the
+               volcano and its table off the right edge and left the whole panel
+               needing a sideways scroll it did not offer. One column, results
+               first, the same order the gene effect and the scatter inspect
+               use, so the answer is what the panel opens on. */
+            #selectionInspectModal .modal-body > div {
+                flex-direction: column !important;
+                gap: 10px !important;
+            }
+            #selectionInspectSidebar {
+                flex: 1 1 auto !important;
+                width: 100% !important;
+                order: 1 !important;
+            }
+            #selectionInspectBody { width: 100% !important; order: 0 !important; }
+            /* The two measures sit side by side inside the results. On one
+               column each gets the full width. */
+            #selectionInspectBody > div { flex-direction: column !important; }
+            #selectionInspectBody [id$="Volcano"] { max-width: 100% !important; }
             /* A collapsed panel should be a line of text, not an empty card.
                With its border, padding and background still drawn it took the
                room of the controls it was hiding, and three of them stacked
@@ -5071,6 +5091,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v88_05"></script>
+    <script src="app.js?v=v88_06"></script>
 </body>
 </html>
