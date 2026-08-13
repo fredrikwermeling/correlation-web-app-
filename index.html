@@ -2210,6 +2210,14 @@
                - Select / Remove mode: precise node picking with a fingertip.
                - Compare all ...: wide tables that cannot be read at this width.
                These stay on desktop; nothing is removed from the app. */
+            /* The five threshold controls. A phone runs the defaults, which is
+               what almost every desktop session leaves them at anyway:
+               correlation cutoff 0.50, min slope 0.10, min cell lines 25,
+               gene needs data in 100, p < 0.001. The inputs stay in the page
+               so the analysis still reads those values; they are simply not
+               shown or adjustable, which takes about half the sidebar back. */
+            #correlationParams, #slopeParams, #minCellLinesPvalRow,
+            #pValueThresholdGroup,
             #networkAnalyzeWithAI, #clbExportAIBtn, #clbWikiAnalyzeWithAI,
             #selectionInspectAI, #aiExportBtn,
             #toggleSelectMode, #toggleRemoveMode,
