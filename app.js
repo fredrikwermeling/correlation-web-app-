@@ -26737,9 +26737,20 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const label = this._stripCnFilterDecoration(cn).replace(/_(amp|del)$/, (_, k) => k === 'amp' ? ' amp' : ' del');
             parts.push(isWT('geCnLevel') ? `${label} absent` : label);
         }
-        if (this._activeOncoprintFilters?.length > 0) {
+        // Only when they actually narrow THIS chart. Picks made in the cell
+        // line browser are deliberately not applied here (see
+        // _gridAppliesToAnalysis), and naming them anyway credited the chart
+        // with a filter it had ignored.
+        if (this._gridAppliesToAnalysis?.() && this._activeOncoprintFilters?.length > 0) {
             this._activeOncoprintFilters.forEach(f => parts.push(`${f.gene} ${this._gridStateWord(f.state)}`));
         }
+        // A pasted cell-line list is the only filter here that leaves no mark
+        // on any control: the lineage box still reads "All lineages" while the
+        // chart is down to two cell lines, which reads as the app having
+        // silently inherited a filter from somewhere else. It is also usually
+        // the most aggressive filter in the popout, so it belongs first.
+        const nCustom = this._customCellLineFilterGE?.size || 0;
+        if (nCustom) parts.unshift(`your list of ${nCustom} cell line${nCustom === 1 ? '' : 's'}`);
         return parts.join(' | ');
     }
 
