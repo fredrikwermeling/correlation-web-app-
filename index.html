@@ -2244,6 +2244,22 @@
                 text-overflow: ellipsis !important;
             }
             #clbSearch { width: 100% !important; }
+            /* The gene box is the one thing you type into on a phone, and with
+               the sections around it collapsed there is room to give it back. */
+            #geneTextarea { min-height: 240px !important; font-size: 15px !important; }
+            /* A finger landing on a chart could not scroll the page. Plotly's
+               drag layer swallows the touch to pan the plot, and on a phone the
+               chart is most of the screen, so there was often nowhere else to
+               put your finger. Zoom and drag are already disabled here, so the
+               drag layer has nothing to do with a vertical swipe: let it
+               through. A tap still reaches the points. */
+            .js-plotly-plot .nsewdrag,
+            .js-plotly-plot .drag,
+            .js-plotly-plot .draglayer,
+            #geneEffectPlot, #scatterPlot, #geneEffectHotspotPlot,
+            #exprCorrelateScatterPlot, [id$="Volcano"] {
+                touch-action: pan-y !important;
+            }
             /* 2. The cell-line detail stacked under the whole list, so tapping
                a line meant scrolling past every other one to reach its wiki.
                Put it above the list. */
@@ -4995,6 +5011,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v87_95"></script>
+    <script src="app.js?v=v87_97"></script>
 </body>
 </html>

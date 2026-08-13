@@ -11427,16 +11427,32 @@ class CorrelationExplorer {
         // the outer one, and the panel never appeared to open or close.
         // The sidebar keeps several sections in one parent, so a section owns
         // the siblings that follow it up to the next heading, not every child.
-        const bodyForAfter = (box, head) => {
-            const prev = head.nextElementSibling;
-            if (prev && prev.hasAttribute && prev.hasAttribute('data-phone-collapse-body')) return prev;
+        const bodyForAfter = (head) => {
+            // The heading sits inside its own form-group, and the rest of the
+            // section (Subtype, Disease) are siblings of THAT group, not of the
+            // heading. Wrapping only the heading's own siblings therefore left
+            // Subtype and Disease behind, still on screen under a collapsed
+            // heading. Lift the heading out first, so one wrapper can take the
+            // group it came from and everything up to the next heading.
+            const anchor = head.parentElement;
+            const box = anchor?.parentElement;
+            if (!box) return null;
+            if (anchor.firstElementChild === head && anchor.children.length > 1) {
+                box.insertBefore(head, anchor);
+            }
+            const already = head.nextElementSibling;
+            if (already && already.hasAttribute && already.hasAttribute('data-phone-collapse-body')) return already;
             const rest = [];
             let n = head.nextElementSibling;
-            while (n && !n.classList.contains('param-section-heading')) { rest.push(n); n = n.nextElementSibling; }
+            while (n && !n.classList.contains('param-section-heading')
+                     && !n.querySelector?.('.param-section-heading')) { rest.push(n); n = n.nextElementSibling; }
             if (!rest.length) return null;
             const body = document.createElement('div');
             body.setAttribute('data-phone-collapse-body', '1');
-            box.insertBefore(body, rest[0]);
+            // Insert relative to the nodes actually being wrapped: once the
+            // heading is promoted the owning parent is not always the one
+            // computed above, and inserting into the wrong one throws.
+            rest[0].parentElement.insertBefore(body, rest[0]);
             rest.forEach(c => body.appendChild(c));
             return body;
         };
@@ -11505,7 +11521,7 @@ class CorrelationExplorer {
             if (head.offsetParent === null && head.style.display === 'none') return;
             const box = head.parentElement;
             if (!box) return;
-            const body = bodyForAfter(box, head);
+            const body = bodyForAfter(head);
             if (!body) return;
             wire(head, body, { open: false });
         });
@@ -11514,7 +11530,15 @@ class CorrelationExplorer {
             const box = head.parentElement;
             if (!box) return;
             const title = (head.textContent || '').trim().toLowerCase();
-            if (title === 'export') { box.style.display = 'none'; return; }
+            if (title === 'export') {
+                head.style.display = 'none';
+                const sibs = [...box.children].filter(c => c !== head);
+                // Only the box is Export's own; a shared column keeps its
+                // other controls and just loses the Export label and rows.
+                if (!box.querySelector('.panel-heading:not([style*="none"])')) box.style.display = 'none';
+                else sibs.forEach(c => { c.style.display = 'none'; });
+                return;
+            }
             const body = bodyFor(box, head);
             if (!body) return;
             wire(head, body, { open: false });
