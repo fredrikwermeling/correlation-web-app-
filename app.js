@@ -22993,7 +22993,25 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const pt = eventData.points?.[0];
             if (!pt || !Number.isInteger(pt.pointNumber)) return;
             const id = extract(pt);
-            if (typeof id === 'string' && id) this._openCellLineInBrowser(id);
+            if (typeof id !== 'string' || !id) return;
+            // A phone has no hover, so the summary card these plots rely on to
+            // say WHICH cell line a dot is never appeared, and the only way to
+            // find out was a tap that threw you into the Cell Line Browser.
+            // First tap names the line, a second tap on the same dot opens it.
+            if (window.innerWidth <= 640) {
+                if (this._phoneTappedDot === id) {
+                    this._phoneTappedDot = null;
+                    this.hideCellLineTooltip?.();
+                    this._openCellLineInBrowser(id);
+                    return;
+                }
+                this._phoneTappedDot = id;
+                this.showCellLineTooltip?.(
+                    { clientX: eventData.event?.clientX, clientY: eventData.event?.clientY },
+                    id, 'Tap again to open this cell line');
+                return;
+            }
+            this._openCellLineInBrowser(id);
         });
         // Same plots also get the hover summary card (same id extraction).
         this._attachDotHoverSummary(plotId, extract);
@@ -26928,7 +26946,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const hlColor = '#dc2626';
         // Shorten the row label, keeping the full name on hover. Names are made
         // unique afterwards so two shortened labels cannot collapse onto one row.
-        const LABEL_MAX = 34;
+        // On a phone the row label competes with the plot for the same ~390px.
+        // "Peripheral Nervous System (n=47)" is 32 characters and ate close to
+        // half the width, leaving the boxes too narrow to compare, which is the
+        // whole point of the chart. Cut the name hard there; the full name is
+        // still on the point and in the tap card.
+        const LABEL_MAX = (window.innerWidth <= 640) ? 13 : 34;
         const seenLabels = new Map();
         const shortLabel = (group, count) => {
             let base = group.length > LABEL_MAX ? group.slice(0, LABEL_MAX - 1).trimEnd() + '…' : group;
@@ -32798,6 +32821,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const id = extract(pt);
             if (typeof id !== 'string' || !id) return;
             if (eventData.event?.shiftKey) { this.hideCellLineTooltip?.(); this.openCellLineWiki(id); return; }
+            // A phone has no Shift, so the wiki was simply unreachable from a
+            // dot. Tapping a dot that is already labelled opens it instead,
+            // which also matches how the label reads as a thing you can press.
+            if (window.innerWidth <= 640 && this._dotHasLabel?.(plotId, id)) {
+                this.hideCellLineTooltip?.();
+                this.openCellLineWiki(id);
+                return;
+            }
             this._toggleDotLabel(plotId, pt, id);
         });
         // Click a placed name label to remove it.
@@ -32844,6 +32875,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
 
     // Toggle a small name label (with a leader line) on a clicked dot.
+    // Is this cell line's name already placed on the plot?
+    _dotHasLabel(plotId, id) {
+        const el = document.getElementById(plotId);
+        return !!(el?.layout?.annotations || []).some(a => a._dotLabel === id);
+    }
+
     _toggleDotLabel(plotId, pt, id) {
         const el = document.getElementById(plotId);
         if (!el?.layout) return;
@@ -32863,7 +32900,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
     // Wire hover (exec summary) + click (label / double-click Wiki) on a GE dot plot.
     _attachGECellInteractivity(plotId) {
-        this._attachDotHoverSummary(plotId, null, 'Click to label this cell line · Shift-click to open its Wiki');
+        this._attachDotHoverSummary(plotId, null, window.innerWidth <= 640
+            ? 'Tap to name this cell line \u00b7 tap the named dot again to open it'
+            : 'Click to label this cell line \u00b7 Shift-click to open its Wiki');
         this._attachDotClickLabelWiki(plotId);
     }
 
