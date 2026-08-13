@@ -45339,8 +45339,20 @@ ${clone.innerHTML}
             this._showGEInspectHelp();
         });
 
+        // Expression covers a different, larger set of cell lines than the
+        // CRISPR screen, so the two columns routinely rest on different counts:
+        // the heading and the gene-effect column would say 50 while the mRNA
+        // column's own n said 49, with nothing on screen accounting for the
+        // missing line. The CRISPR side has been stating its coverage since the
+        // "claims 48 vs 12, actually did 27 vs 3" report; this is the same
+        // point for the other measure.
+        const _exprShort = exprCoverage && (exprCoverage.selNominal !== selected.length
+                                            || exprCoverage.othNominal !== nRestGE);
         const exprNote = this.expressionLoaded
-            ? `Difference in mRNA level, log2(TPM+1). A difference of 1 is a two-fold change. Compared against ${exprOtherN.toLocaleString()} other cell lines.`
+            ? `Difference in mRNA level, log2(TPM+1). A difference of 1 is a two-fold change. `
+              + (_exprShort
+                  ? `Rests on ${exprCoverage.selNominal.toLocaleString()} of the ${selected.length.toLocaleString()} selected and ${exprCoverage.othNominal.toLocaleString()} of the ${nRestGE.toLocaleString()} compared: the rest have no expression data, which is why the n beside a row here differs from the gene-effect column.`
+                  : `Compared against ${exprOtherN.toLocaleString()} other cell lines.`)
             : 'Expression data has not loaded yet.';
         this._mountGEInspectUI(exprNote);
 
