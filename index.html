@@ -2148,6 +2148,17 @@
             #cellLineBrowserModal > div { max-width: 100% !important; height: 100% !important; max-height: 100% !important; margin-top: 0 !important; border-radius: 0 !important; }
             .clb-list { columns: 1 !important; }
             .clb-content { flex-direction: column !important; }
+            /* One scroller, not three. On desktop the list has its own
+               scrollbar inside a clipped row; stacked into a column on a phone
+               that becomes a trap, because the inner list stops at
+               100vh - 220px and .clb-content clips whatever is under it, so
+               the page simply refuses to scroll further and the cell lines
+               below, and the detail panel, cannot be reached. Let the list
+               flow at its natural height and leave the scrolling to
+               #clbScrollableBody, which wraps the lot. */
+            .clb-content { overflow: visible !important; min-height: 0 !important; }
+            .clb-list-wrap { max-height: none !important; overflow: visible !important; padding: 8px 12px !important; }
+            #clbScrollableBody { -webkit-overflow-scrolling: touch; }
             .clb-detail { width: 100% !important; border-left: none !important; border-top: 1px solid var(--gray-200) !important; }
             /* On a phone the full cell-line card is too condensed; show only the
                executive summary + the Wiki button (deep dive opens the wiki). */
@@ -4856,6 +4867,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v87_85"></script>
+    <script src="app.js?v=v87_87"></script>
 </body>
 </html>

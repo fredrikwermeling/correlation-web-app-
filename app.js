@@ -26951,7 +26951,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // half the width, leaving the boxes too narrow to compare, which is the
         // whole point of the chart. Cut the name hard there; the full name is
         // still on the point and in the tap card.
-        const LABEL_MAX = (window.innerWidth <= 640) ? 13 : 34;
+        // 13 still left the names taking about 40% of a phone screen once the
+        // "(n=…)" was added, so the boxes had barely half the width to
+        // separate in. 9 puts the plot back in the majority of the frame.
+        const LABEL_MAX = (window.innerWidth <= 640) ? 9 : 34;
         const seenLabels = new Map();
         const shortLabel = (group, count) => {
             let base = group.length > LABEL_MAX ? group.slice(0, LABEL_MAX - 1).trimEnd() + '…' : group;
