@@ -17990,7 +17990,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const subSize = sts?.subtitleSize || 15;
         // Name the measurement on each axis: the same gene pair means something
         // different for gene effect, expression and copy number.
-        const _axisWord = (t) => t === 'expr' ? 'expression' : t === 'cn' ? 'copy number' : 'gene effect';
+        // Growth rate and a gene-set score are not gene effect, and calling
+        // them that in the chart title states something untrue about the
+        // measure on the axis.
+        const _axisWord = (t) => t === 'expr' ? 'expression' : t === 'cn' ? 'copy number'
+            : t === 'growth' ? 'proliferation rate' : t === 'geneset' ? 'gene set score' : 'gene effect';
         const _xType = document.getElementById('xAxisDataType')?.value || 'ge';
         const _yType = document.getElementById('yAxisDataType')?.value || 'ge';
         // Plotly does not wrap titles, so a long pair label runs off the plot.
