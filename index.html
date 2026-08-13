@@ -4732,7 +4732,7 @@
           <div class="clb-row">
             <span class="clb-row-label">Cohort</span>
             <div class="clb-row-items">
-              <input type="text" id="clbSearch" placeholder="Search cell lines..." style="width:190px;">
+              <input type="text" id="clbSearch" list="clbSearchOptions" autocomplete="off" placeholder="Search cell lines..." style="width:190px;"><datalist id="clbSearchOptions"></datalist>
               <select id="clbTissueFilter" style="width:200px;"><option value="">All tissues</option></select>
               <select id="clbSubtypeFilter" disabled title="Choose a tissue first to narrow by subtype" style="width:200px;"><option value="">All subtypes</option></select>
               <select id="clbOncotreeFilter" style="width:210px;" title="Exact disease entity from Oncotree. Finer than the tissue and subtype fields, and reaches entities they cannot, for example chronic lymphocytic leukemia, which the disease field files under mature B-cell neoplasms."><option value="">All diseases</option></select>
@@ -5107,6 +5107,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v88_10"></script>
+    <script src="app.js?v=v88_11"></script>
 </body>
 </html>

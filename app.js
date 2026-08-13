@@ -18315,8 +18315,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         // Build title - condensed to avoid overlapping with data
         const sts = this._savedScatterTextSettings;
-        let titleFontSize = sts?.titleFontSize || 25;
-        const subSize = sts?.subtitleSize || 15;
+        // The y axis was scaled for a phone and nothing else was, so the title,
+        // the stat lines and the whole x axis stayed at desktop sizes next to a
+        // shrunken y axis. That is the "some things very big, others small"
+        // look. One scale for the lot, the way the gene effect chart does it.
+        const _scPhone = (typeof window !== 'undefined') && window.innerWidth <= 640;
+        let titleFontSize = sts?.titleFontSize || (_scPhone ? 16 : 25);
+        const subSize = sts?.subtitleSize || (_scPhone ? 11 : 15);
         // Name the measurement on each axis: the same gene pair means something
         // different for gene effect, expression and copy number.
         // Growth rate and a gene-set score are not gene effect, and calling
@@ -18331,7 +18336,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const _plainLen = (_xType === _yType)
             ? `${gene1} vs ${gene2} (${_axisWord(_xType)})`.length
             : `${gene1} (${_axisWord(_xType)}) vs ${gene2} (${_axisWord(_yType)})`.length;
-        const _plotW = parseInt(document.getElementById('plotWidth')?.value, 10) || 500;
+        // On a phone the plot is as wide as the screen, not as wide as the
+        // width control says, so measuring the title against the control let a
+        // title that does not fit call itself one line and run off the edge.
+        const _plotW = _scPhone
+            ? Math.max(200, (document.getElementById('scatterPlot')?.clientWidth || window.innerWidth) - 70)
+            : (parseInt(document.getElementById('plotWidth')?.value, 10) || 500);
         // Plotly spaces the lines of an annotation by the annotation's own font
         // size, not by the size each line is actually drawn at. A title drawn at
         // 25px inside a block spaced for 13px put its second line on top of its
@@ -18345,7 +18355,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const _fitsOneLine = _plainLen * titleFontSize * 0.58 < _plotW;
         const _brk = _fitsOneLine ? ' ' : '<br>';
         const _pairLabel = (_xType === _yType)
-            ? `${gene1} vs ${gene2} <span style="font-weight:400;">(${_axisWord(_xType)})</span>`
+            ? `${gene1} vs ${gene2}${_brk}<span style="font-weight:400;">(${_axisWord(_xType)})</span>`
             : `${gene1} <span style="font-weight:400;">(${_axisWord(_xType)})</span>${_brk}vs ${gene2} <span style="font-weight:400;">(${_axisWord(_yType)})</span>`;
         let titleLines = [`<span style="font-size:${titleFontSize}px"><b>${_pairLabel}</b></span>`];
         if (filterDesc) {
@@ -18505,7 +18515,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             yanchor: this._userXLabelPos ? 'auto' : 'top',
             text: xLabelText,
             showarrow: false,
-            font: { size: sts?.xLabelFontSize || 20 },
+            font: { size: sts?.xLabelFontSize || (_isPhone ? 13 : 20) },
             _tsRole: 'xlabel'
         };
         const yLabelAnnotation = {
@@ -18532,7 +18542,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 zeroline: showZero,
                 zerolinecolor: showZero ? '#000' : '#ddd',
                 zerolinewidth: showZero ? 2 : 0,
-                tickfont: { size: sts?.xTickSize || 17 }
+                tickfont: { size: sts?.xTickSize || (_isPhone ? 11 : 17) }
             },
             yaxis: {
                 range: yRange,
@@ -18622,6 +18632,19 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (heightEl) heightEl.value = plotAreaH;
         layout.width = plotAreaW + m.l + m.r;
         layout.height = plotAreaH + m.t + m.b;
+        // On a phone the chart filled the window exactly, so nothing below it
+        // showed and the gene boxes, the filters and Update read as absent
+        // rather than as further down. Cap the whole thing at about two thirds
+        // of the screen: the head of the controls is then visible under it and
+        // says, without a word, that there is more.
+        if (_scPhone) {
+            const cap = Math.round(window.innerHeight * 0.62) - m.t - m.b;
+            if (cap > 160 && plotAreaH > cap) {
+                plotAreaH = cap;
+                if (heightEl) heightEl.value = plotAreaH;
+                layout.height = plotAreaH + m.t + m.b;
+            }
+        }
         // Constrain to available space
         const availableWidth = plotContainer.parentElement?.offsetWidth || 600;
         if (layout.width > availableWidth) {
@@ -39570,6 +39593,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         this.updateClbFilterCounts(this.metadata.cellLines);
         this.populateUmapFilters();
         this.populateClbOncotreeFilter();
+        this._populateClbSearchSuggestions();
         const umapPlot = document.getElementById('clbUmapPlot');
         if (umapPlot) umapPlot.innerHTML = '';
         const umapSel = document.getElementById('clbUmapSelectionControls');
@@ -39724,6 +39748,24 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             sel.appendChild(o);
         }
         sel.value = value;
+    }
+
+    // Name suggestions under the search box. Typing the first letters of a cell
+    // line is how the browser is usually opened, and until now it offered
+    // nothing back: a name half-remembered, or spelled the other way (NCIH2087
+    // against NCI-H2087), simply returned an empty list with no hint that the
+    // line is there under another spelling. Built once per open, from the same
+    // names the list itself shows.
+    _populateClbSearchSuggestions() {
+        const dl = document.getElementById('clbSearchOptions');
+        if (!dl) return;
+        const names = new Set();
+        for (const cl of this.metadata.cellLines) {
+            const nm = this.getCellLineName(cl);
+            if (nm) names.add(nm);
+        }
+        dl.innerHTML = [...names].sort()
+            .map(n => `<option value="${this.esc(n)}"></option>`).join('');
     }
 
     populateClbOncotreeFilter() {
