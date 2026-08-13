@@ -45698,11 +45698,11 @@ ${clone.innerHTML}
         sub.innerHTML = (fromFilter
                 ? `Nothing was ticked, so this is the ${selected.length} cell lines your filters leave showing, `
                 : '')
-            + `<span class="mobile-hide">each gene's average in the selection minus its average in the comparison group`
+            + `each gene's average in the selection minus its average in the comparison group`
             + (canTest
                 ? `, tested with ${this._geInspectTest === 'rank' ? 'a Wilcoxon rank sum' : "Welch's t"} per gene and q from Benjamini-Hochberg`
                 : `. Fewer than three cell lines means no spread to test, so there is no p or q`)
-            + `. </span><a href="#" id="geInspectHelpLink" style="color:#5d9239;">How to read this</a>`;
+            + `. <a href="#" id="geInspectHelpLink" style="color:#5d9239;">How to read this</a>`;
         document.getElementById('geInspectHelpLink')?.addEventListener('click', (e) => {
             e.preventDefault();
             this._showGEInspectHelp();
