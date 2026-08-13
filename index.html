@@ -2228,6 +2228,21 @@
             #optionsRow > * { flex: 1 1 calc(50% - 6px) !important; min-width: calc(50% - 6px) !important; }
             /* Lasso needs a drag on a plot that does not accept drags here. */
             #scatterLassoHighlightBtn { display: none !important; }
+            /* A collapsed panel should be a line of text, not an empty card.
+               With its border, padding and background still drawn it took the
+               room of the controls it was hiding, and three of them stacked
+               read as three empty boxes. */
+            .phone-collapsed {
+                padding: 0 !important; border: none !important; background: none !important;
+                margin: 0 0 2px !important; min-height: 0 !important; box-shadow: none !important;
+            }
+            .phone-collapsed > .panel-heading,
+            .phone-collapsed > .control-label,
+            .phone-collapsed > .param-section-heading {
+                min-height: 32px !important; margin: 0 !important; padding: 0 2px !important;
+            }
+            /* Headings are the tap target, so they read as one. */
+            [data-phone-collapse] { font-weight: 600 !important; color: var(--green-700) !important; }
             /* Closing a popout is the most-used control on a phone and was the
                smallest: a bare glyph with no padding. Give every × a real
                touch target, and a little more glyph to aim at. */
@@ -4942,6 +4957,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v87_94"></script>
+    <script src="app.js?v=v87_95"></script>
 </body>
 </html>

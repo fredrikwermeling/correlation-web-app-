@@ -11412,6 +11412,47 @@ class CorrelationExplorer {
         if (window.innerWidth > 640) return;
         const scope = root || document;
 
+        // Which panels the user has opened, kept on the app and keyed by the
+        // heading's own text. The DOM cannot hold this: these boxes are rebuilt
+        // by several code paths, and every rebuild produced a fresh panel that
+        // knew nothing about what the user had just done with it. Keying on the
+        // title rather than on the element is what survives the rebuild.
+        this._phoneCollapseOpen = this._phoneCollapseOpen || {};
+        const state = this._phoneCollapseOpen;
+        const keyOf = (head) => (head.textContent || '').replace(/[▾▸]/g, '').trim().toLowerCase();
+
+        // Reuse the wrapper if this box has already been through here. Wrapping
+        // a second time nested a new container inside the old one, so the
+        // toggle moved an inner element while the visible panel was governed by
+        // the outer one, and the panel never appeared to open or close.
+        // The sidebar keeps several sections in one parent, so a section owns
+        // the siblings that follow it up to the next heading, not every child.
+        const bodyForAfter = (box, head) => {
+            const prev = head.nextElementSibling;
+            if (prev && prev.hasAttribute && prev.hasAttribute('data-phone-collapse-body')) return prev;
+            const rest = [];
+            let n = head.nextElementSibling;
+            while (n && !n.classList.contains('param-section-heading')) { rest.push(n); n = n.nextElementSibling; }
+            if (!rest.length) return null;
+            const body = document.createElement('div');
+            body.setAttribute('data-phone-collapse-body', '1');
+            box.insertBefore(body, rest[0]);
+            rest.forEach(c => body.appendChild(c));
+            return body;
+        };
+
+        const bodyFor = (box, head) => {
+            const existing = box.querySelector(':scope > [data-phone-collapse-body]');
+            if (existing) return existing;
+            const rest = [...box.children].filter(c => c !== head);
+            if (!rest.length) return null;
+            const body = document.createElement('div');
+            body.setAttribute('data-phone-collapse-body', '1');
+            box.insertBefore(body, rest[0]);
+            rest.forEach(c => body.appendChild(c));
+            return body;
+        };
+
         const wire = (head, body, opts = {}) => {
             if (!head || !body || head.dataset.phoneCollapse) return;
             head.dataset.phoneCollapse = '1';
@@ -11422,11 +11463,15 @@ class CorrelationExplorer {
             head.style.justifyContent = 'space-between';
             head.style.width = '100%';
             head.style.minHeight = '38px';
+            // Read the key BEFORE the caret is appended, so the caret glyph
+            // never becomes part of the key.
+            const key = keyOf(head);
             const caret = document.createElement('span');
             caret.textContent = '▾';
             caret.style.cssText = 'font-size:12px; color:#9ca3af; margin-left:8px; transition:transform .12s;';
             head.appendChild(caret);
-            const set = (open) => {
+            const set = (open, remember) => {
+                if (remember) state[key] = open;
                 // `contents` rather than `block`: the wrapper has to disappear
                 // from layout when open, or the box's own flex/grid rules apply
                 // to the wrapper instead of to the controls and the panel comes
@@ -11434,29 +11479,44 @@ class CorrelationExplorer {
                 // collapsible. Open should be indistinguishable from no
                 // collapsing at all.
                 body.style.display = open ? 'contents' : 'none';
+                head.parentElement?.classList.toggle('phone-collapsed', !open);
                 caret.style.transform = open ? '' : 'rotate(-90deg)';
                 head.setAttribute('aria-expanded', open ? 'true' : 'false');
             };
-            set(!!opts.open);
+            // A panel this user has already opened comes back open; otherwise
+            // the default for that panel applies.
+            set(key in state ? state[key] : !!opts.open, false);
             head.addEventListener('click', (e) => {
                 if (e.target.closest('input, select, textarea, button')) return;
-                set(body.style.display === 'none');
+                // Toggle from the remembered state, not from the DOM, so a
+                // half-applied style can never desync the caret from the panel.
+                const nowOpen = key in state ? state[key] : !!opts.open;
+                set(!nowOpen, true);
             });
         };
 
         // Network: Appearance / Labels and color / View controls sit as a
         // heading followed by their controls inside one box. Export goes
         // entirely: there is nothing useful to do with a downloaded file here.
+        // Sidebar sections on the start page: same treatment, so "Lineage and
+        // disease" and "Genetic alterations" are headings you open rather than
+        // two blocks of selectors between you and the Run button.
+        scope.querySelectorAll('.param-section-heading').forEach(head => {
+            if (head.offsetParent === null && head.style.display === 'none') return;
+            const box = head.parentElement;
+            if (!box) return;
+            const body = bodyForAfter(box, head);
+            if (!body) return;
+            wire(head, body, { open: false });
+        });
+
         scope.querySelectorAll('.panel-heading').forEach(head => {
             const box = head.parentElement;
             if (!box) return;
             const title = (head.textContent || '').trim().toLowerCase();
             if (title === 'export') { box.style.display = 'none'; return; }
-            const rest = [...box.children].filter(c => c !== head);
-            if (!rest.length) return;
-            const body = document.createElement('div');
-            box.insertBefore(body, rest[0]);
-            rest.forEach(c => body.appendChild(c));
+            const body = bodyFor(box, head);
+            if (!body) return;
             wire(head, body, { open: false });
         });
 
@@ -11469,9 +11529,8 @@ class CorrelationExplorer {
             if (!rest.length) return;
             // The gene boxes are the one thing you always need open.
             const keepOpen = /genes/i.test(head.textContent || '');
-            const body = document.createElement('div');
-            box.insertBefore(body, rest[0]);
-            rest.forEach(c => body.appendChild(c));
+            const body = bodyFor(box, head);
+            if (!body) return;
             wire(head, body, { open: keepOpen });
         });
     }
