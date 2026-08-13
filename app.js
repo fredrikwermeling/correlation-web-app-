@@ -20135,12 +20135,20 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (ok) {
                 anyShown = true;
                 b.textContent = `${gene} ${word(type)}`;
-                b.title = `Open ${gene} on its own in the Gene Effect view, showing ${type === 'expr' ? 'mRNA expression' : type === 'cn' ? 'copy number' : 'gene effect'} across cell lines`;
+                // Hovering describes the gene, the same as a gene name in the
+                // network or a results table. The native title would fight the
+                // custom tooltip, so it carries no title of its own.
+                b.classList.add('gene-hover');
+                b.dataset.gene = gene;
+                b.removeAttribute('title');
                 b.onclick = () => this.openGeneEffectModal(gene, 'tissue', { dataType: type === 'expr' ? 'expr' : 'ge' });
             }
         }
         const row = document.getElementById('inspectAxisOpenRow');
-        if (row) row.style.display = anyShown ? 'flex' : 'none';
+        if (row) {
+            row.style.display = anyShown ? 'inline-flex' : 'none';
+            if (anyShown) this.attachGeneTooltips?.(row);
+        }
 
         // Gene names in the heading, hoverable.
         const t = document.getElementById('inspectTitle');
