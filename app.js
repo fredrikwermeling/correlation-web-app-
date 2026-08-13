@@ -44247,6 +44247,13 @@ ${clone.innerHTML}
     }
 
     setGEInspectScope(scope) {
+        // Pressing the button that opened the picker closes it again, which is
+        // what a second press of an open thing should do.
+        if ((scope === 'group' || scope === 'custom') && this._geInspectPanel === scope && this._geInspectScope === scope) {
+            this._geInspectPanel = null;
+            if (this._geInspectResults) this.inspectSelectionGE();
+            return;
+        }
         const known = ['all', 'lineage', 'group', 'custom'];
         this._geInspectScope = known.includes(scope) ? scope : 'all';
         // The two explicit layers open their own chooser; the two implicit
@@ -44311,7 +44318,12 @@ ${clone.innerHTML}
     _geInspectScopePanel() {
         const mode = this._geInspectPanel;
         if (mode !== 'group' && mode !== 'custom') return '';
-        const box = (inner) => `<div style="margin-top:6px; padding:8px 10px; border:1px solid #e5e7eb; border-radius:5px; background:#fafafa;">${inner}</div>`;
+        // Every panel gets a way out of it. There was none: the button that
+        // opened it re-opened it, so once open it stayed open.
+        const box = (inner) => `<div style="position:relative; margin-top:6px; padding:8px 10px; border:1px solid #e5e7eb; border-radius:5px; background:#fafafa;">`
+            + `<button type="button" title="Close this box (your picks are kept)" onclick="app.closeGEInspectPanel()" `
+            + `style="position:absolute; top:4px; right:6px; background:none; border:none; font-size:16px; line-height:1; color:#9ca3af; cursor:pointer; padding:0 3px;">&times;</button>`
+            + `${inner}</div>`;
 
         if (mode === 'custom') {
             const note = this._geInspectCustomNote || '';
@@ -44339,7 +44351,7 @@ ${clone.innerHTML}
             rows += `<tr class="gis-row" style="cursor:pointer;" onmouseenter="this.style.background='#f3f4f6'" onmouseleave="this.style.background=''">
                 <td style="padding:3px 8px;"><input type="checkbox" class="gis-check"${g.lineages.has(lin) ? ' checked' : ''} onclick="event.stopPropagation(); app.toggleGEInspectGroup('lineages','${esc(lin)}')"></td>
                 <td style="padding:3px 4px; color:#1f2937;" onclick="app.toggleGEInspectBranch('${esc(lin)}')">${hasSubs ? `<span style="font-size:9px; color:#9ca3af; margin-right:2px;">${isOpen ? '\u25bc' : '\u25b6'}</span>` : '<span style="margin-right:9px;"></span>'}${this.esc(lin)}</td>
-                <td style="padding:3px 8px; text-align:right; color:#6b7280;">${L.n}</td></tr>`;
+                <td style="padding:3px 8px; text-align:right; color:#6b7280; white-space:nowrap;" title="${this.esc(this._geInspectCountCell(L).title)}">${this._geInspectCountCell(L).text}</td></tr>`;
             if (!isOpen) continue;
             for (const [sub, S] of [...L.subs.entries()].sort((a, b) => b[1].n - a[1].n)) {
                 const hasDis = S.diseases.size > 0;
@@ -44347,18 +44359,19 @@ ${clone.innerHTML}
                 rows += `<tr style="background:#fafafa; cursor:pointer;" onmouseenter="this.style.background='#f0f0f0'" onmouseleave="this.style.background='#fafafa'">
                     <td style="padding:2px 8px 2px 16px;"><input type="checkbox" class="gis-check"${g.sublineages.has(sub) ? ' checked' : ''} onclick="event.stopPropagation(); app.toggleGEInspectGroup('sublineages','${esc(sub)}')"></td>
                     <td style="padding:2px 4px 2px 8px; font-size:11px; color:#6b7280;" onclick="app.toggleGEInspectBranch('${esc(lin)} &gt;&gt; ${esc(sub)}')">${hasDis ? `<span style="font-size:8px; color:#9ca3af; margin-right:2px;">${subOpen ? '\u25bc' : '\u25b6'}</span>` : '<span style="margin-right:8px;"></span>'}${this.esc(sub)}</td>
-                    <td style="padding:2px 8px; text-align:right; color:#9ca3af; font-size:11px;">${S.n}</td></tr>`;
+                    <td style="padding:2px 8px; text-align:right; color:#9ca3af; font-size:11px; white-space:nowrap;" title="${this.esc(this._geInspectCountCell(S).title)}">${this._geInspectCountCell(S).text}</td></tr>`;
                 if (!subOpen) continue;
-                for (const [dis, dn] of [...S.diseases.entries()].sort((a, b) => b[1] - a[1])) {
+                for (const [dis, dn] of [...S.diseases.entries()].sort((a, b) => b[1].n - a[1].n)) {
                     rows += `<tr style="background:#f5f5f4; cursor:pointer;" onmouseenter="this.style.background='#ececeb'" onmouseleave="this.style.background='#f5f5f4'">
                         <td style="padding:2px 8px 2px 24px;"><input type="checkbox" class="gis-check"${g.diseases.has(dis) ? ' checked' : ''} onclick="event.stopPropagation(); app.toggleGEInspectGroup('diseases','${esc(dis)}')"></td>
                         <td style="padding:2px 4px 2px 14px; font-size:10px; color:#9ca3af;">${this.esc(dis)}</td>
-                        <td style="padding:2px 8px; text-align:right; color:#9ca3af; font-size:10px;">${dn}</td></tr>`;
+                        <td style="padding:2px 8px; text-align:right; color:#9ca3af; font-size:10px; white-space:nowrap;" title="${this.esc(this._geInspectCountCell(dn).title)}">${this._geInspectCountCell(dn).text}</td></tr>`;
                 }
             }
         }
         return box(
-            `<div style="font-size:10px; color:#6b7280; margin-bottom:4px;">Tick any tissue, subtype or disease. Ticks add up, so several groups can be compared against at once. Click a name to open the level below it.</div>`
+            `<div style="font-size:10px; color:#6b7280; margin-bottom:4px; padding-right:18px;">Tick any tissue, subtype or disease. Ticks add up, so several groups can be compared against at once. Click a name to open the level below it.`
+            + `${(this._geInspectResults?.selected?.length ? ` Counts read "left of total": a cell line in your selection cannot also be compared against, so a group you selected from offers fewer than it holds.` : '')}</div>`
             + `<div style="max-height:200px; overflow:auto; background:#fff; border:1px solid #e5e7eb; border-radius:4px;">`
             + `<table style="width:100%; border-collapse:collapse; font-size:11px;">${rows}</table></div>`
             + `<div style="margin-top:5px;"><button type="button" class="btn btn-sm btn-outline" style="font-size:10px; padding:2px 8px;" onclick="app.clearGEInspectGroup()">Clear picks</button></div>`);
@@ -44368,22 +44381,53 @@ ${clone.innerHTML}
     // once per render. The picker is multi-select at every level because the
     // right comparison group is often "these three diseases", not one branch.
     _geInspectTreeData() {
+        // Two counts per group: how many cell lines are in it, and how many
+        // would actually be compared against. Those differ whenever the
+        // selection is drawn from the same group, which is the usual case:
+        // picking Melanoma to compare 45 BRAF-mutant melanoma lines against
+        // leaves 22, not 67, because a line cannot be on both sides. Only the
+        // total was shown, so the group looked three times the size it was.
+        const selected = new Set(this._geInspectResults?.selected || []);
         const tree = new Map();
         for (const cl of this.metadata.cellLines) {
             const lin = this.getCellLineLineage(cl) || 'Unknown';
             const sub = this.getCellLineSublineage(cl) || '';
             const dis = this.cellLineMetadata?.oncotreeSubtype?.[cl] || '';
+            const free = selected.has(cl) ? 0 : 1;
             let L = tree.get(lin);
-            if (!L) tree.set(lin, L = { n: 0, subs: new Map() });
-            L.n++;
+            if (!L) tree.set(lin, L = { n: 0, avail: 0, subs: new Map() });
+            L.n++; L.avail += free;
             if (!sub) continue;
             let S = L.subs.get(sub);
-            if (!S) L.subs.set(sub, S = { n: 0, diseases: new Map() });
-            S.n++;
+            if (!S) L.subs.set(sub, S = { n: 0, avail: 0, diseases: new Map() });
+            S.n++; S.avail += free;
             if (!dis || dis === sub) continue;
-            S.diseases.set(dis, (S.diseases.get(dis) || 0) + 1);
+            const D = S.diseases.get(dis) || { n: 0, avail: 0 };
+            D.n++; D.avail += free;
+            S.diseases.set(dis, D);
         }
         return tree;
+    }
+
+    // "22 of 67" when the selection eats into a group, plain "67" when it
+    // does not, so the number the comparison will actually use is the one
+    // being read.
+    _geInspectCountCell(entry) {
+        const total = entry.n, avail = entry.avail;
+        if (avail === total) return { text: String(total), title: `${total} cell lines` };
+        return {
+            text: `${avail} of ${total}`,
+            title: `${total} cell lines here, ${total - avail} of them in your selection, so ${avail} would be compared against`
+        };
+    }
+
+    // Close the picker without changing what it picked. Reopening is the
+    // same button that opened it.
+    closeGEInspectPanel() {
+        this._geInspectPanel = null;
+        // The panel is part of the header the scan writes, so redrawing it is
+        // the scan. Cheap next to leaving a box that cannot be dismissed.
+        if (this._geInspectResults) this.inspectSelectionGE();
     }
 
     // Compare against a list of cell lines the user pastes in, for the case
@@ -44947,10 +44991,16 @@ ${clone.innerHTML}
             }
             return t;
         };
-        document.getElementById('geLeftHint').textContent = hint(leftRows.length, leftCut, leftQ, rows, 'left');
-        document.getElementById('geRightHint').textContent = hint(rightRows.length, rightCut, rightQ, exprRows, 'right');
-        document.getElementById('geLeftBody').innerHTML = this._buildGEInspectTable(leftRows, 'left');
-        document.getElementById('geRightBody').innerHTML = this._buildGEInspectTable(rightRows, 'right');
+        // The diagnosis for an empty table belongs IN the table, under the
+        // headings, where the missing rows would have been. As small grey
+        // text above it, it read as a caption and went unread, so an empty
+        // table looked like an answer rather than a cutoff to loosen.
+        const leftMsg = hint(leftRows.length, leftCut, leftQ, rows, 'left');
+        const rightMsg = hint(rightRows.length, rightCut, rightQ, exprRows, 'right');
+        document.getElementById('geLeftHint').textContent = leftRows.length ? leftMsg : '';
+        document.getElementById('geRightHint').textContent = rightRows.length ? rightMsg : '';
+        document.getElementById('geLeftBody').innerHTML = this._buildGEInspectTable(leftRows, 'left', leftMsg);
+        document.getElementById('geRightBody').innerHTML = this._buildGEInspectTable(rightRows, 'right', rightMsg);
 
         const wireRows = () => {
             document.querySelectorAll('#geLeftBody .si-row, #geRightBody .si-row').forEach(tr => {
@@ -45017,7 +45067,7 @@ ${clone.innerHTML}
     }
 
     // Build the HTML for one sortable GE-inspect table.
-    _buildGEInspectTable(rows, side) {
+    _buildGEInspectTable(rows, side, emptyMessage) {
         // No q column at all when the selection was too small to test, rather
         // than a column of blanks.
         const hasQ = rows.some(r => r.q != null);
@@ -45068,7 +45118,7 @@ ${clone.innerHTML}
                 ${th('n', 'nSel')}
                 ${hasQ ? th('q', 'q') : ''}
             </tr></thead>
-            <tbody>${trows}</tbody>
+            <tbody>${rows.length ? trows : `<tr><td colspan="${hasQ ? 6 : 5}" style="padding:14px 16px; background:#fffbeb; color:#92400e; border-bottom:1px solid #fde68a; font-size:11px; line-height:1.55;">${this.esc(emptyMessage || 'Nothing to show.')}</td></tr>`}</tbody>
         </table>`;
     }
 
