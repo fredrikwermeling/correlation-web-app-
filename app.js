@@ -11423,7 +11423,13 @@ class CorrelationExplorer {
             caret.style.cssText = 'font-size:12px; color:#9ca3af; margin-left:8px; transition:transform .12s;';
             head.appendChild(caret);
             const set = (open) => {
-                body.style.display = open ? '' : 'none';
+                // `contents` rather than `block`: the wrapper has to disappear
+                // from layout when open, or the box's own flex/grid rules apply
+                // to the wrapper instead of to the controls and the panel comes
+                // back looking different from how it looked before it was
+                // collapsible. Open should be indistinguishable from no
+                // collapsing at all.
+                body.style.display = open ? 'contents' : 'none';
                 caret.style.transform = open ? '' : 'rotate(-90deg)';
                 head.setAttribute('aria-expanded', open ? 'true' : 'false');
             };

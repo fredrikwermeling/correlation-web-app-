@@ -2222,6 +2222,10 @@
             /* The Options row's four buttons were sized for a desktop row, so
                "Other" overflowed its own button and sat off-centre. */
             #optionsOtherBtn, .sidebar .card-content > .btn { white-space: normal !important; }
+            /* Four equal columns is ~85px each here, too narrow for "Other ▾",
+               which overflowed its own button and sat off-centre. Two per row. */
+            #optionsRow { flex-wrap: wrap !important; }
+            #optionsRow > * { flex: 1 1 calc(50% - 6px) !important; min-width: calc(50% - 6px) !important; }
             /* Lasso needs a drag on a plot that does not accept drags here. */
             #scatterLassoHighlightBtn { display: none !important; }
             /* Closing a popout is the most-used control on a phone and was the
@@ -4938,6 +4942,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v87_91"></script>
+    <script src="app.js?v=v87_93"></script>
 </body>
 </html>
