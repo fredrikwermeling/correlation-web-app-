@@ -2366,10 +2366,19 @@
                 padding: 0 !important; border: none !important; background: none !important;
                 margin: 0 0 2px !important; min-height: 0 !important; box-shadow: none !important;
             }
+            /* The box drops its padding when collapsed, so the heading has to
+               carry the inset itself or it sits flush against the edge of the
+               screen while everything around it starts 12px in. The heading is
+               also stretched to the full width by the toggle, which is what
+               made a right-aligned label like "Selection" jump to the far left
+               of the row it heads. */
             .phone-collapsed > .panel-heading,
             .phone-collapsed > .control-label,
+            .phone-collapsed > .clb-row-label,
+            .phone-collapsed > .ge-section-heading,
             .phone-collapsed > .param-section-heading {
-                min-height: 32px !important; margin: 0 !important; padding: 0 2px !important;
+                min-height: 32px !important; margin: 0 !important;
+                padding: 0 12px !important; text-align: left !important;
             }
             /* Headings are the tap target, so they read as one. */
             [data-phone-collapse] { font-weight: 600 !important; color: var(--green-700) !important; }
@@ -5091,6 +5100,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v88_07"></script>
+    <script src="app.js?v=v88_08"></script>
 </body>
 </html>

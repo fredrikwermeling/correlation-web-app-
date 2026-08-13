@@ -16941,7 +16941,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const tsp = document.getElementById('textSettingsPanel');
         if (tsp && this._textSettingsPlotId === '__network__') tsp.style.display = 'none';
         this.hideCellLineTooltip?.();
-        this.hideGeneTooltip?.();
+        // force: a gene card opened by a TAP is pinned, and hideGeneTooltip
+        // leaves a pinned card alone by design so a click-to-pin survives the
+        // pointer moving away. Opening a popout is a different thing from the
+        // pointer moving: the card belongs to the view underneath and has to
+        // go, or it sits on top of the new one with no way to reach the tap
+        // that would dismiss it.
+        this.hideGeneTooltip?.(true);
 
         // Clear any instruction text from direct access
         const scatterEl = document.getElementById('scatterPlot');
@@ -26019,7 +26025,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const geTsp = document.getElementById('textSettingsPanel');
         if (geTsp && this._textSettingsPlotId === '__network__') geTsp.style.display = 'none';
         this.hideCellLineTooltip?.();
-        this.hideGeneTooltip?.();
+        // force: a gene card opened by a TAP is pinned, and hideGeneTooltip
+        // leaves a pinned card alone by design so a click-to-pin survives the
+        // pointer moving away. Opening a popout is a different thing from the
+        // pointer moving: the card belongs to the view underneath and has to
+        // go, or it sits on top of the new one with no way to reach the tap
+        // that would dismiss it.
+        this.hideGeneTooltip?.(true);
         // Reset the lineage switch; the caller re-arms it when it applies.
         if (!opts._keepScopeToggle) { this._geScopeLineage = ''; this._syncGeScopeToggle?.(); }
         const geneUpper = gene.toUpperCase();
@@ -32610,7 +32622,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // "Hold Shift" has to mean held: the box appears a second after you
         // start hovering, and the hover handler builds a synthetic event with
         // only coordinates, so event.shiftKey is never set on that path.
-        const pinned = !!(event && event.shiftKey) || !!this._shiftHeld;
+        // A phone has no Shift, so this came out unpinned: pointer-events off
+        // (the NCBI / GeneCards links could not be tapped), the summary cut at
+        // 260 characters, and, worst, no dismiss listener registered, so the
+        // card that says "Tap anywhere to close" could not be closed at all.
+        const pinned = !!(event && event.shiftKey) || !!this._shiftHeld
+                    || (typeof window !== 'undefined' && window.innerWidth <= 640);
 
         const tooltip = document.createElement('div');
         tooltip.id = 'geneTooltip';
@@ -32775,6 +32792,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
 
     hideGeneTooltip(force) {
+        // Cancel anything armed but not yet shown. Without this a card armed by
+        // the same tap that opened a popout appears after the popout does, and
+        // the hide that ran on open had nothing to find.
+        if (force) {
+            clearTimeout(this._clbGeneTooltipTimer);
+            clearTimeout(this._networkQuickTooltipTimer);
+            clearTimeout(this._networkTooltipTimer);
+        }
         const existing = document.getElementById('geneTooltip');
         if (!existing) return;
         if (existing.dataset.pinned === '1' && !force) return;
