@@ -12155,6 +12155,32 @@ class CorrelationExplorer {
             this._networkTooltipHideTimer = setTimeout(() => this.hideGeneTooltip(), 400);
         });
 
+        // An edge is a line a few pixels wide, which a mouse can be placed on
+        // and a finger cannot. vis-network has no hit-tolerance setting, so
+        // when the tap misses, probe outwards from it in rings and take the
+        // first edge found. Desktop keeps the exact hit it already had.
+        const edgeNear = (params) => {
+            if (params.edges && params.edges.length) return params.edges[0];
+            const pt = params.pointer && params.pointer.DOM;
+            if (!pt || typeof this.network.getEdgeAt !== 'function') return null;
+            if (window.innerWidth > 640) return null;
+            // About a fingertip. Wider was measured to still find an edge 45px
+            // away, which in a dense network means a tap on empty canvas opens
+            // a correlation for whatever line happened to be nearest.
+            for (const radius of [10, 18]) {
+                for (let i = 0; i < 8; i++) {
+                    const a = (i / 8) * 2 * Math.PI;
+                    const probe = { x: pt.x + radius * Math.cos(a), y: pt.y + radius * Math.sin(a) };
+                    // A node under the probe means the finger was aiming at the
+                    // node, not at an edge running behind it.
+                    if (this.network.getNodeAt(probe)) return null;
+                    const id = this.network.getEdgeAt(probe);
+                    if (id !== undefined && id !== null && id !== '') return id;
+                }
+            }
+            return null;
+        };
+
         // Double-click to open Gene Effect (node) or Inspect (edge)
         this.network.on('doubleClick', (params) => {
             clearTimeout(this._networkTooltipTimer);
@@ -12163,10 +12189,10 @@ class CorrelationExplorer {
                 // Node double-clicked - open Gene Effect analysis
                 const nodeId = params.nodes[0];
                 this.openGeneEffectFromNetwork(nodeId);
-            } else if (params.edges.length > 0) {
+            } else {
                 // Edge double-clicked - open correlation inspect
-                const edgeId = params.edges[0];
-                const edge = this.networkData.edges.get(edgeId);
+                const edgeId = edgeNear(params);
+                const edge = edgeId != null ? this.networkData.edges.get(edgeId) : null;
                 if (edge) {
                     this.openInspectByGenes(edge.from, edge.to);
                 }
@@ -12178,6 +12204,23 @@ class CorrelationExplorer {
             // Skip if we just finished dragging
             if (isDragging) {
                 return;
+            }
+
+            // On a phone a single tap opens the correlation for an edge. The
+            // double tap this is bound to on the desktop competes with the
+            // browser's own double-tap-to-zoom, and there is no hover to tell
+            // you an edge is under your finger in the first place. Only when no
+            // node was hit and none of the editing modes is on, so tapping
+            // empty canvas to deselect still works.
+            if (window.innerWidth <= 640 && !params.nodes.length
+                && !this.highlightMode && !this.selectMode && !this.removeMode) {
+                const edgeId = edgeNear(params);
+                const edge = edgeId != null ? this.networkData.edges.get(edgeId) : null;
+                if (edge) {
+                    this.hideGeneTooltip(true);
+                    this.openInspectByGenes(edge.from, edge.to);
+                    return;
+                }
             }
 
             if (params.nodes.length > 0) {
