@@ -6536,25 +6536,26 @@ class CorrelationExplorer {
         });
 
         // Gene Effect modal controls
-        document.getElementById('geneEffectSearchBtn')?.addEventListener('click', () => {
-            const gene = document.getElementById('geneEffectSearch').value.trim().toUpperCase();
+        // Analyze and Enter run the gene the box holds, in the measure the
+        // selector beside it is set to. Without reading it they re-opened the
+        // popout with no measure, which defaults to gene effect, so switching
+        // to Expression and then pressing Analyze silently went back to gene
+        // effect. The measure selector's own handler has passed this through
+        // since it was written; these two were left behind.
+        const geRunSearch = (gene) => {
             if (!gene) return;
             if (this.geneEffectViewMode === 'mutation' && this.mutationResults) {
                 this.showGeneEffectDistribution(gene);
             } else {
-                this.showGeneEffectAnalysis(gene, this.currentGEView || 'tissue');
+                const dt = document.getElementById('geDataType')?.value === 'expr' ? 'expr' : 'ge';
+                this.showGeneEffectAnalysis(gene, this.currentGEView || 'tissue', { dataType: dt });
             }
+        };
+        document.getElementById('geneEffectSearchBtn')?.addEventListener('click', () => {
+            geRunSearch(document.getElementById('geneEffectSearch').value.trim().toUpperCase());
         });
         document.getElementById('geneEffectSearch')?.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                const gene = e.target.value.trim().toUpperCase();
-                if (!gene) return;
-                if (this.geneEffectViewMode === 'mutation' && this.mutationResults) {
-                    this.showGeneEffectDistribution(gene);
-                } else {
-                    this.showGeneEffectAnalysis(gene, this.currentGEView || 'tissue');
-                }
-            }
+            if (e.key === 'Enter') geRunSearch(e.target.value.trim().toUpperCase());
         });
         // Data-type toggle (GE / Expression). Re-analyze the current gene
         // immediately when the user flips it. Updates the Gene Effect label
