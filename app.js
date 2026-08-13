@@ -248,6 +248,7 @@ class CorrelationExplorer {
             this.setupUI();
             this._setupGlobalCohortBar();
             this._guardNetworkKeysFromInputs();
+            this._armPhoneCollapsibles();
             this.hideLoading();
             // URL-hash deep links, open a specific view directly so
             // external apps (greenlisted / mouseclb / lab pages) can
@@ -11383,6 +11384,88 @@ class CorrelationExplorer {
 
     // The label/color checkboxes talk about the run's basis; on an
     // expression network "gene effect" would mislabel every number they show.
+    // On a phone, turn the control panels into things you open rather than
+    // things you scroll past. Every one of these is a block of sliders and
+    // pickers that a demo never touches, and together they push the chart
+    // itself off the screen. The header becomes the button; nothing is
+    // removed, and desktop is untouched.
+    // Panels are rebuilt by several different paths, so rather than chase every
+    // one, watch for the headings appearing and wire whatever is new. The
+    // dataset guard makes re-running free.
+    _armPhoneCollapsibles() {
+        if (window.innerWidth > 640 || this._phoneCollapseArmed) return;
+        this._phoneCollapseArmed = true;
+        const run = () => this._setupPhoneCollapsibles(document);
+        run();
+        let pending = null;
+        new MutationObserver(() => {
+            clearTimeout(pending);
+            pending = setTimeout(run, 60);
+        }).observe(document.body, { childList: true, subtree: true });
+    }
+
+    _setupPhoneCollapsibles(root) {
+        if (window.innerWidth > 640) return;
+        const scope = root || document;
+
+        const wire = (head, body, opts = {}) => {
+            if (!head || !body || head.dataset.phoneCollapse) return;
+            head.dataset.phoneCollapse = '1';
+            head.style.cursor = 'pointer';
+            head.style.userSelect = 'none';
+            head.style.display = 'flex';
+            head.style.alignItems = 'center';
+            head.style.justifyContent = 'space-between';
+            head.style.width = '100%';
+            head.style.minHeight = '38px';
+            const caret = document.createElement('span');
+            caret.textContent = '▾';
+            caret.style.cssText = 'font-size:12px; color:#9ca3af; margin-left:8px; transition:transform .12s;';
+            head.appendChild(caret);
+            const set = (open) => {
+                body.style.display = open ? '' : 'none';
+                caret.style.transform = open ? '' : 'rotate(-90deg)';
+                head.setAttribute('aria-expanded', open ? 'true' : 'false');
+            };
+            set(!!opts.open);
+            head.addEventListener('click', (e) => {
+                if (e.target.closest('input, select, textarea, button')) return;
+                set(body.style.display === 'none');
+            });
+        };
+
+        // Network: Appearance / Labels and color / View controls sit as a
+        // heading followed by their controls inside one box. Export goes
+        // entirely: there is nothing useful to do with a downloaded file here.
+        scope.querySelectorAll('.panel-heading').forEach(head => {
+            const box = head.parentElement;
+            if (!box) return;
+            const title = (head.textContent || '').trim().toLowerCase();
+            if (title === 'export') { box.style.display = 'none'; return; }
+            const rest = [...box.children].filter(c => c !== head);
+            if (!rest.length) return;
+            const body = document.createElement('div');
+            box.insertBefore(body, rest[0]);
+            rest.forEach(c => body.appendChild(c));
+            wire(head, body, { open: false });
+        });
+
+        // Correlation popout: same treatment for its filter / highlight /
+        // overlay boxes, which is most of what is above the plot.
+        scope.querySelectorAll('.inspect-controls .control-box-compact').forEach(box => {
+            const head = box.querySelector(':scope > .control-label');
+            if (!head) return;
+            const rest = [...box.children].filter(c => c !== head);
+            if (!rest.length) return;
+            // The gene boxes are the one thing you always need open.
+            const keepOpen = /genes/i.test(head.textContent || '');
+            const body = document.createElement('div');
+            box.insertBefore(body, rest[0]);
+            rest.forEach(c => body.appendChild(c));
+            wire(head, body, { open: keepOpen });
+        });
+    }
+
     _syncBasisNetworkLabels() {
         const expr = this.results?.basis === 'expr';
         const setLabel = (inputId, text) => {
