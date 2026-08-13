@@ -11545,6 +11545,17 @@ class CorrelationExplorer {
             wire(head, body, { open: false });
         });
 
+        // Gene Effect popout: View, Lineage and disease (all three selectors)
+        // and Genetic alterations. Same shape as the network panels, a heading
+        // followed by its controls inside one row.
+        scope.querySelectorAll('.ge-section-heading').forEach(head => {
+            const box = head.parentElement;
+            if (!box) return;
+            const body = bodyFor(box, head);
+            if (!body) return;
+            wire(head, body, { open: false });
+        });
+
         scope.querySelectorAll('.panel-heading').forEach(head => {
             const box = head.parentElement;
             if (!box) return;

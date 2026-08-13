@@ -3676,7 +3676,7 @@
                         <button class="btn btn-success btn-sm" id="geneEffectSearchBtn" style="padding: 6px 16px;">Analyze</button>
                         <span id="geneEffectCurrentGene" style="font-weight: 600; color: #5d9239;"></span>
                         <span style="border-left: 1px solid #d1d5db; height: 20px; margin: 0 4px;"></span>
-                        <label style="font-size: 13px; font-weight: 600; color: #374151; white-space: nowrap;">View:</label>
+                        <label class="ge-section-heading" style="font-size: 13px; font-weight: 600; color: #374151; white-space: nowrap;">View:</label>
                         <button class="btn btn-sm" id="geViewTissue" style="background: #6ba544; color: white;" title="Box plot of gene effect grouped by tissue / lineage">By Tissue</button>
                         <button class="btn btn-sm btn-secondary" id="geViewHotspot" title="Scan how each hotspot mutation shifts this gene's effect, comparing the cell lines carrying it against those without it">By hotspot mutation</button>
                         <button class="btn btn-sm btn-secondary" id="geViewMutation" title="Stratify this gene's effect by another gene's status: pick a hotspot mutation, a fusion or a focal amplification in the selector above the plot.">Mutation Inspect</button>
@@ -3686,7 +3686,7 @@
                     <!-- Row 2: Lineage and disease (same group title as the main
                          parameters and the Cell Line Browser) -->
                     <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 6px;">
-                        <label style="font-size: 12px; font-weight: 600; color: #374151; white-space: nowrap;">Lineage and disease:</label>
+                        <label class="ge-section-heading" style="font-size: 12px; font-weight: 600; color: #374151; white-space: nowrap;">Lineage and disease:</label>
                         <button class="btn btn-sm btn-outline" id="geShowAllBtn" style="display: none;">← Show All</button>
                         <select id="geTissueFilter" class="form-control filter-level-select" style="width: 140px; font-size: 11px; padding: 3px 6px;" title="Filter by tissue/cancer type">
                             <option value="">All tissues</option>
@@ -3700,7 +3700,7 @@
                          full-width calc is overridden inline, it made these span
                          the whole row) -->
                     <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-                        <label style="font-size: 12px; font-weight: 600; color: #374151; white-space: nowrap;">Genetic alterations:</label>
+                        <label class="ge-section-heading" style="font-size: 12px; font-weight: 600; color: #374151; white-space: nowrap;">Genetic alterations:</label>
                         <div id="geHotspotFilterWrap" class="filter-input-wrap" style="position:relative; display:none; width:150px;">
                             <input type="text" id="geHotspotFilter" class="form-control" placeholder="Hotspot gene..." autocomplete="off" style="width: 140px; font-size: 11px; padding: 3px 6px;" title="Hotspot filter, only show cell lines mutated in this gene">
                             <div id="geHotspotDropdown" style="display:none; position:absolute; top:100%; left:0; min-width:240px; max-height:300px; overflow-y:auto; background:#fff; border:1px solid #d1d5db; border-radius:5px; box-shadow:0 6px 16px rgba(0,0,0,0.18); z-index:1450; font-size:11px;"></div>
@@ -5037,6 +5037,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v87_99"></script>
+    <script src="app.js?v=v88_01"></script>
 </body>
 </html>
