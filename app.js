@@ -682,6 +682,18 @@ class CorrelationExplorer {
                 (popout.clickedCells || []).forEach(n => this.clickedCells.add(n));
                 if (popout.labelPositions) this._userLabelPositions = new Map(Object.entries(popout.labelPositions));
                 this.updateInspectPlot();
+                // Dot colour is the one setting the plot does NOT read while
+                // drawing: the picker applies it imperatively through its own
+                // onchange, and a restore sets the input's value without
+                // firing one. So the reopened figure came back in the default
+                // blue while the picker showed the saved colour, which is the
+                // settings file failing at the one job it has. Skipped when
+                // the plot is coloured by a category, where the per-group
+                // colours are the point and one flat colour would erase them.
+                const dc = document.getElementById('scatterDotColor')?.value;
+                if (dc && !document.getElementById('colorByCategory')?.value) {
+                    this.applyScatterDotColor(dc);
+                }
             });
         }
     }
@@ -5867,10 +5879,6 @@ class CorrelationExplorer {
         document.getElementById('exportMutTablePNG')?.addEventListener('click', () => this._exportMutationTable('png'));
 
         // AI export buttons
-        document.getElementById('exportMutationAI')?.addEventListener('click', () => this.exportForAI('mutations'));
-        document.getElementById('exportCorrelationsAI')?.addEventListener('click', () => this.exportForAI('correlations'));
-        document.getElementById('exportClustersAI')?.addEventListener('click', () => this.exportForAI('clusters'));
-        document.getElementById('exportExprCorrelatesAI')?.addEventListener('click', () => this.exportForAI('exprCorrelates'));
 
         // Synonyms search
         document.getElementById('synonymsSearch').addEventListener('input', (e) => {
@@ -6146,7 +6154,6 @@ class CorrelationExplorer {
             if (!dlg) return;
             this.exportGateReport(dlg.format === 'svg' ? 'svg' : 'png');
         });
-        document.getElementById('exportGateAI')?.addEventListener('click', () => this.exportForAI('gates'));
         // Gate tab switching
         document.addEventListener('click', (e) => {
             if (e.target.classList.contains('gate-tab')) {
@@ -6664,7 +6671,6 @@ class CorrelationExplorer {
         });
 
         // Full-screen compare modal buttons
-        document.getElementById('mutCompareByTissueBtn')?.addEventListener('click', () => this.showMutationCompareByTissue());
         document.getElementById('mutCompareModalClose')?.addEventListener('click', () => {
             document.getElementById('mutCompareModal').style.display = 'none';
         });
@@ -28027,7 +28033,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             this._exportDialogAspect = aspect;
 
             const prev = this._lastExportOpts || {};
-            const defaultW = prev.widthCm || context.defaultWidthCm || 5;
+            // Medium (10 cm) rather than Small (5 cm) as the starting size.
+            // A 5 cm figure is a thumbnail: too small to read in a slide or a
+            // manuscript, so the first export nearly always had to be redone
+            // at a larger size. The user's own last choice still wins.
+            const defaultW = prev.widthCm || context.defaultWidthCm || 10;
             const defaultH = prev.heightCm || Math.max(2, Math.round(defaultW * aspect * 10) / 10);
             widthEl.value = defaultW;
             heightEl.value = defaultH;
@@ -44547,7 +44557,7 @@ ${clone.innerHTML}
             <div style="flex:1 1 0; min-width:280px;">
                 <div style="font-weight:700; color:#4c782e; font-size:13px;">${title}</div>
                 <div style="font-size:10px; color:#9ca3af; margin:2px 0 5px;">${note}</div>
-                <div id="ge${side}Volcano" style="height:230px; border:1px solid #e5e7eb; border-radius:4px; margin-bottom:6px;"></div>
+                <div id="ge${side}Volcano" style="width:100%; max-width:330px; aspect-ratio:1/1; border:1px solid #e5e7eb; border-radius:4px; margin:0 auto 6px;"></div>
                 <div id="ge${side}Hint" style="font-size:10px; color:#9ca3af; margin-bottom:5px;"></div>
                 <div id="ge${side}Body" style="max-height:40vh; overflow-y:auto; border:1px solid #e5e7eb; border-radius:4px;"></div>
             </div>`;
@@ -45081,6 +45091,45 @@ ${clone.innerHTML}
         const selSet = new Set(selIdx);
         const otherIdx = [];
         for (let i = 0; i < this.nCellLines; i++) if (!selSet.has(i) && inScope(cellLines[i])) otherIdx.push(i);
+        // Nothing left to compare against. This is easy to walk into: select
+        // every skin line, then compare against "same lineage only" and the
+        // comparison group is empty by construction. Every gene then fails the
+        // minimum-n test, the tables come out blank, and the title read
+        // "75 selected cell lines (0 screened)", which is not true of the
+        // selection and sends the user looking for a data problem that is not
+        // there. Say what happened and what to change instead.
+        if (!otherIdx.length) {
+            const what = scope === 'lineage'
+                ? `every cell line of that lineage (${[...selLineages].join(', ') || 'the same lineage'}) is already in your selection`
+                : scope === 'custom' ? 'the list you pasted contains only cell lines that are already selected'
+                : scope === 'group' ? 'the groups you ticked contain only cell lines that are already selected'
+                : 'every cell line in the panel is already in your selection';
+            document.getElementById('selectionInspectTitle').textContent =
+                `${selected.length} selected cell line${selected.length === 1 ? '' : 's'}, nothing to compare with`;
+            const sub = document.getElementById('selectionInspectSubtitle');
+            if (sub) sub.textContent = 'This comparison has no other side.';
+            const side = document.getElementById('selectionInspectSidebar');
+            if (side) side.innerHTML = '';
+            document.getElementById('selectionInspectBody').innerHTML =
+                `<div style="padding:26px 18px; max-width:640px;">
+                    <div style="font-size:13px; font-weight:600; color:#374151; margin-bottom:8px;">There is no comparison group, so there is nothing to work out.</div>
+                    <div style="font-size:12px; color:#4b5563; line-height:1.6;">
+                        You asked to compare these ${selected.length} cell lines against ${scope === 'lineage' ? 'others of the same lineage' : scope === 'all' ? 'all other cell lines' : 'the group you chose'}, but ${what}.
+                        A difference needs two sides.
+                        <div style="margin-top:10px;">Either widen the comparison, or narrow the selection:</div>
+                        <ul style="margin:6px 0 0 18px; padding:0;">
+                            ${scope !== 'all' ? '<li>Compare against <b>all other cell lines</b> instead.</li>' : ''}
+                            <li>Tick fewer cell lines, so the rest of the group is left to compare with.</li>
+                        </ul>
+                    </div>
+                </div>`;
+            document.getElementById('selectionInspectModal').style.display = 'flex';
+            ['selectionInspectCSV', 'selectionInspectCSVCells', 'selectionInspectAI'].forEach(id => {
+                const b = document.getElementById(id); if (b) b.style.display = 'none';
+            });
+            this._geInspectResults = null;
+            return;
+        }
         // Keep the two sides so a gene opened from this table can be charted as
         // "your selection vs what you compared it with" rather than only by
         // lineage, which is a different question from the one being asked here.
@@ -45528,8 +45577,12 @@ ${clone.innerHTML}
               hoverinfo: 'text', marker: { size: 6, color: hi.x.map(v => v < 0 ? '#dc2626' : '#2563eb'), opacity: 0.85 } }
         ];
         const layout = {
-            margin: { l: 44, r: 8, t: 6, b: 34 },
-            height: 230,
+            margin: { l: 44, r: 10, t: 10, b: 38 },
+            // Square, so the two measures are directly comparable by eye and
+            // an exported figure is the shape people actually want a volcano
+            // in. The container carries the 1:1 aspect ratio; height follows it.
+            height: el.clientHeight || 300,
+            width: el.clientWidth || 300,
             showlegend: false,
             hovermode: 'closest',
             xaxis: { title: { text: xTitle, font: { size: 9 } }, tickfont: { size: 9 }, zeroline: true, zerolinecolor: '#9ca3af' },
@@ -45600,21 +45653,24 @@ ${clone.innerHTML}
                 ${fromFilter ? 'Nothing is ticked, so this is what your filters leave showing.' : 'The cell lines you have ticked.'}
                 <b>Highlight</b> marks them and leaves the cohort alone; <b>Only these</b> narrows the view to them.
             </div>
-            ${row('Scatter plot', scatterOpen
-                    ? `Currently showing ${this.currentInspect.gene1} vs ${this.currentInspect.gene2}.`
-                    : 'No scatter is open yet. The setting is kept and applies as soon as you open one.',
-                  b('scatter-hl', 'Highlight', 'Label these cell lines on the scatter, leaving every other point in place', true)
-                + b('scatter-only', 'Only these', 'Narrow the scatter to these cell lines'))}
+            ${row('Correlation', scatterOpen
+                    ? `Opens on ${this.currentInspect.gene1} vs ${this.currentInspect.gene2}, the pair it last showed.`
+                    : 'Opens ready for two genes; the setting applies as soon as you enter them.',
+                  b('scatter-hl', 'Highlight', 'Label these cell lines on the plot, leaving every other point in place', true)
+                + b('scatter-only', 'Only these', 'Narrow the plot to these cell lines'))}
             ${row('Gene effect', geOpen
-                    ? `Currently showing ${this.currentGeneEffectGene || this.currentGeneEffect}.`
-                    : 'No gene is open yet. The setting is kept and applies as soon as you open one.',
+                    ? `Opens on ${this.currentGeneEffectGene || this.currentGeneEffect}, the gene it last showed.`
+                    : 'Opens ready for a gene; the setting applies as soon as you pick one.',
                   b('ge-hl', 'Highlight', 'Mark these cell lines in red on the gene-effect charts', true)
                 + b('ge-only', 'Only these', 'Narrow the gene-effect charts to these cell lines'))}
-            ${row('Mutation analysis, gene set analysis and network',
-                  'These share one cohort. Set it here and the next run of any of them uses these cell lines; it shows as a removable chip beside the Run button.',
-                  b('cohort', 'Only these', 'Use these cell lines as the cohort for the analyses on the main page'))}
+            ${row('Mutation analysis',
+                  'Splits these cell lines into altered and wild-type for a gene you pick.',
+                  b('cohort-mutation', 'Only these', 'Use these cell lines as the cohort and open the mutation analysis'))}
+            ${row('Gene set analysis / network',
+                  'Correlates the genes you enter across these cell lines.',
+                  b('cohort-geneset', 'Only these', 'Use these cell lines as the cohort and open the gene set analysis'))}
             <div style="border-top:1px solid #f1f5f9; padding-top:7px; margin-top:2px; font-size:10px; color:#9ca3af; line-height:1.45;">
-                Each of these is remembered until you clear it, and the views that have one say so.
+                The two analyses share one cohort, so setting it from either row sets it for both. Each setting is remembered until you clear it, and the views that have one say so.
                 <div style="margin-top:5px; display:flex; gap:4px;">
                     ${b('clear', 'Clear all of these', 'Remove every highlight and cell-line restriction this popout can set, putting the views back to their full cohorts')}
                 </div>
@@ -45645,6 +45701,29 @@ ${clone.innerHTML}
         }, 0);
     }
 
+    // Bring the target view up, so a setting sent to it is visible rather than
+    // waiting somewhere the user has to think to go. Both reopen whatever the
+    // view last held; with nothing held they open in their own empty state,
+    // which is the same thing the Options menu does.
+    _openCorrelationView() {
+        this.closeCellLineBrowser?.();
+        if (this.currentInspect?.gene1) {
+            this.openInspect(this.currentInspect);
+        } else {
+            document.getElementById('showCorrelationDirect')?.click();
+        }
+    }
+
+    _openGeneEffectView() {
+        this.closeCellLineBrowser?.();
+        const modal = document.getElementById('geneEffectModal');
+        if (this.currentGeneEffectGene || this.currentGeneEffect) {
+            if (modal) modal.style.display = 'flex';
+        } else {
+            document.getElementById('showGeneEffectDirect')?.click();
+        }
+    }
+
     _sendSelectionTo(act, cls, names) {
         const setText = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
         const listText = names.join('\n');
@@ -45654,8 +45733,9 @@ ${clone.innerHTML}
         if (act === 'scatter-hl') {
             // The scatter's cell search is what marks named lines on the plot.
             setText('scatterCellSearch', names.join(', '));
+            this._openCorrelationView();
             this.updateInspectPlot?.();
-            say(`${n} cell lines marked on the scatter.`);
+            say(`${n} cell lines marked on the plot.`);
         } else if (act === 'scatter-only') {
             // The scatter's own pasted-list filter, which is what that panel
             // actually reads.
@@ -45663,9 +45743,10 @@ ${clone.innerHTML}
             setText('customCellLineFilter', listText);
             const c = document.getElementById('customCLFilterCount');
             if (c) c.textContent = `${n}/${n} matched`;
+            this._openCorrelationView();
             this.updateInspectPlot?.();
-            say(`The scatter now shows only these ${n} cell lines.`);
-        } else if (act === 'cohort') {
+            say(`The plot now shows only these ${n} cell lines.`);
+        } else if (act === 'cohort-mutation' || act === 'cohort-geneset') {
             // The analysis subset, which the mutation, gene-set and network
             // runs all read and which shows as a removable chip beside Run.
             const label = this._clbSelectedCellLines?.size
@@ -45673,11 +45754,20 @@ ${clone.innerHTML}
                 : `${n} filtered in the browser`;
             this.setAnalysisCellLineSubset(cls, label);
             // Chosen on purpose for these analyses, so it survives the mode
-            // switch the user is about to make to reach them.
+            // switch that opening them performs.
             this._analysisSubsetSticky = true;
-            say(`The next mutation, gene set or network run will use these ${n} cell lines. It is listed under Active filters, where you can remove it.`);
+            this.closeCellLineBrowser?.();
+            this._setAnalysisMode?.(act === 'cohort-mutation' ? 'mutation' : 'analysis');
+            // The subset chip lives beside the Run button of whichever mode
+            // just opened, so put that panel in front of the user.
+            document.getElementById(act === 'cohort-mutation' ? 'runMutationAnalysisBtn' : 'runAnalysis')
+                ?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            say(act === 'cohort-mutation'
+                ? `Mutation analysis will run inside these ${n} cell lines. Pick a gene and Run.`
+                : `Gene set analysis will run across these ${n} cell lines. Enter your genes and Run.`);
         } else if (act === 'ge-hl') {
             this._geSelectionHighlight = new Set(cls);
+            this._openGeneEffectView();
             this._rerenderCurrentGEView?.();
             say(`${n} cell lines marked in red on the gene-effect charts.`);
         } else if (act === 'ge-only') {
@@ -45685,6 +45775,7 @@ ${clone.innerHTML}
             setText('customCellLineFilterGE', listText);
             const c = document.getElementById('customCLFilterCountGE');
             if (c) c.textContent = `${n}/${n} matched`;
+            this._openGeneEffectView();
             this._rerenderCurrentGEView?.();
             say(`Gene-effect charts now use these ${n} cell lines.`);
         } else if (act === 'clear') {
@@ -45755,10 +45846,20 @@ ${clone.innerHTML}
     // Which volcano to export. Two charts and one footer button, so ask,
     // the same way the app asks elsewhere rather than guessing.
     _geVolcanoExportMenu(anchorEl, mode) {
-        const act = (side, label) => () => {
-            const id = `ge${side}Volcano`;
-            if (mode === 'copy') this.copyPlotToClipboard(id, label);
-            else this.screenshotPopout(id, `correlate_volcano_${label.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`);
+        const act = (side, label) => async () => {
+            const el = document.getElementById(`ge${side}Volcano`);
+            if (!el || !el.data) { this.showCopyNotification?.('That plot is not drawn yet.'); return; }
+            if (mode === 'copy') return this.copyPlotToClipboard(el, label);
+            // The shared chart-export dialog, so a volcano gets the same
+            // format, print size, resolution and background choices as every
+            // other chart rather than a flat screenshot.
+            const sel = (this._geInspectResults?.selected || []).length;
+            await this._exportPlotly(el, {
+                w: el._fullLayout?.width || el.clientWidth || 300,
+                h: el._fullLayout?.height || el.clientHeight || 300,
+                format: 'png',
+                filename: `volcano_${label.toLowerCase().replace(/[^a-z0-9]+/g, '_')}_${sel}CLs`
+            });
         };
         document.getElementById('clbChipMenu')?.remove();
         this._simpleChipMenu(anchorEl, [
