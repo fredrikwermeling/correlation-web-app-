@@ -2449,6 +2449,10 @@
                         <!-- Mutation analysis reads no gene list, so box 2 (which holds
                              the main Run button) is hidden in this mode. It needs its
                              own Run. -->
+                        <!-- Cohort handed over from the Cell Line Browser. The
+                             gene-set panel's Active filters list is hidden in
+                             this mode, so the subset needs saying here. -->
+                        <div id="mutationSubsetNote" style="display:none; margin-top:8px;"></div>
                         <button class="btn btn-success" id="runMutationAnalysisBtn" disabled style="width:100%; margin-top:10px; font-size:14px;" title="Split the cell lines into altered and wild-type for the gene chosen above, then rank every gene in the screen by how much its gene effect differs between the two groups.">Run Mutation Analysis</button>
                     </div>
 
@@ -3963,27 +3967,42 @@
     </div>
 
     <!-- Selection Inspect (GE / Correlations for selected cell lines) -->
-    <div id="selectionInspectModal" style="display:none; position:fixed; inset:0; z-index:1380; background:rgba(0,0,0,0.5); align-items:flex-start; justify-content:center; padding:20px; overflow-y:auto;">
-        <div style="background:#fff; width:100%; max-width:min(96vw,1200px); max-height:calc(100vh - 40px); border-radius:8px; display:flex; flex-direction:column; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);">
-            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:16px; padding:12px 18px; border-bottom:1px solid #e5e7eb; background:linear-gradient(90deg,#f0fdf4 0%,#fff 100%);">
+    <!-- Inspect selection. Uses the app's own modal furniture (.modal-overlay /
+         .modal / .modal-header / .modal-body / .modal-footer) rather than a
+         hand-rolled copy of it: this panel used to be the only analysis view
+         with its own header gradient, its own title size and its actions in
+         the title bar instead of a footer, which is most of why it read as a
+         different application. Layout follows the scatter inspect: a column of
+         control cards on the left, the results on the right, actions in the
+         footer. -->
+    <div id="selectionInspectModal" class="modal-overlay" style="z-index:1380;">
+        <div class="modal" id="selectionInspectInner" style="max-width:min(97vw,1500px);">
+            <div class="modal-header">
                 <div style="flex:1 1 auto; min-width:0;">
-                    <h3 id="selectionInspectTitle" style="margin:0; font-size:17px; color:#4c782e;">Inspect selection</h3>
-                    <div id="selectionInspectSubtitle" style="font-size:11px; color:#6b7280; margin-top:2px;"></div>
+                    <h3 id="selectionInspectTitle">Inspect selection</h3>
+                    <div id="selectionInspectSubtitle" style="font-size:11px; color:var(--gray-500); margin-top:1px;"></div>
                 </div>
-                <div style="display:flex; gap:6px; align-items:center; flex-wrap:nowrap; flex:0 0 auto;">
-                    <span style="font-size:10px; color:#9ca3af;">Export:</span>
-                    <button id="selectionInspectCSV" class="btn btn-outline btn-sm" style="font-size:11px; padding:4px 10px; display:none;" title="Download both tables as a CSV: every gene with its mean in the selection, its mean in the other cell lines, and the difference">.csv</button>
-                    <button id="selectionInspectCSVCells" class="btn btn-outline btn-sm" style="font-size:11px; padding:4px 10px; display:none;" title="Download the value for each individual cell line: one row per cell line, one column per gene for each measure, for the genes the tables are currently showing">.csv per cell line</button>
-                    <button id="selectionInspectAI" class="btn btn-outline btn-sm" style="font-size:11px; padding:4px 10px; display:none;" title="Package this comparison for a language model, with the selected cell lines and the data behind them">Export for AI</button>
-                    <button id="selectionInspectSave" class="btn btn-outline btn-sm" style="font-size:11px; padding:4px 10px; display:none;" title="Save these results to a JSON file you can re-open later without re-running the analysis">Save</button>
-                    <button id="selectionInspectClose" style="background:none; border:none; font-size:24px; cursor:pointer; line-height:1; color:#6b7280;">&times;</button>
+                <button id="selectionInspectClose" class="modal-close" title="Close">&times;</button>
+            </div>
+            <div class="modal-body" style="font-size:12px; color:#374151;">
+                <div style="display:flex; gap:14px; align-items:flex-start;">
+                    <div id="selectionInspectSidebar" style="flex:0 0 236px; width:236px; display:flex; flex-direction:column; gap:8px;"></div>
+                    <div id="selectionInspectBody" style="flex:1 1 auto; min-width:0;"></div>
                 </div>
             </div>
-            <div id="selectionInspectBody" style="padding:14px 18px; overflow-y:auto; font-size:12px; color:#374151;"></div>
+            <div class="modal-footer" style="justify-content:flex-start; flex-wrap:wrap; gap:6px;">
+                <button id="selectionInspectReset" class="btn btn-outline btn-sm" style="font-size:10px;" title="Put the cutoffs, the gene search, the sorting and the comparison group back to how they started">Reset</button>
+                <span class="mobile-hide" style="font-size:10px; color:#9ca3af; margin-left:4px;">Export:</span>
+                <button id="selectionInspectImg" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px;" title="Export a volcano plot, choose which measure and the format in the popup">Export image...</button>
+                <button id="selectionInspectCopyImg" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px;" title="Copy a volcano plot to the clipboard, ready to paste into an email or slide">Copy</button>
+                <button id="selectionInspectCSV" class="btn btn-outline btn-sm" style="font-size:11px; display:none;" title="One row per gene, for EVERY gene tested, not only the ones on screen: its mean in the selection, its mean in the comparison group, the difference, p and q, for both measures.">.csv, all genes</button>
+                <button id="selectionInspectCSVCells" class="btn btn-outline btn-sm" style="font-size:11px; display:none;" title="One row per cell line and a column per gene, so each line's own values are visible rather than the group means. Covers only the genes the tables are currently showing, strongest difference first, up to 300 of them.">.csv, shown genes per cell line</button>
+                <button id="selectionInspectAI" class="btn btn-outline btn-sm" style="font-size:11px; display:none;" title="Package this comparison for a language model: the selected cell lines, the differences for every gene, and the settings that produced them. Not the same file as the browser's own Export for AI, which sends the cell line list without a comparison.">Export for AI</button>
+                <span style="flex:1 1 auto;"></span>
+                <button id="selectionInspectClose2" class="btn btn-secondary btn-sm">Close</button>
+            </div>
         </div>
     </div>
-    <!-- Hidden file input for re-loading saved selection-inspect results -->
-    <input type="file" id="selectionInspectOpenInput" accept="application/json,.json" style="display:none;">
 
     <!-- Progress overlay used by long-running analyzes (correlation inspect). -->
     <div id="progressOverlay" style="display:none; position:fixed; inset:0; z-index:1400; background:rgba(0,0,0,0.6); align-items:center; justify-content:center;">
@@ -4511,6 +4530,7 @@
 
               <span class="clb-group-label" style="color:var(--green-700);">Look at</span>
               <button id="clbInspectGEBtn" class="btn btn-outline btn-sm clb-tall-btn" style="color:#5d9239; border-color:#6ba544;" title="Compare the selected cell lines against every other cell line, gene by gene. Fast (~seconds).">Inspect<br><span>selected vs rest</span></button>
+              <button id="clbSendToBtn" class="btn btn-outline btn-sm clb-tall-btn" style="color:#5d9239; border-color:#6ba544;" title="Carry these cell lines over to another view: highlight them on a chart, or narrow that view to them.">Send to<br><span>another view</span></button>
 
               <span class="clb-sep"></span>
 
@@ -4774,6 +4794,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v87_74"></script>
+    <script src="app.js?v=v87_75"></script>
 </body>
 </html>

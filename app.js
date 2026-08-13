@@ -455,7 +455,12 @@ class CorrelationExplorer {
         if (cnt) cnt.textContent = '';
         // A gate is a cohort filter like any other, and the most surprising one
         // to find still applied after switching modes.
-        this.clearAnalysisCellLineSubset?.();
+        // A subset handed over from the Cell Line Browser is the exception: it
+        // was chosen deliberately FOR one of these analyses, usually seconds
+        // earlier, so wiping it on the way to the mode that uses it undid the
+        // request. It stays, and the removable chip under Active filters is
+        // what stops it being a surprise.
+        if (!this._analysisSubsetSticky) this.clearAnalysisCellLineSubset?.();
         this.clearGateFilter?.();
     }
 
@@ -8923,6 +8928,12 @@ class CorrelationExplorer {
 
             // Check oncoprint multi-gene filters
             if (this._gridAppliesToAnalysis() && !this._cellLinePassesOncoprintFilters(cellLine)) return;
+            // A cell-line subset handed over from the Cell Line Browser. The
+            // gene-set analysis has honoured this since it was added and it is
+            // advertised as a removable chip beside the Run button, but the
+            // mutation analysis quietly ignored it, so the same chip narrowed
+            // one analysis and not the other.
+            if (this._analysisCellLineSubset && !this._analysisCellLineSubset.has(cellLine)) return;
 
             const mutLevel = mutationData.mutations[cellLine] || 0;
             if (mutLevel === 0) {
@@ -9107,6 +9118,10 @@ class CorrelationExplorer {
 
             // Check oncoprint multi-gene filters
             if (this._gridAppliesToAnalysis() && !this._cellLinePassesOncoprintFilters(cellLine)) return;
+
+            // Same subset the gene-set analysis honours, see the note in
+            // calculateMutationAnalysis.
+            if (this._analysisCellLineSubset && !this._analysisCellLineSubset.has(cellLine)) return;
 
             // A fusion call needs RNA-seq. A line that was never sequenced is
             // not fusion-negative, it is unknown, unless a published call says
@@ -17079,6 +17094,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     clearAnalysisCellLineSubset() {
         this._analysisCellLineSubset = null;
         this._analysisSubsetLabel = '';
+        this._analysisSubsetSticky = false;
         // The banner's "Selection (n)" describes this subset, so it goes too.
         this._pendingSelectionLabel = null;
         this._renderAnalysisSubsetChip();
@@ -17091,6 +17107,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     _renderAnalysisSubsetChip() {
         const box = document.getElementById('analysisSubsetGroup');
         if (!box) return;
+        // Mutation analysis hides the gene-set box that holds this panel, so
+        // in that mode the chips were rendered into something invisible and a
+        // cohort narrowed from the browser could be neither seen nor removed.
+        // The mutation panel gets its own copy beside its own Run button.
+        this._renderMutationSubsetNote();
         const chips = [];
         const val = (id) => document.getElementById(id)?.value || '';
         const fire = (id) => { const e = document.getElementById(id); if (e) e.dispatchEvent(new Event('change', { bubbles: true })); };
@@ -17152,6 +17173,25 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         box.querySelector('#activeFiltersClearAll')?.addEventListener('click', () => {
             chips.forEach(c => { try { c.clear(); } catch (e) {} });
             this._renderAnalysisSubsetChip();
+        });
+    }
+
+    // The cohort-subset chip as it appears in the mutation panel, which has
+    // its own Run button and does not show the gene-set panel's Active
+    // filters. Only the subset is mirrored here: every other filter in that
+    // list has its own visible control inside this panel already.
+    _renderMutationSubsetNote() {
+        const el = document.getElementById('mutationSubsetNote');
+        if (!el) return;
+        const n = this._analysisCellLineSubset?.size || 0;
+        if (!n) { el.style.display = 'none'; el.innerHTML = ''; return; }
+        el.style.display = '';
+        el.innerHTML = `<span title="These cell lines were sent over from the Cell Line Browser. The analysis runs inside them, with the filters above applying on top." style="display:inline-flex; align-items:center; gap:5px; font-size:10px; background:#f0fdf4; border:1px solid #86c26f; color:#4c782e; border-radius:12px; padding:2px 4px 2px 9px;">`
+            + `Cohort: ${this.esc(this._analysisSubsetLabel || `${n} cell lines`)}`
+            + `<button type="button" id="mutationSubsetClear" title="Use every cell line again" style="border:none; background:#dcfce7; color:#4c782e; border-radius:50%; width:15px; height:15px; line-height:1; cursor:pointer; font-size:11px; padding:0;">&times;</button></span>`;
+        el.querySelector('#mutationSubsetClear')?.addEventListener('click', () => {
+            this.clearAnalysisCellLineSubset();
+            this._markMutationRunStale?.();
         });
     }
 
@@ -38795,24 +38835,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             this._resetGEInspectScope();
             this.inspectSelectionGE();
         });
-        document.getElementById('clbInspectCorrBtn')?.addEventListener('click', () => this.inspectSelectionCorrelations());
         document.getElementById('clbCopyNamesBtn')?.addEventListener('click', () => this.copyCellLineNames());
-        // Save / Open the selection-inspect results so a 5–10 min correlation
-        // run isn't a single-shot, user can return to it later.
-        document.getElementById('selectionInspectSave')?.addEventListener('click', () => this._saveSelectionInspect());
-        document.getElementById('clbOpenInspectBtn')?.addEventListener('click', () => {
-            document.getElementById('selectionInspectOpenInput')?.click();
-        });
-        document.getElementById('selectionInspectOpenInput')?.addEventListener('change', (e) => {
-            const file = e.target.files?.[0];
-            if (file) this._openSelectionInspect(file);
-            e.target.value = ''; // allow re-selecting the same file
-        });
+        document.getElementById('clbSendToBtn')?.addEventListener('click', (e) => this.openSendSelectionPopout(e.currentTarget));
         document.getElementById('selectionInspectCSV')?.addEventListener('click', () => this.downloadSelectionInspectCSV());
         document.getElementById('selectionInspectCSVCells')?.addEventListener('click', () => this.downloadSelectionInspectPerCellCSV());
-        document.getElementById('selectionInspectClose')?.addEventListener('click', () => {
-            document.getElementById('selectionInspectModal').style.display = 'none';
-        });
+        const closeSelInspect = () => { document.getElementById('selectionInspectModal').style.display = 'none'; };
+        document.getElementById('selectionInspectClose')?.addEventListener('click', closeSelInspect);
+        document.getElementById('selectionInspectClose2')?.addEventListener('click', closeSelInspect);
+        document.getElementById('selectionInspectReset')?.addEventListener('click', () => this._resetGEInspect());
+        document.getElementById('selectionInspectImg')?.addEventListener('click', (e) => this._geVolcanoExportMenu(e.currentTarget, 'image'));
+        document.getElementById('selectionInspectCopyImg')?.addEventListener('click', (e) => this._geVolcanoExportMenu(e.currentTarget, 'copy'));
 
         // Gene tooltips on gene links in detail panel
         const geneLists = document.getElementById('clbDetailGeneLists');
@@ -44446,184 +44478,85 @@ ${clone.innerHTML}
         }
     }
 
-    // Serialize the currently-displayed selection-inspect (GE or
-    // correlations) to a JSON file the user can re-open later via
-    // "Open saved Inspect". A 5–10 minute correlation run shouldn't
-    // be a single-shot.
-    _saveSelectionInspect() {
-        const kind = this._activeSelectionInspect?.kind;
-        const date = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-        let payload;
-        let filename;
-        if (kind === 'corr' && this._corrInspectResults) {
-            const r = this._corrInspectResults;
-            payload = { kind: 'corr', version: 1, savedAt: new Date().toISOString(),
-                selected: r.selected, corrInSel: r.corrInSel, corrDiff: r.corrDiff };
-            filename = `correlate_inspect_corr_${r.selected.length}cl_${date}.json`;
-        } else if (kind === 'ge' && this._geInspectResults) {
-            const r = this._geInspectResults;
-            payload = { kind: 'ge', version: 1, savedAt: new Date().toISOString(),
-                selected: r.selected, rows: r.rows };
-            filename = `correlate_inspect_ge_${r.selected.length}cl_${date}.json`;
-        } else {
-            alert('Nothing to save yet.'); return;
-        }
-        const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = filename;
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
-        URL.revokeObjectURL(a.href);
-        this.showCopyNotification?.(`Saved ${kind === 'corr' ? 'correlations' : 'gene effects'} inspect → ${filename}`);
-    }
 
-    // Re-open a previously saved selection-inspect file. Restores the
-    // results into the instance and re-renders the modal, no recomputation.
-    async _openSelectionInspect(file) {
-        try {
-            const text = await file.text();
-            const payload = JSON.parse(text);
-            if (payload.kind === 'corr' && Array.isArray(payload.corrInSel) && Array.isArray(payload.corrDiff)) {
-                // Stub the result structure inspectSelectionCorrelations would
-                // have built. Open the modal and re-render via the same path.
-                this._corrInspectResults = {
-                    selected: payload.selected || [],
-                    corrInSel: payload.corrInSel,
-                    corrDiff: payload.corrDiff
-                };
-                this._activeSelectionInspect = { kind: 'corr' };
-                this._renderRestoredCorrInspect();
-            } else if (payload.kind === 'ge' && Array.isArray(payload.rows)) {
-                this._geInspectResults = {
-                    selected: payload.selected || [],
-                    rows: payload.rows
-                };
-                this._activeSelectionInspect = { kind: 'ge' };
-                this._renderRestoredGEInspect();
-            } else {
-                alert('Unrecognized file format. Expected a saved Inspect file.');
-            }
-        } catch (e) {
-            alert('Failed to read file: ' + e.message);
-        }
-    }
+    // The scaffold: a column of control cards on the left, the two measures on
+    // the right, each a volcano over its table. The controls used to be spread
+    // across three places (pills in the title bar, a loose strip, and a
+    // duplicated five-control row above each table); they are collected here
+    // into cards of the same shape the scatter inspect uses.
+    _mountGEInspectUI(exprNote) {
+        // One card, matching the scatter modal's control cards.
+        const card = (title, inner, extra = '') => `
+            <div style="border:1px solid #e5e7eb; border-radius:6px; padding:7px 9px; background:#fff;${extra}">
+                <div style="font-size:10px; font-weight:700; color:#6b7280; text-transform:uppercase; letter-spacing:.03em; margin-bottom:5px;">${title}</div>
+                ${inner}
+            </div>`;
 
-    // Re-build the UI scaffolding for a restored Correlations inspect.
-    // Identical to the post-compute branch in inspectSelectionCorrelations.
-    _renderRestoredCorrInspect() {
-        const r = this._corrInspectResults;
-        const selected = r.selected || [];
-        const saveBtn = document.getElementById('selectionInspectSave');
-        if (saveBtn) saveBtn.style.display = '';
-        document.getElementById('selectionInspectTitle').textContent = `Inspect Correlations, ${selected.length} selected cell lines (restored)`;
-        document.getElementById('selectionInspectSubtitle').textContent = `Loaded from a saved file. Left: top correlations in the selection. Right: largest Δ vs all cell lines. Click any row to open the correlation inspect; cutoffs and Network buttons work as before.`;
+        // The per-measure filters. Two of these, one per measure, so the
+        // controls sit beside each other and can be read as a pair instead of
+        // being duplicated above two tables.
+        const filterCard = (side, title, cut, step) => card(title, `
+            <div style="display:flex; align-items:center; gap:5px; font-size:11px; margin-bottom:5px;">
+                <label style="flex:0 0 34px; color:#374151;" title="Hide genes whose difference is smaller than this">|&Delta;|&nbsp;&ge;</label>
+                <span style="display:inline-flex; align-items:center;">
+                    <button type="button" class="ge-step" data-t="${side}Delta" data-d="-1" title="Smaller cutoff, more genes" style="border:1px solid #d1d5db; border-right:none; border-radius:3px 0 0 3px; background:#f9fafb; cursor:pointer; padding:1px 6px; line-height:1.4;">&minus;</button>
+                    <input type="text" inputmode="decimal" id="ge${side}DeltaCutoff" min="0" max="10" step="${step}" value="${cut}" style="width:44px; padding:2px; border:1px solid #d1d5db; border-radius:0; text-align:center;">
+                    <button type="button" class="ge-step" data-t="${side}Delta" data-d="1" title="Larger cutoff, fewer genes" style="border:1px solid #d1d5db; border-left:none; border-radius:0 3px 3px 0; background:#f9fafb; cursor:pointer; padding:1px 6px; line-height:1.4;">+</button>
+                </span>
+            </div>
+            <div style="display:flex; align-items:center; gap:5px; font-size:11px; margin-bottom:5px;">
+                <label style="flex:0 0 34px; color:#374151;" title="Benjamini-Hochberg adjusted p-value. 1 shows every gene.">q&nbsp;&le;</label>
+                <span style="display:inline-flex; align-items:center;">
+                    <button type="button" class="ge-step" data-t="${side}Q" data-d="-1" title="Stricter q" style="border:1px solid #d1d5db; border-right:none; border-radius:3px 0 0 3px; background:#f9fafb; cursor:pointer; padding:1px 6px; line-height:1.4;">&minus;</button>
+                    <input type="text" inputmode="decimal" id="ge${side}QCutoff" min="0" max="1" step="0.01" value="0.05" style="width:44px; padding:2px; border:1px solid #d1d5db; border-radius:0; text-align:center;">
+                    <button type="button" class="ge-step" data-t="${side}Q" data-d="1" title="Looser q, 1 shows every gene" style="border:1px solid #d1d5db; border-left:none; border-radius:0 3px 3px 0; background:#f9fafb; cursor:pointer; padding:1px 6px; line-height:1.4;">+</button>
+                </span>
+            </div>
+            <div style="display:flex; align-items:center; gap:5px; font-size:11px; margin-bottom:6px;">
+                <label style="flex:0 0 34px; color:#374151;">Top</label>
+                <input type="number" id="ge${side}N" min="10" max="2000" step="10" value="200" style="width:62px; padding:2px 4px; border:1px solid #d1d5db; border-radius:3px; text-align:center;">
+            </div>
+            <div style="display:flex; gap:5px;">
+                <button class="btn btn-outline btn-sm" id="ge${side}Network" style="font-size:10px; padding:3px 7px; flex:1;" title="Build a correlation network from the genes listed">Network</button>
+                <button class="btn btn-outline btn-sm" id="ge${side}Enrichr" aria-haspopup="true" style="font-size:10px; padding:3px 7px; flex:1;" title="Send the genes listed to Enrichr for pathway enrichment">Enrichr &#9662;</button>
+            </div>`);
+
+        const sidebar = document.getElementById('selectionInspectSidebar');
+        if (sidebar) {
+            sidebar.innerHTML =
+                card('Compare with', '<div id="geInspectScopeBox"></div>')
+                + card('Test', `
+                    <select id="geInspectTest" style="width:100%; font-size:11px; padding:3px 5px; border:1px solid #d1d5db; border-radius:3px; background:#fff;" title="Welch's t compares the means and is punished by spread, which bites hardest on small groups. The rank test asks only whether one group sits above the other, so a clean separation survives a wide spread, but it cannot resolve very small groups at all.">
+                        <option value="welch">Welch's t (means)</option>
+                        <option value="rank">Rank sum (order)</option>
+                    </select>
+                    <div id="geInspectStatNote" style="color:#6b7280; font-size:10px; margin-top:5px;"></div>`)
+                + card('Find gene', `
+                    <div style="display:flex; gap:4px; align-items:center;">
+                        <input type="text" id="geInspectSearch" placeholder="e.g. BRAF, SOX10" title="Show these genes in both tables whatever the cutoffs are set to. Separate several with commas or spaces." style="flex:1; min-width:0; font-size:11px; padding:3px 5px; border:1px solid #d1d5db; border-radius:3px;">
+                        <button type="button" id="geInspectSearchClear" title="Clear" style="border:1px solid #d1d5db; border-radius:3px; background:#f9fafb; cursor:pointer; padding:2px 6px; line-height:1.4; display:none;">&times;</button>
+                    </div>`)
+                + filterCard('Left', 'CRISPR gene effect', 0.3, 0.05)
+                + filterCard('Right', 'mRNA expression', 1.0, 0.1);
+        }
+
+        // One measure: a volcano over its table. The volcano is what the rest
+        // of the app would have shown here from the start, and it makes the
+        // shape of the comparison visible in a way a ranked table cannot.
+        const col = (side, title, note) => `
+            <div style="flex:1 1 0; min-width:280px;">
+                <div style="font-weight:700; color:#4c782e; font-size:13px;">${title}</div>
+                <div style="font-size:10px; color:#9ca3af; margin:2px 0 5px;">${note}</div>
+                <div id="ge${side}Volcano" style="height:230px; border:1px solid #e5e7eb; border-radius:4px; margin-bottom:6px;"></div>
+                <div id="ge${side}Hint" style="font-size:10px; color:#9ca3af; margin-bottom:5px;"></div>
+                <div id="ge${side}Body" style="max-height:40vh; overflow-y:auto; border:1px solid #e5e7eb; border-radius:4px;"></div>
+            </div>`;
+
         document.getElementById('selectionInspectBody').innerHTML = `
             <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start;">
-                <div style="flex:1; min-width:0;">
-                    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
-                        <div style="font-weight:600; color:#374151;">Top correlations in selection</div>
-                        <div style="display:flex; gap:6px; align-items:center; font-size:11px;">
-                            <label>|r|&nbsp;≥</label>
-                            <input type="text" inputmode="decimal" id="siLeftCutoff" min="0" max="1" step="0.05" value="0.3" style="width:60px; padding:2px 4px; border:1px solid #d1d5db; border-radius:3px; text-align:center;">
-                            <button class="btn btn-outline btn-sm" id="siLeftNetwork" style="font-size:11px; padding:3px 8px;">Network</button>
-                        </div>
-                    </div>
-                    <div id="siLeftHint" style="font-size:10px; color:#9ca3af; margin-bottom:6px;"></div>
-                    <div id="siLeftBody" style="max-height:58vh; overflow-y:auto; border:1px solid #e5e7eb; border-radius:4px;"></div>
-                </div>
-                <div style="flex:1; min-width:0;">
-                    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
-                        <div style="font-weight:600; color:#374151;">Most different vs rest (Δr)</div>
-                        <div style="display:flex; gap:6px; align-items:center; font-size:11px;">
-                            <label>|Δ|&nbsp;≥</label>
-                            <input type="text" inputmode="decimal" id="siRightCutoff" min="0" max="2" step="0.05" value="0.3" style="width:60px; padding:2px 4px; border:1px solid #d1d5db; border-radius:3px; text-align:center;">
-                            <button class="btn btn-outline btn-sm" id="siRightNetwork" style="font-size:11px; padding:3px 8px;">Network</button>
-                        </div>
-                    </div>
-                    <div id="siRightHint" style="font-size:10px; color:#9ca3af; margin-bottom:6px;"></div>
-                    <div id="siRightBody" style="max-height:58vh; overflow-y:auto; border:1px solid #e5e7eb; border-radius:4px;"></div>
-                </div>
-            </div>`;
-        document.getElementById('selectionInspectModal').style.display = 'flex';
-        const renderSides = () => this._renderCorrInspectTables();
-        document.getElementById('siLeftCutoff').addEventListener('input', renderSides);
-        document.getElementById('siRightCutoff').addEventListener('input', renderSides);
-        document.getElementById('siLeftNetwork').addEventListener('click', () => this._launchCorrelationNetwork('left'));
-        document.getElementById('siRightNetwork').addEventListener('click', () => this._launchCorrelationNetwork('right'));
-        renderSides();
-    }
-
-    // Re-build the UI scaffolding for a restored Gene Effects inspect.
-    _renderRestoredGEInspect() {
-        const r = this._geInspectResults;
-        const selected = r.selected || [];
-        // Files saved before the two-column view carry only the CRISPR rows.
-        if (!r.exprRows) r.exprRows = [];
-        const saveBtn = document.getElementById('selectionInspectSave');
-        if (saveBtn) saveBtn.style.display = '';
-        ['selectionInspectCSV', 'selectionInspectCSVCells', 'selectionInspectAI'].forEach(id => {
-            const b = document.getElementById(id);
-            if (b) b.style.display = '';
-        });
-        document.getElementById('selectionInspectTitle').textContent =
-            `${selected.length} selected cell lines vs the rest (restored)`;
-        document.getElementById('selectionInspectSubtitle').textContent =
-            'Loaded from a saved file. Click any gene to open it with the selected cell lines highlighted.';
-        this._mountGEInspectUI(r.exprRows.length
-            ? 'Difference in mRNA level, log2(TPM+1). A difference of 1 is a two-fold change.'
-            : 'This saved file has no expression data.');
-    }
-
-    // The two-column scaffold, shared by a fresh inspect and a restored one so
-    // a saved file looks exactly like the view it was saved from.
-    _mountGEInspectUI(exprNote) {
-        const col = (side, title, note, cut, step) => `
-            <div style="flex:1; min-width:0;">
-                <div style="display:flex; align-items:baseline; justify-content:space-between; gap:8px; margin-bottom:2px; flex-wrap:wrap;">
-                    <div style="font-weight:700; color:#4c782e; font-size:13px;">${title}</div>
-                    <div style="display:flex; gap:6px; align-items:center; font-size:11px;">
-                        <label title="Hide genes whose difference is smaller than this">|&Delta;|&nbsp;&ge;</label>
-                        <span style="display:inline-flex; align-items:center;">
-                            <button type="button" class="ge-step" data-t="${side}Delta" data-d="-1" title="Smaller cutoff, more genes" style="border:1px solid #d1d5db; border-right:none; border-radius:3px 0 0 3px; background:#f9fafb; cursor:pointer; padding:1px 6px; line-height:1.4;">&minus;</button>
-                            <input type="text" inputmode="decimal" id="ge${side}DeltaCutoff" min="0" max="10" step="${step}" value="${cut}" style="width:46px; padding:2px 2px; border:1px solid #d1d5db; border-radius:0; text-align:center;">
-                            <button type="button" class="ge-step" data-t="${side}Delta" data-d="1" title="Larger cutoff, fewer genes" style="border:1px solid #d1d5db; border-left:none; border-radius:0 3px 3px 0; background:#f9fafb; cursor:pointer; padding:1px 6px; line-height:1.4;">+</button>
-                        </span>
-                        <label title="Benjamini-Hochberg adjusted p-value. 1 shows every gene.">q&nbsp;&le;</label>
-                        <span style="display:inline-flex; align-items:center;">
-                            <button type="button" class="ge-step" data-t="${side}Q" data-d="-1" title="Stricter q" style="border:1px solid #d1d5db; border-right:none; border-radius:3px 0 0 3px; background:#f9fafb; cursor:pointer; padding:1px 6px; line-height:1.4;">&minus;</button>
-                            <input type="text" inputmode="decimal" id="ge${side}QCutoff" min="0" max="1" step="0.01" value="0.05" style="width:52px; padding:2px 2px; border:1px solid #d1d5db; border-radius:0; text-align:center;">
-                            <button type="button" class="ge-step" data-t="${side}Q" data-d="1" title="Looser q, 1 shows every gene" style="border:1px solid #d1d5db; border-left:none; border-radius:0 3px 3px 0; background:#f9fafb; cursor:pointer; padding:1px 6px; line-height:1.4;">+</button>
-                        </span>
-                        <label>Top</label>
-                        <input type="number" id="ge${side}N" min="10" max="2000" step="10" value="200" style="width:60px; padding:2px 4px; border:1px solid #d1d5db; border-radius:3px; text-align:center;">
-                        <button class="btn btn-outline btn-sm" id="ge${side}Network" style="font-size:11px; padding:3px 8px;">Network</button>
-                        <button class="btn btn-outline btn-sm" id="ge${side}Enrichr" aria-haspopup="true" style="font-size:11px; padding:3px 8px;">Enrichr &#9662;</button>
-                    </div>
-                </div>
-                <div style="font-size:10px; color:#9ca3af; margin-bottom:5px;">${note}</div>
-                <div id="ge${side}Hint" style="font-size:10px; color:#9ca3af; margin-bottom:5px;"></div>
-                <div id="ge${side}Body" style="max-height:56vh; overflow-y:auto; border:1px solid #e5e7eb; border-radius:4px;"></div>
-            </div>`;
-
-        document.getElementById('selectionInspectBody').innerHTML = `
-            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-size:11px; margin-bottom:8px; padding-bottom:7px; border-bottom:1px solid #eef2f7;">
-                <label for="geInspectTest" style="font-weight:600; color:#374151;">Test</label>
-                <select id="geInspectTest" style="font-size:11px; padding:2px 6px; border:1px solid #d1d5db; border-radius:3px; background:#fff;" title="Welch's t compares the means and is punished by spread, which bites hardest on small groups. The rank test asks only whether one group sits above the other, so a clean separation survives a wide spread, but it cannot resolve very small groups at all.">
-                    <option value="welch">Welch's t (means)</option>
-                    <option value="rank">Rank sum (order)</option>
-                </select>
-                <span style="display:inline-flex; align-items:center; gap:5px; margin-left:4px;">
-                    <label for="geInspectSearch" style="font-weight:600; color:#374151;">Find gene</label>
-                    <input type="text" id="geInspectSearch" placeholder="e.g. BRAF, SOX10" title="Show these genes in both tables whatever the cutoffs are set to. Separate several with commas or spaces." style="width:150px; font-size:11px; padding:2px 6px; border:1px solid #d1d5db; border-radius:3px;">
-                    <button type="button" id="geInspectSearchClear" title="Clear" style="border:1px solid #d1d5db; border-radius:3px; background:#f9fafb; cursor:pointer; padding:1px 6px; line-height:1.4; display:none;">&times;</button>
-                </span>
-                <span id="geInspectStatNote" style="color:#6b7280;"></span>
-            </div>
-            <div style="display:flex; gap:18px; flex-wrap:wrap; align-items:flex-start;">
                 ${col('Left', 'CRISPR gene effect',
-                      'Difference in knockout effect. Negative means the selected lines depend on the gene more than the rest.',
-                      0.3, 0.05)}
-                ${col('Right', 'mRNA expression', exprNote, 1.0, 0.1)}
+                      'Difference in knockout effect. Negative means the selected lines depend on the gene more than the rest.')}
+                ${col('Right', 'mRNA expression', exprNote)}
             </div>`;
 
         this._geInspectSort = {
@@ -44638,7 +44571,7 @@ ${clone.innerHTML}
         // q is not linear, so its buttons walk a ladder of the values people
         // actually use rather than adding a fixed amount.
         const Q_LADDER = [0.001, 0.01, 0.05, 0.1, 0.25, 0.5, 1];
-        document.querySelectorAll('#selectionInspectBody .ge-step').forEach(b => {
+        document.querySelectorAll('#selectionInspectModal .ge-step').forEach(b => {
             b.addEventListener('click', () => {
                 const t = b.dataset.t, dir = +b.dataset.d;
                 const el = document.getElementById('ge' + t + 'Cutoff');
@@ -44871,6 +44804,44 @@ ${clone.innerHTML}
     // groups that were picked. Not every cell line has a CRISPR screen, so a
     // comparison of 48 against 12 can quietly become 27 against 3, and at that
     // size a difference means very little.
+    // The methods text that used to fill the title bar. Every other panel puts
+    // this behind a link or a "?", so this one does too.
+    _showGEInspectHelp() {
+        const canTest = (this._geInspectResults?.selected || []).length >= 3;
+        let m = document.getElementById('geInspectHelpModal');
+        if (!m) {
+            m = document.createElement('div');
+            m.id = 'geInspectHelpModal';
+            m.className = 'modal-overlay';
+            m.style.zIndex = '1480';
+            m.innerHTML = `
+                <div class="modal" style="max-width:640px;">
+                    <div class="modal-header">
+                        <h3>How to read this</h3>
+                        <button class="modal-close" data-close="1" title="Close">&times;</button>
+                    </div>
+                    <div class="modal-body" id="geInspectHelpBody" style="font-size:12px; line-height:1.6; color:#374151;"></div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary btn-sm" data-close="1">Close</button>
+                    </div>
+                </div>`;
+            document.body.appendChild(m);
+            m.addEventListener('click', (e) => {
+                if (e.target === m || e.target.dataset.close) m.style.display = 'none';
+            });
+        }
+        document.getElementById('geInspectHelpBody').innerHTML = `
+            <p>Every gene is scored as <b>its average across your selection minus its average across the comparison group</b>. Both measures are shown: the CRISPR knockout effect on the left, mRNA level on the right.</p>
+            <p><b>Gene effect</b> is negative when a knockout slows growth, so a <b>negative difference means the selected lines depend on that gene more</b> than the comparison group does. <b>mRNA</b> is log2(TPM+1), where a difference of 1 is a two-fold change and positive means higher in your selection.</p>
+            <p>${canTest
+                ? `Each gene is tested on its own, then <b>q</b> corrects those p-values for the number of genes tested (Benjamini-Hochberg). <b>Read q, not p</b>: with ~18,000 genes, roughly 900 will clear p &lt; 0.05 by chance alone.`
+                : `With fewer than three cell lines in the selection there is no spread to test, so differences are shown <b>without p or q</b>. Treat them as descriptive.`}</p>
+            <p>The <b>volcano</b> above each table plots the difference against significance, so the genes in the upper corners are the ones that are both large and reliable. Points follow the cutoffs in the sidebar. <b>Click any gene</b>, in the plot or the table, to open it.</p>
+            <p><b>What it is compared with matters as much as the selection.</b> Comparing melanoma lines against every other cell line will surface the whole melanoma lineage; comparing them against other skin lines instead takes lineage out and leaves what is specific to your group. Use the comparison card in the sidebar.</p>
+            <p style="color:#6b7280;">The two <b>.csv</b> exports differ in scope: <i>all genes</i> is every gene tested, <i>shown genes per cell line</i> covers only what the cutoffs currently leave and gives each cell line its own row.</p>`;
+        m.style.display = 'flex';
+    }
+
     _geCoverageWarningHtml(cov) {
         if (!cov) return '';
         const lost = (cov.selNominal - cov.selMeasured) + (cov.othNominal - cov.othMeasured);
@@ -45213,9 +45184,6 @@ ${clone.innerHTML}
             othMeasured: _medOf(geRows, 'nOther')
         };
         this._geInspectResults = { rows: geRows, exprRows, selected, geCoverage, exprCoverage };
-        this._activeSelectionInspect = { kind: 'ge' };
-        const saveBtn = document.getElementById('selectionInspectSave');
-        if (saveBtn) saveBtn.style.display = '';
         ['selectionInspectCSV', 'selectionInspectCSVCells', 'selectionInspectAI'].forEach(id => {
             const b = document.getElementById(id);
             if (b) b.style.display = '';
@@ -45241,33 +45209,45 @@ ${clone.innerHTML}
         const _g = this._geInspectGroup || { lineages: new Set(), sublineages: new Set(), diseases: new Set() };
         const grpCount = _g.lineages.size + _g.sublineages.size + _g.diseases.size;
         const chosen = this._geInspectScope || 'all';
-        const btn = (val, label, title) => `<button type="button" onclick="app.setGEInspectScope('${val}')" title="${title}" style="font-size:10px; padding:2px 8px; border:1px solid ${chosen === val ? '#6ba544' : '#d1d5db'}; background:${chosen === val ? '#f0fdf4' : '#fff'}; color:${chosen === val ? '#4c782e' : '#374151'}; font-weight:${chosen === val ? '700' : '400'}; border-radius:4px; cursor:pointer;">${label}</button>`;
+        const btn = (val, label, title) => `<button type="button" onclick="app.setGEInspectScope('${val}')" title="${title}" style="display:block; width:100%; text-align:left; font-size:10px; padding:3px 7px; border:1px solid ${chosen === val ? '#6ba544' : '#d1d5db'}; background:${chosen === val ? '#f0fdf4' : '#fff'}; color:${chosen === val ? '#4c782e' : '#374151'}; font-weight:${chosen === val ? '700' : '400'}; border-radius:4px; cursor:pointer;">${label}</button>`;
+        // The subtitle is one line saying what the view is, the way every
+        // other modal's is. The methods paragraph that used to sit here moved
+        // behind the "?" and the comparison controls moved to the sidebar,
+        // because a title bar holding four buttons and a wall of prose was the
+        // main thing that made this panel unlike the rest of the app.
         sub.innerHTML = (fromFilter
-                ? `<b>Nothing was ticked, so this compares the ${selected.length} cell lines your filters currently leave showing.</b> `
+                ? `Nothing was ticked, so this is the ${selected.length} cell lines your filters leave showing, `
                 : '')
-            + `For every gene, its average across your selection minus its average across the cell lines it is compared with. `
-            + `Both columns are sorted by the size of that difference, so genes that are higher and lower in your selection appear together. `
+            + `each gene's average in the selection minus its average in the comparison group`
             + (canTest
-                ? (this._geInspectTest === 'rank'
-                    ? `Wilcoxon rank sum per gene, which asks whether one group sits above the other rather than how far apart their means are, and q is that p-value after Benjamini-Hochberg across all genes tested. `
-                    : `Welch's t-test per gene, q is that p-value after Benjamini-Hochberg across all genes tested. `)
-                : `<b>With fewer than three cell lines there is no spread to test</b>, so differences are shown without p or q. `)
-            + `Click a gene to open it; Network builds a correlation network from the genes listed.`
-            + `<div style="margin-top:6px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">`
-            + `<span style="color:#6b7280;">Compare with:</span>`
-            + btn('all', `All other cell lines`, 'Every other cell line in the panel')
-            + btn('lineage', `Same lineage only (${lineageText})`, 'Only cell lines from the same tissue of origin, which takes lineage out of the comparison')
-            + btn('group', `Pick tissues / diseases\u2026${grpCount ? ` (${grpCount})` : ''}`, 'Choose the comparison group yourself, at tissue, subtype or disease level. Ticks combine, so you can compare against several at once')
-            + btn('custom', `My own list\u2026${this._geInspectCustom?.size ? ` (${this._geInspectCustom.size})` : ''}`, 'Compare against a list of cell lines you paste in, for when the right group is not one of the annotation\'s own')
-            + `<span style="color:#9ca3af; font-size:10px;">now comparing against ${nRestGE.toLocaleString()}</span>`
-            + `</div>`
-            + this._geCoverageWarningHtml(cov)
-            + this._geInspectScopePanel();
+                ? `, tested with ${this._geInspectTest === 'rank' ? 'a Wilcoxon rank sum' : "Welch's t"} per gene and q from Benjamini-Hochberg`
+                : `. Fewer than three cell lines means no spread to test, so there is no p or q`)
+            + `. <a href="#" id="geInspectHelpLink" style="color:#5d9239;">How to read this</a>`;
+        document.getElementById('geInspectHelpLink')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            this._showGEInspectHelp();
+        });
 
         const exprNote = this.expressionLoaded
             ? `Difference in mRNA level, log2(TPM+1). A difference of 1 is a two-fold change. Compared against ${exprOtherN.toLocaleString()} other cell lines.`
             : 'Expression data has not loaded yet.';
         this._mountGEInspectUI(exprNote);
+
+        // The comparison controls, now a sidebar card. Rebuilt here rather
+        // than in the mount because their labels carry live counts.
+        const scopeBox = document.getElementById('geInspectScopeBox');
+        if (scopeBox) {
+            scopeBox.innerHTML =
+                `<div style="display:flex; flex-direction:column; gap:3px;">`
+                + btn('all', 'All other cell lines', 'Every other cell line in the panel')
+                + btn('lineage', `Same lineage only (${lineageText})`, 'Only cell lines from the same tissue of origin, which takes lineage out of the comparison')
+                + btn('group', `Pick tissues / diseases\u2026${grpCount ? ` (${grpCount})` : ''}`, 'Choose the comparison group yourself, at tissue, subtype or disease level. Ticks combine, so you can compare against several at once')
+                + btn('custom', `My own list\u2026${this._geInspectCustom?.size ? ` (${this._geInspectCustom.size})` : ''}`, 'Compare against a list of cell lines you paste in, for when the right group is not one of the annotation\'s own')
+                + `</div>`
+                + `<div style="color:#9ca3af; font-size:10px; margin-top:4px;">comparing against ${nRestGE.toLocaleString()} cell lines</div>`
+                + this._geCoverageWarningHtml(cov)
+                + this._geInspectScopePanel();
+        }
 
         // Expression is loaded on demand; fill the right column once it arrives.
         if (!this.expressionLoaded) {
@@ -45360,7 +45340,14 @@ ${clone.innerHTML}
         // p and q keep full precision; rounding them to 4 places would turn
         // every strong hit into 0.0000.
         const sci = (v) => (v === undefined || v === null || isNaN(v)) ? '' : v.toExponential(3);
-        const head = 'Gene,GE_mean_selection,GE_mean_others,GE_delta,GE_p,GE_q,GE_n_selection,GE_n_others,'
+        const _sides = this._geInspectSides || {};
+        // Same reasoning as the per-cell-line file: say what the scope is, so
+        // the two are never confused for each other later on.
+        const head = '"' + `Correlate selection inspect, group means. ${_sides.selLabel || 'selection'} vs ${_sides.cmpLabel || 'the rest'}.`
+                   + ` EVERY gene tested is here, not only the ones that were on screen; the cutoffs in the panel do not apply to this file.`
+                   + ` delta is selection minus comparison. GE is CRISPR gene effect (negative = the knockout slows growth), Expr is log2(TPM+1).`
+                   + ` q is p corrected across all genes tested, and is the number to read.`.replace(/"/g, '""') + '"\n'
+                   + 'Gene,GE_mean_selection,GE_mean_others,GE_delta,GE_p,GE_q,GE_n_selection,GE_n_others,'
                    + 'Expr_mean_selection,Expr_mean_others,Expr_delta,Expr_p,Expr_q,Expr_n_selection,Expr_n_others\n';
         const body = [...byGene.entries()]
             .sort((a, b) => Math.abs(b[1].ge?.delta ?? b[1].expr?.delta ?? 0)
@@ -45437,7 +45424,18 @@ ${clone.innerHTML}
             head.push(`${c.gene}_GE`);
             if (c.ei !== undefined) head.push(`${c.gene}_expr`);
         }
-        const out = [head.map(q).join(',')];
+        // The file states its own scope. A spreadsheet opened next week gives
+        // no clue that its 300 columns were the top of a longer list, and the
+        // toast that said so is long gone.
+        const out = [];
+        out.push(q(`Correlate selection inspect, per cell line. ${selLabel} vs ${cmpLabel}.`
+            + ` Columns cover ${genes.length.toLocaleString()}`
+            + (allGenes.length > genes.length
+                ? ` of the ${allGenes.length.toLocaleString()} genes on screen, the largest differences first;`
+                : ` genes, every one on screen at export time;`)
+            + ` change the cutoffs to change what is here, or use the all-genes CSV for group means on every gene tested.`
+            + ` _GE is CRISPR gene effect (negative = the knockout slows growth), _expr is log2(TPM+1).`));
+        out.push(head.map(q).join(','));
         for (const cl of lines) {
             const ci = geRow.get(cl), eci = exprRow.get(cl);
             const cells = [
@@ -45490,6 +45488,283 @@ ${clone.innerHTML}
             + (q && q !== '-' ? `, q ${this.esc(q)}` : '')
             + (nCell ? `<br><span style="color:#6b7280;">Measured in ${this.esc(nCell)} cell lines (selection / compared group)</span>` : '')
             + `</div>`;
+    }
+
+    // Volcano for one measure: the difference against its significance. The
+    // panel had no chart at all, alone among the analysis views, so the shape
+    // of a comparison (a handful of strong hits, or a broad shift affecting
+    // everything) was invisible and could only be guessed at from a ranked
+    // list. Genes passing the sidebar cutoffs are drawn in colour, the rest in
+    // grey, so the plot and the table below it always agree.
+    _drawGEVolcano(side, allRows, shownRows, cut, qCut, anyQ, measure, xTitle) {
+        const el = document.getElementById(`ge${side}Volcano`);
+        if (!el || typeof Plotly === 'undefined') return;
+        if (!allRows || !allRows.length) { el.innerHTML = ''; return; }
+        // Without a test there is no y axis to speak of, so the plot falls back
+        // to |Δ|, which still separates the genes worth looking at.
+        const yOf = (r) => anyQ
+            ? (r.q != null && r.q > 0 ? -Math.log10(r.q) : (r.q === 0 ? 30 : null))
+            : Math.abs(r.delta);
+        const shown = new Set(shownRows.map(r => r.gene));
+        const bg = { x: [], y: [], t: [] }, hi = { x: [], y: [], t: [] };
+        for (const r of allRows) {
+            const y = yOf(r);
+            if (y == null || !isFinite(y) || !isFinite(r.delta)) continue;
+            const into = shown.has(r.gene) ? hi : bg;
+            into.x.push(r.delta); into.y.push(y);
+            into.t.push(`${r.gene}<br>Δ ${r.delta.toFixed(2)}${anyQ && r.q != null ? `<br>q ${r.q < 0.001 ? r.q.toExponential(1) : r.q.toFixed(3)}` : ''}`);
+        }
+        // Label the strongest few, so the plot says something on its own.
+        // Taking the top N outright piles every label into one corner when the
+        // strongest hits all move the same way, so take the best few in each
+        // direction and stagger them.
+        const labelable = shownRows.filter(r => isFinite(r.delta) && yOf(r) != null);
+        const lab = [...labelable.filter(r => r.delta < 0).slice(0, 4),
+                     ...labelable.filter(r => r.delta > 0).slice(0, 4)];
+        const traces = [
+            { x: bg.x, y: bg.y, text: bg.t, type: 'scattergl', mode: 'markers', name: 'below cutoff',
+              hoverinfo: 'text', marker: { size: 4, color: '#d1d5db', opacity: 0.55 } },
+            { x: hi.x, y: hi.y, text: hi.t, type: 'scattergl', mode: 'markers', name: 'shown in table',
+              hoverinfo: 'text', marker: { size: 6, color: hi.x.map(v => v < 0 ? '#dc2626' : '#2563eb'), opacity: 0.85 } }
+        ];
+        const layout = {
+            margin: { l: 44, r: 8, t: 6, b: 34 },
+            height: 230,
+            showlegend: false,
+            hovermode: 'closest',
+            xaxis: { title: { text: xTitle, font: { size: 9 } }, tickfont: { size: 9 }, zeroline: true, zerolinecolor: '#9ca3af' },
+            yaxis: { title: { text: anyQ ? '−log10(q)' : '|Δ|', font: { size: 9 } }, tickfont: { size: 9 } },
+            annotations: lab.map((r, i) => ({
+                x: r.delta, y: yOf(r), text: r.gene, font: { size: 8, color: '#374151' },
+                showarrow: false,
+                // Alternate above and below: neighbouring hits often sit at
+                // almost the same height and their labels would overprint.
+                yshift: i % 2 ? -9 : 9,
+                xanchor: r.delta < 0 ? 'right' : 'left',
+                xshift: r.delta < 0 ? -3 : 3
+            })),
+            paper_bgcolor: '#fff', plot_bgcolor: '#fff'
+        };
+        Plotly.react(el, traces, layout, { displayModeBar: false, responsive: true });
+        if (!el.dataset.wired) {
+            el.dataset.wired = '1';
+            el.on('plotly_click', (ev) => {
+                const t = ev.points?.[0]?.text || '';
+                const gene = t.split('<br>')[0];
+                if (gene) this._openGeneFromInspect?.(gene, side === 'Right');
+            });
+        }
+    }
+
+    // ===== Send the selection to another view ==============================
+    // Picking a set of cell lines in the browser and then wanting to see them
+    // somewhere else meant copying their names out and pasting them into
+    // whichever panel's custom-cell-line box, if you knew that box existed.
+    // This carries them over directly, either as a highlight (the cohort is
+    // untouched, the lines are just marked) or as a filter (the view is
+    // narrowed to them).
+    _clbSelectionForSend() {
+        const ticked = [...(this._clbSelectedCellLines || [])];
+        return ticked.length ? ticked : [...(this._clbVisibleCellLines || [])];
+    }
+
+    openSendSelectionPopout(anchorEl) {
+        const cls = this._clbSelectionForSend();
+        if (!cls.length) { this.showCopyNotification?.('No cell lines to send. Tick some, or filter the list.'); return; }
+        const fromFilter = !(this._clbSelectedCellLines?.size);
+        const names = cls.map(c => this.getCellLineName(c) || c);
+        const n = cls.length;
+
+        document.getElementById('clbSendToPopout')?.remove();
+        const p = document.createElement('div');
+        p.id = 'clbSendToPopout';
+        p.style.cssText = 'position:fixed; z-index:1450; background:#fff; border:1px solid #d1d5db; border-radius:8px; box-shadow:0 12px 28px rgba(0,0,0,0.18); width:390px; padding:12px 14px; font-size:12px; color:#374151;';
+        const row = (label, note, btns) => `
+            <div style="display:flex; align-items:flex-start; gap:8px; padding:7px 0; border-top:1px solid #f1f5f9;">
+                <div style="flex:1 1 auto; min-width:0;">
+                    <div style="font-weight:600; color:#374151;">${label}</div>
+                    <div style="font-size:10px; color:#9ca3af; line-height:1.4;">${note}</div>
+                </div>
+                <div style="display:flex; gap:4px; flex:0 0 auto; padding-top:1px;">${btns}</div>
+            </div>`;
+        const b = (act, label, title, primary) => `<button data-act="${act}" title="${title}" style="font-size:10px; padding:3px 8px; border:1px solid ${primary ? '#6ba544' : '#d1d5db'}; color:${primary ? '#4c782e' : '#374151'}; background:${primary ? '#f0fdf4' : '#fff'}; border-radius:4px; cursor:pointer; white-space:nowrap;">${label}</button>`;
+
+        const scatterOpen = !!this.currentInspect?.gene1;
+        const geOpen = !!(this.currentGeneEffectGene || this.currentGeneEffect);
+        p.innerHTML = `
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                <b style="font-size:13px; color:#374151;">Send ${n.toLocaleString()} cell line${n === 1 ? '' : 's'} to…</b>
+                <button data-act="close" style="background:none; border:none; font-size:18px; line-height:1; cursor:pointer; color:#9ca3af;">&times;</button>
+            </div>
+            <div style="font-size:10px; color:#9ca3af; margin-bottom:2px;">
+                ${fromFilter ? 'Nothing is ticked, so this is what your filters leave showing.' : 'The cell lines you have ticked.'}
+                <b>Highlight</b> marks them and leaves the cohort alone; <b>Only these</b> narrows the view to them.
+            </div>
+            ${row('Scatter plot', scatterOpen
+                    ? `Currently showing ${this.currentInspect.gene1} vs ${this.currentInspect.gene2}.`
+                    : 'No scatter is open yet. The setting is kept and applies as soon as you open one.',
+                  b('scatter-hl', 'Highlight', 'Label these cell lines on the scatter, leaving every other point in place', true)
+                + b('scatter-only', 'Only these', 'Narrow the scatter to these cell lines'))}
+            ${row('Gene effect', geOpen
+                    ? `Currently showing ${this.currentGeneEffectGene || this.currentGeneEffect}.`
+                    : 'No gene is open yet. The setting is kept and applies as soon as you open one.',
+                  b('ge-hl', 'Highlight', 'Mark these cell lines in red on the gene-effect charts', true)
+                + b('ge-only', 'Only these', 'Narrow the gene-effect charts to these cell lines'))}
+            ${row('Mutation analysis, gene set analysis and network',
+                  'These share one cohort. Set it here and the next run of any of them uses these cell lines; it shows as a removable chip beside the Run button.',
+                  b('cohort', 'Only these', 'Use these cell lines as the cohort for the analyses on the main page'))}
+            <div style="border-top:1px solid #f1f5f9; padding-top:7px; margin-top:2px; font-size:10px; color:#9ca3af; line-height:1.45;">
+                Each of these is remembered until you clear it, and the views that have one say so.
+                <div style="margin-top:5px; display:flex; gap:4px;">
+                    ${b('clear', 'Clear all of these', 'Remove every highlight and cell-line restriction this popout can set, putting the views back to their full cohorts')}
+                </div>
+            </div>`;
+        document.body.appendChild(p);
+
+        const r = anchorEl?.getBoundingClientRect();
+        if (r) {
+            p.style.left = Math.max(8, Math.min(window.innerWidth - 400, r.left)) + 'px';
+            p.style.top = Math.min(window.innerHeight - 20 - p.offsetHeight, r.bottom + 6) + 'px';
+        }
+
+        const closeIt = () => p.remove();
+        p.addEventListener('click', (e) => {
+            const btn = e.target.closest('[data-act]');
+            if (!btn) return;
+            const act = btn.dataset.act;
+            if (act === 'close') return closeIt();
+            this._sendSelectionTo(act, cls, names);
+            closeIt();
+        });
+        // Click-away, registered after this click finishes bubbling.
+        setTimeout(() => {
+            const away = (e) => {
+                if (!p.contains(e.target) && e.target !== anchorEl) { p.remove(); document.removeEventListener('mousedown', away); }
+            };
+            document.addEventListener('mousedown', away);
+        }, 0);
+    }
+
+    _sendSelectionTo(act, cls, names) {
+        const setText = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
+        const listText = names.join('\n');
+        const say = (m) => this.showCopyNotification?.(m);
+        const n = cls.length;
+
+        if (act === 'scatter-hl') {
+            // The scatter's cell search is what marks named lines on the plot.
+            setText('scatterCellSearch', names.join(', '));
+            this.updateInspectPlot?.();
+            say(`${n} cell lines marked on the scatter.`);
+        } else if (act === 'scatter-only') {
+            // The scatter's own pasted-list filter, which is what that panel
+            // actually reads.
+            this._customCellLineFilter = new Set(cls);
+            setText('customCellLineFilter', listText);
+            const c = document.getElementById('customCLFilterCount');
+            if (c) c.textContent = `${n}/${n} matched`;
+            this.updateInspectPlot?.();
+            say(`The scatter now shows only these ${n} cell lines.`);
+        } else if (act === 'cohort') {
+            // The analysis subset, which the mutation, gene-set and network
+            // runs all read and which shows as a removable chip beside Run.
+            const label = this._clbSelectedCellLines?.size
+                ? `${n} from the browser`
+                : `${n} filtered in the browser`;
+            this.setAnalysisCellLineSubset(cls, label);
+            // Chosen on purpose for these analyses, so it survives the mode
+            // switch the user is about to make to reach them.
+            this._analysisSubsetSticky = true;
+            say(`The next mutation, gene set or network run will use these ${n} cell lines. It is listed under Active filters, where you can remove it.`);
+        } else if (act === 'ge-hl') {
+            this._geSelectionHighlight = new Set(cls);
+            this._rerenderCurrentGEView?.();
+            say(`${n} cell lines marked in red on the gene-effect charts.`);
+        } else if (act === 'ge-only') {
+            this._customCellLineFilterGE = new Set(cls);
+            setText('customCellLineFilterGE', listText);
+            const c = document.getElementById('customCLFilterCountGE');
+            if (c) c.textContent = `${n}/${n} matched`;
+            this._rerenderCurrentGEView?.();
+            say(`Gene-effect charts now use these ${n} cell lines.`);
+        } else if (act === 'clear') {
+            this._customCellLineFilter = null;
+            this._customCellLineFilterGE = null;
+            this._geSelectionHighlight = null;
+            this.clearAnalysisCellLineSubset?.();
+            ['customCellLineFilter', 'customCellLineFilterGE', 'scatterCellSearch'].forEach(id => setText(id, ''));
+            ['customCLFilterCount', 'customCLFilterCountGE'].forEach(id => {
+                const c = document.getElementById(id); if (c) c.textContent = '';
+            });
+            this.updateInspectPlot?.();
+            this._rerenderCurrentGEView?.();
+            say('Custom cell-line lists cleared everywhere.');
+        }
+    }
+
+    // Open a gene picked out of this panel, from either the table or the
+    // volcano, on the measure it was picked from and scoped to the comparison
+    // that was on screen.
+    _openGeneFromInspect(gene, fromExpr) {
+        if (!gene) return;
+        const selected = this._geInspectResults?.selected || [];
+        document.getElementById('selectionInspectModal').style.display = 'none';
+        this._geSelectionHighlight = new Set(selected);
+        // Remember where this was opened from, so closing the gene-effect
+        // popout comes back here.
+        this._geOpenedFrom = 'selectionInspect';
+        const insLins = [...new Set(selected.map(c => this.getCellLineLineage(c)).filter(Boolean))];
+        this.openGeneScoped(gene, {
+            dataType: fromExpr ? 'expr' : 'ge',
+            scope: this._geInspectScope === 'lineage' ? 'lineage' : 'all',
+            lineage: insLins.length === 1 ? insLins[0] : '',
+            compareSides: this._geInspectSides || null,
+        });
+    }
+
+    // Put the panel back to how it opens: default cutoffs, no gene search,
+    // default sort, comparison back to every other cell line. Every other
+    // analysis view has a Reset and this one did not.
+    _resetGEInspect() {
+        const set = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
+        set('geLeftDeltaCutoff', 0.3); set('geRightDeltaCutoff', 1.0);
+        set('geLeftQCutoff', 0.05); set('geRightQCutoff', 0.05);
+        set('geLeftN', 200); set('geRightN', 200);
+        set('geInspectSearch', '');
+        const clr = document.getElementById('geInspectSearchClear');
+        if (clr) clr.style.display = 'none';
+        this._geInspectSort = {
+            left:  { key: 'delta', dir: -1, absolute: true },
+            right: { key: 'delta', dir: -1, absolute: true },
+        };
+        const testSel = document.getElementById('geInspectTest');
+        const wasRank = this._geInspectTest === 'rank';
+        this._geInspectTest = 'welch';
+        if (testSel) testSel.value = 'welch';
+        // Changing the comparison group or the test means recomputing, which
+        // rebuilds the whole panel; otherwise just redraw what is here.
+        if (this._geInspectScope !== 'all' || wasRank) {
+            this._resetGEInspectScope();
+            this.inspectSelectionGE();
+        } else {
+            this._renderGEInspectTables();
+        }
+        this.showCopyNotification?.('Inspect settings reset.');
+    }
+
+    // Which volcano to export. Two charts and one footer button, so ask,
+    // the same way the app asks elsewhere rather than guessing.
+    _geVolcanoExportMenu(anchorEl, mode) {
+        const act = (side, label) => () => {
+            const id = `ge${side}Volcano`;
+            if (mode === 'copy') this.copyPlotToClipboard(id, label);
+            else this.screenshotPopout(id, `correlate_volcano_${label.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`);
+        };
+        document.getElementById('clbChipMenu')?.remove();
+        this._simpleChipMenu(anchorEl, [
+            { label: 'CRISPR gene effect', act: act('Left', 'Gene effect') },
+            { label: 'mRNA expression', act: act('Right', 'Expression') }
+        ], () => {});
     }
 
     _renderGEInspectTables() {
@@ -45549,6 +45824,12 @@ ${clone.innerHTML}
         // What is on screen right now, so an export can follow the tables
         // rather than dumping every gene that was tested.
         this._geInspectShown = { left: leftRows, right: rightRows };
+        // The volcano follows the same cutoffs the table does, so what is
+        // highlighted in the plot and what is listed below it are one set.
+        this._drawGEVolcano('Left', rows, leftRows, leftCut, anyQ ? leftQ : 1, anyQ,
+            'CRISPR gene effect', 'Δ gene effect (selection − comparison)');
+        this._drawGEVolcano('Right', exprRows, rightRows, rightCut, anyQ ? rightQ : 1, anyQ,
+            'mRNA expression', 'Δ log2(TPM+1) (selection − comparison)');
 
         // Stash the currently displayed gene lists so the Network button
         // can pull from them directly.
@@ -45604,22 +45885,7 @@ ${clone.innerHTML}
             document.querySelectorAll('#geLeftBody .si-row, #geRightBody .si-row').forEach(tr => {
                 tr.addEventListener('click', (ev) => {
                     if (ev.target.closest('th')) return;
-                    const gene = tr.dataset.gene;
-                    document.getElementById('selectionInspectModal').style.display = 'none';
-                    this._geSelectionHighlight = new Set(selected);
-                    // Remember where this was opened from, so closing the
-                    // gene-effect popout comes back here.
-                    this._geOpenedFrom = 'selectionInspect';
-                    // A gene picked from the expression column opens on
-                    // expression, matching the number that was clicked.
-                    const fromExpr = !!tr.closest('#geRightBody');
-                    const insLins = [...new Set(selected.map(c => this.getCellLineLineage(c)).filter(Boolean))];
-                    this.openGeneScoped(gene, {
-                        dataType: fromExpr ? 'expr' : 'ge',
-                        scope: this._geInspectScope === 'lineage' ? 'lineage' : 'all',
-                        lineage: insLins.length === 1 ? insLins[0] : '',
-                        compareSides: this._geInspectSides || null,
-                    });
+                    this._openGeneFromInspect(tr.dataset.gene, !!tr.closest('#geRightBody'));
                 });
                 tr.addEventListener('mouseenter', () => {
                     tr.style.background = '#f0fdf4';
@@ -45722,8 +45988,7 @@ ${clone.innerHTML}
 
     // Build a correlation network from the genes currently displayed on the
     // requested side of the Inspect GE modal, restricted to the selected
-    // cell lines. Same flow as _launchCorrelationNetwork but starting from
-    // a gene list rather than gene pairs.
+    // cell lines, starting from a gene list rather than gene pairs.
     async _launchGENetwork(side) {
         if (!this._geInspectResults) return;
         const list = side === 'left' ? this._geInspectResults.leftDisplayed : this._geInspectResults.rightDisplayed;
@@ -45761,325 +46026,6 @@ ${clone.innerHTML}
         document.getElementById('runAnalysis')?.click();
     }
 
-    // Inspect Correlations for the selection: unbiased all-vs-all Pearson's r
-    // across the selected cell lines. O(nGenes^2 × nSel) in the worst case.
-    // Warn before running, show progress, allow cancel. Top-K heap used to
-    // avoid storing all pairs.
-    async inspectSelectionCorrelations() {
-        const selected = [...(this._clbSelectedCellLines || new Set())];
-        if (selected.length < 8) {
-            alert('Select at least 8 cell lines for a stable correlation (more is better).');
-            return;
-        }
-        const cellLines = this.metadata.cellLines;
-        const clIndexOf = new Map(cellLines.map((cl, i) => [cl, i]));
-        const selIdx = selected.map(cl => clIndexOf.get(cl)).filter(i => i !== undefined);
-        const allIdx = [];
-        for (let i = 0; i < this.nCellLines; i++) allIdx.push(i);
-
-        const cont = confirm(
-            `Unbiased all-vs-all correlation:\n\n` +
-            `Genes: ${this.nGenes.toLocaleString()}\n` +
-            `Selected cell lines: ${selIdx.length}\n` +
-            `Baseline: all ${allIdx.length} cell lines (Δ is selected r − all-cells r).\n\n` +
-            `This is computationally expensive: up to 5–10 minutes on a typical laptop, longer on older hardware. The browser will remain responsive and you can cancel.\n\n` +
-            `Continue?`
-        );
-        if (!cont) return;
-
-        this._corrInspectCanceled = false;
-        const cancelBtn = document.getElementById('progressCancelBtn');
-        const onCancel = () => { this._corrInspectCanceled = true; };
-        cancelBtn.onclick = onCancel;
-        this._showProgress('Computing correlations', 'Centering gene vectors…', 0);
-
-        // Center each gene's vector within each subset so pairwise correlation
-        // is just dot(centered_i, centered_j) / (norm_i × norm_j).
-        const nGenes = this.nGenes;
-        const buildCentered = (indices) => {
-            const n = indices.length;
-            const centered = new Float32Array(nGenes * n);
-            const norms = new Float32Array(nGenes);
-            const keep = new Uint8Array(nGenes); // 0 if gene has <3 valid values or zero variance
-            for (let g = 0; g < nGenes; g++) {
-                const off = g * this.nCellLines;
-                let s = 0, cnt = 0;
-                for (let k = 0; k < n; k++) {
-                    const v = this.geneEffects[off + indices[k]];
-                    if (!isNaN(v) && v !== -999) { s += v; cnt++; }
-                }
-                if (cnt < 3) continue;
-                const mean = s / cnt;
-                let ss = 0;
-                const rowOff = g * n;
-                for (let k = 0; k < n; k++) {
-                    const v = this.geneEffects[off + indices[k]];
-                    const c = (!isNaN(v) && v !== -999) ? (v - mean) : 0;
-                    centered[rowOff + k] = c;
-                    ss += c * c;
-                }
-                if (ss > 1e-12) {
-                    norms[g] = Math.sqrt(ss);
-                    keep[g] = 1;
-                }
-            }
-            return { centered, norms, keep, n };
-        };
-
-        const _yield = () => new Promise(r => setTimeout(r, 0));
-
-        // Centered vectors across ALL cell lines are the baseline that Δ is
-        // computed against. They're also the same across runs with different
-        // selections, so we cache them on the instance for the lifetime of
-        // the page, subsequent inspect-correlation runs skip this cost.
-        if (!this._corrCacheAll) {
-            this._showProgress('Computing correlations', 'Centering gene vectors (all cell lines, one-time)…', 2);
-            await _yield();
-            this._corrCacheAll = buildCentered(allIdx);
-        }
-        const allData = this._corrCacheAll;
-        await _yield();
-        if (this._corrInspectCanceled) { this._hideProgress(); return; }
-
-        this._showProgress('Computing correlations', 'Centering gene vectors (selection)…', 4);
-        await _yield();
-        const selData = buildCentered(selIdx);
-        await _yield();
-        if (this._corrInspectCanceled) { this._hideProgress(); return; }
-
-        // Top-K heap of best absolute correlations. Using a proper min-heap
-        // would be asymptotically better but K is small (200) so linear
-        // scan to find the minimum is fine and keeps the code clear.
-        const TOPK = 200;
-        const pushHeap = (heap, item) => {
-            if (heap.length < TOPK) { heap.push(item); return; }
-            let minIdx = 0;
-            for (let i = 1; i < heap.length; i++) if (Math.abs(heap[i].abs) < Math.abs(heap[minIdx].abs)) minIdx = i;
-            if (Math.abs(item.abs) > Math.abs(heap[minIdx].abs)) heap[minIdx] = item;
-        };
-
-        const corrInSel = [];   // top correlations in selected
-        const corrDiff = [];    // top Δ correlations (sel − all)
-
-        // Single pass: for each gene pair, compute r in selected and r in
-        // all-cells; push into both heaps. Avoids the redundant double-pass
-        // the earlier implementation had (which discarded its first pass
-        // and recomputed everything in a second loop).
-        const start = performance.now();
-        const chunk = 50;
-        for (let i = 0; i < nGenes; i++) {
-            if (this._corrInspectCanceled) { this._hideProgress(); return; }
-            const inSel = selData.keep[i], inAll = allData.keep[i];
-            if (!inSel && !inAll) continue;
-            const iOffS = i * selData.n, iOffA = i * allData.n;
-            const niS = selData.norms[i], niA = allData.norms[i];
-            for (let j = i + 1; j < nGenes; j++) {
-                if (!selData.keep[j] && !allData.keep[j]) continue;
-                let rS = NaN, rA = NaN;
-                if (inSel && selData.keep[j]) {
-                    let dot = 0;
-                    const jOff = j * selData.n;
-                    for (let k = 0; k < selData.n; k++) dot += selData.centered[iOffS + k] * selData.centered[jOff + k];
-                    rS = dot / (niS * selData.norms[j]);
-                }
-                if (inAll && allData.keep[j]) {
-                    let dot = 0;
-                    const jOff = j * allData.n;
-                    for (let k = 0; k < allData.n; k++) dot += allData.centered[iOffA + k] * allData.centered[jOff + k];
-                    rA = dot / (niA * allData.norms[j]);
-                }
-                if (isFinite(rS)) {
-                    pushHeap(corrInSel, { g1: this.geneNames[i], g2: this.geneNames[j], r: rS, abs: rS });
-                }
-                if (isFinite(rS) && isFinite(rA)) {
-                    const d = rS - rA;
-                    pushHeap(corrDiff, { g1: this.geneNames[i], g2: this.geneNames[j], rSel: rS, rOther: rA, d, abs: d });
-                }
-            }
-            if (i % chunk === 0) {
-                const pct = (i / nGenes) * 100;
-                const elapsed = (performance.now() - start) / 1000;
-                const eta = elapsed * (nGenes - i) / Math.max(1, i);
-                this._showProgress('Computing correlations', `Gene ${i.toLocaleString()} of ${nGenes.toLocaleString()}, ~${Math.round(eta)} s remaining.`, pct);
-                await _yield();
-            }
-        }
-
-        this._hideProgress();
-        if (this._corrInspectCanceled) return;
-
-        corrInSel.sort((a, b) => Math.abs(b.r) - Math.abs(a.r));
-        corrDiff.sort((a, b) => Math.abs(b.d) - Math.abs(a.d));
-
-        // Stash full result sets (unfiltered by cutoff) on the instance so
-        // the cutoff input can re-filter without re-running the heavy math,
-        // the "Network" button can read from whichever side triggered it,
-        // and "Save" can dump the whole thing to a JSON file.
-        this._corrInspectResults = { selected, corrInSel, corrDiff };
-        this._activeSelectionInspect = { kind: 'corr' };
-        const saveBtn = document.getElementById('selectionInspectSave');
-        if (saveBtn) saveBtn.style.display = '';
-
-        document.getElementById('selectionInspectTitle').textContent = `Inspect Correlations, ${selected.length} selected cell lines`;
-        document.getElementById('selectionInspectSubtitle').textContent = `Left: strongest gene-pair correlations in the selection. Right: largest Δ (selection r − rest r). Click a row to open the correlation inspect for that pair; use the r-cutoff or the Network button to drill in.`;
-        document.getElementById('selectionInspectBody').innerHTML = `
-            <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start;">
-                <div style="flex:1; min-width:0;">
-                    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
-                        <div style="font-weight:600; color:#374151;">Top correlations in selection</div>
-                        <div style="display:flex; gap:6px; align-items:center; font-size:11px;">
-                            <label>|r|&nbsp;≥</label>
-                            <input type="text" inputmode="decimal" id="siLeftCutoff" min="0" max="1" step="0.05" value="0.3" style="width:60px; padding:2px 4px; border:1px solid #d1d5db; border-radius:3px; text-align:center;">
-                            <button class="btn btn-outline btn-sm" id="siLeftNetwork" style="font-size:11px; padding:3px 8px;" title="Build a correlation network from these gene pairs restricted to the selected cell lines">Network</button>
-                        </div>
-                    </div>
-                    <div id="siLeftHint" style="font-size:10px; color:#9ca3af; margin-bottom:6px;"></div>
-                    <div id="siLeftBody" style="max-height:58vh; overflow-y:auto; border:1px solid #e5e7eb; border-radius:4px;"></div>
-                </div>
-                <div style="flex:1; min-width:0;">
-                    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
-                        <div style="font-weight:600; color:#374151;">Most different vs rest (Δr)</div>
-                        <div style="display:flex; gap:6px; align-items:center; font-size:11px;">
-                            <label>|Δ|&nbsp;≥</label>
-                            <input type="text" inputmode="decimal" id="siRightCutoff" min="0" max="2" step="0.05" value="0.3" style="width:60px; padding:2px 4px; border:1px solid #d1d5db; border-radius:3px; text-align:center;">
-                            <button class="btn btn-outline btn-sm" id="siRightNetwork" style="font-size:11px; padding:3px 8px;" title="Build a correlation network from these gene pairs restricted to the selected cell lines">Network</button>
-                        </div>
-                    </div>
-                    <div id="siRightHint" style="font-size:10px; color:#9ca3af; margin-bottom:6px;"></div>
-                    <div id="siRightBody" style="max-height:58vh; overflow-y:auto; border:1px solid #e5e7eb; border-radius:4px;"></div>
-                </div>
-            </div>`;
-        document.getElementById('selectionInspectModal').style.display = 'flex';
-
-        const renderSides = () => this._renderCorrInspectTables();
-        document.getElementById('siLeftCutoff').addEventListener('input', renderSides);
-        document.getElementById('siRightCutoff').addEventListener('input', renderSides);
-        document.getElementById('siLeftNetwork').addEventListener('click', () => this._launchCorrelationNetwork('left'));
-        document.getElementById('siRightNetwork').addEventListener('click', () => this._launchCorrelationNetwork('right'));
-        renderSides();
-    }
-
-    // Render the two correlation tables in the Inspect Correlations modal,
-    // filtered by the current |r| / |Δ| cutoffs. Called on open and on
-    // cutoff input change.
-    _renderCorrInspectTables() {
-        if (!this._corrInspectResults) return;
-        const { corrInSel, corrDiff } = this._corrInspectResults;
-        const leftCut = this.numInput('siLeftCutoff', 0);
-        const rightCut = this.numInput('siRightCutoff', 0);
-        const leftFiltered = corrInSel.filter(r => Math.abs(r.r) >= leftCut).slice(0, 200);
-        const rightFiltered = corrDiff.filter(r => Math.abs(r.d) >= rightCut).slice(0, 200);
-
-        const fmt = (v) => (isFinite(v) ? v.toFixed(3) : '-');
-        const th = (t) => `<th style="padding:6px 8px; border-bottom:2px solid #d1d5db; text-align:left; font-size:11px;">${t}</th>`;
-        const leftRows = leftFiltered.map(r => `
-            <tr class="si-row" data-g1="${this.esc(r.g1)}" data-g2="${this.esc(r.g2)}" style="cursor:pointer;">
-                <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6;"><b>${r.g1}</b> &nbsp;&times;&nbsp; <b>${r.g2}</b></td>
-                <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; text-align:right; font-weight:600; color:${r.r < 0 ? '#dc2626' : '#2563eb'};">${fmt(r.r)}</td>
-            </tr>`).join('');
-        const rightRows = rightFiltered.map(r => `
-            <tr class="si-row" data-g1="${this.esc(r.g1)}" data-g2="${this.esc(r.g2)}" style="cursor:pointer;">
-                <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6;"><b>${r.g1}</b> &nbsp;&times;&nbsp; <b>${r.g2}</b></td>
-                <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; text-align:right; color:#374151;">${fmt(r.rSel)}</td>
-                <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; text-align:right; color:#6b7280;">${fmt(r.rOther)}</td>
-                <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; text-align:right; font-weight:600; color:${r.d < 0 ? '#dc2626' : '#2563eb'};">${fmt(r.d)}</td>
-            </tr>`).join('');
-
-        document.getElementById('siLeftHint').textContent = `${leftFiltered.length} pair(s) with |r| ≥ ${leftCut.toFixed(2)}.`;
-        document.getElementById('siRightHint').textContent = `${rightFiltered.length} pair(s) with |Δ| ≥ ${rightCut.toFixed(2)}.`;
-        document.getElementById('siLeftBody').innerHTML =
-            `<table style="width:100%; border-collapse:collapse; font-size:11px;">
-                <thead style="position:sticky; top:0;" class="sticky-head"><tr>${th('Gene pair')}${th('r')}</tr></thead>
-                <tbody>${leftRows}</tbody>
-            </table>`;
-        document.getElementById('siRightBody').innerHTML =
-            `<table style="width:100%; border-collapse:collapse; font-size:11px;">
-                <thead style="position:sticky; top:0;" class="sticky-head"><tr>${th('Gene pair')}${th('r sel')}${th('r rest')}${th('Δ')}</tr></thead>
-                <tbody>${rightRows}</tbody>
-            </table>`;
-
-        document.querySelectorAll('.si-row').forEach(tr => {
-            tr.addEventListener('click', () => {
-                // Pre-populate the scatter's highlight list with the
-                // selected cell-line NAMES so they're labeled in red on
-                // the correlation scatter (the inspect's existing
-                // highlight mechanism). Cleared on the inspect's "Clear"
-                // or "Reset Filters" button.
-                const sel = (this._corrInspectResults?.selected || []);
-                const names = sel.map(cl => this.getCellLineName(cl) || cl);
-                const search = document.getElementById('scatterCellSearch');
-                if (search && names.length) search.value = names.join('\n');
-                // Keep the selection-inspect modal open so the user can
-                // return to the list after viewing a pair, the
-                // correlation popup has a higher z-index and overlays it.
-                this.openInspect({ gene1: tr.dataset.g1, gene2: tr.dataset.g2, correlation: null });
-            });
-            tr.addEventListener('mouseenter', () => tr.style.background = '#f0fdf4');
-            tr.addEventListener('mouseleave', () => tr.style.background = '');
-        });
-    }
-
-    // Build a correlation network from the currently-displayed gene pairs
-    // on the requested side (left = top correlations in selection, right
-    // = top Δ vs rest). Reuses the main analysis pipeline: populates the
-    // gene list, applies the cell-line selection as a custom filter, sets
-    // the cutoff, runs, and switches to the network view.
-    async _launchCorrelationNetwork(side) {
-        const res = this._corrInspectResults;
-        if (!res) return;
-        const isLeft = side === 'left';
-        const pairs = isLeft ? res.corrInSel : res.corrDiff;
-        const scoreOf = isLeft ? (r => r.r) : (r => r.d);
-        const suggested = this.numInput(isLeft ? 'siLeftCutoff' : 'siRightCutoff', 0.3) || 0.3;
-
-        const cutStr = await this._askValue('Build network',
-            `Correlation cutoff |${isLeft ? 'r' : 'delta r'}| for the network (0 to 1).\n\nOnly gene pairs at or above this cutoff become edges. A higher cutoff gives a sparser, more readable network.`,
-            suggested.toFixed(2));
-        if (cutStr === null) return;
-        const cut = parseFloat(cutStr);
-        if (isNaN(cut) || cut < 0) return;
-
-        const selected = res.selected || [];
-        const edges = pairs.filter(p => Math.abs(scoreOf(p)) >= cut);
-        if (!edges.length) { alert(`No pairs at |${isLeft ? 'r' : 'Δr'}| ≥ ${cut}. Try a lower cutoff.`); return; }
-        const genes = new Set();
-        edges.forEach(p => { genes.add(p.g1); genes.add(p.g2); });
-        if (genes.size > 300) {
-            if (!confirm(`${genes.size} genes / ${edges.length} pairs at this cutoff, that's a very dense network and may be slow to render. Continue?`)) return;
-        }
-
-        // Close the modals so the user sees the main analysis view.
-        document.getElementById('selectionInspectModal').style.display = 'none';
-        document.getElementById('cellLineBrowserModal').style.display = 'none';
-
-        // Tag the pending analysis so the network banner labels the cell-line
-        // filter as "Selection (n)".
-        this._pendingSelectionLabel = `Selection (${selected.length} cell line${selected.length === 1 ? '' : 's'})`;
-
-        // Populate the main gene-list textarea.
-        const taEl = document.getElementById('geneTextarea');
-        if (taEl) taEl.value = [...genes].join('\n');
-
-        this.setAnalysisCellLineSubset(selected,
-            `Selection from the browser (${selected.length} cell line${selected.length === 1 ? '' : 's'})`);
-
-        // Set the correlation cutoff (clamped to the slider's 0.1–0.8 range).
-        const cutoffEl = document.getElementById('correlationCutoff');
-        if (cutoffEl) {
-            const clamped = Math.max(0.1, Math.min(0.8, cut));
-            cutoffEl.value = clamped.toFixed(2);
-            cutoffEl.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-
-        // Kick off the analysis, this renders the network.
-        document.getElementById('runAnalysis')?.click();
-    }
-
-    // One row per selected (or visible) cell line, columns: CellLineID,
-    // CellLineName, Tissue, Subtype, Sex (annotation), Sex (expression),
-    // then GE_<gene> and Expr_<gene> for every gene the user types in.
-    // Aimed at quickly pulling a tidy table to explore or plot outside the
-    // app.
     // Map gene -> focal copy-number event ({ cn, tier, kind }) for one cell
     // line, from the curated clinical CN panel (clinical_cn.json). Used to add
     // a deep-deletion / amplification column to the full-profile exports.
