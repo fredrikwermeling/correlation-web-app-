@@ -2224,6 +2224,22 @@
             #optionsOtherBtn, .sidebar .card-content > .btn { white-space: normal !important; }
             /* Lasso needs a drag on a plot that does not accept drags here. */
             #scatterLassoHighlightBtn { display: none !important; }
+            /* A popout is fullscreen on a phone, but the overlay behind it was
+               still half-transparent, so the network showed through along the
+               bottom and read as part of the popout. Make the backdrop solid. */
+            .modal-overlay, #cellLineBrowserModal, #clbWikiModal,
+            #selectionInspectModal { background: #fff !important; }
+            /* The rest of the mutation-analysis toolbar: the remaining export
+               buttons, the copy-genes button and the row of Compare buttons.
+               Nothing here leads anywhere on a phone. */
+            #downloadMutationResults, #copyMutationGenes, #exportMutTablePNG,
+            #copyCorrelationGenes, #copyClustersGenes, #downloadCorrelations,
+            #downloadClusters, #downloadSummary, #downloadAllData,
+            #clbExportMinimal, #clbExportComprehensive, #clbExportListBtn,
+            #clbCopyListBtn, #clbExportGenesBtn, #clbCopyNamesBtn,
+            #clbExportImageBtn, #clbWikiDownloadBtn, #clbWikiExportGenesBtn,
+            #selectionInspectCSV, #selectionInspectCSVCells,
+            #selectionInspectImg, #selectionInspectCopyImg { display: none !important; }
             /* The five threshold controls. A phone runs the defaults, which is
                what almost every desktop session leaves them at anyway:
                correlation cutoff 0.50, min slope 0.10, min cell lines 25,
@@ -4903,6 +4919,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v87_90"></script>
+    <script src="app.js?v=v87_91"></script>
 </body>
 </html>
