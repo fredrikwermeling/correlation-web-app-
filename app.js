@@ -45451,14 +45451,12 @@ ${clone.innerHTML}
         // p and q keep full precision; rounding them to 4 places would turn
         // every strong hit into 0.0000.
         const sci = (v) => (v === undefined || v === null || isNaN(v)) ? '' : v.toExponential(3);
-        const _sides = this._geInspectSides || {};
-        // Same reasoning as the per-cell-line file: say what the scope is, so
-        // the two are never confused for each other later on.
-        const head = '"' + `Correlate selection inspect, group means. ${_sides.selLabel || 'selection'} vs ${_sides.cmpLabel || 'the rest'}.`
-                   + ` EVERY gene tested is here, not only the ones that were on screen; the cutoffs in the panel do not apply to this file.`
-                   + ` delta is selection minus comparison. GE is CRISPR gene effect (negative = the knockout slows growth), Expr is log2(TPM+1).`
-                   + ` q is p corrected across all genes tested, and is the number to read.`.replace(/"/g, '""') + '"\n'
-                   + 'Gene,GE_mean_selection,GE_mean_others,GE_delta,GE_p,GE_q,GE_n_selection,GE_n_others,'
+        // The header is row 1 and nothing precedes it. A provenance sentence
+        // on the first line, added in v.87.76, meant Excel and pandas both
+        // took THAT as the header: the real column names became data and the
+        // numbers stopped parsing. Scope belongs in the filename and the
+        // on-screen message, not in the file's first row.
+        const head = 'Gene,GE_mean_selection,GE_mean_others,GE_delta,GE_p,GE_q,GE_n_selection,GE_n_others,'
                    + 'Expr_mean_selection,Expr_mean_others,Expr_delta,Expr_p,Expr_q,Expr_n_selection,Expr_n_others\n';
         const body = [...byGene.entries()]
             .sort((a, b) => Math.abs(b[1].ge?.delta ?? b[1].expr?.delta ?? 0)
@@ -45535,18 +45533,8 @@ ${clone.innerHTML}
             head.push(`${c.gene}_GE`);
             if (c.ei !== undefined) head.push(`${c.gene}_expr`);
         }
-        // The file states its own scope. A spreadsheet opened next week gives
-        // no clue that its 300 columns were the top of a longer list, and the
-        // toast that said so is long gone.
-        const out = [];
-        out.push(q(`Correlate selection inspect, per cell line. ${selLabel} vs ${cmpLabel}.`
-            + ` Columns cover ${genes.length.toLocaleString()}`
-            + (allGenes.length > genes.length
-                ? ` of the ${allGenes.length.toLocaleString()} genes on screen, the largest differences first;`
-                : ` genes, every one on screen at export time;`)
-            + ` change the cutoffs to change what is here, or use the all-genes CSV for group means on every gene tested.`
-            + ` _GE is CRISPR gene effect (negative = the knockout slows growth), _expr is log2(TPM+1).`));
-        out.push(head.map(q).join(','));
+        // Header first, no preamble: see the note in downloadSelectionInspectCSV.
+        const out = [head.map(q).join(',')];
         for (const cl of lines) {
             const ci = geRow.get(cl), eci = exprRow.get(cl);
             const cells = [
