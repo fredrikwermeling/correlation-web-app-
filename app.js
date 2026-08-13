@@ -44343,6 +44343,7 @@ ${clone.innerHTML}
         // a table with real checkboxes, a caret to open a branch, and a count
         // column, indented one level per tier.
         const g = this._geInspectGroup || { lineages: new Set(), sublineages: new Set(), diseases: new Set() };
+        const nSel = (this._geInspectResults?.selected || []).length;
         const open = this._geInspectOpen || new Set();
         const tree = this._geInspectTreeData();
         const esc = (v) => this.esc(v).replace(/'/g, '&#39;');
@@ -44363,7 +44364,19 @@ ${clone.innerHTML}
                     <td style="padding:2px 4px 2px 8px; font-size:11px; color:#6b7280;" onclick="app.toggleGEInspectBranch('${esc(lin)} &gt;&gt; ${esc(sub)}')">${hasDis ? `<span style="font-size:8px; color:#9ca3af; margin-right:2px;">${subOpen ? '\u25bc' : '\u25b6'}</span>` : '<span style="margin-right:8px;"></span>'}${this.esc(sub)}</td>
                     <td style="padding:2px 8px; text-align:right; color:#9ca3af; font-size:11px; white-space:nowrap;" title="${this.esc(this._geInspectCountCell(S).title)}">${this._geInspectCountCell(S).text}</td></tr>`;
                 if (!subOpen) continue;
-                for (const [dis, dn] of [...S.diseases.entries()].sort((a, b) => b[1].n - a[1].n)) {
+                // Only worth showing the remainder when there is something to
+                // reconcile it against; on its own it is just the parent again.
+                const disEntries = [...S.diseases.entries()];
+                const realDis = disEntries.filter(([d]) => d !== '\u0000none');
+                const shown = realDis.length ? disEntries : realDis;
+                for (const [dis, dn] of shown.sort((a, b) => b[1].n - a[1].n)) {
+                    if (dis === '\u0000none') {
+                        rows += `<tr style="background:#f5f5f4;">
+                            <td style="padding:2px 8px 2px 24px;"></td>
+                            <td style="padding:2px 4px 2px 14px; font-size:10px; color:#b0b0ac; font-style:italic;" title="These cell lines are in ${this.esc(sub)} but carry no finer disease label, so they appear in no row below it. Shown so the rows add up to the group above.">no finer subtype recorded</td>
+                            <td style="padding:2px 8px; text-align:right; color:#b0b0ac; font-size:10px; white-space:nowrap;" title="${this.esc(this._geInspectCountCell(dn).title)}">${this._geInspectCountCell(dn).text}</td></tr>`;
+                        continue;
+                    }
                     rows += `<tr style="background:#f5f5f4; cursor:pointer;" onmouseenter="this.style.background='#ececeb'" onmouseleave="this.style.background='#f5f5f4'">
                         <td style="padding:2px 8px 2px 24px;"><input type="checkbox" class="gis-check"${g.diseases.has(dis) ? ' checked' : ''} onclick="event.stopPropagation(); app.toggleGEInspectGroup('diseases','${esc(dis)}')"></td>
                         <td style="padding:2px 4px 2px 14px; font-size:10px; color:#9ca3af;">${this.esc(dis)}</td>
@@ -44373,7 +44386,9 @@ ${clone.innerHTML}
         }
         return box(
             `<div style="font-size:10px; color:#6b7280; margin-bottom:4px; padding-right:18px;">Tick any tissue, subtype or disease. Ticks add up, so several groups can be compared against at once. Click a name to open the level below it.`
-            + `${(this._geInspectResults?.selected?.length ? ` Counts read "left of total": a cell line in your selection cannot also be compared against, so a group you selected from offers fewer than it holds.` : '')}</div>`
+            + `${(this._geInspectResults?.selected?.length
+                ? ` <b>${nSel} of these cell lines are your selection</b>, and a cell line cannot be on both sides, so each group shows <b>how many are left to compare against, of how many it holds</b>. Rows below a group add up to it, including the "no finer subtype recorded" row for lines that carry no finer label.`
+                : '')}</div>`
             + `<div style="max-height:200px; overflow:auto; background:#fff; border:1px solid #e5e7eb; border-radius:4px;">`
             + `<table style="width:100%; border-collapse:collapse; font-size:11px;">${rows}</table></div>`
             + `<div style="margin-top:5px;"><button type="button" class="btn btn-sm btn-outline" style="font-size:10px; padding:2px 8px;" onclick="app.clearGEInspectGroup()">Clear picks</button></div>`);
@@ -44403,10 +44418,16 @@ ${clone.innerHTML}
             let S = L.subs.get(sub);
             if (!S) L.subs.set(sub, S = { n: 0, avail: 0, diseases: new Map() });
             S.n++; S.avail += free;
-            if (!dis || dis === sub) continue;
-            const D = S.diseases.get(dis) || { n: 0, avail: 0 };
+            // A line whose finer label is missing, or is just the group name
+            // again, belongs to no disease row. Those were counted in the
+            // parent and shown nowhere, so the children never summed to it:
+            // Melanoma held 67 while its two children held 8 and 4, and the
+            // arithmetic looked broken. They are kept as an explicit
+            // remainder instead.
+            const key = (!dis || dis === sub) ? '\u0000none' : dis;
+            const D = S.diseases.get(key) || { n: 0, avail: 0 };
             D.n++; D.avail += free;
-            S.diseases.set(dis, D);
+            S.diseases.set(key, D);
         }
         return tree;
     }
