@@ -2224,19 +2224,11 @@ class CorrelationExplorer {
         popup.style.left = '50px';
         popup.style.top = '50px';
 
-        // Build filter context string
-        const lineageF = document.getElementById('lineageFilter')?.value || '';
-        const subLineageF = document.getElementById('subLineageFilter')?.value || '';
-        const hasExcl = this.excludedTissues && this.excludedTissues.size > 0;
-        let filterCtx = '';
-        if (lineageF) {
-            filterCtx = lineageF;
-            if (subLineageF) filterCtx += ` · ${subLineageF}`;
-        } else if (hasExcl) {
-            const allLin = this.cellLineMetadata?.lineage ? [...new Set(Object.values(this.cellLineMetadata.lineage))] : [];
-            const incl = allLin.filter(t => !this.excludedTissues.has(t));
-            filterCtx = incl.length <= 4 ? incl.join(', ') : `${incl.length} tissues`;
-        }
+        // What the cohort under this plot was narrowed by. Raised from the
+        // Cell Line Browser it is the BROWSER's filters that made the cohort,
+        // and only the parameter panel's were read, so an UpSet built over the
+        // lung lines said nothing about lung.
+        const filterCtx = this._gridCohortDescription();
 
         let html = `<div id="upsetDragHandle" style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:#f0fdf4; border-radius:8px 8px 0 0; cursor:move; user-select:none;">`;
         const upsetKindWord = { fusion: 'curated fusions', cn: 'copy-number events' }[this._oncoprintKind] || 'hotspot mutations';
@@ -2419,6 +2411,12 @@ class CorrelationExplorer {
                 range: [-(nGenes + 0.5), -0.5]
             },
             bargap: 0.3,
+            // The invisible click target is a second bar trace on the same
+            // axis, and Plotly's default groups bar traces side by side, so
+            // each got half the slot and the visible bar sat off-centre from
+            // the dot column under it. Overlay puts both back on the category
+            // centre, which also puts the count label back over its own bar.
+            barmode: 'overlay',
             plot_bgcolor: '#fafafa',
             paper_bgcolor: 'white'
         };
@@ -2514,6 +2512,9 @@ class CorrelationExplorer {
         const w = plotEl._fullLayout?.width || plotEl.layout?.width || plotEl.offsetWidth || 500;
         const h = plotEl._fullLayout?.height || plotEl.layout?.height || plotEl.offsetHeight || 400;
         await this._exportPlotly(plotEl, { w, h, format, filename: 'upset_plot',
+            // An UpSet is wide and full of small text; at the 5 cm default it
+            // is unreadable, so it starts at medium.
+            defaultWidthCm: 10,
             meta: this._buildOncoprintMeta('upset') });
     }
 
@@ -24145,6 +24146,40 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // The cohort controls the oncoprint and UpSet are built from. Captured so an
     // exported figure from either can be reopened; previously neither wrote a
     // settings file at all, so those two exports were dead ends.
+    // One line naming what narrowed the cohort a grid or UpSet was built over,
+    // read from whichever panel actually built it.
+    _gridCohortDescription() {
+        const val = (id) => document.getElementById(id)?.value || '';
+        const parts = [];
+        if (this._oncoprintContext === 'clb') {
+            const t = val('clbTissueFilter'), sub = val('clbSubtypeFilter'), onc = val('clbOncotreeFilter');
+            const deepest = onc || sub || t;
+            if (deepest) parts.push(deepest);
+            if (val('clbSexFilter')) parts.push(val('clbSexFilter'));
+            const hs = val('clbHotspotFilter');
+            if (hs) parts.push(`${hs} ${val('clbHotspotLevel') === '0' ? 'WT' : 'mutated'}`);
+            const fu = val('clbTranslocationFilter');
+            if (fu) parts.push(`${this._stripFusionFilterDecoration?.(fu) || fu} fused`);
+            const cn = val('clbCnFilter');
+            if (cn) parts.push(this._stripCnFilterDecoration?.(cn) || cn);
+            const nColl = this._clbCollectionStates?.size || 0;
+            if (nColl) parts.push(`${nColl} quick filter${nColl === 1 ? '' : 's'}`);
+            if (this._customCellLineFilterCLB?.size) parts.push(`custom list (${this._customCellLineFilterCLB.size})`);
+            if (val('clbSearch')) parts.push(`search "${val('clbSearch')}"`);
+        } else {
+            const lin = val('lineageFilter'), sub = val('subLineageFilter');
+            if (lin) { parts.push(lin); if (sub) parts.push(sub); }
+            else if (this.excludedTissues?.size) {
+                const allLin = this.cellLineMetadata?.lineage ? [...new Set(Object.values(this.cellLineMetadata.lineage))] : [];
+                const incl = allLin.filter(t => !this.excludedTissues.has(t));
+                parts.push(incl.length <= 4 ? incl.join(', ') : `${incl.length} tissues`);
+            }
+            const hs = val('paramHotspotGene');
+            if (hs) parts.push(`${hs} ${val('paramHotspotLevel') === '0' ? 'WT' : 'mutated'}`);
+        }
+        return parts.join(' · ');
+    }
+
     _oncoprintCohortState() {
         const val = (id) => document.getElementById(id)?.value || '';
         return {
@@ -24162,6 +24197,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             excludedTissues: this.excludedTissues ? [...this.excludedTissues] : [],
             extraGenes: this._oncoprintExtraGenes ? [...this._oncoprintExtraGenes] : [],
             oncoprintFilters: { ...(this._oncoprintFilters || {}) },
+            // A pick in the grid and an APPLIED filter are different states,
+            // and only the pick was saved. Restoring promoted it to a filter,
+            // so an UpSet exported with KRAS merely selected (green bar, the
+            // KRAS-negative bars still standing) reopened with KRAS filtering
+            // the cohort and those bars gone.
+            oncoprintApplied: !!(this._activeOncoprintFilters && this._activeOncoprintFilters.length),
             // Which grid this is (hotspot/fusion/CN) and which grid each filter
             // pick was made in; without these a fusion or CN grid restored as
             // the hotspot grid.
@@ -24281,7 +24322,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Writing the checkbox state alone leaves _activeOncoprintFilters
         // null, so the grid and every downstream cohort ignored the saved
         // include/exclude picks while the checkboxes looked applied.
-        this._oncoprintSyncFilters?.();
+        // Older files have no flag; treat them as applied, which is what they
+        // used to do.
+        if (c.oncoprintApplied === false) {
+            // Selected in the grid but never applied: show the picks without
+            // letting them narrow anything.
+            this._activeOncoprintFilters = null;
+            this._recordGridFilterOrigin?.();
+        } else {
+            this._oncoprintSyncFilters?.();
+        }
         // Pass the saved grid kind, or a fusion / CN grid reopens as hotspot.
         this.showOncoprint(c.context || undefined, c.oncoprintKind || undefined);
         // showOncoprint clears the added genes, so put them back and redraw.
@@ -27937,7 +27987,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             this._exportDialogAspect = aspect;
 
             const prev = this._lastExportOpts || {};
-            const defaultW = prev.widthCm || 5;
+            const defaultW = prev.widthCm || context.defaultWidthCm || 5;
             const defaultH = prev.heightCm || Math.max(2, Math.round(defaultW * aspect * 10) / 10);
             widthEl.value = defaultW;
             heightEl.value = defaultH;
@@ -28025,14 +28075,15 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // print size and DPI for raster output. Follows feedback_plotly_exports.md:
     // SVG from Plotly → _expandSvgToContent → rasterise at target DPI.
     async _exportPlotly(plotEl, opts) {
-        const { w, h, format, filename, meta, postProcess, popout, withGatePlot } = opts || {};
+        const { w, h, format, filename, meta, postProcess, popout, withGatePlot, defaultWidthCm } = opts || {};
 
         // Ask user for publication dimensions + DPI. When the chart sits in a
         // popout, the same dialog also offers capturing the whole panel, which
         // is what the separate camera buttons used to do.
         const dlg = await this._showExportDialog({
             format, plotW: w, plotH: h,
-            canScreenshot: !!popout
+            canScreenshot: !!popout,
+            defaultWidthCm
         });
         if (!dlg) return;
         if (popout && dlg.what === 'popout') {
