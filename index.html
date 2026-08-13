@@ -2224,6 +2224,25 @@
             #optionsOtherBtn, .sidebar .card-content > .btn { white-space: normal !important; }
             /* Lasso needs a drag on a plot that does not accept drags here. */
             #scatterLassoHighlightBtn { display: none !important; }
+            /* Closing a popout is the most-used control on a phone and was the
+               smallest: a bare glyph with no padding. Give every × a real
+               touch target, and a little more glyph to aim at. */
+            .modal-close,
+            #clbCloseBtn, #clbWikiCloseBtn, #clbInfoCloseBtn, #clbDetailCloseBtn,
+            #clbCustomCLClose, #selectionInspectClose, #closeInspect,
+            #closeCorrAnalysis, #closeGeneEffect, #closeGateCompare,
+            #closeGEGateCompare, #closeInfoGraphic, #closeExprCorrelatesPanel,
+            #aiAnalysisDialogClose, #enrichrCloseBtn, #exportOptionsClose {
+                min-width: 44px !important;
+                min-height: 44px !important;
+                font-size: 30px !important;
+                line-height: 1 !important;
+                display: inline-flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                padding: 0 !important;
+                flex: 0 0 auto !important;
+            }
             /* A popout is fullscreen on a phone, but the overlay behind it was
                still half-transparent, so the network showed through along the
                bottom and read as part of the popout. Make the backdrop solid. */
