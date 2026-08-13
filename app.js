@@ -39318,7 +39318,15 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // e.g. "Non-Small Cell Lung Cancer" listed among the NSCLC subtypes,
         // which reads as a duplicate rather than as "nothing finer recorded".
         const parentLevel = new Map();
-        for (const cl of this._clbBaseFilteredLines({ skipOncotree: true })) {
+        // Count over what the browser is ACTUALLY showing, minus the disease
+        // filter itself. _clbBaseFilteredLines stops short of the quick filters
+        // and the show-selected toggle, both of which are applied later in
+        // renderCellLineList, so a list narrowed to 13 EBV-transformed lines
+        // still offered "Plasma Cell Myeloma (n=19)" and the numbers in the
+        // menu added up to four times the list beneath it.
+        for (const cl of this._clbBaseFilteredLines({ skipOncotree: true })
+                .filter(cl => this._clbPassesCollections(cl))
+                .filter(cl => !this._clbShowSelectedOnly || this._clbSelectedCellLines?.has(cl))) {
             const v = src[cl];
             if (!v) continue;
             counts.set(v, (counts.get(v) || 0) + 1);
@@ -39353,6 +39361,21 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
         sel.value = current;
         this._enhanceSelect?.('clbOncotreeFilter');
+    }
+
+    // Quick-filter (collection) membership: in every "include" set and in no
+    // "exclude" set. Shared by the list and by the disease menu's counts, which
+    // have to agree about what is on screen.
+    _clbPassesCollections(cl) {
+        const states = this._clbCollectionStates;
+        if (!states || !states.size) return true;
+        const mem = this._collectionMembership || {};
+        for (const [id, state] of states) {
+            const inSet = mem[id]?.has(cl);
+            if (state === 'include' && !inSet) return false;
+            if (state === 'exclude' && inSet) return false;
+        }
+        return true;
     }
 
     _clbBaseFilteredLines(opts = {}) {
@@ -39397,15 +39420,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Collection states: each {id → 'include'|'exclude'}. Cell line must be
         // in every include set AND in none of the exclude sets to pass.
         const collectionStates = this._clbCollectionStates;
-        const collectionMem = this._collectionMembership || {};
-        const passesCollections = (cl) => {
-            for (const [id, state] of collectionStates) {
-                const inSet = collectionMem[id]?.has(cl);
-                if (state === 'include' && !inSet) return false;
-                if (state === 'exclude' && inSet) return false;
-            }
-            return true;
-        };
+        const passesCollections = (cl) => this._clbPassesCollections(cl);
 
         this.populateClbOncotreeFilter();
         let filtered = this._clbBaseFilteredLines();
