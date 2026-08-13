@@ -2158,7 +2158,21 @@
                #clbScrollableBody, which wraps the lot. */
             .clb-content { overflow: visible !important; min-height: 0 !important; }
             .clb-list-wrap { max-height: none !important; overflow: visible !important; padding: 8px 12px !important; }
-            #clbScrollableBody { -webkit-overflow-scrolling: touch; }
+            /* The card is a flex column with a fixed header and a toolbar, and
+               only what is left over scrolls. On a phone that leftover is a
+               sliver, because the stacked filter toolbar takes most of the
+               height, so the list ran out almost immediately and nothing below
+               could be reached. Make the CARD the scroller and let everything
+               inside it, toolbar included, scroll away as one page. */
+            #cellLineBrowserModal > div {
+                overflow-y: auto !important;
+                -webkit-overflow-scrolling: touch;
+            }
+            #clbScrollableBody {
+                flex: 0 0 auto !important;
+                overflow: visible !important;
+                min-height: 0 !important;
+            }
             .clb-detail { width: 100% !important; border-left: none !important; border-top: 1px solid var(--gray-200) !important; }
             /* On a phone the full cell-line card is too condensed; show only the
                executive summary + the Wiki button (deep dive opens the wiki). */
@@ -2562,7 +2576,7 @@
                         <select id="paramOncotreeFilter" class="form-control" title="Exact disease entity from Oncotree. Finer than tissue and subtype."><option value="">All diseases</option></select>
                     </div>
 
-                    <div class="form-group" id="tissueExcludeGroup">
+                    <div class="form-group mobile-hide" id="tissueExcludeGroup">
                         <div style="display: flex; align-items: center; justify-content: space-between;">
                             <label class="form-label" style="cursor: pointer; margin-bottom: 0;" onclick="document.getElementById('tissueExcludeList').style.display = document.getElementById('tissueExcludeList').style.display === 'none' ? 'block' : 'none'">Exclude Tissues: <span style="font-size: 10px; color: #6b7280;">▼ click to expand</span></label>
                             <button class="btn btn-secondary" id="resetExcludedTissuesBtn" style="padding: 1px 6px; font-size: 10px;">Reset</button>
@@ -3008,11 +3022,11 @@
 
                 <!-- Mutation Analysis Tab -->
                 <div class="tab-content" id="tab-mutation">
-                    <div style="background: #fef3c7; border: 1px solid #f59e0b; border-radius: 4px; padding: 8px 12px; margin-bottom: 10px; font-size: 11px; color: #92400e;">
+                    <div class="mobile-hide" style="background: #fef3c7; border: 1px solid #f59e0b; border-radius: 4px; padding: 8px 12px; margin-bottom: 10px; font-size: 11px; color: #92400e;">
                         <strong>Note:</strong> Differential gene effects may reflect selection bias (e.g., mutations enriched in certain cancer types) rather than direct functional consequences of the mutation. Consider filtering by lineage to control for tissue-specific effects.
                     </div>
                     <div style="margin-bottom: 10px; font-size: 11px; color: #6b7280;">
-                        <strong>Statistics:</strong> <span id="mutStatsBlurb">p-values are calculated using Welch's t-test comparing gene effect scores between wild-type (WT, 0 mutations) and mutated cell lines (1+2 or 2 mutations). Δ GE = Mean(mutated) − Mean(WT).</span>
+                        <strong>Statistics:</strong> <span id="mutStatsBlurb" class="mobile-hide">p-values are calculated using Welch's t-test comparing gene effect scores between wild-type (WT, 0 mutations) and mutated cell lines (1+2 or 2 mutations). Δ GE = Mean(mutated) − Mean(WT).</span>
                     </div>
                     <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom: 10px;">
                         <span id="mutationResultsCount">0 genes with p < 0.001</span>
@@ -4867,6 +4881,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v87_87"></script>
+    <script src="app.js?v=v87_88"></script>
 </body>
 </html>
