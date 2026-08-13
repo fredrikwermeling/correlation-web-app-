@@ -2245,6 +2245,11 @@ class CorrelationExplorer {
         html += `<button onclick="app._upsetClose()" style="background:none;border:none;font-size:16px;cursor:pointer;color:#999;">&times;</button>`;
         html += `</div>`;
         html += `<div style="padding:10px; overflow:auto; flex:1;">`;
+        // What was actually plotted, which is not always what the user picked:
+        // with no explicit pick the top genes are chosen here, and a file saved
+        // in that state carried no genes at all, so reopening it rebuilt the
+        // grid and no UpSet.
+        this._upsetPlottedGenes = upsetGenes.map(g => g.gene || g);
         html += `<div id="upsetPlotDiv" style="width:${plotW}px; height:${plotH}px;"></div>`;
         html += `</div>`;
         html += `<div style="display:flex; gap:6px; padding:6px 10px; border-top:1px solid #e5e7eb; align-items:center; flex-wrap:wrap;">`;
@@ -24162,13 +24167,43 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             // the hotspot grid.
             oncoprintKind: this._oncoprintKind || 'hotspot',
             oncoprintFilterKinds: { ...(this._oncoprintFilterKinds || {}) },
-            context: this._oncoprintContext || null
+            context: this._oncoprintContext || null,
+            // A grid or UpSet raised from the Cell Line Browser is built over
+            // the browser's cohort, and the browser's filters are its OWN
+            // controls, not the parameter panel's. Only the panel's were
+            // saved, so a plot of 75 skin lines reopened over all 1,208 and
+            // looked nothing like the figure it came from.
+            clb: this._oncoprintContext === 'clb' ? {
+                search: val('clbSearch'),
+                tissue: val('clbTissueFilter'),
+                subtype: val('clbSubtypeFilter'),
+                oncotree: val('clbOncotreeFilter'),
+                sex: val('clbSexFilter'),
+                hotspot: val('clbHotspotFilter'),
+                hotspotLevel: val('clbHotspotLevel'),
+                fusion: val('clbTranslocationFilter'),
+                fusionLevel: val('clbFusionLevel'),
+                cn: val('clbCnFilter'),
+                cnLevel: val('clbCnLevel'),
+                minGeneCoverage: val('minGeneCoverage'),
+                // Quick filters and a pasted cell-line list narrow the browser
+                // as hard as any dropdown.
+                collections: this._clbCollectionStates?.size ? [...this._clbCollectionStates.entries()] : null,
+                customList: this._customCellLineFilterCLB?.size ? [...this._customCellLineFilterCLB] : null,
+                selected: this._clbSelectedCellLines?.size ? [...this._clbSelectedCellLines] : null
+            } : null
         };
     }
 
     _buildOncoprintMeta(kind) {
         return this._buildExportMetadata(kind, { cohort: this._oncoprintCohortState(),
-            upsetGenes: kind === 'upset' ? (this._upsetSelectedGenes || null) : undefined });
+            upsetGenes: kind === 'upset' ? (this._upsetSelectedGenes || this._upsetPlottedGenes || null) : undefined,
+            // What the plot looked like, not just what it was built from.
+            upsetView: kind === 'upset' ? {
+                showCounts: this._upsetShowCounts !== false,
+                showPct: !!this._upsetShowPct,
+                topN: parseInt(document.getElementById('upsetTopN')?.value, 10) || null
+            } : undefined });
     }
 
     // Rebuilds the oncoprint (and the UpSet on top of it) from a saved file.
@@ -24186,6 +24221,31 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const el = document.getElementById(id);
             if (el && v != null) el.value = v;
         };
+        // Put the browser back the way it was BEFORE the grid is rebuilt, since
+        // the grid is built over whatever the browser is showing. Opening the
+        // browser above resets these, which is why it has to happen here.
+        if (c.clb) {
+            set('clbSearch', c.clb.search);
+            set('clbTissueFilter', c.clb.tissue);
+            this.updateClbSubtypeFilter?.();
+            set('clbSubtypeFilter', c.clb.subtype);
+            if (c.clb.oncotree) {
+                this._prefillOncotreeSelect?.('clbOncotreeFilter', c.clb.tissue || '', c.clb.subtype || '', c.clb.oncotree);
+                set('clbOncotreeFilter', c.clb.oncotree);
+            }
+            set('clbSexFilter', c.clb.sex);
+            set('clbHotspotFilter', c.clb.hotspot);
+            set('clbHotspotLevel', c.clb.hotspotLevel);
+            set('clbTranslocationFilter', c.clb.fusion);
+            set('clbFusionLevel', c.clb.fusionLevel);
+            set('clbCnFilter', c.clb.cn);
+            set('clbCnLevel', c.clb.cnLevel);
+            set('minGeneCoverage', c.clb.minGeneCoverage);
+            this._clbCollectionStates = new Map(c.clb.collections || []);
+            this._customCellLineFilterCLB = c.clb.customList?.length ? new Set(c.clb.customList) : null;
+            this._clbSelectedCellLines = new Set(c.clb.selected || []);
+            try { this.renderCellLineList?.(); } catch (e) { /* the grid rebuild below still runs */ }
+        }
         set('lineageFilter', c.lineageFilter);
         this.updateSubLineageFilter?.();
         set('subLineageFilter', c.subLineageFilter);
@@ -24231,7 +24291,20 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
         if (meta.graphType === 'upset' && meta.upsetGenes && meta.upsetGenes.length >= 2) {
             this._upsetSelectedGenes = meta.upsetGenes;
+            // Counts, percentages and the top-N cut are what the figure looked
+            // like, so they are restored before it is drawn rather than left
+            // at whatever this session happened to be set to.
+            if (meta.upsetView) {
+                if (meta.upsetView.showCounts != null) this._upsetShowCounts = !!meta.upsetView.showCounts;
+                if (meta.upsetView.showPct != null) this._upsetShowPct = !!meta.upsetView.showPct;
+                if (meta.upsetView.topN) this._upsetRestoreTopN = meta.upsetView.topN;
+            }
             this._showUpsetPlot();
+            if (this._upsetRestoreTopN) {
+                const el = document.getElementById('upsetTopN');
+                if (el) { el.value = this._upsetRestoreTopN; el.dispatchEvent(new Event('change', { bubbles: true })); }
+                this._upsetRestoreTopN = null;
+            }
         }
     }
 
