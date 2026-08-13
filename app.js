@@ -3247,15 +3247,19 @@ class CorrelationExplorer {
         const currentHotspot = document.getElementById('mutationHotspotSelect').value;
 
         // Draggable header
-        let html = `<div id="oncoprintDragHandle" style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:6px 10px; background:#f0fdf4; border-radius:8px 8px 0 0; cursor:move; user-select:none;">`;
+        let html = `<div id="oncoprintDragHandle" style="display:flex; ${_oncoPhone ? 'flex-wrap:wrap;' : ''} justify-content:space-between; align-items:center; gap:8px; padding:6px 10px; background:#f0fdf4; border-radius:8px 8px 0 0; cursor:move; user-select:none;">`;
         // "Oncoprint" is the field's word for this chart but says nothing to a
         // reader who has not met it, so the plain description leads.
         const gridTitle = gridKind === 'fusion' ? `Fusion grid, ${topGenes.length} curated driver fusions`
                         : gridKind === 'cn' ? `Copy-number grid, top ${topGenes.length} focal events`
                         : `Mutation grid, top ${topGenes.length} hotspot genes`;
-        html += `<span style="font-weight:600; font-size:12px; white-space:nowrap;">${gridTitle} <span style="font-weight:400; color:#9ca3af;">(oncoprint)</span></span>`;
-        html += `<span style="font-size:10px; color:#6b7280; white-space:nowrap;">${sortedCLs.length} cell lines${filterLabel ? ' · ' + filterLabel : ''}</span>`;
-        html += `<button onclick="document.getElementById('oncoprintPopup').remove()" style="background:none;border:none;font-size:16px;cursor:pointer;color:#999;">&times;</button>`;
+        // On a phone the header has to give: nowrap on both spans made it wider
+        // than the popup, which pushed the close button off the right edge with
+        // nothing to scroll it back, so the grid could be opened and not shut.
+        const _wrapTitle = _oncoPhone ? 'white-space:normal; flex:1 1 auto; min-width:0;' : 'white-space:nowrap;';
+        html += `<span style="font-weight:600; font-size:12px; ${_wrapTitle}">${gridTitle} <span style="font-weight:400; color:#9ca3af;">(oncoprint)</span></span>`;
+        html += `<span style="font-size:10px; color:#6b7280; ${_oncoPhone ? 'white-space:normal;' : 'white-space:nowrap;'}">${sortedCLs.length} cell lines${filterLabel ? ' · ' + filterLabel : ''}</span>`;
+        html += `<button onclick="document.getElementById('oncoprintPopup').remove()" title="Close the grid" style="background:none;border:none;cursor:pointer;color:#999;${_oncoPhone ? 'font-size:28px;min-width:44px;min-height:44px;margin-left:auto;flex:0 0 auto;line-height:1;' : 'font-size:16px;'}">&times;</button>`;
         html += `</div>`;
         html += `<div style="padding:6px 10px; overflow-y:auto; overflow-x:hidden; flex:1;">`;
         const legendWords = gridKind === 'fusion'
@@ -3271,11 +3275,13 @@ class CorrelationExplorer {
         html += `<div id="oncoprintScrollHint" style="font-size:9px; color:#9ca3af; margin-top:3px;"></div>`;
         html += `<div id="oncoprintStatus" style="font-size:10px; margin-top:4px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;"></div>`;
         html += `</div>`; // close inner padding div
-        html += `<div style="display:flex; gap:4px; padding:6px 10px; border-top:1px solid #e5e7eb;">`;
+        html += `<div style="display:flex; ${_oncoPhone ? 'flex-wrap:wrap;' : ''} gap:4px; padding:6px 10px; border-top:1px solid #e5e7eb;">`;
+        if (!_oncoPhone) {
         html += `<button onclick="app._oncoprintExport('image')" style="font-size:10px;padding:2px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:#f9fafb;" title="Choose format, print size and resolution">Export image...</button>`;
         html += `<button onclick="app._oncoprintCopy()" style="font-size:10px;padding:2px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:#f9fafb;" title="Copy the whole grid as an image to the clipboard, ready to paste into an email or slide">Copy</button>`;
         html += `<button onclick="app._oncoprintExport('csv')" style="font-size:10px;padding:2px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:#f9fafb;" title="The gene x cell line matrix as data">Export data (CSV)</button>`;
         html += `<span style="border-left:1px solid #d1d5db;height:16px;margin:0 2px;"></span>`;
+        }
         html += `<button onclick="app._showUpsetSetup()" style="font-size:10px;padding:2px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:#f0fdf4;color:#5d9239;font-weight:500;" title="Pick which genes to compare, then draw the UpSet plot">UpSet...</button>`;
         html += `<span style="border-left:1px solid #d1d5db;height:16px;margin:0 2px;"></span>`;
         const addWhat = gridKind === 'fusion' ? 'add fusion' : gridKind === 'cn' ? 'add event' : 'add gene';
@@ -11591,6 +11597,18 @@ class CorrelationExplorer {
             const box = head.parentElement;
             if (!box) return;
             const body = bodyForAfter(head);
+            if (!body) return;
+            wire(head, body, { open: false });
+        });
+
+        // Cell Line Browser, the Selection row: its label heads the row and the
+        // controls live in one .clb-row-items beside it, which is exactly the
+        // shape bodyFor wants. Collapsed by default, since a selection is made
+        // in the list below and only then is there anything to do with it.
+        scope.querySelectorAll('.clb-row-actions > .clb-row-label').forEach(head => {
+            const box = head.parentElement;
+            if (!box) return;
+            const body = bodyFor(box, head);
             if (!body) return;
             wire(head, body, { open: false });
         });
