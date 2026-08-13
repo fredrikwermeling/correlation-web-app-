@@ -26704,7 +26704,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             pointpos: 0,
             marker: {
                 color: 'rgba(80,80,80,0.5)',
-                size: 5
+                // 5 was small enough that a single cell line was hard to hit
+                // and harder to see in an exported figure.
+                size: 7
             },
             line: { color: '#374151' },
             fillcolor: 'rgba(200,200,200,0.3)',
@@ -32142,7 +32144,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         else anns.push({
             x: pt.x, y: pt.y, xref: 'x', yref: 'y', text: name,
             showarrow: true, arrowhead: 0, arrowwidth: 1, arrowcolor: '#6b7280', ax: 0, ay: -18,
-            font: { size: 10, color: '#111' }, bgcolor: 'rgba(255,255,255,0.88)',
+            font: { size: this._geDotLabelSize || 11, color: '#111' }, bgcolor: 'rgba(255,255,255,0.88)',
             bordercolor: '#d1d5db', borderwidth: 1, borderpad: 2, captureevents: true,
             _dotLabel: id, hovertext: 'Click to remove'
         });
@@ -49021,6 +49023,11 @@ ${clone.innerHTML}
         const yTickSize = layout.yaxis?.tickfont?.size || 17;
         const legendSize = layout.legend?.font?.size || 17;
         const markerSize = plotEl.data?.[0]?.marker?.size || 10;
+        // Names clicked onto the plot are annotations of their own, and were
+        // the one piece of text with no size control.
+        const dotAnns = (layout.annotations || []).filter(a => a._dotLabel);
+        const nDotLabels = dotAnns.length;
+        const dotLabelSize = dotAnns[0]?.font?.size || this._geDotLabelSize || 11;
         const hasLegend = layout.showlegend !== false && plotEl.data?.some(t => t.showlegend !== false && t.name);
 
         // Track visibility states
@@ -49120,6 +49127,8 @@ ${clone.innerHTML}
             <div style="border-top:1px solid #e5e7eb;margin:6px 0;"></div>
             <div style="font-weight:600;margin-bottom:4px;color:#1f2937;font-size:11px;">Cell line dots</div>
             ${sizeRow('Size', 'ts_marker', markerSize, 1, 40, null, true)}
+            ${nDotLabels ? `<div style="font-weight:600;margin:8px 0 4px;color:#1f2937;font-size:11px;">Cell line names <span style="font-weight:400;color:#6b7280;">, the ${nDotLabels} you clicked onto the plot</span></div>`
+                + sizeRow('Size', 'ts_dotLabel', dotLabelSize, 5, 30, null, true) : ''}
             ${plotDivId === 'scatterPlot' ? `
             <div style="display:flex;align-items:center;margin-bottom:5px;gap:4px;">
                 <span style="width:15px;"></span>
@@ -49128,14 +49137,15 @@ ${clone.innerHTML}
             </div>` : ''}
             ${this._tsHasBoxTraces(plotEl) ? `
             <div style="border-top:1px solid #e5e7eb;margin:6px 0;"></div>
-            <div style="font-weight:600;margin-bottom:4px;color:#1f2937;font-size:11px;">Box Color Scheme</div>
+            <div style="font-weight:600;margin-bottom:2px;color:#1f2937;font-size:11px;">Box Color Scheme</div>
+            <div style="font-size:10px;color:#6b7280;margin-bottom:4px;line-height:1.45;">How each box is coloured. All of them read the group's <b>mean</b> gene effect, they differ only in how they show it.</div>
             <div style="display:flex;flex-wrap:wrap;gap:4px;">
-                <button onclick="app._tsColorScheme('essential')" class="ts-color-btn" title="Red/Gray/Green by mean GE" style="font-size:10px;padding:3px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:linear-gradient(90deg,#dc2626 33%,#9ca3af 33%,#9ca3af 66%,#22c55e 66%);">Essential</button>
-                <button onclick="app._tsColorScheme('bw')" class="ts-color-btn" title="Black & white" style="font-size:10px;padding:3px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:#e5e7eb;">B&W</button>
-                <button onclick="app._tsColorScheme('blue')" class="ts-color-btn" title="Blue gradient by mean GE" style="font-size:10px;padding:3px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:linear-gradient(90deg,#1e40af,#93c5fd);">Blue</button>
-                <button onclick="app._tsColorScheme('redblue')" class="ts-color-btn" title="Red-Blue diverging" style="font-size:10px;padding:3px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:linear-gradient(90deg,#dc2626,#f5f5f5 50%,#2563eb);">Red-Blue</button>
-                <button onclick="app._tsColorScheme('viridis')" class="ts-color-btn" title="Viridis continuous" style="font-size:10px;padding:3px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:linear-gradient(90deg,#440154,#31688e,#35b779,#fde725);">Viridis</button>
-                <button onclick="app._tsColorScheme('steelblue')" class="ts-color-btn" title="Uniform steelblue" style="font-size:10px;padding:3px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:#4682b4;color:white;">Uniform</button>
+                <button onclick="app._tsColorScheme('essential')" class="ts-color-btn" title="By what the mean says: red where the group needs the gene to survive (mean below -0.5), green where knocking it out helps (mean above 0), grey in between. The box outline is dark when that group differs from the rest at p &lt; 0.05." style="font-size:10px;padding:3px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:linear-gradient(90deg,#dc2626 33%,#9ca3af 33%,#9ca3af 66%,#22c55e 66%);">Essential</button>
+                <button onclick="app._tsColorScheme('bw')" class="ts-color-btn" title="One grey for every box, for a figure that has to print in black and white." style="font-size:10px;padding:3px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:#e5e7eb;">B&W</button>
+                <button onclick="app._tsColorScheme('blue')" class="ts-color-btn" title="One colour, darker the more essential the group, so the ordering is visible without a legend." style="font-size:10px;padding:3px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:linear-gradient(90deg,#1e40af,#93c5fd);">Blue</button>
+                <button onclick="app._tsColorScheme('redblue')" class="ts-color-btn" title="Diverging around the middle of the range: red at one end, blue at the other. Good when both directions matter." style="font-size:10px;padding:3px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:linear-gradient(90deg,#dc2626,#f5f5f5 50%,#2563eb);">Red-Blue</button>
+                <button onclick="app._tsColorScheme('viridis')" class="ts-color-btn" title="Viridis, a colour scale that stays readable in greyscale and to colour-blind readers." style="font-size:10px;padding:3px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:linear-gradient(90deg,#440154,#31688e,#35b779,#fde725);">Viridis</button>
+                <button onclick="app._tsColorScheme('steelblue')" class="ts-color-btn" title="One colour for every box, so nothing in the colouring competes with the data." style="font-size:10px;padding:3px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:#4682b4;color:white;">Uniform</button>
             </div>
             ` : ''}
             ${plotDivId === 'geneEffectPlot' ? `
@@ -49327,7 +49337,7 @@ ${clone.innerHTML}
     }
 
     _tsScaleAll(direction) {
-        const ids = ['ts_title', 'ts_subtitle', 'ts_xlabel', 'ts_ylabel', 'ts_xtick', 'ts_ytick', 'ts_legend', 'ts_marker'];
+        const ids = ['ts_title', 'ts_subtitle', 'ts_xlabel', 'ts_ylabel', 'ts_xtick', 'ts_ytick', 'ts_legend', 'ts_marker', 'ts_dotLabel'];
         ids.forEach(id => {
             const inp = document.getElementById(id);
             if (!inp) return;
@@ -49665,16 +49675,39 @@ ${clone.innerHTML}
                 updates[`annotations[${subAnnIdx}].text`] = (anns[subAnnIdx].text || '').replace(/font-size:\s*\d+px/g, `font-size:${subtitleSize}px`);
             }
         } else if (titleIdx >= 0) {
-            // Annotation font.size controls <br> line spacing, set to subtitle-based
-            if (subtitleSize) updates[`annotations[${titleIdx}].font.size`] = Math.round(subtitleSize * 0.85);
-            // Update inline font sizes: first match = title, rest = subtitle
-            const raw = anns[titleIdx].text || '';
-            let isFirst = true;
-            const updatedText = raw.replace(/font-size:\s*\d+px/g, (match) => {
-                if (isFirst) { isFirst = false; return `font-size:${titleSize}px`; }
-                return subtitleSize ? `font-size:${subtitleSize}px` : match;
-            });
-            if (updatedText !== raw) updates[`annotations[${titleIdx}].text`] = updatedText;
+            // One annotation holding both. It comes in two shapes and only one
+            // of them was handled: the chart builds "<b>Title</b><br><span
+            // style='font-size:11px'>subtitle</span>", where the TITLE has no
+            // span of its own and renders at the annotation's font.size. The
+            // old code took the first inline font-size as the title's, which
+            // is the subtitle's span in that shape, so the subtitle got the
+            // title's size while the title was pushed down to 0.85 of the
+            // subtitle's. They came out swapped, exactly as reported.
+            const rawT = anns[titleIdx].text || '';
+            const partsT = rawT.split(/<br\s*\/?>/i);
+            const titleHasSpan = /font-size:\s*\d+px/i.test(partsT[0] || '');
+            if (titleHasSpan) {
+                // Title carries its own size, so font.size is only line spacing.
+                if (subtitleSize) updates[`annotations[${titleIdx}].font.size`] = Math.round(subtitleSize * 0.85);
+            } else if (titleSize) {
+                // Nothing wraps the title, so font.size IS the title's size.
+                updates[`annotations[${titleIdx}].font.size`] = titleSize;
+            }
+            if (partsT.length > 1 && (titleSize || subtitleSize)) {
+                const head = titleHasSpan && titleSize
+                    ? (partsT[0] || '').replace(/font-size:\s*\d+px/i, `font-size:${titleSize}px`)
+                    : partsT[0];
+                const tail = partsT.slice(1).map(seg => {
+                    if (!subtitleSize) return seg;
+                    return /font-size:\s*\d+px/i.test(seg)
+                        ? seg.replace(/font-size:\s*\d+px/gi, `font-size:${subtitleSize}px`)
+                        // A subtitle line with no span of its own would other-
+                        // wise inherit the title's size; give it one.
+                        : `<span style="font-size:${subtitleSize}px;color:#6b7280;">${seg}</span>`;
+                });
+                const rebuilt = [head, ...tail].join('<br>');
+                if (rebuilt !== rawT) updates[`annotations[${titleIdx}].text`] = rebuilt;
+            }
         } else if (this._tsOriginal?.usesAnnotationTitle && anns.length > 0) {
             if (subtitleSize) updates['annotations[0].font.size'] = Math.round(subtitleSize * 0.85);
             const raw = anns[0].text || '';
@@ -49716,6 +49749,17 @@ ${clone.innerHTML}
         }
 
         Plotly.relayout(plotEl, updates);
+
+        // Placed cell-line names, which are annotations rather than traces.
+        const dotLabelSize = getVal('ts_dotLabel');
+        if (dotLabelSize) {
+            this._geDotLabelSize = dotLabelSize;
+            const dotUpdates = {};
+            (plotEl.layout?.annotations || []).forEach((ann, i) => {
+                if (ann._dotLabel) dotUpdates[`annotations[${i}].font.size`] = dotLabelSize;
+            });
+            if (Object.keys(dotUpdates).length) Plotly.relayout(plotEl, dotUpdates);
+        }
 
         const markerSize = getVal('ts_marker');
         if (markerSize && plotEl.data) {
@@ -49965,6 +50009,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // the page behind doesn't jump sideways when a dialog opens.
     let locked = false;
     const applyLock = () => {
+        closeOrphanedPanels();
         const anyOpen = modals.some(isOpen);
         if (anyOpen === locked) return;
         locked = anyOpen;
@@ -49977,6 +50022,27 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             document.body.style.overflow = document.body.dataset.prevOverflow || '';
             document.body.style.paddingRight = document.body.dataset.prevPadRight || '';
+        }
+    };
+
+    // A settings panel belongs to the plot it is configuring, so it goes when
+    // that plot does. It is positioned outside the modal (so it can be dragged
+    // clear of it), which is exactly why closing the modal used to leave it
+    // hovering over an empty page, still pointed at a chart that is no longer
+    // there. Rather than wiring every close button, this asks the only
+    // question that matters: is the plot still on screen.
+    const closeOrphanedPanels = () => {
+        const app = window.app;
+        for (const [panelId, plotIdKey] of [['textSettingsPanel', '_textSettingsPlotId']]) {
+            const panel = document.getElementById(panelId);
+            if (!panel || panel.style.display === 'none' || !panel.style.display) continue;
+            const plot = document.getElementById(app?.[plotIdKey]);
+            // offsetParent is null for anything inside a display:none ancestor,
+            // which is how every one of these modals is hidden.
+            if (!plot || plot.offsetParent === null) {
+                panel.style.display = 'none';
+                if (app) app[plotIdKey] = null;
+            }
         }
     };
 
