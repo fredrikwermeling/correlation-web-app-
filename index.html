@@ -2308,6 +2308,36 @@
                 box-sizing: border-box !important; width: 100% !important; min-width: 0 !important;
             }
             .inspect-controls [id$="Dropdown"] { max-height: 45vh !important; overflow-y: auto !important; }
+            /* The cohort selectors were cutting their own text in half. The
+               toolbar gives every control a fixed height (--clb-ctl-h, ~26px)
+               and the phone rules then add 15px text and 8px of padding inside
+               that same fixed box, so a select had about 10px of content box to
+               draw 15px of text in. Drop the fixed height and let min-height
+               and padding size them. */
+            .clb-toolbar select,
+            .clb-toolbar input[type="text"],
+            .clb-toolbar .btn-sm { height: auto !important; }
+            .clb-toolbar select {
+                line-height: 1.3 !important;
+                padding-top: 6px !important;
+                padding-bottom: 6px !important;
+            }
+            /* The 1px dividers between toolbar groups read as stray vertical
+               marks once the toolbar wraps into a column. */
+            .clb-sep { display: none !important; }
+            /* The cell-line card was capped at 200px, which is roughly the
+               executive summary, so the Wiki button underneath it was cut off
+               the bottom with no way to scroll to it. The card is short on a
+               phone anyway, most of its sections are hidden here. */
+            .clb-detail { max-height: none !important; overflow: visible !important; }
+            /* Close is a labelled button, not a bare glyph: it only needs to be
+               thumb-sized, not the width of the card. */
+            #clbDetailCloseBtn {
+                width: auto !important;
+                min-height: 36px !important;
+                font-size: 13px !important;
+                padding: 6px 16px !important;
+            }
             /* A collapsed panel should be a line of text, not an empty card.
                With its border, padding and background still drawn it took the
                room of the controls it was hiding, and three of them stacked
@@ -2327,7 +2357,7 @@
                smallest: a bare glyph with no padding. Give every × a real
                touch target, and a little more glyph to aim at. */
             .modal-close,
-            #clbCloseBtn, #clbWikiCloseBtn, #clbInfoCloseBtn, #clbDetailCloseBtn,
+            #clbCloseBtn, #clbWikiCloseBtn, #clbInfoCloseBtn,
             #clbCustomCLClose, #selectionInspectClose, #closeInspect,
             #closeCorrAnalysis, #closeGeneEffect, #closeGateCompare,
             #closeGEGateCompare, #closeInfoGraphic, #closeExprCorrelatesPanel,
@@ -5037,6 +5067,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v88_01"></script>
+    <script src="app.js?v=v88_02"></script>
 </body>
 </html>
