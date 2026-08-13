@@ -2244,6 +2244,27 @@
                 text-overflow: ellipsis !important;
             }
             #clbSearch { width: 100% !important; }
+            /* "Rank by" and the best-lineage picker render into #analysisStatus
+               under the Run button after a run. It is a way of hunting for the
+               lineage with the strongest correlations, which is not what a
+               phone is for, and it read as a stray filter appearing under Run. */
+            #analysisStatus { display: none !important; }
+            /* The correlation view opened on a screenful of controls with the
+               plot somewhere below them, which is backwards: the plot is the
+               reason you opened it. Plot first, controls under it. */
+            .inspect-layout { display: flex !important; flex-direction: column !important; }
+            .inspect-plot { order: -1 !important; width: 100% !important; }
+            /* One control per row. The grid was still placing collapsed
+               headings two-across, so they read as a scattered list rather
+               than a stack of things to open. */
+            .inspect-controls { display: block !important; }
+            .inspect-controls > * { width: 100% !important; margin-bottom: 4px !important; }
+            /* The gene row had every field on its own line, taking half the
+               screen before the plot even started: gene and its measure sit
+               together, and the two pairs stack. */
+            #inspectGeneX, #inspectGeneY { flex: 1 1 110px !important; min-width: 0 !important; }
+            #xAxisDataType, #yAxisDataType { flex: 0 0 84px !important; width: 84px !important; }
+            #inspectSwapAxes { flex: 0 0 44px !important; }
             /* The gene box is the one thing you type into on a phone, and with
                the sections around it collapsed there is room to give it back. */
             #geneTextarea { min-height: 240px !important; font-size: 15px !important; }
