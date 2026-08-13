@@ -28962,7 +28962,23 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (!genes.length || !title.trim()) return { checked: false };
         const t = title.toUpperCase();
         const missingFromTitle = genes.filter(g => !t.includes(g));
-        return { checked: true, visibleTitle: title.trim().slice(0, 160), genes, matchesVisibleTitle: missingFromTitle.length === 0, missingFromTitle };
+        const full = title.trim().replace(/\s+/g, ' ');
+        // Three reading assistants in a row tried to reconcile the counts in
+        // this caption against the file and could not, because the caption
+        // describes the VIEW (its own cohort, its own on-screen p threshold)
+        // while the file carries the exported cohort. The check itself only
+        // ever compared gene names, so `matchesVisibleTitle: true` was read as
+        // a guarantee it never made. Say what was compared, and say that the
+        // numbers in the caption are not the file's numbers.
+        return {
+            checked: true,
+            _readMe: 'A guard against exporting one view while looking at another. It compares GENE NAMES ONLY between the caption on screen and this file. It does NOT check any count, threshold or cohort size, so `matchesVisibleTitle: true` says the right gene was exported and nothing more.',
+            visibleTitle: full.length > 300 ? full.slice(0, 300) + '… [caption truncated here]' : full,
+            visibleTitleWarning: 'Counts and thresholds inside this caption describe what was drawn on screen, which is not necessarily the scope of this file: the view may have been computed over a larger cohort, or with a different p threshold, than what was exported. Never quote a number out of this caption. Every number you report must come from the data in this file, with the cohort size taken from nTotal and the threshold from context.',
+            genes,
+            matchesVisibleTitle: missingFromTitle.length === 0,
+            missingFromTitle
+        };
     }
 
     // ===== Custom Export for AI ===============================================
@@ -29071,13 +29087,46 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const applied = [], ignored = [];
         const LAYER_WORDS = {};
         for (const l of this._aiRequestLayers()) for (const w of l.words) LAYER_WORDS[w] = l.key;
+        // The names an assistant reaches for when writing from memory rather
+        // than copying the syntax. Accepting them costs nothing and is the
+        // difference between a request that works and one that silently does
+        // nothing but carry the question over.
+        const KEY_ALIASES = {
+            'cell-lines': 'cohort', 'cell-line': 'cohort', 'lines': 'cohort', 'cells': 'cohort',
+            'tissue': 'cohort', 'lineage': 'cohort', 'disease': 'cohort', 'subtype': 'cohort',
+            'gene': 'genes', 'gene-list': 'genes', 'gene-set': 'genes', 'symbols': 'genes',
+            'max-genes': 'gene-limit', 'gene-count': 'gene-limit', 'limit': 'gene-limit',
+            'genes-per-matrix': 'gene-limit', 'n-genes': 'gene-limit',
+            'scan': 'scan-size', 'scan-rows': 'scan-size', 'top-n': 'scan-size',
+            'include-layers': 'include', 'extras': 'include', 'layer': 'include', 'with': 'include',
+            'compounds': 'drugs', 'drug': 'drugs',
+            'ask': 'question', 'q': 'question'
+        };
         const nameToId = this._buildCellLineNameToIdMap ? this._buildCellLineNameToIdMap() : new Map();
+        // What an assistant actually emits is markdown: bulleted or numbered
+        // lines, bold keys, the whole thing inside a code fence. Rejecting
+        // those threw away every instruction in the block except the question,
+        // which read as "the app ignored what the assistant told it".
+        let sawKey = false;
         for (const raw of String(text || '').split(/\r?\n/)) {
-            const line = raw.trim();
+            let line = raw.trim();
+            if (/^(```|~~~)/.test(line)) continue;
+            line = line
+                .replace(/^[-*•–—]\s+/, '')      // - bullet
+                .replace(/^\d+[.)]\s+/, '')                      // 1. numbered
+                .replace(/^\*\*\s*/, '').replace(/\*\*/g, '')    // **bold**
+                .replace(/^`+|`+$/g, '')                         // `code`
+                .trim();
             if (!line || /^correlate-request/i.test(line) || line.startsWith('#')) continue;
-            const m = line.match(/^([A-Za-z][A-Za-z \-_]*)\s*[:=]\s*(.*)$/);
+            const m = line.match(/^([A-Za-z][A-Za-z \-_]*)\s*(?:[:=]|->|→)\s*(.*)$/);
             if (!m) { ignored.push(line.slice(0, 60)); continue; }
-            const key = m[1].trim().toLowerCase().replace(/[ _]+/g, '-');
+            const origKey = m[1].trim().toLowerCase().replace(/[ _]+/g, '-');
+            let key = KEY_ALIASES[origKey] || origKey;
+            // "tissue: Skin" means the same as "cohort: tissue:Skin". Keep
+            // which word was used so the bare value can be read as that kind
+            // of group rather than hunted for as a cell line name.
+            const groupHint = ['tissue', 'lineage', 'disease', 'subtype'].includes(origKey) ? origKey : null;
+            sawKey = true;
             const val = m[2].trim();
             const items = () => val.split(/[,;]+/).map(x => x.trim()).filter(Boolean);
             if (key === 'cohort') {
@@ -29099,7 +29148,22 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                             continue;
                         }
                         const id = /^ACH-\d+$/i.test(t) ? t.toUpperCase() : nameToId.get(t.toUpperCase());
-                        if (id) ids.push(id); else missed.push(t);
+                        if (id) { ids.push(id); continue; }
+                        // Not a cell line name. Before giving up, read it as a
+                        // group: "cohort: Melanoma" and "tissue: Skin" are what
+                        // an assistant writes when it has the idea right and
+                        // the prefix wrong, and rejecting them sent it hunting
+                        // for a cell line called Melanoma.
+                        let got = [];
+                        for (const kind of (groupHint ? [groupHint] : ['tissue', 'disease', 'subtype'])) {
+                            got = this._cellLinesInGroup(kind, t.toLowerCase());
+                            if (got.length) {
+                                ids.push(...got);
+                                groupsNamed.push(`${got.length} ${t} lines`);
+                                break;
+                            }
+                        }
+                        if (!got.length) missed.push(t);
                     }
                     if (ids.length) {
                         settings.cohort = 'list'; settings.cohortList = [...new Set(ids)];
@@ -29155,13 +29219,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 for (const t of items()) {
                     const layer = LAYER_WORDS[t.toLowerCase()];
                     if (layer) { settings.layers[layer] = true; applied.push(`include: ${t}`); }
-                    else ignored.push(`unknown layer: ${t}`);
+                    else ignored.push(`no layer called "${t}" (the five are: drug-response, copy-number, virus, identity, matched-pairs)`);
                 }
             } else if (key === 'exclude' || key === 'drop') {
                 for (const t of items()) {
                     const layer = LAYER_WORDS[t.toLowerCase()];
                     if (layer) { settings.layers[layer] = false; applied.push(`exclude: ${t}`); }
-                    else ignored.push(`unknown layer: ${t}`);
+                    else ignored.push(`no layer called "${t}" (the five are: drug-response, copy-number, virus, identity, matched-pairs)`);
                 }
             } else if (key === 'drugs' || key === 'compounds') {
                 settings.drugFilter = items();
@@ -29171,9 +29235,22 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 }
             } else if (key === 'question') {
                 settings.question = val; applied.push('question carried over');
+            } else if (/^(compare|compare-with|comparison|versus|vs|control|reference|baseline)$/.test(key)) {
+                // Asked for by two reading assistants, because the view they
+                // came from is a two-group contrast and the syntax only has
+                // one cohort. Say plainly that it cannot be done here rather
+                // than dropping the line as gibberish.
+                ignored.push('a comparison group cannot be set from a request block: an export carries ONE cohort. Put both sides in `cohort:` and split them in the reading, or set the comparison in the Cell Line Browser and export from there');
             } else {
-                ignored.push(line.slice(0, 60));
+                ignored.push(`"${origKey}" is not one of the keys (cohort, genes, gene-limit, scan-size, include, drugs, question)`);
             }
+        }
+        // A block that set nothing at all is the failure worth explaining: the
+        // dialog otherwise reported a list of rejected lines with no hint that
+        // the whole shape was wrong.
+        if (!sawKey && String(text || '').trim()) {
+            ignored.length = 0;
+            ignored.push('nothing here is a request line. Each line must read "key: value", one per line, using the keys cohort, genes, gene-limit, scan-size, include, drugs, question. Prose is not parsed');
         }
         return { settings, applied, ignored };
     }
@@ -29409,6 +29486,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Kept off the main exportData object until composition so we can
         // omit them when null.
         let extras = null;
+        // How long each precomputed list was BEFORE any display cap, keyed by
+        // its name in extras. Five readers in a row could not tell a list cut
+        // at the top N from a complete one, and two of them answered the wrong
+        // question because of it: one saw 3 of a gene's 9 correlations and had
+        // no way to know the other 6 existed. Recorded here at build time and
+        // turned into extras._listScope at composition.
+        const _listTotals = {};
 
         // Build context (#2, richer analysis context)
         let context, cellLineGroups = {}, description = '';
@@ -29494,7 +29578,42 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 type: 'mutation_analysis', hotspotGene: mr?.hotspotGene,
                 isTranslocation: mr?.isTranslocation || false, isDamaging: mr?.isDamaging || false,
                 cnMode: mr?.cnMode || null,
-                nWT: mr?.nWT, nMutated: mr?.nMut, pValueThreshold: mr?.pThreshold,
+                // isDamaging/isTranslocation are the sub-type radio, not the
+                // evidence that split the lines, and a reader who took them at
+                // face value described the cohort wrongly: an MTAP functional-
+                // loss export carries isDamaging true while not one line in the
+                // release has an MTAP damaging point mutation, because the call
+                // is an integrated CN + mutation + expression one. Name the
+                // actual rule instead of leaving it to be inferred.
+                stratificationMethod: mr?.isTranslocation
+                    ? 'curated fusion call: a line is in the altered group when the named fusion was called in it'
+                    : mr?.isDamaging
+                        ? (mr?.cnMode === 'amp'
+                            ? 'relative copy number: the altered group is lines called amplified for this gene on the curated actionable panel'
+                            : 'integrated functional-loss call (DepMap combines copy number, mutation and expression). NOT a point-mutation test: a gene can put every line in the altered group with no damaging coding mutation anywhere in the release, because deletion alone drives the call')
+                        : 'hotspot mutation call: the altered group is lines carrying a recurrent activating mutation at a known hotspot in this gene, heterozygous or homozygous alike',
+                unalteredGroupMeaning: 'Every line that is not in the altered group, which folds "called negative" together with "never called": the two cannot be told apart from this file. On a gene where calling is incomplete the reference group is therefore slightly contaminated, which biases a difference DOWNWARD rather than inventing one.',
+                // These come from the analysis run, which can have been over a
+                // line or two more than the file carries (a line with no CRISPR
+                // screen drops out on the way here). Left bare they simply did
+                // not add up to nTotal, and a reader had to hunt for the note
+                // that explains it. Recount over the exported cohort instead,
+                // and keep the analysis numbers beside them when they differ.
+                ...(() => {
+                    const hg = mr?.hotspotGene;
+                    const mData = hg ? ((mr.isTranslocation ? this._fusionAxisData?.geneData?.[hg]?.translocations
+                        : mr.isDamaging ? this._lossAxisData?.geneData?.[hg]?.mutations
+                        : this.mutations?.geneData?.[hg]?.mutations) || {}) : {};
+                    let alt = 0;
+                    for (const cl of cellLines) if (mData[cl] >= 1) alt++;
+                    const wt = cellLines.length - alt;
+                    const drift = (mr?.nWT != null && mr?.nMut != null && (mr.nWT !== wt || mr.nMut !== alt));
+                    return {
+                        nWT: wt, nMutated: alt,
+                        ...(drift ? { countsNote: `Counted over the ${cellLines.length.toLocaleString()} cell lines in this file, so nWT + nMutated equals nTotal. The analysis on screen ran over ${(mr.nWT + mr.nMut).toLocaleString()} lines (${mr.nMut} altered, ${mr.nWT} unaltered); the difference is lines that have no CRISPR screen and so carry no data to export. Precomputed rows in extras were computed on the analysis cohort, which is why an n there can exceed what you count here by one or two.` } : {})
+                    };
+                })(),
+                pValueThreshold: mr?.pThreshold,
                 plotType: 'mutation_table', stratification: mr?.hotspotGene,
                 lineageFilter: mr?.lineageFilter || '', subLineageFilter: mr?.subLineageFilter || '',
                 oncotreeFilter: mr?.oncotreeFilter || '', oncotreeFilterMulti: mr?.oncotreeFilterMulti || null,
@@ -29522,7 +29641,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                         delta_ge: parseFloat((r.diff_mut ?? 0).toFixed(3)),
                         p_value: r.p_mut,
                         compositeScore: r.p_mut > 0 ? parseFloat((r.diff_mut * -Math.log10(r.p_mut)).toFixed(3)) : 0
-                    }))
+                    })),
+                    differentialGeneEffect_readMe: `One row per gene, comparing the ${this._aiAlterationWord(mr)} group against the rest. delta_ge is mean(altered) MINUS mean(unaltered) on gene effect, so a NEGATIVE delta_ge means the gene is more essential in the altered lines. p_value is a raw two-sided Welch t-test, not corrected for multiple testing: with this many genes tested, judge a hit on effect size and on whether its pathway partners move with it, not on p alone. compositeScore is a sort key only, defined as delta_ge x -log10(p_value), which deliberately rewards a hit for being both large and confident; it is not a statistic, has no units and no threshold, so rank with it but never quote it as a result.`
                 };
             }
         } else if (source === 'gates') {
@@ -29542,7 +29662,32 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 gateA: { n: gA.length, xRange: gAShape ? [gAShape.x0, gAShape.x1] : null, yRange: gAShape ? [gAShape.y0, gAShape.y1] : null },
                 gateB: { n: gB.length, xRange: gBShape ? [gBShape.x0, gBShape.x1] : null, yRange: gBShape ? [gBShape.y0, gBShape.y1] : null },
                 filters: filterParts,
-                plotType: 'scatter_with_gates', stratification: 'gateA_vs_gateB'
+                plotType: 'scatter_with_gates', stratification: 'gateA_vs_gateB',
+                // A gated export is the two ends of a plot, not the plot. The
+                // lines in the middle are not merely ungrouped, they are not in
+                // the file at all, and `filters: []` positively suggested
+                // otherwise. A reader called this the one fact that changed how
+                // it read everything else.
+                cohortIsGatesOnly: `This file carries ONLY the ${gA.length + gB.length} cell lines inside gate A or gate B. Cell lines whose values fall between the gates were on the plot but are absent from this file entirely, so nothing here describes them and the contrast cannot be read as a gradient across the full range. \`filters\` above lists the filters applied to the plot BEFORE gating and does not mention the gating itself.`,
+                gateProvenance: 'Gates are regions drawn by hand on the plot. The bounds below are wherever they were dragged to, not a percentile, a standard-deviation multiple or any other rule, so do not present them as a principled threshold.',
+                // A rectangle on two axes that only constrains one of them is a
+                // one-dimensional cut, and reading it as a joint condition on
+                // both genes invents a criterion nobody applied.
+                ...(() => {
+                    if (!gAShape || !gBShape || gAShape.path || gBShape.path) return {};
+                    const spanY = [Math.min(gAShape.y0, gAShape.y1), Math.max(gAShape.y0, gAShape.y1)];
+                    const spanYB = [Math.min(gBShape.y0, gBShape.y1), Math.max(gBShape.y0, gBShape.y1)];
+                    const spanX = [Math.min(gAShape.x0, gAShape.x1), Math.max(gAShape.x0, gAShape.x1)];
+                    const spanXB = [Math.min(gBShape.x0, gBShape.x1), Math.max(gBShape.x0, gBShape.x1)];
+                    const sameY = Math.abs(spanY[0] - spanYB[0]) < 1e-6 && Math.abs(spanY[1] - spanYB[1]) < 1e-6;
+                    const sameX = Math.abs(spanX[0] - spanXB[0]) < 1e-6 && Math.abs(spanX[1] - spanXB[1]) < 1e-6;
+                    if (sameY && !sameX) return { effectiveCriterion: `Both gates span the same range on the y axis (${ci?.gene2}), so y does not separate them: this is effectively a one-dimensional split on ${ci?.gene1} (x) alone. Describe it that way rather than as a joint condition on both genes.` };
+                    if (sameX && !sameY) return { effectiveCriterion: `Both gates span the same range on the x axis (${ci?.gene1}), so x does not separate them: this is effectively a one-dimensional split on ${ci?.gene2} (y) alone. Describe it that way rather than as a joint condition on both genes.` };
+                    return {};
+                })(),
+                ...(gA.length && gB.length && (Math.max(gA.length, gB.length) / Math.min(gA.length, gB.length)) >= 3
+                    ? { groupSizeImbalance: `The gates are very unequal (${gA.length} vs ${gB.length}). Raw percentages and counts in the enrichment tables therefore carry very different weight in each direction, and a percentage from the smaller gate moves by whole cell lines at a time. Read the p or q beside a row, never the percentage on its own.` }
+                    : {})
             };
             // Stratification, gates are the analysis axis here.
             cellLineGroups = { gateA: gA.map(d => d.cellLineId), gateB: gB.map(d => d.cellLineId) };
@@ -29554,7 +29699,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 extras = {
                     tissueEnrichment: gr.tissueStats,
                     subtissueEnrichment: gr.subtissueStats,
-                    mutationEnrichment: gr.mutStats?.slice(0, 200),
+                    mutationEnrichment: (_listTotals.mutationEnrichment = gr.mutStats?.length || 0,
+                                         gr.mutStats?.slice(0, 200)),
                     differentialGeneEffect: gr.diffGE?.map(g => ({
                         gene: g.gene,
                         meanA: parseFloat((g.meanA ?? 0).toFixed(3)),
@@ -29597,14 +29743,38 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 ...(source === 'correlations'
                     ? { nPairsAtOrAboveCutoff: this.results?.correlations?.length || 0,
                         nPairsPossible: (inputGenes.length * (inputGenes.length - 1)) / 2 || undefined }
-                    : { nClusters: this.results?.clusters?.length || 0 }),
+                    // nClusters used to carry clusters.length, which is one row
+                    // PER GENE, not per cluster. A ten-gene network reported
+                    // "nClusters: 10" while holding a single cluster, and a
+                    // reader took it for ten groups' worth of structure.
+                    : (() => {
+                        const rows = this.results?.clusters || [];
+                        const ids = [...new Set(rows.map(r => r.cluster))].filter(c => c !== '-' && c !== 0 && c !== undefined);
+                        const unclustered = rows.filter(r => r.cluster === '-' || r.cluster === 0).length;
+                        return {
+                            nGenesInNetwork: rows.length,
+                            nClustersFound: ids.length,
+                            nGenesUnclustered: unclustered,
+                            unclusteredMeaning: unclustered
+                                ? `${unclustered} of the ${rows.length} genes joined no cluster: nothing correlated with them above the cutoff. They are filed under the cluster id "-", which is a leftover bucket and NOT a cluster. Any pathway annotation attached to "-" describes a shared textbook label among genes that did not group together in this data, so never present it as a module.`
+                                : undefined
+                        };
+                    })()),
+                // Two things a reader had to reverse-engineer from the raw
+                // matrices: what was correlated, and over which cell lines. It
+                // typed melanoma genes in and reasonably assumed a melanoma
+                // cohort; the network was the whole panel.
+                correlatedOn: this._runBasis === 'expr'
+                    ? 'mRNA expression (log2 TPM+1): which genes are switched on together'
+                    : 'CRISPR gene effect (Chronos): which genes the same cell lines depend on. NOT expression',
+                cohortStatement: `Every correlation in this file was computed across the ${cellLines.length.toLocaleString()} cell lines described by \`filters\` above${filterParts.length ? '' : ', which is the whole panel with no tissue or disease restriction applied'}. Typing in genes associated with one disease does NOT restrict the cohort to that disease: a correlation here can be driven by differences BETWEEN tissues rather than by anything within the disease of interest. To ask the within-disease question, recompute from the matrices over the lines you want, or export again with that cohort.`,
                 filters: filterParts,
                 plotType: source === 'correlations' ? 'correlation_table' : 'cluster_network',
                 stratification: 'none'
             };
             description = source === 'correlations'
-                ? `Correlation analysis (${this.results?.mode || ''}, cutoff ${this.results?.cutoff || ''}) on ${inputGenes.length} input genes.`
-                : `Cluster network from correlation analysis (${this.results?.clusters?.length || 0} genes).`;
+                ? `Correlation analysis of ${inputGenes.length} input genes on ${this._runBasis === 'expr' ? 'mRNA expression' : 'CRISPR gene effect'}, at cutoff ${this.results?.cutoff || ''}, across ${cellLines.length.toLocaleString()} cell lines${filterParts.length ? ' (' + filterParts.join(', ') + ')' : ' (the whole panel, not restricted to any tissue)'}.`
+                : `Correlation network of ${inputGenes.length} input genes on ${this._runBasis === 'expr' ? 'mRNA expression' : 'CRISPR gene effect'}, edges drawn at |r| >= ${this.results?.cutoff || ''}, across ${cellLines.length.toLocaleString()} cell lines${filterParts.length ? ' (' + filterParts.join(', ') + ')' : ' (the whole panel, not restricted to any tissue)'}.`;
             // Source-specific extras
             if (source === 'correlations' && this.results?.correlations) {
                 extras = {
@@ -29688,8 +29858,46 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                         n: c.n
                     })),
                     correlationCutoff: this.results.cutoff,
-                    correlationsBelowCutoffNote: 'These pairs are below the cutoff used to draw the network, so they are absent from clusterGenes and from the figure. They are included so weaker or borderline relationships can still be discussed. The list is capped and does not cover every untested pair.'
+                    correlationsBelowCutoffNote: `These pairs fell short of the cutoff (${this.results.cutoff}) used to draw the network, so they are absent from clusterGenes and from the figure, and are carried so a borderline relationship can still be discussed. This list is NOT the complete set of non-drawn pairs, and the rule that shaped it matters: a pair was only recorded at all if |r| was at least ${Math.max(0.15, (this.results.cutoff || 0.5) - 0.2).toFixed(2)}, its slope cleared the minimum, and it had enough cell lines; whatever survived was then sorted by |r| and cut at 300. A pair missing from here is therefore usually a pair whose |r| was too SMALL to record, which is the opposite of unmeasured. Do not read absence as "not correlated" without checking: where inputGenePairs is present below it settles the question outright, and otherwise both genes are in the geneEffect matrix and the pair can be recomputed.`
                 };
+                // For a hand-typed gene set the whole pairwise matrix is a few
+                // hundred numbers, so there is no reason to make a reader infer
+                // anything. A reader answering "does DUSP4 sit with the MAPK
+                // genes or the lineage genes" was handed 3 of that gene's 9
+                // pairings, the 6 missing ones being exactly the weak lineage
+                // ones that would have settled it, and had no way to know they
+                // existed.
+                const _inputGenes = (this.results.geneList || []).filter(g => this.geneIndex?.has(g) || this.expressionGeneIndex?.has(g));
+                if (_inputGenes.length >= 2 && _inputGenes.length <= 60) {
+                    const idxs = this.getFilteredCellLineIndices ? this.getFilteredCellLineIndices() : null;
+                    const vecOf = new Map();
+                    for (const g of _inputGenes) {
+                        const full = this._analysisVector(g);
+                        if (full) vecOf.set(g, idxs && idxs.length ? idxs.map(i => full[i]) : Array.from(full));
+                    }
+                    const pairs = [];
+                    for (let a = 0; a < _inputGenes.length; a++) {
+                        for (let b = a + 1; b < _inputGenes.length; b++) {
+                            const g1 = _inputGenes[a], g2 = _inputGenes[b];
+                            const v1 = vecOf.get(g1), v2 = vecOf.get(g2);
+                            if (!v1 || !v2) continue;
+                            const res = this.pearsonWithSlope(v1, v2);
+                            if (!res || !res.n) continue;
+                            pairs.push({
+                                gene1: g1, gene2: g2,
+                                r: Math.round(res.correlation * 1000) / 1000,
+                                p: this._pearsonP(res.correlation, res.n),
+                                slope: Math.round(res.slope * 1000) / 1000,
+                                n: res.n,
+                                drawnInNetwork: Math.abs(res.correlation) >= (this.results.cutoff || 0.5)
+                            });
+                        }
+                    }
+                    if (pairs.length) {
+                        extras.inputGenePairs = pairs.sort((x, y) => Math.abs(y.r) - Math.abs(x.r));
+                        extras.inputGenePairs_readMe = `EVERY pairing among the ${_inputGenes.length} genes that were typed in, all ${pairs.length} of them, with no cutoff and no cap. This is the list to answer "does gene X group with these genes or those": it is complete, so a small or zero r here IS the answer rather than a gap. \`drawnInNetwork\` says whether the pair cleared the ${this.results.cutoff} cutoff and so appears in the figure; the ones that did not are still real measurements. Correlated on ${this._runBasis === 'expr' ? 'mRNA expression' : 'CRISPR gene effect'} across the ${this.results.geneList ? '' : ''}cohort described in context, the same values as the matrices in this file.`;
+                    }
+                }
                 // Per-cluster pathway annotation. For each cluster, list the
                 // wiki cancer pathways and CORUM / Reactome complexes whose
                 // gene set overlaps with the cluster members. Saves the LLM
@@ -29719,9 +29927,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                             if (memSet.has(p)) sharedCorum.set(p, (sharedCorum.get(p) || 0) + 1);
                         }
                     }
+                    // The leftover bucket gets annotated like a cluster, and it
+                    // reads like one: "RAS / MAPK, overlap NRAS + MAP2K1" on
+                    // two genes that in fact correlate at r = 0.003. The
+                    // warning about it lived in another field entirely, so put
+                    // it on the row a reader is actually looking at.
+                    const isLeftover = clusterId === '-' || clusterId === '0' || clusterId === 0;
                     annotations.push({
                         cluster: parseInt(clusterId, 10) || clusterId,
                         nMembers: members.length,
+                        ...(isLeftover ? { NOT_A_CLUSTER: 'These genes joined no cluster: nothing correlated with any of them above the cutoff. They are grouped here only because they were left over. Any pathway named below is a shared TEXTBOOK label among genes that did NOT group together in this data, so it is the opposite of a finding, and presenting it as a module would be wrong. Check the pair in extras.inputGenePairs before saying anything about these genes together.' } : {}),
                         wikiPathwayOverlaps: wikiHits.slice(0, 5),
                         nCorumCoMembers: sharedCorum.size
                     });
@@ -29750,7 +29965,46 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 // column of the differential lists. Saying so stops a reader
                 // attempting the same-lineage control the general guidance
                 // asks for and quietly getting it wrong.
-                comparedLinesIncluded: 'no - the matrices and per-line annotation cover the SELECTED lines only. The comparison set is present only as the meanCompared column of the differential lists, so it cannot be re-split (by lineage, mutation or anything else) from this file. To contrast the selection against one specific comparison group instead of everything, set that group as the comparison in the Cell Line Browser and export again.'
+                comparedLinesIncluded: 'no - the matrices and per-line annotation cover the SELECTED lines only. The comparison set is present only as the meanCompared column of the differential lists, so it cannot be re-split (by lineage, mutation or anything else) from this file. To contrast the selection against one specific comparison group instead of everything, set that group as the comparison in the Cell Line Browser and export again.',
+                // Naming nothing about the comparison group left a reader
+                // unable to tell whether it was BRAF-wild-type melanoma or no
+                // melanoma at all, which decided whether the top hit meant
+                // "BRAF-driven" or merely "melanoma". A breakdown costs a few
+                // dozen bytes and settles it.
+                ...(() => {
+                    const cmp = sides?.comparison || [];
+                    if (!cmp.length) return {};
+                    const tally = (fn) => {
+                        const c = {};
+                        for (const cl of cmp) { const k = fn(cl) || 'unlabelled'; c[k] = (c[k] || 0) + 1; }
+                        return Object.fromEntries(Object.entries(c).sort((a, b) => b[1] - a[1]).slice(0, 12));
+                    };
+                    return {
+                        comparisonGroupComposition: {
+                            _readMe: 'What the selection was actually compared WITH, counted up. The comparison lines themselves are not in this file, but their make-up is, because whether the contrast means anything depends entirely on what sits on the other side of it.',
+                            byTissue: tally(cl => this.getCellLineLineage(cl)),
+                            byDisease: tally(cl => this.cellLineMetadata?.oncotreeSubtype?.[cl] || this.cellLineMetadata?.primaryDisease?.[cl])
+                        }
+                    };
+                })(),
+                // What the ticks meant. The app knows when the selection came
+                // out of a filter; when it came from hand-picking it does not,
+                // and saying which is which stops a reader inventing a rule.
+                selectionRule: (() => {
+                    const v = (id) => document.getElementById(id)?.value || '';
+                    const bits = [];
+                    if (v('clbTissueFilter')) bits.push(`tissue = ${v('clbTissueFilter')}`);
+                    if (v('clbSubtypeFilter')) bits.push(`subtype = ${v('clbSubtypeFilter')}`);
+                    if (v('clbOncotreeFilter')) bits.push(`disease = ${v('clbOncotreeFilter')}`);
+                    if (v('clbHotspotFilter')) bits.push(`hotspot mutation in ${v('clbHotspotFilter')}`);
+                    if (v('clbTranslocationFilter')) bits.push(`fusion ${v('clbTranslocationFilter')}`);
+                    if (v('clbCnFilter')) bits.push(`copy-number event in ${v('clbCnFilter')}`);
+                    for (const f of (this._activeOncoprintFilters || [])) bits.push(`${f.gene} ${this._gridStateWord(f.state)}`);
+                    for (const [k, s] of (this._clbCollectionStates || new Map())) bits.push(`quick filter "${k}" ${s}`);
+                    return bits.length
+                        ? `The browser was filtered to: ${bits.join('; ')}. Those filters are what the selection was drawn from, though lines may also have been ticked or unticked by hand on top of them.`
+                        : 'No filter was active in the Cell Line Browser, so these lines were picked by hand. Whatever they have in common is not recorded anywhere in this file: work it out from cellLineMetadata rather than assuming a rule, and say which rule you inferred.';
+                })()
             };
             description = `${sel.length} cell lines picked out in the Cell Line Browser, compared with ${sides?.cmpLabel || 'all other cell lines'}.`;
             const rows = this._geInspectResults?.rows || [];
@@ -29845,6 +30099,49 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 description = `${n} cell line${n === 1 ? '' : 's'} from the ${source || 'current'} view.`;
             }
         }
+        // A custom export can replace the cohort outright. When it does, the
+        // view's own precomputed results were computed over a DIFFERENT set of
+        // cell lines, and shipping them beside the new matrices is the worst
+        // thing this file can do: a request for lung lines came back carrying
+        // a melanoma selection differential whose top rows named BRAF, DUSP4
+        // and SOX10, not one of them in the matrices, under a context block
+        // describing 50 cell lines that were not the 126 in the file.
+        if (custom && custom.cohort !== 'view') {
+            const viewCLs = this._getAICellLines(source) || [];
+            const a = new Set(viewCLs), b = new Set(cellLines);
+            // Overlap both ways, not equality. The flow this feature exists for
+            // is "narrow the genes, keep the cohort", and there the two sets
+            // differ by the odd line that has no screen; throwing the view's
+            // results away over one line out of 75 would gut the useful case.
+            // What must be caught is a cohort that is genuinely a different
+            // set, including one that merely CONTAINS the view's lines: a
+            // 50-line selection differential sitting in a 75-line file is
+            // describing two thirds of it and reads as describing all of it.
+            const inBoth = [...a].filter(x => b.has(x)).length;
+            const union = new Set([...a, ...b]).size;
+            const jaccard = union ? inBoth / union : 0;
+            const sameCohort = jaccard >= 0.9;
+            if (sameCohort && inBoth < union && extras) {
+                extras._cohortDrift = `The precomputed results here were computed over the ${viewCLs.length.toLocaleString()} cell lines of the view this was exported from, and this file carries ${cellLines.length.toLocaleString()}; ${union - inBoth} line(s) are in one and not the other, normally because a line has no CRISPR screen. The two are the same cohort for practical purposes, but where a count in a precomputed row disagrees with what you count in the matrices by one or two lines, this is why.`;
+            }
+            if (!sameCohort) {
+                const overlap = [...b].filter(x => a.has(x)).length;
+                const dropped = extras ? Object.keys(extras).filter(k => !k.startsWith('_') && !k.endsWith('_readMe')) : [];
+                extras = null;
+                cellLineGroups = {};
+                context = {
+                    type: 'custom_export',
+                    plotType: 'none', stratification: 'none',
+                    builtFrom: 'the Custom export for AI dialog, with a cohort named in the request rather than taken from whatever view was on screen',
+                    cohortReplaced: `The ${cellLines.length.toLocaleString()} cell lines here were named in the request. They are NOT the cohort of the view that happened to be open, which held ${viewCLs.length.toLocaleString()} lines and overlaps this file by ${overlap}.`,
+                    viewResultsDropped: dropped.length
+                        ? `The open view's precomputed results (${dropped.join(', ')}) were computed over its cohort, not this one, so they have been REMOVED rather than shipped beside matrices they do not describe. Nothing here is left over from it. To get numbers like those for THIS cohort, set this cohort up in the app and export from that view.`
+                        : 'The open view had no precomputed results, so nothing had to be dropped.',
+                    whatToAnalyse: 'There is no precomputed contrast in this file. Work from the matrices, cellLineMetadata and any optional layers: define whatever grouping the question needs (by mutation, tissue, disease or anything else in cellLineMetadata) yourself, over cellLineOrder, and compute it.'
+                };
+                description = `${cellLines.length.toLocaleString()} cell lines requested through the Custom export for AI dialog, with the genes named in the request.`;
+            }
+        }
         context.description = description;
         // Record the visible-title cross-check in the export; warn on mismatch.
         // It lives at the top level, not inside `context`: it is the export
@@ -29870,7 +30167,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // user noticed). With the gene cap, even a 1186-cell correlation
         // export fits comfortably under the 30 MB limit while still giving
         // the AI matrix context.
-        context.dataTier = `${tierLabel} (this describes the geneEffect / expression MATRICES only; precomputed lists in extras have their own caps, stated with each list)`;
+        context.dataTier = `${tierLabel} (this describes the geneEffect / expression MATRICES only${extras ? '; the precomputed lists in extras are governed separately, and extras._listScope says for each one whether it is complete or was cut' : ', and this file carries no precomputed lists for it to be confused with'})`;
         // An unfiltered view was arriving with five empty strings and a null
         // ahead of the two fields that carry the answer. A filter that is not
         // set is not information.
@@ -29924,6 +30221,24 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const _onCode = this.cellLineMetadata?.oncotreeCode?.[cl] || '';
             if (_onSub && _onSub !== entry.subtype) entry.oncotreeSubtype = _onSub;
             if (_onCode) entry.oncotreeCode = _onCode;
+            // Who the line came from. The wiki's written summary already
+            // states the donor's age and sex and the line's RRID, and a reader
+            // checking that prose against the file found none of it there and
+            // had to drop the claims as unverifiable. They are four small
+            // strings, and they are what identifies a line to a bench
+            // scientist ordering one.
+            {
+                const M = this.cellLineMetadata || {};
+                const donor = {};
+                const age = M.age?.[cl];
+                if (age !== undefined && age !== null && age !== '' && !isNaN(parseFloat(age))) donor.age = parseFloat(age);
+                if (M.ageCategory?.[cl]) donor.ageCategory = M.ageCategory[cl];
+                if (M.sex?.[cl]) donor.sex = M.sex[cl];
+                if (M.primaryOrMetastasis?.[cl]) donor.primaryOrMetastasis = M.primaryOrMetastasis[cl];
+                if (M.sampleCollectionSite?.[cl]) donor.collectionSite = M.sampleCollectionSite[cl];
+                if (Object.keys(donor).length) entry.donor = donor;
+                if (M.rrid?.[cl]) entry.rrid = M.rrid[cl];
+            }
             // Proliferation is the standard alternative explanation for a
             // dependency of modest size, so it belongs in the file rather than
             // one export away.
@@ -30722,8 +31037,42 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     }
                     extras.focalGeneMutationSummary = {
                         coreDrivers: coreRows.sort((a, b) => Math.abs(b.t) - Math.abs(a.t)),
-                        topByEffect: extRows.slice(0, 20)
+                        // An empty array here is ambiguous between "nothing
+                        // qualified" and "something upstream broke", and a
+                        // reader flagged not being able to tell. Say which.
+                        ...(extRows.length
+                            ? { topByEffect: extRows.slice(0, 20) }
+                            : { topByEffect: [], topByEffect_whyEmpty: `No gene on the extended driver panel reached the minimum of 10 mutated cell lines within this cohort of ${cellLines.length.toLocaleString()}, so none was testable. This is a statement about the size and make-up of the cohort, not about any gene's effect.` })
                     };
+                }
+                // Microsatellite instability, on the same footing as the driver
+                // genes. It is a per-line binary the app already holds and one
+                // of the handful of splits people actually come asking about
+                // (WRN being the standard example), yet answering "does this
+                // dependency track MSI" meant pulling the flag out line by line
+                // and running the test by hand.
+                {
+                    const msiVals = [], mssVals = [];
+                    for (let j = 0; j < cellLines.length; j++) {
+                        const idx = geCLIndices[j];
+                        if (idx === -1) continue;
+                        const v = targetData[idx];
+                        if (isNaN(v)) continue;
+                        (this.inferredSubtypes?.byCellLine?.[cellLines[j]]?.msi === true ? msiVals : mssVals).push(v);
+                    }
+                    if (msiVals.length >= 3 && mssVals.length >= 3) {
+                        const w = welch(msiVals, mssVals);
+                        if (w) {
+                            extras = extras || {};
+                            extras.focalGeneMsiSummary = {
+                                n_msiHigh: msiVals.length, n_notCalled: mssVals.length,
+                                mean_msiHigh: w.mx, mean_notCalled: w.my,
+                                delta: parseFloat((w.mx - w.my).toFixed(3)),
+                                t: w.t, p: parseFloat(w.p.toExponential(3)),
+                                _readMe: `Welch's t on the focal gene's gene effect, MSI-high lines against the rest of this cohort. delta is mean(MSI-high) MINUS mean(rest), so a NEGATIVE delta means the gene is more essential in the MSI-high lines. The "rest" group is every line NOT called MSI-high, which folds "called MSS" together with "never called": the two cannot be separated, so the comparison is slightly conservative rather than inflated. Per-line status is cellLineMetadata[id].inferred.msi, present only on MSI-high lines.`
+                            };
+                        }
+                    }
                 }
                 // The same test on curated copy-number events. An amplified
                 // driver is the first alternative explanation for a lineage
@@ -30909,13 +31258,15 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             correlationPairsBelowCutoff: 'The strongest pairs that did NOT reach the cutoff, so the gap between the last hit and the first miss is visible. The cutoff is a display threshold, not a claim of no relationship.',
             tissueStratifiedCorrelations: 'Top 20 pairs broken out by tissue; each tissue with n>=10 lines reports its own r. Flags lineage-driven artifacts, where an overall r vanishes inside every individual tissue.',
             clusterGenes: 'Per gene: its cluster, whether it was an input gene, mean and sd of its effect.',
-            clusterAnnotations: 'Per cluster: wiki cancer-pathway overlaps with >=2 shared genes, plus CORUM co-member count. Tells you whether a cluster is biologically coherent or a grab-bag.',
+            clusterAnnotations: 'Per cluster: wiki cancer-pathway overlaps with >=2 shared genes, plus CORUM co-member count. Tells you whether a cluster is biologically coherent or a grab-bag. One row may cover the leftover bucket of genes that joined no cluster; that row carries a NOT_A_CLUSTER field and its pathway names mean nothing about this data.',
             correlationsBelowCutoff: 'Pairs under the cutoff used to draw the network, absent from clusterGenes and from the figure. Capped; does not cover every untested pair.',
             correlationCutoff: 'The |r| threshold used to draw the network.',
             expressionCorrelates: 'Precomputed expression-correlate results from that view.',
             focalGeneTissueSummary: 'Focal-gene gene effect per tissue / subtype / Oncotree subtype: mean, sd, n, zVsOverall. Three stratifications because the disease group alone is too coarse for a question about one disease inside it. Groups under the solid-n threshold are kept and marked lowN rather than dropped. Where the ranking pass ran, each group also carries selectivityZ, focalGeneRankAmongGenes / nGenesRanked and groupZSdAcrossGenes; _groupScoring on the object explains how to read them.',
             groupContrastNull: 'What a RANDOM group of k cell lines does by chance, as percentiles at k = 3, 5, 10, 25, 50. The calibration for judging whether a small group\'s mean is remarkable.',
             focalGeneMutationSummary: "Welch's t comparing mutated vs WT lines on focal-gene gene effect. coreDrivers: canonical drivers, always shown at n_mut>=5 regardless of effect size. topByEffect: top 20 from the extended panel at n_mut>=10, ranked by |t|.",
+            focalGeneMsiSummary: 'Welch\'s t on the focal gene, MSI-high lines against every line not called MSI-high, emitted whenever both sides reach 3 lines in this cohort. The standard test for a mismatch-repair-linked dependency, precomputed so it does not have to be assembled from the per-line flags.',
+            inputGenePairs: 'Every pairing among the genes that were typed in, complete and uncapped, each with r, its two-sided p, slope, n, and whether the pair cleared the network cutoff. Use this rather than the below-cutoff list when asking which genes group together: it is the one correlation list in the file where absence of a strong value is a real answer rather than a gap.',
             focalGeneCnSummary: "Welch's t comparing lines with a curated focal amplification / deletion of a driver gene against lines without, on focal-gene gene effect. The copy-number counterpart of focalGeneMutationSummary, and the first alternative explanation to rule out for any lineage dependency.",
             focalGeneVarianceWarning: 'Emitted ONLY when the focal axis sits in cohort noise (mean gene effect near 0 with no essential lines, or expression sd < 0.5). When the check passes, focalGeneVarianceCheck says so positively instead.',
             focalGeneVarianceCheck: 'The variance check having run and passed, stated rather than left to be inferred from a missing warning.',
@@ -30931,11 +31282,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             nTotal: cellLines.length,
             dataStructure: {
                 cellLineOrder: 'Array of DepMap cell line IDs. Defines column order for geneEffect and expression matrices. Length = nTotal.',
-                cellLineMetadata: 'Object keyed by cell line ID. Per cell line: name, tissue, subtype, mutations (gene → {hotspot: 0|1|2, damaging: bool, caveat?: "polymorphic_locus"}), clinicalFusions (curated driver fusion calls with tier), inferred (DepMap inferred subtypes, specificVariants like KRAS p.G12D, namedFusions, functionalLoss, msi), signatures (ploidy, wgd, cin, lohFraction, msiScore, aneuploidy; the boolean flags are emitted only when true, so an absent flag means not called rather than called negative), cnEvents ({ amplifications: [{gene, cn, tier}], deletions: [{gene, cn, tier}] }, curated focal CN events from a clinically actionable panel; amp tier is "amp" (CN ≥ 3.0) or "strong_amp" (≥ 5.0); deletion tier is "del" (CN ≤ 0.5) or "deep_del" (≤ 0.3) on DepMap relative-CN scale where 1.0 = diploid; the 8 TSGs in inferred.functionalLoss are NOT duplicated here), lehmannTnbc ({ tnbcType6, tnbcType4 }, Lehmann TNBC subtype assignments from JCI 2011 / PLOS ONE 2016 for the ~22 panel cell lines that overlap DepMap; six-class: BL1, BL2, IM, M, MSL, LAR; four-class collapses IM/MSL as immune/stromal contamination), class1AntigenPresentation (ABSENT on a line means either not compromised or never assessed, and the two cannot be told apart here; { status: "reduced" | "likely_lost", reasons: [...], evidence: { b2mDamaging?, classOneExprMeanZ?, classOneCn? } }, functional inference combining B2M damaging mutations + HLA-A/B/C expression z-score vs cohort + B2M-normalized HLA copy number; only emitted when class-I presentation looks compromised; NOT allele-specific LOH detection). Also per cell line where available: oncotreeSubtype / oncotreeCode (finer than `subtype`, which is the Oncotree disease GROUP and cannot separate CLL from DLBCL or myeloma), growthRate (CRISPR-inferred proliferation, the standard alternative explanation for a modest dependency), meanGeneEffect + meanGeneEffectPercentile (that line\'s mean across the whole gene-effect matrix, and where that mean ranks among EVERY screened cell line in the release, not just the ones in this file; the "is this screen globally sick" control, so a percentile near 0 means the line looks sensitive to almost any knockout and a strong-looking dependency in it deserves less weight) and focalGeneZWithinLine (the focal gene\'s z against that line\'s OWN dependency distribution, the "is this gene unusual for this line" control). The `caveat: "polymorphic_locus"` flag marks HLA / MIC / KIR genes, calls in these highly polymorphic regions typically reflect germline allelic divergence from GRCh38, not somatic events.',
+                cellLineMetadata: 'Object keyed by cell line ID. Per cell line: name, tissue, subtype, mutations (gene → {hotspot: 0|1|2 where 0 = wild type, 1 = one copy carries the hotspot, 2 = both copies or multiple hits; damaging: bool, a likely loss-of-function variant; caveat?: "polymorphic_locus"}. The list per line is every call DepMap makes for it, not a top N, so its length varies by line because mutational burden does; a gene absent from a line was called wild type), clinicalFusions (curated driver fusion calls with tier), inferred (DepMap inferred subtypes, specificVariants like KRAS p.G12D, namedFusions, functionalLoss, msi. Every field in `inferred` is emitted ONLY when it is true or non-empty, so absence means the call was not made and never means it was made negative. functionalLoss covers exactly eight tumour suppressors and no others (TP53, CDKN2A, MTAP, APC, PTEN, NF1, RB1, VHL): a gene outside those eight is never listed here however deleted it is, so absence for any other gene says nothing at all. It is an integrated copy-number + mutation + expression call, so a line can be listed with no damaging coding mutation anywhere, deletion alone being enough), signatures, whose numbers are useless without their scales, so: ploidy (average copies per locus, ~2 is diploid, ~4 after a whole-genome doubling), wgd (boolean, whole-genome doubled), cin (chromosomal instability, 0 to 1, higher is more rearranged), lohFraction (fraction of the genome under loss of heterozygosity, 0 to 1), msiScore (continuous microsatellite-instability score; it is NOT a percentage and has no fixed ceiling. Do not invent a threshold for it: use inferred.msi as the call, and read msiScore only as a severity gradient underneath that call), aneuploidy (count of chromosome arms called aneuploid, out of 39). These are emitted only where DepMap computed them, so a line missing them was not measured rather than measured as normal; the boolean flags among them are emitted only when true, so an absent flag means not called rather than called negative, cnEvents ({ amplifications: [{gene, cn, tier}], deletions: [{gene, cn, tier}] }, curated focal CN events from a clinically actionable panel; amp tier is "amp" (CN ≥ 3.0) or "strong_amp" (≥ 5.0); deletion tier is "del" (CN ≤ 0.5) or "deep_del" (≤ 0.3) on DepMap relative-CN scale where 1.0 = diploid; the 8 TSGs in inferred.functionalLoss are NOT duplicated here), lehmannTnbc ({ tnbcType6, tnbcType4 }, Lehmann TNBC subtype assignments from JCI 2011 / PLOS ONE 2016 for the ~22 panel cell lines that overlap DepMap; six-class: BL1, BL2, IM, M, MSL, LAR; four-class collapses IM/MSL as immune/stromal contamination), class1AntigenPresentation (ABSENT on a line means either not compromised or never assessed, and the two cannot be told apart here; { status: "reduced" | "likely_lost", reasons: [...], evidence: { b2mDamaging?, classOneExprMeanZ?, classOneCn? } }, functional inference combining B2M damaging mutations + HLA-A/B/C expression z-score vs cohort + B2M-normalized HLA copy number; only emitted when class-I presentation looks compromised; NOT allele-specific LOH detection). Also per cell line where available: donor ({ age in years, ageCategory, sex, primaryOrMetastasis, collectionSite } describing the patient the line came from, not how the line behaves in culture) and rrid (the Cellosaurus accession, the unambiguous identifier to quote when ordering or citing a line), oncotreeSubtype / oncotreeCode (finer than `subtype`, which is the Oncotree disease GROUP and cannot separate CLL from DLBCL or myeloma), growthRate (CRISPR-inferred proliferation, on a relative scale where 1.0 is a typical line in the panel and higher is faster, NOT doublings per day; the standard alternative explanation for a modest dependency, so compare it between your groups before crediting a difference in dependency), meanGeneEffect + meanGeneEffectPercentile (that line\'s mean across the whole gene-effect matrix, and where that mean ranks among EVERY screened cell line in the release, not just the ones in this file; the "is this screen globally sick" control, so a percentile near 0 means the line looks sensitive to almost any knockout and a strong-looking dependency in it deserves less weight) and focalGeneZWithinLine (the focal gene\'s z against that line\'s OWN dependency distribution, the "is this gene unusual for this line" control). The `caveat: "polymorphic_locus"` flag marks HLA / MIC / KIR genes, calls in these highly polymorphic regions typically reflect germline allelic divergence from GRCh38, not somatic events.',
                 geneEffect: 'Object keyed by gene name. Each value is an array of CRISPR gene effect scores aligned to cellLineOrder. Negative = essential. null = missing. Always included regardless of the variance threshold: the focal gene, every gene named in topCoessentials, and every gene the user typed into a multi-gene view, so any precomputed number about them can be recomputed from this file.',
                 expression: 'Object keyed by gene name. Each value is an array of log2(TPM+1) RNA expression values aligned to cellLineOrder. null = missing. Always included regardless of the variance threshold: the focal gene where there is one, the genes surfaced in topCorrelates, the focal gene\'s pathway / complex partners, and every gene the user typed into a multi-gene view. Partner sources are layered: hand-curated high-value complexes (NEDD8/CRL, Proteasome, Hippo, MYC, TP53, BRCA, mTOR, BCL2, splicing) → CORUM physical protein complexes (~5000 human genes) → wiki cancer pathways (RAS/MAPK, PI3K, RTK family, etc.) → Reactome pathway / signaling-cascade co-members (~10000 human genes; broad parents filtered out, only pathways with 5-100 genes kept). So for SMARCA4 you get the BAF subunits via CORUM; for MCM4 the MCM2-7 helicase; for IL4R the JAK/STAT cascade via Reactome; for arbitrary genes you typically get something useful from at least one of the four layers.',
                 topCorrelates: 'Optional. Top 30 expression-vs-GE correlates of the focal gene: { gene, r (Pearson, focal-gene GE vs partner expression across the cohort), n }. Gated at n >= max(50, 0.6 * cohortSize) to drop partial-coverage genes. Polarity: positive r means high partner expression covaries with weaker focal-gene dependency (less negative GE).',
-                topCoessentials: 'Optional. Top 30 GE-vs-GE co-essentials of the focal gene: { gene, r (Pearson, focal-gene GE vs partner GE across the cohort), n }. Same n-gate as topCorrelates. Every gene named here is also present in the geneEffect matrix (added back if the variance filter dropped it), so the LLM can verify by recomputing. Polarity: positive r means lines that depend more on the partner depend less on the focal gene (classic co-essentiality buffering pattern within a complex). Negative r means partner and focal gene are co-essential, both required by the same lines (same-pathway dependency).',
+                topCoessentials: 'Optional. Top 30 GE-vs-GE co-essentials of the focal gene: { gene, r (Pearson, focal-gene GE vs partner GE across the cohort), n }. Same n-gate as topCorrelates. Every gene named here is also present in the geneEffect matrix (added back if the variance filter dropped it), so the LLM can verify by recomputing. Polarity, and note the sign convention because it is easy to get backwards: gene effect is NEGATIVE for a dependency, so two genes both needed by the same lines move down together and their r is POSITIVE. Positive r therefore means partner and focal gene are co-essential, required by the same lines, which is the same-complex / same-pathway pattern: BRAF against MAP2K1, MAP2K2 and MAPK1 sits near r = +0.6 to +0.8. Negative r means the opposite, lines that depend on the partner do NOT depend on the focal gene, which is the buffering pattern seen between paralogues, where one covers for the other and only the line that has lost one needs the other. Neither sign is a mechanism on its own: check the pair against the geneEffect matrix, which carries every gene named here.',
                 topExpressionCorrelates: 'Optional. Top 30 expression-vs-expression correlates of the focal gene: { gene, r (Pearson, focal-gene expression vs partner expression across the cohort), n }. Same n-gate as topCorrelates. Every gene named here is in the expression matrix (the always-include set carries them through the variance filter). Polarity: positive r means partner expression is co-regulated with focal-gene expression (often shared transcriptional program / phenotype state / lineage marker); negative r means anti-correlated (often a competing program). Note: in homogeneous filtered cohorts, top hits often reflect transcriptional state / phenotype switches rather than direct mechanistic links. Suppressed when the focal gene\'s expression has near-zero variance in the cohort (SD < 0.05).',
                 cellLineGroups: 'Optional. Cell line IDs grouped by analysis stratification (WT/mut1/mut2 for mutation, gateA/gateB for gate comparison, etc.).',
                 extras: 'Optional. Source-specific precomputed analysis results. When this file carries extras, this entry is replaced by an object documenting ONLY the keys actually present, so what you read here is what is in the file. Keys ending in _readMe describe themselves.',
@@ -30977,10 +31328,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                         question: 'the question to carry with the file, so the next reader starts where you left off.'
                     },
                     whatEachLayerAdds: Object.fromEntries(layers.map(l => [l.canonical, l.adds])),
-                    alreadyInThisFile: present.length ? present : 'none of the optional layers',
+                    alreadyInThisFile: (present.length ? present.join(', ') : 'none of the five optional layers')
+                        + '. Note this covers ONLY those five opt-in layers. It is not a list of what the file holds: mutation calls, fusion calls, curated copy-number events, microsatellite-instability status, ploidy and genome-instability signatures, proliferation rate and Oncotree disease labels are core per-line content and are always carried, whatever it says here. Before deciding something is missing, check whatIsInThisFile.perCellLineAttributes, which answers that directly.',
                     tissueNamesThatResolve: tissues,
                     diseaseAndSubtypeNames: 'Not listed here, there are too many. Take them from cellLineMetadata in this file: `subtype` is the disease group and `oncotreeSubtype` the finer label, and either is a legal value for disease: or subtype:. Matching ignores case and accepts a partial name, so disease:Melanoma takes cutaneous, acral and mucosal melanoma alike. Anything that resolves to no cell lines is reported back rather than silently ignored.',
-                    notes: 'One instruction per line, order does not matter, and anything you leave out is left as the dialog currently has it, so write every line that matters rather than relying on what a previous export set. Ask only for what the question needs: a file carrying everything is slower to read and may be too large to attach. If the question is about where a gene sits relative to its neighbours, name a region in `genes:` as well, since copy number is only carried for the genes in the matrices.'
+                    notes: 'One instruction per line, order does not matter, and anything you leave out is left as the dialog currently has it, so write every line that matters rather than relying on what a previous export set. Ask only for what the question needs: a file carrying everything is slower to read and may be too large to attach. If the question is about where a gene sits relative to its neighbours, name a region in `genes:` as well, since copy number is only carried for the genes in the matrices.',
+                    whatTheParserForgives: 'Write the block however you normally would. Markdown bullets, numbered lines, **bold** keys and surrounding ``` fences are all stripped before parsing. Keys are matched loosely, so cell-lines / lines / gene-list / max-genes / compounds all reach the right setting, and `tissue: Skin` works as well as `cohort: tissue:Skin`. A bare group name resolves too: `cohort: Melanoma` finds the melanoma lines rather than hunting for a cell line of that name. What it will NOT do is read prose, so do not write a sentence and hope.',
+                    whatItCannotDo: 'It sets what goes in ONE export. It cannot define two groups to be compared against each other: there is a single `cohort:` and no comparison arm. If the question is a contrast, put BOTH sides in `cohort:` and split them yourself in the reading, using the mutation, tissue and disease fields in cellLineMetadata, which is usually better anyway because you can see both sides line by line. It also cannot fetch anything the app does not already hold, which is what `neverInThisApp` lists.',
+                    whatChangesTheCohort: 'IMPORTANT, this is the one thing that catches assistants out. Naming a cohort other than `view` REPLACES the cell lines, and any precomputed result belonging to the view on screen is then dropped rather than carried into a file it no longer describes. So a request that narrows the genes but keeps `cohort: view`, or that names the same lines the view already had, KEEPS that view\'s analysis. A request that names a different cohort gets matrices and annotation but no precomputed contrast, and you compute what you need yourself. Choose accordingly: to deepen the current analysis, leave the cohort alone; to ask a different question, name the new cohort and expect to do the statistics.'
                     };
                 })(),
             },
@@ -30996,7 +31351,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             ],
             _analysisInstructions: [
                 { when: 'focal', text: "Step 0 - Sanity check: Look for extras.focalGeneVarianceWarning. If present, the focal gene sits in screen noise in this cohort, top genome-wide correlations will be noise-driven. Read the warning aloud to the user, suggest stratification or a wider cohort, and treat any pattern hunting in this export as exploratory, not load-bearing." },
-                { when: 'focal', text: "Step 1 - Overview: Briefly survey the data. Summarize key groups, sample sizes, and the target gene's effect distribution. When the export includes them (gene-effect / scatter / mutation / expression-correlate views with a single focal gene), USE these precomputed scans before recomputing anything: topCoessentials (GE-vs-GE Pearson, which other genes' essentiality co-varies with the focal gene's; positive r = co-essentiality BUFFERING within a complex, negative r = same-pathway co-essentiality) and topCorrelates (GE-vs-expression Pearson, which genes' expression predicts focal-gene dependency; positive r = high partner expression covaries with WEAKER focal-gene essentiality). Each row carries a two-sided p alongside r and n, so a scan hit can be reported as significant or not without recomputing it." },
+                { when: 'focal', text: "Step 1 - Overview: Briefly survey the data. Summarize key groups, sample sizes, and the target gene's effect distribution. When the export includes them (gene-effect / scatter / mutation / expression-correlate views with a single focal gene), USE these precomputed scans before recomputing anything: topCoessentials (GE-vs-GE Pearson, which other genes' essentiality co-varies with the focal gene's; POSITIVE r = the two are co-essential, needed by the same lines, the same-complex / same-pathway pattern, because gene effect is negative for a dependency and partners move down together; NEGATIVE r = the buffering pattern between paralogues, where the lines needing one do not need the other) and topCorrelates (GE-vs-expression Pearson, which genes' expression predicts focal-gene dependency; positive r = high partner expression covaries with WEAKER focal-gene essentiality). Each row carries a two-sided p alongside r and n, so a scan hit can be reported as significant or not without recomputing it." },
                 { when: 'noFocal', text: "Step 1b - If there is NO single focal gene (correlation, cluster and gate-comparison views export a gene LIST or two GROUPS, not a focal gene), the focal-gene machinery is absent by design and every step below that names focalGene... does not apply. Work from the view's own precomputed results in extras and from the matrices: for a gene list, the pairwise results plus the near-misses just under the cutoff; for two groups, the differential lists. Do not read the absence of focal-gene fields as missing data, and do not substitute a coarser field for them." },
                 { when: 'always', text: "Step 2 - Confirm scope: If the question names a disease, subtype, or gene-defined subset narrower than the stratification groups available in `extras`, define that subset explicitly by cell line FIRST and test it as a group, using `questionScope` if present. Do not answer a subgroup question from marginal summaries computed at a coarser granularity: a question can read as specific ('is IPO5 interesting in CLL') and still not be self-contained, because the cohort it names is not a group the file defines. Skip this step only when the question's cohort is already the export's cohort. If the question is instead open-ended ('explain the variability', 'what drives X'), present the overview with 2-3 candidate angles and ask which to pursue." },
                 { when: 'scans', text: "Step 2b - Before concluding a subgroup effect is ABSENT, check whether the precomputed scans could have detected it at that scope. topCorrelates / topCoessentials / topExpressionCorrelates are cohort-wide (see `scanScope`); an effect confined to a few lines is invisible in them by construction. Recompute inside the group, and score the group against extras.groupContrastNull for its size and against focalGeneRankAmongGenes, rather than eyeballing per-line percentiles: one line at the 6th percentile is unremarkable, four lines all there is not." },
@@ -31189,7 +31544,21 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 }
             }
         }
-        if (exportSelfCheck) exportData._exportSelfCheck = exportSelfCheck;
+        if (exportSelfCheck) {
+            // Three readers tried to reconcile the count inside the caption
+            // against the file and could not, one of them twice over because
+            // the caption quotes two different thresholds. Warning them off it
+            // was not enough: do the count here, from this file's own data, so
+            // there is a number they can actually use standing beside it.
+            const diffRows = extras?.differentialGeneEffect;
+            if (Array.isArray(diffRows) && diffRows.length && /\d/.test(exportSelfCheck.visibleTitle || '')) {
+                const pOf = (r) => (r.p_value ?? r.pValue ?? r.p);
+                const n05 = diffRows.filter(r => pOf(r) != null && pOf(r) < 0.05).length;
+                const n001 = diffRows.filter(r => pOf(r) != null && pOf(r) < 0.001).length;
+                exportSelfCheck.countsFromThisFile = `Counted from extras.differentialGeneEffect in this file: ${n05.toLocaleString()} genes at raw p < 0.05 and ${n001.toLocaleString()} at p < 0.001, out of ${diffRows.length.toLocaleString()} tested. Use these. Any gene count inside visibleTitle above belongs to the screen the user was looking at, was computed under that view's own settings, and will generally NOT match these; that is expected and is not a fault in either.`;
+            }
+            exportData._exportSelfCheck = exportSelfCheck;
+        }
         if (custom?.cohort === 'all') delete exportData.notIncluded.cellLinesOutsideCohort;
 
         // Layers the standard export leaves out, added because they were asked
@@ -31288,11 +31657,29 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
             if (custom.layers.derivativePairs && this.derivativeLines?.pairs) {
                 const inCohort = new Set(cellLines);
-                const pairs = this.derivativeLines.pairs.filter(pr => inCohort.has(pr.parent) || inCohort.has(pr.derivative));
+                // A pair is kept when EITHER side is in the cohort, so one side
+                // routinely has no data in this file. The note below promised
+                // CRISPR and expression for every derived line, and a reader
+                // chasing one that had neither called it a dangling pointer,
+                // rightly. Say per pair which sides are actually here.
+                const pairs = this.derivativeLines.pairs
+                    .filter(pr => inCohort.has(pr.parent) || inCohort.has(pr.derivative))
+                    .map(pr => {
+                        const hasP = inCohort.has(pr.parent), hasD = inCohort.has(pr.derivative);
+                        return {
+                            ...pr,
+                            dataInThisFile: hasP && hasD ? 'both sides'
+                                : hasP ? 'the parent only, so this pair cannot be compared from this file'
+                                : 'the derivative only, so this pair cannot be compared from this file'
+                        };
+                    });
                 if (pairs.length) {
+                    const usable = pairs.filter(pr => pr.dataInThisFile === 'both sides').length;
                     exportData.dataStructure.matchedPairs = 'Cell lines derived from another line in this panel, with that parental line. relationship distinguishes a drug-resistant line from a gene knockdown.';
                     exportData.matchedPairs = {
-                        _readMe: 'Cell lines derived from another line in this panel, paired with that parental line. `relationship` says which kind: "drug-resistant" means the line was grown in the compounds in `agents` until it survived them; "gene-knockdown" means the genes in `genesTargeted` were knocked down in it, which is NOT a drug exposure. `change` states it in words. Treat a pair as one line in two states: a difference between them is what that change did, and a property they share is the background they both came from. A pair read as two independent cell lines is the most misleading comparison the panel offers. These derived lines carry CRISPR and expression data but were NOT put through the drug screen, so do not expect before-and-after sensitivity for a pair even when drugResponse is present. The relationship is read off the DepMap name, not from a curated field.',
+                        _readMe: 'Cell lines derived from another line in this panel, paired with that parental line. `relationship` says which kind: "drug-resistant" means the line was grown in the compounds in `agents` until it survived them; "gene-knockdown" means the genes in `genesTargeted` were knocked down in it, which is NOT a drug exposure. `change` states it in words. Treat a pair as one line in two states: a difference between them is what that change did, and a property they share is the background they both came from. A pair read as two independent cell lines is the most misleading comparison the panel offers. A pair is listed whenever EITHER side falls in this file\'s cohort, so check `dataInThisFile` on each row before using it: only the rows saying "both sides" can actually be compared here, and a line named in any other row has no gene-effect or expression values in this file at all. Where DepMap screened them, these derived lines carry CRISPR and expression data, but they were NOT put through the drug screen, so do not expect before-and-after sensitivity for a pair even when drugResponse is present. The relationship is read off the DepMap name, not from a curated field.',
+                        nPairsComparableHere: usable,
+                        nPairsWithOnlyOneSideHere: pairs.length - usable,
                         pairs
                     };
                 }
@@ -31322,7 +31709,33 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 view: context?.type || 'unknown',
                 present,
                 absent,
-                extras: exportData.extras ? Object.keys(exportData.extras) : []
+                extras: exportData.extras ? Object.keys(exportData.extras) : [],
+                // present/absent name top-level SECTIONS, so they structurally
+                // cannot answer "does this file have MSI status": MSI is a leaf
+                // inside cellLineMetadata. A reader spent its search grepping
+                // prose for the word, hitting the genes MSI1 and MSI2 first,
+                // and only settled it by pulling values out and checking they
+                // were not all null. These are the per-line attributes people
+                // actually ask after, answered directly.
+                perCellLineAttributes: (() => {
+                    const meta = exportData.cellLineMetadata || {};
+                    const ids = Object.keys(meta);
+                    if (!ids.length) return undefined;
+                    const has = (fn) => ids.filter(id => { try { return fn(meta[id]); } catch (e) { return false; } }).length;
+                    const say = (n, what) => n ? `${what}: YES, on ${n} of ${ids.length} lines` : `${what}: not carried in this file`;
+                    return [
+                        say(has(m => m?.inferred?.msi), 'microsatellite instability (MSI) call, at cellLineMetadata[id].inferred.msi, present only when the line IS MSI-high'),
+                        say(has(m => m?.signatures?.msiScore != null), 'continuous MSI score, at cellLineMetadata[id].signatures.msiScore'),
+                        say(has(m => m?.mutations && Object.keys(m.mutations).length), 'per-gene mutation calls, at cellLineMetadata[id].mutations'),
+                        say(has(m => m?.cnEvents), 'curated amplification / deletion calls, at cellLineMetadata[id].cnEvents'),
+                        say(has(m => m?.clinicalFusions?.length), 'curated driver fusion calls, at cellLineMetadata[id].clinicalFusions'),
+                        say(has(m => m?.growthRate != null), 'proliferation rate, at cellLineMetadata[id].growthRate'),
+                        say(has(m => m?.signatures?.ploidy != null), 'ploidy / genome-instability signatures, at cellLineMetadata[id].signatures'),
+                        say(has(m => m?.oncotreeSubtype), 'fine-grained Oncotree disease subtype, at cellLineMetadata[id].oncotreeSubtype'),
+                        say(has(m => m?.meanGeneEffectPercentile != null), 'how globally sensitive that line\'s whole screen is, at cellLineMetadata[id].meanGeneEffectPercentile'),
+                        'Beware when searching this file by keyword: MSI1 and MSI2 are ordinary gene symbols (Musashi RNA-binding proteins) with nothing to do with microsatellite instability, and they appear throughout the mutation blocks.'
+                    ];
+                })()
             };
             // Documentation only for what is here.
             if (exportData.dataStructure) {
@@ -31392,8 +31805,44 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     delete exportData.assayNotes.groupComparisonCalibration;
                 }
             }
-            // The extras listing is written last, after the prunings above,
-            // and separates the data from the notes about the data.
+            // questionScope's note pointed at extras.groupContrastNull whether
+            // or not the file carried it. Two readers followed it, found
+            // nothing, and one nearly reported a number from a field that was
+            // never there.
+            if (exportData.questionScope?.note && !exportData.extras?.groupContrastNull) {
+                exportData.questionScope.note = exportData.questionScope.note.replace(
+                    'score it with extras.groupContrastNull for this size, and compare it',
+                    'this file carries no resampled null for a group of that size, so lean on the per-gene q values where a differential list is present rather than on a group mean alone, and compare the group');
+            }
+            // Which precomputed lists are complete and which were cut, in one
+            // place. Five readers could not tell the difference and two paid
+            // for it: one reported a gene as unrelated when its pairing had
+            // been dropped by a magnitude floor, another hedged an answer off
+            // a genome-wide list it assumed was capped like the top-30s beside
+            // it.
+            if (exportData.extras) {
+                const CAP_RULE = {
+                    mutationEnrichment: 'sorted by p and cut at the strongest 200',
+                    selectionDifferential: 'sorted by |difference| and cut at the strongest 200',
+                    selectionDifferentialExpression: 'sorted by |difference| and cut at the strongest 200',
+                    correlationsBelowCutoff: 'only pairs clearing a magnitude floor were recorded at all, then sorted by |r| and cut at 300',
+                    correlationPairsBelowCutoff: 'sorted by |r| and cut at 30'
+                };
+                const scope = {};
+                for (const [k, v] of Object.entries(exportData.extras)) {
+                    if (!Array.isArray(v) || k.startsWith('_') || k.endsWith('_readMe')) continue;
+                    const total = _listTotals[k];
+                    scope[k] = CAP_RULE[k]
+                        ? `CUT: ${v.length.toLocaleString()} rows${total && total > v.length ? ` out of ${total.toLocaleString()} that qualified` : ''}, ${CAP_RULE[k]}. A gene missing from here may simply have fallen outside the cut, so do not read its absence as a negative result without checking the matrices.`
+                        : `COMPLETE: ${v.length.toLocaleString()} rows, every one that could be computed, no cap and no cut. Absence from this list IS informative: the gene was not testable (too few cell lines with data), rather than ranked too low.`;
+                }
+                if (Object.keys(scope).length) {
+                    exportData.extras._listScope = scope;
+                    exportData.dataStructure = exportData.dataStructure || {};
+                    exportData.dataStructure.extras = exportData.dataStructure.extras || {};
+                    exportData.dataStructure.extras._listScope = 'For every list in extras, whether it is COMPLETE or was CUT to a top N, and by which rule. Check here before concluding anything from a gene being absent from one of them.';
+                }
+            }
             if (exportData.whatIsInThisFile) {
                 const keys = exportData.extras ? Object.keys(exportData.extras) : [];
                 const isNote = (k) => k.startsWith('_') || k.endsWith('_readMe') || k.endsWith('_notInMatrix');
