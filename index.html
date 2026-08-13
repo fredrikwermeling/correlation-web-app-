@@ -2228,6 +2228,44 @@
             #optionsRow > * { flex: 1 1 calc(50% - 6px) !important; min-width: calc(50% - 6px) !important; }
             /* Lasso needs a drag on a plot that does not accept drags here. */
             #scatterLassoHighlightBtn { display: none !important; }
+            /* 1. Browser text boxes were cutting their own text off. They carry
+               fixed pixel widths written for a desktop row (#clbSearch is
+               190px), and the phone rules then added 15px text and 10px of
+               side padding inside that same fixed width, so the value no
+               longer fitted. Let them size to the row instead. */
+            #cellLineBrowserModal input[type="text"],
+            #cellLineBrowserModal select,
+            #cellLineBrowserModal textarea {
+                box-sizing: border-box !important;
+                width: 100% !important;
+                max-width: 100% !important;
+                min-width: 0 !important;
+                padding: 8px 8px !important;
+                text-overflow: ellipsis !important;
+            }
+            #clbSearch { width: 100% !important; }
+            /* 2. The cell-line detail stacked under the whole list, so tapping
+               a line meant scrolling past every other one to reach its wiki.
+               Put it above the list. */
+            .clb-detail { order: -1 !important; }
+            /* 3. Gene pairs and Clusters were cropped at the right edge: the
+               tables are wider than a phone and nothing was allowed to scroll. */
+            .table-container, .data-table-wrapper {
+                overflow-x: auto !important;
+                -webkit-overflow-scrolling: touch;
+                max-width: 100% !important;
+            }
+            .table-container .data-table, .data-table-wrapper .data-table { min-width: max-content !important; }
+            /* 4. The correlation popout's boxes were different heights because
+               each sized itself around its own contents. One height for all of
+               them, and their dropdowns bounded so a long list cannot stretch
+               the box that holds it. */
+            .inspect-controls .control-box-compact { min-height: 0 !important; align-self: start !important; }
+            .inspect-controls .control-box-compact select,
+            .inspect-controls .control-box-compact input[type="text"] {
+                box-sizing: border-box !important; width: 100% !important; min-width: 0 !important;
+            }
+            .inspect-controls [id$="Dropdown"] { max-height: 45vh !important; overflow-y: auto !important; }
             /* A collapsed panel should be a line of text, not an empty card.
                With its border, padding and background still drawn it took the
                room of the controls it was hiding, and three of them stacked
