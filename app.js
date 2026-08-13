@@ -41,7 +41,15 @@
         const out = Object.assign({}, config, { scrollZoom: false, modeBarButtonsToRemove: remove, displaylogo: false });
         // On phones, disable dragging of titles / axis labels / legends / shapes,
         // they were far too easy to nudge by accident on a touch screen.
-        if (typeof window !== 'undefined' && window.innerWidth <= 640) out.edits = {};
+        if (typeof window !== 'undefined' && window.innerWidth <= 640) {
+            out.edits = {};
+            // And stop Plotly claiming the drag at all. touch-action alone was
+            // not enough on the correlation scatter: Plotly still handles the
+            // gesture for its own pan/select, so a finger on the plot moved the
+            // plot instead of the page. With zoom already locked there is
+            // nothing a drag should do here, and a tap still reaches a point.
+            out.dragmode = false;
+        }
         return out;
     };
     ['newPlot', 'react'].forEach((fn) => {
@@ -249,6 +257,17 @@ class CorrelationExplorer {
             this._setupGlobalCohortBar();
             this._guardNetworkKeysFromInputs();
             this._armPhoneCollapsibles();
+            // A node drawn at 25px and an edge at 3px are a fine mouse target
+            // and a poor finger one: opening the next level by tapping a node
+            // or an edge was mostly luck. vis has no hit tolerance to widen, so
+            // the target has to be the drawing itself. Set on the sliders, so
+            // every later read of them follows and the user can still adjust.
+            if (window.innerWidth <= 640) {
+                const bump = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
+                bump('netNodeSize', 42);
+                bump('netEdgeWidth', 7);
+                bump('netFontSize', 24);
+            }
             this.hideLoading();
             // URL-hash deep links, open a specific view directly so
             // external apps (greenlisted / mouseclb / lab pages) can
@@ -32527,8 +32546,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         tooltip.style.pointerEvents = pinned ? 'auto' : 'none';
         tooltip.innerHTML = `<div style="margin-bottom:4px;"><b style="color:#5d9239; font-size:13px;">${gene}</b></div>${prefixHtml || ''}<div style="color: #6b7280; margin-top:2px;">Loading info…</div>`;
 
-        const x = Math.min(event.clientX + 10, window.innerWidth - maxW - 20);
-        const y = Math.min(event.clientY + 10, window.innerHeight - 200);
+        // Clamped on all four sides. It only ever guarded the right and bottom,
+        // so on a narrow screen innerWidth - maxW - 20 goes NEGATIVE and the
+        // card sits off the left edge with its text cut off.
+        const _tipW = Math.min(maxW, window.innerWidth - 16);
+        const x = Math.max(8, Math.min(event.clientX + 10, window.innerWidth - _tipW - 8));
+        const y = Math.max(8, Math.min(event.clientY + 10, window.innerHeight - 200));
+        tooltip.style.maxWidth = _tipW + 'px';
         tooltip.style.left = x + 'px';
         tooltip.style.top = y + 'px';
 
@@ -32622,7 +32646,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             // squeeze the hint next to them.
             html += `<div style="margin-top:8px; padding-top:6px; border-top:1px solid #f3f4f6; font-size:10px; color:#6b7280;">`;
             html += `<div style="display:flex; flex-wrap:wrap; gap:2px 4px;">${links}</div>`;
-            html += `<div style="color:#9ca3af; margin-top:4px;">${el.dataset.pinned === '1' ? 'Esc to close' : 'Hold Shift for full text'}</div>`;
+            // No Shift key and no Esc on a phone, so neither hint leads
+            // anywhere: the card is dismissed by tapping away from it.
+            const _hint = window.innerWidth <= 640
+                ? 'Tap anywhere to close'
+                : (el.dataset.pinned === '1' ? 'Esc to close' : 'Hold Shift for full text');
+            html += `<div style="color:#9ca3af; margin-top:4px;">${_hint}</div>`;
             html += `</div>`;
 
             el.style.position = 'fixed';
