@@ -56,9 +56,54 @@
         const orig = Plotly[fn];
         if (typeof orig !== 'function') return;
         Plotly[fn] = function(div, data, layout, config) {
-            return orig.call(this, div, data, lockLayout(layout), lockConfig(config));
+            const r = orig.call(this, div, data, lockLayout(layout), lockConfig(config));
+            // Phone only, and only if a Run / Update press armed it.
+            if (r && typeof r.then === 'function') {
+                r.then((gd) => { try { window.__phoneRevealResult?.(gd || div); } catch (e) {} });
+            }
+            return r;
         };
     });
+})();
+
+// Phone: a Run or Update press produces a chart that is usually below the
+// controls that produced it, and on a small screen it lands off-screen, so it
+// reads as if nothing happened. Pressing one of those buttons arms a one-shot
+// scroll; the next chart to finish rendering claims it.
+//
+// It is armed by the press rather than fired by the render because charts
+// redraw for many reasons (a resize, a legend toggle, a filter) and none of
+// those should move the page under the reader.
+(function() {
+    if (typeof window === 'undefined') return;
+    let armedAt = 0;
+    const PHONE = () => window.innerWidth <= 640;
+    // A press only counts for a few seconds. An analysis that takes longer than
+    // this has almost certainly been scrolled by hand in the meantime.
+    const WINDOW_MS = 12000;
+
+    window.__phoneArmResultScroll = () => { if (PHONE()) armedAt = Date.now(); };
+    window.__phoneRevealResult = (el) => {
+        if (!PHONE() || !armedAt || Date.now() - armedAt > WINDOW_MS) return;
+        if (!el || !el.isConnected || !el.getBoundingClientRect().height) return;
+        armedAt = 0;
+        // Let the chart finish laying out before measuring where it sits. A
+        // timer rather than requestAnimationFrame: rAF is throttled when the
+        // tab is not in front, which would hold the scroll until it came back.
+        setTimeout(() => {
+            try { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) { el.scrollIntoView(); }
+        }, 60);
+    };
+
+    // Arm on the buttons that produce a chart. Matched on the label rather than
+    // an id list so a new Run button is covered without being registered here.
+    document.addEventListener('click', (e) => {
+        if (!PHONE()) return;
+        const btn = e.target && e.target.closest ? e.target.closest('button, .btn') : null;
+        if (!btn || btn.disabled) return;
+        const label = (btn.textContent || '').trim().toLowerCase();
+        if (/^(run|update|apply|analyz|calculate|plot|draw|build)\b/.test(label)) window.__phoneArmResultScroll();
+    }, true);
 })();
 
 // Single source of truth for DepMap release.
@@ -11545,9 +11590,13 @@ class CorrelationExplorer {
             wire(head, body, { open: false });
         });
 
-        // Gene Effect popout: View, Lineage and disease (all three selectors)
-        // and Genetic alterations. Same shape as the network panels, a heading
-        // followed by its controls inside one row.
+        // Gene Effect popout: Lineage and disease (all three selectors) and
+        // Genetic alterations, each a heading followed by its controls in one
+        // row. Deliberately NOT the View row: its heading sits in the middle of
+        // the row that carries the gene box, the GE / Expression selector and
+        // Analyze, and bodyFor takes every child but the heading, so collapsing
+        // View hid the gene being looked at. Which gene, and whether it is gene
+        // effect or expression, has to stay on screen.
         scope.querySelectorAll('.ge-section-heading').forEach(head => {
             const box = head.parentElement;
             if (!box) return;
@@ -11939,6 +11988,7 @@ class CorrelationExplorer {
 
         // After stabilization: resolve edge crossings, then lock large networks
         this.network.once('stabilizationIterationsDone', () => {
+            window.__phoneRevealResult?.(container);
             this.resolveEdgeCrossings();
             this._separateNetworkComponents();
             this._arrangeUncorrelatedGrid();
