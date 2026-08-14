@@ -40533,7 +40533,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }).join('');
         // Live count of the filtered list (updates as filters / quick filters change).
         const totalN = this.metadata.cellLines.length;
-        const countCaption = `<div style="${captionStyle} font-weight:600; color:#374151;">`
+        // A quarter larger than the other captions sharing captionStyle: this
+        // one is the count of what the filters left, which is read far more
+        // often than the note about what the columns hold.
+        const countCaption = `<div style="${captionStyle} font-size:12.5px; font-weight:600; color:#374151;">`
             + `<b>${filtered.length}</b> cell line${filtered.length === 1 ? '' : 's'}`
             + `${filtered.length < totalN ? ` <span style="font-weight:400; color:#9ca3af;">of ${totalN}</span>` : ''}`
             + `</div>`;
@@ -45716,9 +45719,9 @@ ${clone.innerHTML}
             const isOpen = open.has(lin);
             const hasSubs = L.subs.size > 0;
             rows += `<tr class="gis-row" style="cursor:pointer;" onmouseenter="this.style.background='#f3f4f6'" onmouseleave="this.style.background=''">
-                <td style="padding:3px 8px;"><input type="checkbox" class="gis-check"${g.lineages.has(lin) ? ' checked' : ''} onclick="event.stopPropagation(); app.toggleGEInspectGroup('lineages','${esc(lin)}')"></td>
+                <td style="padding:3px 3px;"><input type="checkbox" class="gis-check"${g.lineages.has(lin) ? ' checked' : ''} onclick="event.stopPropagation(); app.toggleGEInspectGroup('lineages','${esc(lin)}')"></td>
                 <td style="padding:3px 4px; color:#1f2937;" onclick="app.toggleGEInspectBranch('${esc(lin)}')">${hasSubs ? `<span style="font-size:9px; color:#9ca3af; margin-right:2px;">${isOpen ? '\u25bc' : '\u25b6'}</span>` : '<span style="margin-right:9px;"></span>'}${this.esc(lin)}</td>
-                <td style="padding:3px 8px; text-align:right; color:#6b7280; white-space:nowrap;" title="${this.esc(this._geInspectCountCell(L).title)}">${this._geInspectCountCell(L).text}</td></tr>`;
+                <td style="padding:3px 3px; text-align:right; color:#6b7280; line-height:1.25;" title="${this.esc(this._geInspectCountCell(L).title)}">${this._geInspectCountCell(L).text}</td></tr>`;
             if (!isOpen) continue;
             for (const [sub, S] of [...L.subs.entries()].sort((a, b) => b[1].n - a[1].n)) {
                 const hasDis = S.diseases.size > 0;
@@ -45726,7 +45729,7 @@ ${clone.innerHTML}
                 rows += `<tr style="background:#fafafa; cursor:pointer;" onmouseenter="this.style.background='#f0f0f0'" onmouseleave="this.style.background='#fafafa'">
                     <td style="padding:2px 8px 2px 16px;"><input type="checkbox" class="gis-check"${g.sublineages.has(sub) ? ' checked' : ''} onclick="event.stopPropagation(); app.toggleGEInspectGroup('sublineages','${esc(sub)}')"></td>
                     <td style="padding:2px 4px 2px 8px; font-size:11px; color:#6b7280;" onclick="app.toggleGEInspectBranch('${esc(lin)} &gt;&gt; ${esc(sub)}')">${hasDis ? `<span style="font-size:8px; color:#9ca3af; margin-right:2px;">${subOpen ? '\u25bc' : '\u25b6'}</span>` : '<span style="margin-right:8px;"></span>'}${this.esc(sub)}</td>
-                    <td style="padding:2px 8px; text-align:right; color:#9ca3af; font-size:11px; white-space:nowrap;" title="${this.esc(this._geInspectCountCell(S).title)}">${this._geInspectCountCell(S).text}</td></tr>`;
+                    <td style="padding:2px 3px; text-align:right; color:#9ca3af; font-size:11px; line-height:1.25;" title="${this.esc(this._geInspectCountCell(S).title)}">${this._geInspectCountCell(S).text}</td></tr>`;
                 if (!subOpen) continue;
                 // Only worth showing the remainder when there is something to
                 // reconcile it against; on its own it is just the parent again.
@@ -45738,13 +45741,13 @@ ${clone.innerHTML}
                         rows += `<tr style="background:#f5f5f4;">
                             <td style="padding:2px 8px 2px 24px;"></td>
                             <td style="padding:2px 4px 2px 14px; font-size:10px; color:#b0b0ac; font-style:italic;" title="These cell lines are in ${this.esc(sub)} but carry no finer disease label, so they appear in no row below it. Shown so the rows add up to the group above.">no finer subtype recorded</td>
-                            <td style="padding:2px 8px; text-align:right; color:#b0b0ac; font-size:10px; white-space:nowrap;" title="${this.esc(this._geInspectCountCell(dn).title)}">${this._geInspectCountCell(dn).text}</td></tr>`;
+                            <td style="padding:2px 3px; text-align:right; color:#b0b0ac; font-size:10px; line-height:1.25;" title="${this.esc(this._geInspectCountCell(dn).title)}">${this._geInspectCountCell(dn).text}</td></tr>`;
                         continue;
                     }
                     rows += `<tr style="background:#f5f5f4; cursor:pointer;" onmouseenter="this.style.background='#ececeb'" onmouseleave="this.style.background='#f5f5f4'">
                         <td style="padding:2px 8px 2px 24px;"><input type="checkbox" class="gis-check"${g.diseases.has(dis) ? ' checked' : ''} onclick="event.stopPropagation(); app.toggleGEInspectGroup('diseases','${esc(dis)}')"></td>
                         <td style="padding:2px 4px 2px 14px; font-size:10px; color:#9ca3af;">${this.esc(dis)}</td>
-                        <td style="padding:2px 8px; text-align:right; color:#9ca3af; font-size:10px; white-space:nowrap;" title="${this.esc(this._geInspectCountCell(dn).title)}">${this._geInspectCountCell(dn).text}</td></tr>`;
+                        <td style="padding:2px 3px; text-align:right; color:#9ca3af; font-size:10px; line-height:1.25;" title="${this.esc(this._geInspectCountCell(dn).title)}">${this._geInspectCountCell(dn).text}</td></tr>`;
                 }
             }
         }
@@ -45799,6 +45802,40 @@ ${clone.innerHTML}
     // "22 of 67" when the selection eats into a group, plain "67" when it
     // does not, so the number the comparison will actually use is the one
     // being read.
+    // What the other side of the comparison actually is, said plainly. The
+    // title gives the two counts; this says what rule produced them, which is
+    // the thing that changes the meaning of every number below it.
+    // The Cell Line Browser's own filter chips as one phrase. What the
+    // selection was drawn from is part of what it means, and the inspect panel
+    // opens on top of the browser, so the chips are no longer on screen.
+    _clbActiveFilterText() {
+        const el = document.getElementById('clbActiveFilters');
+        // The chips carry their own carets and clear-crosses; those are controls,
+        // not part of what the filter says.
+        const txt = (el?.textContent || '').replace(/[\u25be\u25b8\u00d7\u2715\u2716]/g, ' ')
+            .replace(/\s+/g, ' ').trim();
+        if (!txt || /^none$/i.test(txt)) return '';
+        return txt.length > 120 ? txt.slice(0, 117) + '...' : txt;
+    }
+
+    _geInspectComparatorWords(scope, lineageText, g, grpCount) {
+        if (scope === 'custom') {
+            return this._geInspectCustomNote
+                ? `a list you pasted, ${this._geInspectCustomNote}`
+                : 'a list you pasted';
+        }
+        if (scope === 'lineage') return `the rest of ${lineageText || 'the same lineage'}`;
+        if (scope === 'group' || grpCount > 0) {
+            const names = [...(g.diseases || []), ...(g.sublineages || []), ...(g.lineages || [])];
+            if (!names.length) return 'the groups you ticked';
+            const shown = names.slice(0, 3).join(', ');
+            return names.length > 3
+                ? `the rest of ${shown} and ${names.length - 3} more`
+                : `the rest of ${shown}`;
+        }
+        return 'every other cell line in the panel';
+    }
+
     _geInspectCountCell(entry) {
         const total = entry.n, avail = entry.avail;
         if (avail === total) return { text: String(total), title: `${total} cell lines` };
@@ -46075,6 +46112,15 @@ ${clone.innerHTML}
         sub.innerHTML = (fromFilter
                 ? `Nothing was ticked, so this is the ${selected.length} cell lines your filters leave showing, `
                 : '')
+            + `<span style="display:block; color:#374151; margin-bottom:2px;">`
+            + `<b>Selection:</b> ${selected.length.toLocaleString()} cell line${selected.length === 1 ? '' : 's'}`
+            + `${cov.selMeasured < cov.selNominal ? `, ${cov.selMeasured} with a screen` : ''}`
+            + `, ${fromFilter ? 'everything the Cell Line Browser filters left showing' : 'ticked in the Cell Line Browser'}`
+            + `${(() => { const f = this._clbActiveFilterText(); return f ? `, from a list narrowed by ${this.esc(f)}` : ''; })()}`
+            + `. &nbsp;<b>Compared with:</b> ${nRestGE.toLocaleString()} cell line${nRestGE === 1 ? '' : 's'}`
+            + `${cov.othMeasured < cov.othNominal ? `, ${cov.othMeasured} with a screen` : ''}`
+            + `, ${this.esc(this._geInspectComparatorWords(scope, lineageText, _g, grpCount))}.`
+            + `</span>`
             + `each gene's average in the selection minus its average in the comparison group`
             + (canTest
                 ? `, tested with ${this._geInspectTest === 'rank' ? 'a Wilcoxon rank sum' : "Welch's t"} per gene and q from Benjamini-Hochberg`
