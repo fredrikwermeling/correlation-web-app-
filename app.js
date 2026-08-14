@@ -47044,6 +47044,23 @@ ${clone.innerHTML}
             cutoffEl.value = clamped.toFixed(2);
             cutoffEl.dispatchEvent(new Event('input', { bubbles: true }));
         }
+        // The run is about to be restricted to the selected cell lines, and
+        // "Min Cell Lines" is a floor on how many a gene needs data in. Left at
+        // its default of 25 it rejects any selection smaller than that, so the
+        // button appeared to do nothing: the modals closed, the genes landed in
+        // the box, and the analysis stopped on the home screen with "Too few
+        // cell lines for analysis (12 available, 25 required)". Bring the floor
+        // down to the size of the selection when it is the smaller of the two.
+        const minEl = document.getElementById('minCellLines');
+        if (minEl) {
+            const current = parseInt(minEl.value, 10) || 25;
+            const want = Math.max(3, Math.min(current, selected.length));
+            if (want !== current) {
+                minEl.value = want;
+                minEl.dispatchEvent(new Event('input', { bubbles: true }));
+                minEl.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        }
         document.getElementById('runAnalysis')?.click();
     }
 
