@@ -12365,6 +12365,7 @@ class CorrelationExplorer {
                 const edge = edgeId != null ? this.networkData.edges.get(edgeId) : null;
                 if (edge) {
                     this.openInspectByGenes(edge.from, edge.to);
+                    this._revealScatterPlot();
                 }
             }
         });
@@ -12375,6 +12376,9 @@ class CorrelationExplorer {
             if (isDragging) {
                 return;
             }
+            // A tap anywhere else dismisses an r popup left by a previous
+            // edge tap.
+            document.getElementById('edgeRPopup')?.remove();
 
             // On a phone a single tap opens the correlation for an edge. The
             // double tap this is bound to on the desktop competes with the
@@ -12389,6 +12393,25 @@ class CorrelationExplorer {
                 if (edge) {
                     this.hideGeneTooltip(true);
                     this.openInspectByGenes(edge.from, edge.to);
+                    this._revealScatterPlot();
+                    return;
+                }
+            }
+
+            // An iPad: an edge is a hard double-tap target and there is no
+            // hover to say what it holds. First tap answers with the pair and
+            // its r as a small button by the finger; tapping that opens the
+            // correlation. Tablet widths, plus any coarse-pointer screen
+            // above them, so a desktop mouse never sees it.
+            if (window.innerWidth > 640
+                && (window.innerWidth <= 900 || window.matchMedia?.('(pointer: coarse)')?.matches)
+                && !params.nodes.length
+                && !this.highlightMode && !this.selectMode && !this.removeMode) {
+                const edgeId = edgeNear(params);
+                const edge = edgeId != null ? this.networkData.edges.get(edgeId) : null;
+                if (edge) {
+                    this.hideGeneTooltip(true);
+                    this._showEdgeRPopup(edge, params.pointer?.DOM);
                     return;
                 }
             }
@@ -33118,6 +33141,57 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const lead = sentences[idx];
         const rest = sentences.filter((_, i) => i !== idx);
         return (lead + rest.join('')).replace(/\s+/g, ' ').trim();
+    }
+
+    // The button a first edge tap leaves by the finger on a touch screen: the
+    // pair and its r, and tapping it opens the correlation. It answers the
+    // hover the desktop has and a finger does not, and turns the hard
+    // double-tap on a thin line into two easy taps.
+    _showEdgeRPopup(edge, domPoint) {
+        document.getElementById('edgeRPopup')?.remove();
+        const host = this.network?.body?.container;
+        if (!host) return;
+        const rect = host.getBoundingClientRect();
+        const x = rect.left + (domPoint?.x ?? rect.width / 2);
+        const y = rect.top + (domPoint?.y ?? rect.height / 2);
+        const r = typeof edge.correlation === 'number' ? edge.correlation.toFixed(3) : '?';
+        const b = document.createElement('button');
+        b.id = 'edgeRPopup';
+        b.type = 'button';
+        b.innerHTML = `${this.esc(edge.from)} / ${this.esc(edge.to)}: r = ${r} &nbsp;<span style="color:#6ba544;">Open &#9656;</span>`;
+        b.style.cssText = 'position:fixed; z-index:1500; background:#fff; border:1px solid #6ba544;'
+            + ' border-radius:8px; box-shadow:0 8px 22px rgba(0,0,0,0.2); padding:10px 14px;'
+            + ' font-size:13px; font-weight:600; color:#374151; cursor:pointer; white-space:nowrap;';
+        document.body.appendChild(b);
+        // By the tap, but never off the screen.
+        b.style.left = Math.max(8, Math.min(window.innerWidth - b.offsetWidth - 8, x - b.offsetWidth / 2)) + 'px';
+        b.style.top = Math.max(8, Math.min(window.innerHeight - b.offsetHeight - 8, y - b.offsetHeight - 12)) + 'px';
+        b.addEventListener('click', () => {
+            b.remove();
+            this.openInspectByGenes(edge.from, edge.to);
+            this._revealScatterPlot();
+        });
+        // Left alone it goes away by itself; a tap elsewhere on the network
+        // removes it sooner (see the click handler).
+        setTimeout(() => b.remove(), 8000);
+    }
+
+    // On a stacked-layout touch screen the correlation popout opens on its
+    // controls with the plot below the fold; bring the plot up once it has
+    // drawn. Desktop layouts show the plot beside the controls and are left
+    // alone, as is the phone, whose layout already puts the plot first.
+    _revealScatterPlot() {
+        const stacked = window.innerWidth <= 1100;
+        const touchy = window.innerWidth <= 900 || window.matchMedia?.('(pointer: coarse)')?.matches;
+        if (!stacked || !touchy) return;
+        let tries = 0;
+        const go = () => {
+            const el = document.getElementById('scatterPlot');
+            if (el && el.getBoundingClientRect().height > 50) {
+                try { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {}
+            } else if (tries++ < 25) setTimeout(go, 200);
+        };
+        setTimeout(go, 300);
     }
 
     hideGeneTooltip(force) {
