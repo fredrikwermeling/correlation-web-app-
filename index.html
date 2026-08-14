@@ -2192,6 +2192,8 @@
             /* Cell Line Browser: fullscreen, single-column list, detail stacks under.
                (It uses a custom overlay, not .modal, so it needs its own rules.) */
             #cellLineBrowserModal { padding: 0 !important; align-items: stretch !important; }
+            /* The banner takes the title's place; at header height for a phone. */
+            #cellLineBrowserModal .modal-header img { height: 28px !important; }
             #cellLineBrowserModal > div { max-width: 100% !important; height: 100% !important; max-height: 100% !important; margin-top: 0 !important; border-radius: 0 !important; }
             .clb-list { columns: 1 !important; }
             .clb-content { flex-direction: column !important; }
@@ -2420,8 +2422,9 @@
             #selectionInspectBody { width: 100% !important; order: 1 !important; }
             /* The two measures sit side by side inside the results. On one
                column each gets the full width, and nothing may set a minimum
-               that is wider than the screen. */
-            #selectionInspectBody > div { flex-direction: column !important; }
+               that is wider than the screen. The container is a grid, so one
+               column means one grid track. */
+            #selectionInspectBody > div { grid-template-columns: 1fr !important; }
             #selectionInspectBody > div > div { min-width: 0 !important; }
             /* A square volcano at full width is as tall as the screen, which
                left the table it belongs to below the fold and out of scale with
@@ -2500,6 +2503,7 @@
             #clbCopyListBtn, #clbExportGenesBtn, #clbCopyNamesBtn,
             #clbExportImageBtn, #clbWikiDownloadBtn, #clbWikiExportGenesBtn,
             #selectionInspectCSV, #selectionInspectCSVCells,
+            #selectionInspectCopyData, #selectionInspectSettings,
             #selectionInspectImg, #selectionInspectCopyImg { display: none !important; }
             /* The five threshold controls. A phone runs the defaults, which is
                what almost every desktop session leaves them at anyway:
@@ -3237,7 +3241,7 @@
                              by an Enrichr result, editable in the settings
                              popout like the filter banner above it, and part of
                              the picture so an export carries it. -->
-                        <div id="networkHighlightNote" style="display:none; padding:6px 14px; border-bottom:1px solid var(--gray-200); background:#faf7ff; border-left:3px solid #7c3aed; font-size:11px; color:#4b5563;"></div>
+                        <div id="networkHighlightNote" style="display:none; padding:6px 14px; border-bottom:1px solid var(--gray-200); background:#f9fafb; border-left:3px solid #111827; font-size:11px; color:#4b5563;"></div>
                         <div class="network-container" id="networkPlot" style="flex:1; min-height:0; border:none; border-radius:0;">
                             <div style="display: flex; flex-direction: column; justify-content: flex-start; align-items: center; height: 100%; padding-top: 10%; color: var(--gray-500); text-align: center; line-height: 1.8;">
                                 <div>New to Correlate?</div>
@@ -4400,9 +4404,11 @@
             </div>
             <div class="modal-footer" style="justify-content:flex-start; flex-wrap:wrap; gap:6px;">
                 <button id="selectionInspectReset" class="btn btn-outline btn-sm" style="font-size:10px;" title="Put the cutoffs, the gene search, the sorting and the comparison group back to how they started">Reset</button>
+                <button id="selectionInspectSettings" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px; font-weight:700;" title="Edit a volcano plot's heading, axis labels and font sizes, the same panel the other charts have">Settings</button>
                 <span class="mobile-hide" style="font-size:10px; color:#9ca3af; margin-left:4px;">Export:</span>
                 <button id="selectionInspectImg" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px;" title="Export a volcano plot, choose which measure and the format in the popup">Export image...</button>
                 <button id="selectionInspectCopyImg" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px;" title="Copy a volcano plot to the clipboard, ready to paste into an email or slide">Copy</button>
+                <button id="selectionInspectCopyData" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px; display:none;" title="Copy the data behind a volcano plot, choose which measure in the popup: every gene drawn, with its difference and FDR, under a line saying what was compared. Tab separated, for redrawing the plot in other software">Copy data</button>
                 <button id="selectionInspectCSV" class="btn btn-outline btn-sm" style="font-size:11px; display:none;" title="One row per gene, for EVERY gene tested, not only the ones on screen: its mean in the selection, its mean in the comparison group, the difference, p and q, for both measures.">.csv, all genes</button>
                 <button id="selectionInspectCSVCells" class="btn btn-outline btn-sm" style="font-size:11px; display:none;" title="One row per cell line and a column per gene, so each line's own values are visible rather than the group means. Covers only the genes the tables are currently showing, strongest difference first, up to 300 of them.">.csv, shown genes per cell line</button>
                 <button id="selectionInspectAI" class="btn btn-outline btn-sm" style="font-size:11px; display:none;" title="Package this comparison for a language model: the selected cell lines, the differences for every gene, and the settings that produced them. Not the same file as the browser's own Export for AI, which sends the cell line list without a comparison.">Export for AI</button>
@@ -4816,7 +4822,7 @@
       <div id="clbModalCard" style="background:#fff; border-radius:8px; width:100%; min-width:0; max-width:min(98vw, 1600px); max-height:calc(100vh - 40px); margin-top:20px; display:flex; flex-direction:column; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25); overflow:hidden;">
         <!-- Header -->
         <div class="modal-header">
-          <h3>Cell Line Browser</h3>
+          <img src="web_data/clb_banner.png" alt="Cell Line Browser" style="height:44px; width:auto; min-width:0; flex:0 1 auto; object-fit:contain; object-position:left center;">
           <div style="margin-left:auto; display:flex; align-items:center; gap:6px;">
             <button id="clbInfoBtn" class="btn btn-outline btn-sm clb-icon-btn" title="How the Cell Line Browser works: the filters, sorts, quick filters, symbols, warnings and where each piece of data comes from">?</button>
             <button id="clbExportImageBtn" class="btn btn-outline btn-sm mobile-hide" title="Capture the Cell Line Browser as an image (PNG / TIFF / PDF / PowerPoint)">Export image...</button>
@@ -5207,6 +5213,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v88_19"></script>
+    <script src="app.js?v=v88_23"></script>
 </body>
 </html>
