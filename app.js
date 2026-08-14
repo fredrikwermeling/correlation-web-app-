@@ -636,7 +636,22 @@ class CorrelationExplorer {
         const textSettings = extraTs || (TS_PLOT[kind] ? this._capturePlotTextSettings(TS_PLOT[kind]) : null);
         let popout;
         if (kind === 'gene_effect') {
-            popout = { kind, gene: this.currentGeneEffect?.gene || this._geGene, view: this.currentGEView || 'tissue', dataType: this._geDataType || 'ge', controls: this._captureControls(this._GE_NEWTAB_CONTROLS()), geChartWidthRatio: this.geChartWidthRatio || 1.0, textSettings };
+            popout = { kind, gene: this.currentGeneEffect?.gene || this._geGene, view: this.currentGEView || 'tissue', dataType: this._geDataType || 'ge', controls: this._captureControls(this._GE_NEWTAB_CONTROLS()), geChartWidthRatio: this.geChartWidthRatio || 1.0, textSettings,
+                // The layers a gene opened from an inspect carries, which live
+                // outside the form controls: the two compared sides and their
+                // labels, whether the chart is split on them, the lineage the
+                // scope toggle can switch to, the red-marked selection, and a
+                // pasted cell-line list. Without these a new tab reopened the
+                // bare gene, which is not the chart that was on screen.
+                compareSides: (this._geCompareSides?.selection?.length && this._geCompareSides?.comparison?.length)
+                    ? { selection: [...this._geCompareSides.selection], comparison: [...this._geCompareSides.comparison],
+                        selLabel: this._geCompareSides.selLabel || '', cmpLabel: this._geCompareSides.cmpLabel || '' }
+                    : null,
+                compareMode: !!this._geCompareMode,
+                scopeLineage: this._geScopeLineage || '',
+                splitByOncotree: !!this._geSplitByOncotree,
+                selectionHighlight: this._geSelectionHighlight?.size ? [...this._geSelectionHighlight] : null,
+                customCellLines: this._customCellLineFilterGE?.size ? [...this._customCellLineFilterGE] : null };
         } else if (kind === 'scatter') {
             popout = {
                 kind, gene1: this.currentInspect && this.currentInspect.gene1, gene2: this.currentInspect && this.currentInspect.gene2,
@@ -646,6 +661,13 @@ class CorrelationExplorer {
                 // controls; without them a restored figure lost its labels.
                 clickedCells: this.clickedCells?.size ? [...this.clickedCells] : null,
                 labelPositions: this._userLabelPositions?.size ? Object.fromEntries(this._userLabelPositions) : null,
+                // The applied cell-line restriction as the Set it really is: a
+                // gate writes it without touching the textarea the controls
+                // capture, so a gate-filtered chart reopened on the full
+                // cohort. The gate's drawing does not travel (its image is too
+                // big for a URL); the cohort and its label do.
+                customCellLines: this._customCellLineFilter?.size ? [...this._customCellLineFilter] : null,
+                customCellLinesNote: document.getElementById('customCLFilterCount')?.textContent || '',
                 textSettings
             };
         } else if (kind === 'correlation_analysis') {
@@ -724,7 +746,29 @@ class CorrelationExplorer {
         const ts = popout.textSettings || null;
         if (popout.kind === 'gene_effect' && popout.gene) {
             this.openGeneEffectModal(popout.gene, popout.view || 'tissue', popout.dataType ? { dataType: popout.dataType } : {});
-            this._restorePopoutControls(popout.controls, 'geTissueFilter', () => { this._savedScatterTextSettings = ts; if (popout.geChartWidthRatio) this.geChartWidthRatio = popout.geChartWidthRatio; this.switchGeneEffectView(popout.view || 'tissue'); });
+            // The inspect layers, put back AFTER the open (opening resets
+            // them): the compared sides, the scope lineage, the red-marked
+            // selection and the pasted list. The compare split itself is
+            // re-entered in the render callback below, once the controls are
+            // in place.
+            this._geCompareSides = (popout.compareSides?.selection?.length && popout.compareSides?.comparison?.length)
+                ? popout.compareSides : null;
+            this._geScopeLineage = popout.scopeLineage || '';
+            this._geSplitByOncotree = !!popout.splitByOncotree;
+            if (popout.selectionHighlight?.length) this._geSelectionHighlight = new Set(popout.selectionHighlight);
+            if (popout.customCellLines?.length) {
+                this._customCellLineFilterGE = new Set(popout.customCellLines);
+                const box = document.getElementById('customCellLineFilterGE');
+                if (box && !box.value) box.value = popout.customCellLines.join('\n');
+                const cnt = document.getElementById('customCLFilterCountGE');
+                if (cnt) cnt.textContent = `${popout.customCellLines.length}/${popout.customCellLines.length} matched`;
+            }
+            this._restorePopoutControls(popout.controls, 'geTissueFilter', () => {
+                this._savedScatterTextSettings = ts;
+                if (popout.geChartWidthRatio) this.geChartWidthRatio = popout.geChartWidthRatio;
+                if (popout.compareMode && this._geCompareSides) this.setGeScopeMode('compare');
+                else { this._syncGeScopeToggle?.(); this.switchGeneEffectView(popout.view || 'tissue'); }
+            });
         } else if (popout.kind === 'correlation_analysis' && popout.gene1 && popout.gene2) {
             this.openCorrelationAnalysisModal(popout.gene1, popout.gene2, popout.view || 'tissue');
             this._restorePopoutControls(popout.controls, 'caTissueFilter', () => { this._savedScatterTextSettings = ts; this.switchCorrAnalysisView(popout.view || 'tissue'); });
@@ -746,6 +790,14 @@ class CorrelationExplorer {
                 // cell-line labels and where their labels were dragged.
                 (popout.clickedCells || []).forEach(n => this.clickedCells.add(n));
                 if (popout.labelPositions) this._userLabelPositions = new Map(Object.entries(popout.labelPositions));
+                // The applied cell-line Set, which a gate fills without
+                // writing the textarea; the label says where it came from.
+                if (popout.customCellLines?.length) {
+                    this._customCellLineFilter = new Set(popout.customCellLines);
+                    const cnt = document.getElementById('customCLFilterCount');
+                    if (cnt) cnt.textContent = popout.customCellLinesNote
+                        || `${popout.customCellLines.length}/${popout.customCellLines.length} matched`;
+                }
                 this.updateInspectPlot();
                 // Dot colour is the one setting the plot does NOT read while
                 // drawing: the picker applies it imperatively through its own
