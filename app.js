@@ -77,7 +77,10 @@
 (function() {
     if (typeof window === 'undefined') return;
     let armedAt = 0;
-    const PHONE = () => window.innerWidth <= 640;
+    // Phones and upright tablets both stack the results below the controls
+    // (the 900px cut matches the layout breakpoint), so both need the chart
+    // brought into view; a desktop shows it beside the controls already.
+    const PHONE = () => window.innerWidth <= 900;
     // A press only counts for a few seconds. An analysis that takes longer than
     // this has almost certainly been scrolled by hand in the meantime.
     const WINDOW_MS = 12000;
