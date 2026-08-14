@@ -6538,6 +6538,9 @@ class CorrelationExplorer {
             });
             document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeNetEnr(); });
         }
+        document.getElementById('enrichrDockBtn')?.addEventListener('click', () => {
+            this._setEnrichrFloating(!document.getElementById('enrichrModal')?.classList.contains('enrichr-floating'));
+        });
         document.getElementById('enrichrCloseBtn')?.addEventListener('click', () => {
             document.getElementById('enrichrModal').style.display = 'none';
         });
@@ -12047,6 +12050,15 @@ class CorrelationExplorer {
             selectModeBtn.style.color = '';
         }
         document.getElementById('selectedNodesList').style.display = 'none';
+        // A new network is a new picture. The highlight, the list of highlighted
+        // genes under View controls and the note saying why they were marked all
+        // belong to the network that has just been replaced: after a Run with a
+        // different gene set the list still named genes that were no longer
+        // drawn anywhere.
+        this._netHighlightText = '';
+        this._netHighlightNote = '';
+        this.updateHighlightedNodesList();
+        this._renderNetHighlightNote();
 
         // After stabilization: resolve edge crossings, then lock large networks
         this.network.once('stabilizationIterationsDone', () => {
@@ -35573,6 +35585,17 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }).map(r => r.gene);
     }
 
+    // Float the results beside the network instead of over everything. The
+    // network stays live underneath, so a term can be clicked and its genes
+    // watched lighting up, rather than clicked, dismissed, and then looked at.
+    _setEnrichrFloating(on) {
+        const modal = document.getElementById('enrichrModal');
+        const btn = document.getElementById('enrichrDockBtn');
+        if (!modal) return;
+        modal.classList.toggle('enrichr-floating', !!on);
+        if (btn) btn.textContent = on ? 'Fill the window' : 'Float beside network';
+    }
+
     // Enrichr from the network. Three sets, because they answer different
     // questions: everything asked about, the part of the picture that is
     // actually connected, and the whole picture. Whether a gene was typed in or
@@ -35608,6 +35631,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Clicking a result highlights its genes, which only means something
         // while a network is on screen.
         this._enrichrFromNetwork = true;
+        // Beside the network by default: these results are about the picture
+        // on screen, and covering it to read them defeats the point.
+        this._setEnrichrFloating(window.innerWidth > 640);
         const label = scope === 'input' ? 'genes'
                     : scope === 'correlated' ? 'correlated genes' : 'genes in the image';
         const modal = document.getElementById('enrichrModal');
@@ -35625,6 +35651,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
     async openEnrichr(source) {
         this._enrichrFromNetwork = false;
+        this._setEnrichrFloating(false);
         const genes = this.getGenesFromTable(source);
         if (genes.length < 2) {
             this.showCopyNotification('Need at least 2 genes for Enrichr analysis');
@@ -35691,7 +35718,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const active = lib.key === activeLibrary;
             const total = results[lib.key]?.length || 0;
             const sig = (results[lib.key] || []).filter(r => r[6] < 0.05).length;
-            return `<button data-lib="${lib.key}" style="padding:5px 12px; font-size:12px; border:1px solid ${active ? '#6ba544' : '#555'}; background:${active ? '#6ba544' : 'transparent'}; color:${active ? '#fff' : '#ccc'}; border-radius:4px; cursor:pointer;">${lib.label} (${sig}/${total})</button>`;
+            return `<button data-lib="${lib.key}" style="padding:5px 12px; font-size:12px; border:1px solid ${active ? '#6ba544' : 'var(--gray-200)'}; background:${active ? '#6ba544' : '#fff'}; color:${active ? '#fff' : '#374151'}; border-radius:4px; cursor:pointer;">${lib.label} (${sig}/${total})</button>`;
         }).join('');
 
         tabsEl.querySelectorAll('button').forEach(btn => {
@@ -35752,7 +35779,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         columns.forEach(c => {
             const sortable = c.key !== 'genesDisplay';
             const sortKey = c.key === 'geneCount' ? 'geneCount' : c.key;
-            html += `<th data-enrichr-sort="${sortable ? sortKey : ''}" style="padding:6px 8px; text-align:left; border-bottom:2px solid #555; color:#aaa; cursor:${sortable ? 'pointer' : 'default'}; white-space:nowrap; font-size:11px;">${c.label}${arrow(sortKey)}</th>`;
+            html += `<th data-enrichr-sort="${sortable ? sortKey : ''}" style="padding:6px 8px; text-align:left; border-bottom:2px solid var(--gray-200); color:#6b7280; cursor:${sortable ? 'pointer' : 'default'}; white-space:nowrap; font-size:11px;">${c.label}${arrow(sortKey)}</th>`;
         });
         html += '</tr></thead><tbody>';
 
@@ -35769,7 +35796,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 + ` title="Highlight these genes in the network"`
                 : '';
             html += `<tr${_gsAttr} style="border-bottom:1px solid #333;${_clickable ? ' cursor:pointer;' : ''}">`;
-            html += `<td style="padding:5px 8px; color:#888;">${row.rank}</td>`;
+            html += `<td style="padding:5px 8px; color:#9ca3af;">${row.rank}</td>`;
             html += `<td style="padding:5px 8px; max-width:350px; overflow:hidden; text-overflow:ellipsis;" title="${this.esc(row.term)}">${this.esc(row.term)}</td>`;
             html += `<td style="padding:5px 8px; font-family:monospace; font-size:11px;">${this.formatPValue(row.pValue)}</td>`;
             html += `<td style="padding:5px 8px; font-family:monospace; font-size:11px; color:#5d9239; font-weight:bold;">${this.formatPValue(row.adjPValue)}</td>`;
