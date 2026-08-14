@@ -1210,7 +1210,13 @@
         /* New horizontal grid layout for network controls */
         .network-controls-grid {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            /* Sized to the box the toolbar actually sits in, not the window:
+               a fixed three-column split overflowed whenever the results
+               panel was narrower than the toolbar's content (an iPad held
+               upright clipped the view controls and export column clean off
+               the right edge). auto-fit drops to two columns, then one, as
+               the panel narrows. */
+            grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
             gap: 10px;
             padding: 8px 10px;
             background: #f9fafb;
@@ -1476,22 +1482,50 @@
         .button-group-horizontal {
             display: flex;
             gap: 8px;
+            /* Never wider than the column: three labeled buttons on one row
+               are what used to force the toolbar past its box. */
+            flex-wrap: wrap;
         }
 
         .button-group-horizontal .btn {
             flex: 1;
         }
 
-        @media (max-width: 800px) {
-            .network-controls-grid {
-                grid-template-columns: repeat(2, 1fr);
-            }
+        /* The old fixed 2-column / 1-column window-width fallbacks are gone:
+           auto-fit above follows the panel's own width at every size. */
+
+        /* ---- Tablet (641-900px): an iPad held upright. The 415px sidebar
+           beside the results left the network a strip too narrow to use,
+           with the toolbar's right columns clipped off the page. Stack
+           instead: Options, then parameters and gene input side by side,
+           then Results with the full width. A tablet on its side is wide
+           enough for the desktop layout and keeps it. */
+        @media (min-width: 641px) and (max-width: 900px) {
+            .container { flex-direction: column; max-width: 100%; }
+            .sidebar { width: 100%; min-width: 0; }
+            .main-panel { width: 100%; }
+            .logo-header img { max-width: min(440px, 92vw); }
         }
 
-        @media (max-width: 500px) {
-            .network-controls-grid {
-                grid-template-columns: 1fr;
+        /* ---- Touch screens above phone size (an iPad, either way up).
+           The layout is the desktop's, but the pointer is a finger, so
+           nothing interactive may be much smaller than a fingertip. Scoped
+           by pointer, never by width: a desktop with a mouse never matches,
+           and the phone block below carries its own, stronger sizing. */
+        @media (pointer: coarse) and (min-width: 641px) {
+            .modal-body .form-control, .modal-body select, .modal-body input,
+            .sidebar .form-control, .sidebar select, .sidebar input[type="text"],
+            .sidebar input[type="number"], #cellLineBrowserModal select,
+            #cellLineBrowserModal input[type="text"] {
+                min-height: 36px !important;
+                font-size: 14px !important;
             }
+            .modal-body .btn, .sidebar .btn, #cellLineBrowserModal .btn,
+            .network-controls-grid .btn {
+                min-height: 38px !important;
+            }
+            input[type="checkbox"], input[type="radio"] { width: 18px !important; height: 18px !important; }
+            .modal-close { min-width: 40px !important; min-height: 40px !important; }
         }
 
         .network-legend {
@@ -5213,6 +5247,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v88_23"></script>
+    <script src="app.js?v=v88_24"></script>
 </body>
 </html>

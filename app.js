@@ -1162,6 +1162,29 @@ class CorrelationExplorer {
         try { this._syncOncotreeSelectors(); } catch (e) { /* selectors optional */ }
     }
 
+    // The cell lines a popout's tissue / subtype / disease counts run over:
+    // the panel's own points, which already reflect the gene and data type on
+    // screen (USP18 expression covers fewer Lung lines than the Lung metadata
+    // holds, and the selectors must agree on which of those two numbers they
+    // are counting), narrowed by the panel's alteration filters. The three
+    // annotation selectors then scale to every other filter, and to each
+    // other only through the picks passed alongside. The browser and the
+    // first-page params count over their own cohorts and are not served here.
+    _annotationCountCohort(ctx) {
+        // The mutation-inspect layout populates its selectors from the whole
+        // panel on purpose (the inspect may widen past the analysis filters),
+        // and currentGeneEffect can be another gene's leftovers there.
+        if (ctx === 'ge' && this.geneEffectViewMode === 'mutation') return null;
+        const data = ctx === 'scatter' ? this.currentInspect?.data
+            : ctx === 'ge' ? this.currentGeneEffect?.data
+            : ctx === 'ca' ? this._corrAnalysisData?.data : null;
+        if (!Array.isArray(data) || !data.length) return null;
+        const excl = ctx === 'scatter' ? this._inspectCohortExcluding('tissue')
+            : ctx === 'ge' ? this._geCohortExcluding('tissue')
+            : this._caCohortExcluding('tissue');
+        return data.map(d => d.cellLineId).filter(cl => excl.has(cl));
+    }
+
     // Subtype options for one panel: scoped by that panel's tissue AND its
     // disease pick, counted and ranked by count. The disease list is already
     // scoped by the subtype; this is the reverse half of the two selectors
@@ -1259,10 +1282,10 @@ class CorrelationExplorer {
         }
 
         // Subtypes from current inspect data, scoped by the panel's lineage
-        // AND disease picks (a disease alone is enough) so the selectors stay
-        // consistent with each other.
+        // AND disease picks (a disease alone is enough) and by the panel's
+        // alteration filters, so the selectors stay consistent with each other.
         const { items, total } = this._subtypeOptionsFor(lineage, diseaseVal,
-            this.currentInspect.data.map(d => d.cellLineId));
+            this._annotationCountCohort('scatter') || this.currentInspect.data.map(d => d.cellLineId));
 
         if (items.length > 1 || (items.length === 1 && items[0].name !== lineage)) {
             this._fillSubtypeSelect(subSelect, items, total);
@@ -1385,8 +1408,12 @@ class CorrelationExplorer {
         }
 
         // Subtype counts scoped by the panel's lineage AND disease picks (a
-        // disease alone is enough) so the selectors stay consistent.
-        const { items, total } = this._subtypeOptionsFor(lineage, diseaseVal);
+        // disease alone is enough), counted over the popout's own points so
+        // they agree with the tissue selector: counting the whole metadata
+        // here said "Lung n=126" while the tissue list, built from the lines
+        // actually measured for this gene, said 123.
+        const { items, total } = this._subtypeOptionsFor(lineage, diseaseVal,
+            this._annotationCountCohort('ge'));
 
         if (items.length > 1 || (items.length === 1 && items[0].name !== lineage)) {
             this._fillSubtypeSelect(subSelect, items, total);
@@ -5428,8 +5455,15 @@ class CorrelationExplorer {
         try {
             if (ctxName === 'params') this._updateLineageFilterCounts();
             else if (ctxName === 'scatter') this._updateScatterTissueOptions();
-            else if (ctxName === 'ge') this._rescopeTissueSelect('geTissueFilter',
-                this.currentGeneEffect?.data, document.getElementById('geOncotreeFilter')?.value || '');
+            else if (ctxName === 'ge') {
+                // Tissue counts respect the panel's alteration filters too,
+                // like the scatter and correlation-analysis panels.
+                const pts = this.currentGeneEffect?.data;
+                const co = Array.isArray(pts) && pts.length ? this._geCohortExcluding('tissue') : null;
+                this._rescopeTissueSelect('geTissueFilter',
+                    co ? pts.filter(p => co.has(p.cellLineId)) : pts,
+                    document.getElementById('geOncotreeFilter')?.value || '');
+            }
             else if (ctxName === 'ca') this._updateCaTissueOptions();
             // clb: renderCellLineList -> updateClbFilterCounts already rescopes.
         } catch (e) { /* selector may not be mounted */ }
@@ -5451,7 +5485,7 @@ class CorrelationExplorer {
             return;
         }
         const { items, total } = this._subtypeOptionsFor(tissue, diseaseVal,
-            data.map(p => p.cellLineId));
+            this._annotationCountCohort('ca') || data.map(p => p.cellLineId));
         if (items.length > 1 || (items.length === 1 && items[0].name !== tissue)) {
             this._fillSubtypeSelect(subSelect, items, total);
         } else {
@@ -7332,7 +7366,12 @@ class CorrelationExplorer {
     }
 
     geneNotFound(gene, where = '') {
-        const sugg = (this._findGeneSuggestions([gene]).get(gene) || []).slice(0, 6);
+        // A family query ("USP") lists every member in a scrolling strip,
+        // because the one the user wants is as likely to be USP18 as USP1,
+        // and six arbitrary names answered the wrong question. Only a very
+        // short query overflows the 80 shown, and the note then says so.
+        const all = this._findGeneSuggestions([gene]).get(gene) || [];
+        const sugg = all.slice(0, 80);
         document.getElementById('geneNotFoundNotice')?.remove();
         const box = document.createElement('div');
         box.id = 'geneNotFoundNotice';
@@ -7342,9 +7381,9 @@ class CorrelationExplorer {
                 <button style="background:none;border:none;font-size:18px;line-height:1;cursor:pointer;color:#9ca3af;">&times;</button>
             </div>`
             + (sugg.length
-                ? `<div style="color:#6b7280; margin-bottom:6px;">Did you mean:</div><div>${sugg.map(g =>
+                ? `<div style="color:#6b7280; margin-bottom:6px;">Did you mean:</div><div style="max-height:150px; overflow-y:auto;">${sugg.map(g =>
                     `<button data-g="${this.esc(g)}" style="border:1px solid #d1d5db; background:#f9fafb; color:#4c782e; font-weight:600; border-radius:10px; padding:2px 10px; margin:0 6px 6px 0; cursor:pointer; font-size:11px;">${this.esc(g)}</button>`).join('')}</div>
-                   <div style="color:#9ca3af; font-size:10px; margin-top:4px;">Click one to use it.</div>`
+                   <div style="color:#9ca3af; font-size:10px; margin-top:4px;">Click one to use it.${all.length > sugg.length ? ` Showing ${sugg.length} of ${all.length} names; type more letters to narrow.` : sugg.length > 8 ? ' Every name starting with what you typed is listed.' : ''}</div>`
                 : `<div style="color:#6b7280;">No similar gene symbol in this dataset. Check the spelling, or use Find synonyms for an alternative name.</div>`);
         document.body.appendChild(box);
         box.querySelector('button').onclick = () => box.remove();
@@ -7535,13 +7574,16 @@ class CorrelationExplorer {
                 continue;
             }
 
-            // 1. Check prefix matches
+            // 1. Prefix matches. A short query like "USP" is usually someone
+            //    reaching for a family member, so collect the whole family in
+            //    natural order rather than whichever three the index yields
+            //    first, which suggested USP1 / USP10 / USP11 and could never
+            //    reach USP18. Consumers cap the list to what their layout
+            //    carries.
             for (const gene of allGenes) {
-                if (gene.startsWith(upper) || upper.startsWith(gene)) {
-                    matches.push(gene);
-                    if (matches.length >= 3) break;
-                }
+                if (gene.startsWith(upper) || upper.startsWith(gene)) matches.push(gene);
             }
+            matches.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
             // 2. Check edit distance ≤ 2 (only if few/no prefix matches found)
             if (matches.length < 3) {
@@ -17774,7 +17816,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const setVal = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
         if (kind === 'tissue') {
             return this._simpleChipMenu(anchorEl, [
-                { label: 'Remove this filter', danger: true, act: () => { setVal('geTissueFilter', ''); setVal('geSubtypeFilter', ''); setVal('geOncotreeFilter', ''); this.updateGESubtypeFilter?.(); } },
+                { label: 'Remove this filter', danger: true, act: () => { setVal('geTissueFilter', ''); setVal('geSubtypeFilter', ''); setVal('geOncotreeFilter', ''); this.updateGeSubtypeFilter(); } },
             ], rerender);
         }
         if (kind === 'subtype') {
@@ -39947,7 +39989,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // are, not only in the Cell Line Browser. Counts follow the tissue and
     // subtype already chosen in that panel, so the list never offers a disease
     // that would empty the view.
-    _populateOncotreeSelect(selectId, tissue = '', subtype = '') {
+    _populateOncotreeSelect(selectId, tissue = '', subtype = '', cellLines = null) {
         const sel = document.getElementById(selectId);
         if (!sel || !this.cellLineMetadata) return;
         const onc = this.cellLineMetadata.oncotreeSubtype || {};
@@ -39959,7 +40001,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // "Cutaneous Melanoma"). Mark those so they read as "not further
         // specified" rather than as a distinct disease.
         const parentLevel = new Map();
-        for (const cl of (this.metadata?.cellLines || [])) {
+        // cellLines: a popout's own count cohort (see _annotationCountCohort),
+        // so the disease counts agree with the tissue and subtype selectors
+        // beside them instead of quoting the whole panel's metadata.
+        for (const cl of (cellLines || this.metadata?.cellLines || [])) {
             if (tissue && lin[cl] !== tissue) continue;
             if (subtype && pd[cl] !== subtype) continue;
             const v = onc[cl];
@@ -40688,12 +40733,17 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             ['ge', 'geTissueFilter', 'geSubtypeFilter', 'geOncotreeFilter'],
             ['ca', 'caTissueFilter', 'caSubtypeFilter', 'caOncotreeFilter'],
         ];
+        // Each popout's disease counts run over that popout's own cohort;
+        // the first-page params keep the whole panel (their cohort IS the
+        // whole panel, and rewiring them is a decided non-goal).
+        const cohortOf = (ctx) => ctx === 'params' ? null : this._annotationCountCohort(ctx);
         for (const [ctx, tId, sId, oId] of ctxs) {
             const sel = document.getElementById(oId);
             if (!sel) continue;
             this._populateOncotreeSelect(oId,
                 document.getElementById(tId)?.value || '',
-                document.getElementById(sId)?.value || '');
+                document.getElementById(sId)?.value || '',
+                cohortOf(ctx));
             if (!sel._wired) {
                 sel._wired = true;
                 sel.addEventListener('change', () => {
@@ -40710,7 +40760,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 [tId, sId].forEach(id => document.getElementById(id)?.addEventListener('change', () =>
                     this._populateOncotreeSelect(oId,
                         document.getElementById(tId)?.value || '',
-                        document.getElementById(sId)?.value || '')));
+                        document.getElementById(sId)?.value || '',
+                        cohortOf(ctx))));
             }
         }
     }
@@ -40750,6 +40801,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const spec = this._filterCtx(ctxName);
         if (!spec) return;
         try { this._syncOncotreeSelectors(); } catch (e) { /* selectors are optional */ }
+        // Chips re-render on every filter change, so this is the one place
+        // that keeps a popout's tissue / subtype counts scaled to whatever
+        // else is applied (hotspot, fusion, CN, disease). The browser and the
+        // first-page params maintain their own counts, and the mutation
+        // inspect populates its selectors from the whole panel on purpose.
+        if ((ctxName === 'scatter' || ctxName === 'ca')
+            || (ctxName === 'ge' && this.geneEffectViewMode !== 'mutation')) {
+            try { this._refreshTissueSelector(ctxName); } catch (e) {}
+            try { this._refreshSubtypeSelector(ctxName); } catch (e) {}
+        }
         const host = document.getElementById(spec.chips);
         if (!host) return;
         const val = (id) => (id && document.getElementById(id)?.value) || '';
