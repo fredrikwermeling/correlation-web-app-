@@ -35482,29 +35482,42 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
 
     // Enrichr from the network. Three sets, because they answer different
-    // questions: what was asked about, what the search actually drew, and what
-    // the search added. Nodes removed by hand are gone from networkData, so
-    // "genes in the network" means what is on screen, not what was built.
+    // questions: everything asked about, the part of the picture that is
+    // actually connected, and the whole picture. Whether a gene was typed in or
+    // brought in by the search is not one of the three: by the time it is drawn
+    // and correlated it is part of the same answer. Nodes removed by hand are
+    // gone from networkData, so both drawn sets mean what is on screen.
     async openNetworkEnrichr(scope) {
         const input = (this.results?.geneList || []).map(g => String(g).toUpperCase());
         const drawn = this.networkData?.nodes
             ? this.networkData.nodes.getIds().map(g => String(g).toUpperCase())
             : [];
-        const inputSet = new Set(input);
         let genes;
         if (scope === 'input') genes = input;
-        else if (scope === 'partners') genes = drawn.filter(g => !inputSet.has(g));
-        else genes = drawn;
+        else if (scope === 'correlated') {
+            // Connected to at least one other gene. The unconnected ones are
+            // parked in their own grid to the side and are not part of any
+            // cluster, so they say nothing about a shared pathway.
+            const connected = new Set();
+            (this.networkData?.edges?.get() || []).forEach(e => {
+                connected.add(String(e.from).toUpperCase());
+                connected.add(String(e.to).toUpperCase());
+            });
+            genes = drawn.filter(g => connected.has(g));
+        } else genes = drawn;
 
         genes = [...new Set(genes)].filter(Boolean);
         if (genes.length < 2) {
-            this.showCopyNotification(scope === 'partners'
-                ? 'No correlated genes were added to this network.'
+            this.showCopyNotification(scope === 'correlated'
+                ? 'No gene in this network is correlated with another.'
                 : 'Need at least 2 genes for Enrichr analysis');
             return;
         }
-        const label = scope === 'input' ? 'input genes'
-                    : scope === 'partners' ? 'correlated genes' : 'network genes';
+        // Clicking a result highlights its genes, which only means something
+        // while a network is on screen.
+        this._enrichrFromNetwork = true;
+        const label = scope === 'input' ? 'genes'
+                    : scope === 'correlated' ? 'correlated genes' : 'genes in the image';
         const modal = document.getElementById('enrichrModal');
         const content = document.getElementById('enrichrContent');
         const title = document.getElementById('enrichrTitle');
@@ -35519,6 +35532,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
 
     async openEnrichr(source) {
+        this._enrichrFromNetwork = false;
         const genes = this.getGenesFromTable(source);
         if (genes.length < 2) {
             this.showCopyNotification('Need at least 2 genes for Enrichr analysis');
@@ -35656,7 +35670,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const isLong = geneList.length > 60;
             const truncatedGenes = isLong ? geneList.substring(0, 60) + '...' : geneList;
 
-            html += `<tr style="border-bottom:1px solid #333;">`;
+            const _clickable = this._enrichrFromNetwork;
+            const _gsAttr = _clickable
+                ? ` class="enrichr-hl-row" data-enrichr-hl="${this.esc((Array.isArray(row.genes) ? row.genes : []).join(','))}"`
+                + ` data-enrichr-term="${this.esc(row.term)}" data-enrichr-q="${row.adjPValue}" data-enrichr-n="${geneCount}"`
+                + ` title="Highlight these genes in the network"`
+                : '';
+            html += `<tr${_gsAttr} style="border-bottom:1px solid #333;${_clickable ? ' cursor:pointer;' : ''}">`;
             html += `<td style="padding:5px 8px; color:#888;">${row.rank}</td>`;
             html += `<td style="padding:5px 8px; max-width:350px; overflow:hidden; text-overflow:ellipsis;" title="${this.esc(row.term)}">${this.esc(row.term)}</td>`;
             html += `<td style="padding:5px 8px; font-family:monospace; font-size:11px;">${this.formatPValue(row.pValue)}</td>`;
@@ -35676,7 +35696,37 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         });
 
         html += '</tbody></table>';
+        // A line above the table that names whatever was last clicked. Without
+        // it the network lights up with no statement of what the highlight is,
+        // which is the part worth reading off a result.
+        if (this._enrichrFromNetwork) {
+            html = '<div id="enrichrHlNote" style="margin:0 0 8px; padding:6px 10px; border-left:3px solid #7c3aed;'
+                 + ' background:#faf7ff; border-radius:4px; font-size:11px; color:#4b5563;">'
+                 + 'Click a row to highlight its genes in the network.</div>' + html;
+        }
         contentEl.innerHTML = html;
+
+        if (this._enrichrFromNetwork) {
+            contentEl.querySelectorAll('tr[data-enrichr-hl]').forEach(tr => {
+                tr.addEventListener('click', (ev) => {
+                    // The gene cell has its own click, for expanding the list.
+                    if (ev.target.closest('.enrichr-gene-cell')) return;
+                    const genes = (tr.dataset.enrichrHl || '').split(',').filter(Boolean);
+                    if (!genes.length) return;
+                    this.applyNetworkHighlight(genes.join(', '));
+                    contentEl.querySelectorAll('tr[data-enrichr-hl]').forEach(o => {
+                        o.style.background = o === tr ? '#f5f3ff' : '';
+                    });
+                    const note = document.getElementById('enrichrHlNote');
+                    if (note) {
+                        const q = parseFloat(tr.dataset.enrichrQ);
+                        note.innerHTML = `<b>${this.esc(tr.dataset.enrichrTerm)}</b>`
+                            + `<br><span style="color:#6b7280;">${tr.dataset.enrichrN} of the ${this._enrichrData?.genes?.length || '?'} genes sent`
+                            + `, adjusted p = ${this.formatPValue(q)}. Highlighted in the network.</span>`;
+                    }
+                });
+            });
+        }
 
         // Wire sort clicks
         contentEl.querySelectorAll('th[data-enrichr-sort]').forEach(th => {

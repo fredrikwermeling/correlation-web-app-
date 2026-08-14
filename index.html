@@ -3152,9 +3152,9 @@
                                 <button class="btn btn-secondary" id="netEnrichrBtn" aria-haspopup="true" aria-expanded="false" title="Pathway enrichment via Enrichr, for the genes you typed in or for the ones actually drawn">Enrichr &#9662;</button>
                                 <div id="netEnrichrMenu" style="display:none; position:absolute; top:calc(100% + 4px); left:0; z-index:1500; background:#fff; border:1px solid var(--gray-200); border-radius:6px; box-shadow:0 6px 18px rgba(0,0,0,0.14); min-width:230px; padding:4px;">
                                     <div style="font-size:10px; color:#9ca3af; padding:3px 10px 4px;">Which genes to send?</div>
-                                    <button class="options-menu-item" data-net-enrichr="input" title="The genes in the box above, whether or not they reached the picture">All input genes</button>
-                                    <button class="options-menu-item" data-net-enrichr="network" title="Every gene drawn: the input genes that survived the cutoff plus the correlated genes brought in with them">Genes in the network</button>
-                                    <button class="options-menu-item" data-net-enrichr="partners" title="Only the correlated genes the search added, without the ones you typed in">Correlated genes only</button>
+                                    <button class="options-menu-item" data-net-enrichr="input" title="Every gene in the box above, whether or not it reached the picture">All genes</button>
+                                    <button class="options-menu-item" data-net-enrichr="correlated" title="The genes that are actually connected to something: the clusters, without the unconnected genes parked to the side">Correlated genes (the clusters)</button>
+                                    <button class="options-menu-item" data-net-enrichr="drawn" title="Every gene drawn, clusters and unconnected genes alike">Everything in the image</button>
                                     <div style="border-top:1px solid #e5e7eb; margin:4px 0 0; padding-top:4px;">
                                         <a href="https://maayanlab.cloud/Enrichr/" target="_blank" rel="noopener" class="options-menu-item" style="color:#9ca3af; font-size:10px; text-decoration:none; display:block;">About Enrichr &#8599;</a>
                                     </div>
@@ -5154,6 +5154,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v88_13"></script>
+    <script src="app.js?v=v88_14"></script>
 </body>
 </html>
