@@ -1507,7 +1507,12 @@
             .logo-header img { max-width: min(440px, 92vw); }
             /* Room to paste a real gene list, in both input modes: the input
                card has half the page here, so the box can afford the height. */
-            #geneTextarea, #manualStatsTextarea { min-height: 320px !important; }
+            #geneTextarea, #manualStatsTextarea { min-height: 260px !important; }
+            /* "Rank by" and the best-lineage picker render into #analysisStatus
+               under the Run button after a run; hidden here for the same
+               reason as on a phone, where it read as a stray filter. The
+               desktop keeps it. */
+            #analysisStatus { display: none !important; }
             /* The collapsed sidebar sections read as a tappable line, same as
                the phone's. */
             .phone-collapsed > .param-section-heading {
@@ -5255,6 +5260,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v88_26"></script>
+    <script src="app.js?v=v88_27"></script>
 </body>
 </html>
