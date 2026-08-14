@@ -1505,6 +1505,14 @@
             .sidebar { width: 100%; min-width: 0; }
             .main-panel { width: 100%; }
             .logo-header img { max-width: min(440px, 92vw); }
+            /* Room to paste a real gene list, in both input modes: the input
+               card has half the page here, so the box can afford the height. */
+            #geneTextarea, #manualStatsTextarea { min-height: 320px !important; }
+            /* The collapsed sidebar sections read as a tappable line, same as
+               the phone's. */
+            .phone-collapsed > .param-section-heading {
+                min-height: 36px; margin: 0; text-align: left;
+            }
         }
 
         /* ---- Touch screens above phone size (an iPad, either way up).
@@ -5247,6 +5255,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v88_25"></script>
+    <script src="app.js?v=v88_26"></script>
 </body>
 </html>

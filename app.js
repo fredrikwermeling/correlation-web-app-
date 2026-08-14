@@ -302,6 +302,7 @@ class CorrelationExplorer {
             this._setupGlobalCohortBar();
             this._guardNetworkKeysFromInputs();
             this._armPhoneCollapsibles();
+            this._armTabletCollapsibles();
             // A node drawn at 25px and an edge at 3px are a fine mouse target
             // and a poor finger one: opening the next level by tapping a node
             // or an edge was mostly luck. vis has no hit tolerance to widen, so
@@ -11607,8 +11608,25 @@ class CorrelationExplorer {
         }).observe(document.body, { childList: true, subtree: true });
     }
 
-    _setupPhoneCollapsibles(root) {
-        if (window.innerWidth > 640) return;
+    // An iPad held upright: the start page stacks (v.88.24), so "Lineage and
+    // disease" and "Genetic alterations" sit between the gene box and Run just
+    // as they do on a phone. Same open-on-tap treatment, but ONLY those two
+    // sidebar sections; every other panel keeps its desktop layout.
+    _armTabletCollapsibles() {
+        if (window.innerWidth <= 640 || window.innerWidth > 900 || this._tabletCollapseArmed) return;
+        this._tabletCollapseArmed = true;
+        const run = () => this._setupPhoneCollapsibles(document, true);
+        run();
+        let pending = null;
+        new MutationObserver(() => {
+            clearTimeout(pending);
+            pending = setTimeout(run, 60);
+        }).observe(document.body, { childList: true, subtree: true });
+    }
+
+    _setupPhoneCollapsibles(root, sidebarOnly = false) {
+        if (sidebarOnly ? (window.innerWidth <= 640 || window.innerWidth > 900)
+                        : window.innerWidth > 640) return;
         const scope = root || document;
 
         // Which panels the user has opened, kept on the app and keyed by the
@@ -11724,6 +11742,10 @@ class CorrelationExplorer {
             if (!body) return;
             wire(head, body, { open: false });
         });
+
+        // The two sidebar sections are all a tablet collapses; everything
+        // below is the phone's fuller treatment.
+        if (sidebarOnly) return;
 
         // Inspect selection: the two threshold cards. They sit above the
         // results on a phone so "Compare with" is the first thing on screen,
