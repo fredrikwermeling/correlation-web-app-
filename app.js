@@ -12333,7 +12333,9 @@ class CorrelationExplorer {
             if (params.edges && params.edges.length) return params.edges[0];
             const pt = params.pointer && params.pointer.DOM;
             if (!pt || typeof this.network.getEdgeAt !== 'function') return null;
-            if (window.innerWidth > 640) return null;
+            // The probe is for fingers: phones, tablets and any other
+            // coarse-pointer screen. A mouse keeps the exact hit it had.
+            if (window.innerWidth > 900 && !window.matchMedia?.('(pointer: coarse)')?.matches) return null;
             // About a fingertip. Wider was measured to still find an edge 45px
             // away, which in a dense network means a tap on empty canvas opens
             // a correlation for whatever line happened to be nearest.
@@ -12354,7 +12356,11 @@ class CorrelationExplorer {
         // Double-click to open Gene Effect (node) or Inspect (edge)
         this.network.on('doubleClick', (params) => {
             clearTimeout(this._networkTooltipTimer);
-            this.hideGeneTooltip();
+            // force: a PINNED card (Shift on desktop, any tap on touch)
+            // ignores the plain hide and stayed on top of the popout this
+            // opens, with the popout's own chrome underneath its close.
+            this.hideGeneTooltip(true);
+            document.getElementById('edgeRPopup')?.remove();
             if (params.nodes.length > 0) {
                 // Node double-clicked - open Gene Effect analysis
                 const nodeId = params.nodes[0];
@@ -12380,37 +12386,20 @@ class CorrelationExplorer {
             // edge tap.
             document.getElementById('edgeRPopup')?.remove();
 
-            // On a phone a single tap opens the correlation for an edge. The
-            // double tap this is bound to on the desktop competes with the
-            // browser's own double-tap-to-zoom, and there is no hover to tell
-            // you an edge is under your finger in the first place. Only when no
-            // node was hit and none of the editing modes is on, so tapping
-            // empty canvas to deselect still works.
-            if (window.innerWidth <= 640 && !params.nodes.length
-                && !this.highlightMode && !this.selectMode && !this.removeMode) {
-                const edgeId = edgeNear(params);
-                const edge = edgeId != null ? this.networkData.edges.get(edgeId) : null;
-                if (edge) {
-                    this.hideGeneTooltip(true);
-                    this.openInspectByGenes(edge.from, edge.to);
-                    this._revealScatterPlot();
-                    return;
-                }
-            }
-
-            // An iPad: an edge is a hard double-tap target and there is no
-            // hover to say what it holds. First tap answers with the pair and
-            // its r as a small button by the finger; tapping that opens the
-            // correlation. Tablet widths, plus any coarse-pointer screen
-            // above them, so a desktop mouse never sees it.
-            if (window.innerWidth > 640
-                && (window.innerWidth <= 900 || window.matchMedia?.('(pointer: coarse)')?.matches)
+            // Phones and iPads alike: an edge is a hard target on glass and
+            // there is no hover to say what it holds. The first tap answers
+            // with the pair and its r as a small button by the finger; tapping
+            // that opens the correlation. Two taps rather than one on the
+            // phone too, so a missed tap in a dense network shows what it hit
+            // before committing to a popout. Only when no node was hit and no
+            // editing mode is on, so tapping empty canvas to deselect still
+            // works; a desktop mouse keeps hover + double-click.
+            if ((window.innerWidth <= 900 || window.matchMedia?.('(pointer: coarse)')?.matches)
                 && !params.nodes.length
                 && !this.highlightMode && !this.selectMode && !this.removeMode) {
                 const edgeId = edgeNear(params);
                 const edge = edgeId != null ? this.networkData.edges.get(edgeId) : null;
                 if (edge) {
-                    this.hideGeneTooltip(true);
                     this._showEdgeRPopup(edge, params.pointer?.DOM);
                     return;
                 }
@@ -28107,6 +28096,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
 
     openGeneEffectFromNetwork(gene) {
+        // The gene card a tap may have pinned must not sit over the popout.
+        this.hideGeneTooltip(true);
         // Open on the analysis's own basis, so a node in an expression
         // network drills into the expression distribution.
         this.openGeneEffectModal(gene, 'tissue', { dataType: this.results?.basis === 'expr' ? 'expr' : 'ge' });
@@ -32978,8 +32969,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // (the NCBI / GeneCards links could not be tapped), the summary cut at
         // 260 characters, and, worst, no dismiss listener registered, so the
         // card that says "Tap anywhere to close" could not be closed at all.
+        // The same holds for ANY touch screen: an iPad showed the unpinned
+        // hover card, and with no mouse to move away the box stayed over the
+        // chart with no way to close it. Coarse pointer = pinned.
         const pinned = !!(event && event.shiftKey) || !!this._shiftHeld
-                    || (typeof window !== 'undefined' && window.innerWidth <= 640);
+                    || (typeof window !== 'undefined' && (window.innerWidth <= 640
+                        || window.matchMedia?.('(pointer: coarse)')?.matches));
 
         const tooltip = document.createElement('div');
         tooltip.id = 'geneTooltip';
@@ -33149,6 +33144,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // double-tap on a thin line into two easy taps.
     _showEdgeRPopup(edge, domPoint) {
         document.getElementById('edgeRPopup')?.remove();
+        // One box at a time: the gene card a node tap may have pinned, and
+        // vis-network's own edge tooltip (which shows the same r), both
+        // otherwise sit under or across this button.
+        this.hideGeneTooltip(true);
+        document.querySelectorAll('.vis-tooltip').forEach(t => { t.style.display = 'none'; });
         const host = this.network?.body?.container;
         if (!host) return;
         const rect = host.getBoundingClientRect();
