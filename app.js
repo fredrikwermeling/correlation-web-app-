@@ -39753,6 +39753,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const search = document.getElementById('clbSearch').value.trim().toLowerCase();
         const tissue = document.getElementById('clbTissueFilter').value;
         const subtype = document.getElementById('clbSubtypeFilter').value;
+        // Disease is the third level of the same choice and was missing here,
+        // so every count built on this cohort quietly answered for the tissue
+        // instead: with Colon Adenocarcinoma chosen, 48 lines, the hotspot list
+        // offered KRAS n=34 and TP53 n=43, which are the Bowel figures over 63
+        // lines. The grid, which filters properly, said 24 and 30.
+        const oncotree = document.getElementById('clbOncotreeFilter')?.value || '';
         const sexFilter = document.getElementById('clbSexFilter').value;
         const hotspotGene = kind === 'hotspot' ? '' : document.getElementById('clbHotspotFilter').value;
         const transGene = kind === 'fusion' ? '' : document.getElementById('clbTranslocationFilter').value;
@@ -39767,6 +39773,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         for (const cl of this.metadata.cellLines) {
             if (tissue && this.getCellLineLineage(cl) !== tissue) continue;
             if (subtype && this.getCellLineSublineage(cl) !== subtype) continue;
+            if (oncotree && (this.cellLineMetadata?.oncotreeSubtype?.[cl] || '') !== oncotree) continue;
             if (sexFilter && !this._cellLineMatchesSexFilter(cl, sexFilter)) continue;
             if (hotspotMuts) { const l = hotspotMuts[cl] || 0; if (hotspotLvl === '0' ? l !== 0 : hotspotLvl === '1' ? l !== 1 : hotspotLvl === '2' ? l < 2 : l < 1) continue; }
             if (transGene) { const has = this._geFusionPasses(cl, transGene); if (fusionLvl === '0' ? has : !has) continue; }
