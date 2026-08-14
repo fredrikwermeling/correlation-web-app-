@@ -12835,6 +12835,24 @@ class CorrelationExplorer {
                 <input type="text" id="net_ts_bannerText" value="${this._escapeAttr(bannerText)}" style="width:100%;border:1px solid #d1d5db;border-radius:4px;padding:3px 6px;font-size:11px;margin-top:1px;box-sizing:border-box;" oninput="app._netTsApply()">
             </div>` : '<div style="font-size:10px;color:#9ca3af;margin-bottom:4px;">No filter banner on this network (no parameter filters active).</div>'}
             <div style="border-top:1px solid #e5e7eb;margin:6px 0;"></div>
+            <div style="font-weight:600;margin-bottom:4px;color:#1f2937;font-size:11px;">Highlight</div>
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">
+                <span style="color:#374151;flex:1;min-width:55px;font-size:11px;">Mark</span>
+                <select id="net_ts_hlStyle" onchange="app._netTsApply()" style="flex:1;font-size:11px;padding:2px 4px;border:1px solid #d1d5db;border-radius:4px;" title="How highlighted genes are marked, both from an Enrichr result and from the Highlight button">
+                    <option value="dashed" ${(this._netHighlightStyle || 'dashed') === 'dashed' ? 'selected' : ''}>Dashed ring</option>
+                    <option value="ring" ${this._netHighlightStyle === 'ring' ? 'selected' : ''}>Solid ring</option>
+                    <option value="fill" ${this._netHighlightStyle === 'fill' ? 'selected' : ''}>Filled</option>
+                    <option value="dim" ${this._netHighlightStyle === 'dim' ? 'selected' : ''}>Fade the rest</option>
+                </select>
+            </div>
+            ${colorRow('Mark Color', 'net_ts_hlColor', this._netHighlightColor || '#7c3aed')}
+            ${sizeRow('Note Size', 'net_ts_hlNoteSize', this._netHighlightNoteSize || 11, 6, 30)}
+            ${colorRow('Note Color', 'net_ts_hlNoteColor', this._netHighlightNoteColor || '#4b5563')}
+            <div style="margin-bottom:5px;">
+                <label style="font-size:10px;color:#6b7280;">Note above the network</label>
+                <input type="text" id="net_ts_hlNote" value="${this._escapeAttr(this._netHighlightNote || '')}" placeholder="Why these genes are marked" style="width:100%;border:1px solid #d1d5db;border-radius:4px;padding:3px 6px;font-size:11px;" oninput="app._netTsApply()">
+            </div>
+            <div style="border-top:1px solid #e5e7eb;margin:6px 0;"></div>
             <div style="font-weight:600;margin-bottom:4px;color:#1f2937;font-size:11px;">Colors</div>
             ${colorRow('Node Label', 'net_ts_labelColor', labelColor)}
             ${colorRow('Node Fill', 'net_ts_nodeColor', nodeColor)}
@@ -12956,6 +12974,23 @@ class CorrelationExplorer {
         // The banner is the #networkHeader strip above the canvas (it used to be a
         // .network-filter-banner overlay, which no longer exists), so style THAT,
         // otherwise banner font/color/text changes only showed up in exports.
+        // Highlight: the mark and the note that explains it.
+        const hlStyle = document.getElementById('net_ts_hlStyle')?.value;
+        const hlColor = document.getElementById('net_ts_hlColor')?.value;
+        const hlNote = document.getElementById('net_ts_hlNote')?.value;
+        const hlNoteSize = parseInt(document.getElementById('net_ts_hlNoteSize')?.value, 10);
+        const hlNoteColor = document.getElementById('net_ts_hlNoteColor')?.value;
+        let hlChanged = false;
+        if (hlStyle && hlStyle !== this._netHighlightStyle) { this._netHighlightStyle = hlStyle; hlChanged = true; }
+        if (hlColor && hlColor !== this._netHighlightColor) { this._netHighlightColor = hlColor; hlChanged = true; }
+        if (isFinite(hlNoteSize)) this._netHighlightNoteSize = hlNoteSize;
+        if (hlNoteColor) this._netHighlightNoteColor = hlNoteColor;
+        if (hlNote !== undefined) this._netHighlightNote = hlNote;
+        // Redraw the marks only when the mark itself changed; editing the note
+        // should not disturb the network.
+        if (hlChanged && this._netHighlightText) this.applyNetworkHighlight(this._netHighlightText);
+        this._renderNetHighlightNote();
+
         const banner = document.getElementById('networkHeader');
         if (banner) {
             banner.style.fontSize = bannerFontSize + 'px';
@@ -15042,38 +15077,95 @@ ${filterText ? `<text x="${width / 2}" y="${headerH / 2}" dominant-baseline="mid
     // Highlight one or several genes with an orange ring and glow. The styling
     // lives on the node data, so Export image and Copy network (which draw
     // from the same nodes) carry it automatically. Returns how many matched.
-    applyNetworkHighlight(text) {
+    // How a highlight is drawn. One setting for both ways of highlighting,
+    // the Enrichr result and the Highlight button, since they are the same
+    // mark meaning the same thing.
+    _netHighlightStyleDef() {
+        return {
+            style: this._netHighlightStyle || 'dashed',
+            color: this._netHighlightColor || '#7c3aed'
+        };
+    }
+
+    // `note` says why these genes are marked. Passing undefined leaves whatever
+    // note is there, passing '' clears it, so un-highlighting one gene by hand
+    // does not silently drop the sentence explaining the set.
+    applyNetworkHighlight(text, note) {
         if (!this.networkData?.nodes) return 0;
         const wanted = new Set(String(text || '').toUpperCase().split(/[\s,;]+/).filter(Boolean));
+        const { style, color } = this._netHighlightStyleDef();
         const updates = [];
         let matched = 0;
         this.networkData.nodes.get().forEach(n => {
             const on = wanted.has(String(n.id).toUpperCase());
+            // Remember the untouched look once, on the first highlight, so a
+            // second highlight does not save the highlighted state as the
+            // thing to go back to.
+            const prevBorder = n._cvHl ? n._cvPrevBorder : (n.color?.border ?? '#000000');
+            const prevWidth = n._cvHl ? n._cvPrevBorderWidth : (n.borderWidth ?? 2);
+            const prevBg = n._cvHl ? n._cvPrevBg : (n.color?.background ?? '#6ba544');
             if (on) {
                 matched++;
-                updates.push({
-                    id: n.id,
-                    _cvHl: true,
-                    _cvPrevBorder: n._cvHl ? n._cvPrevBorder : (n.color?.border ?? '#000000'),
-                    _cvPrevBorderWidth: n._cvHl ? n._cvPrevBorderWidth : (n.borderWidth ?? 2),
-                    borderWidth: 4,
-                    color: { ...(n.color || {}), border: n._cvHl ? n._cvPrevBorder : (n.color?.border ?? '#000000') },
-                    shapeProperties: { borderDashes: [12, 4] }
-                });
-            } else if (n._cvHl) {
-                updates.push({
-                    id: n.id,
-                    _cvHl: false,
-                    borderWidth: n._cvPrevBorderWidth ?? 2,
-                    color: { ...(n.color || {}), border: n._cvPrevBorder ?? '#000000' },
-                    shapeProperties: { borderDashes: false }
-                });
+                const u = {
+                    id: n.id, _cvHl: true,
+                    _cvPrevBorder: prevBorder, _cvPrevBorderWidth: prevWidth, _cvPrevBg: prevBg,
+                    opacity: 1
+                };
+                if (style === 'fill') {
+                    u.borderWidth = prevWidth;
+                    u.color = { ...(n.color || {}), background: color, border: prevBorder };
+                    u.shapeProperties = { borderDashes: false };
+                } else if (style === 'ring') {
+                    u.borderWidth = 6;
+                    u.color = { ...(n.color || {}), background: prevBg, border: color };
+                    u.shapeProperties = { borderDashes: false };
+                } else if (style === 'dim') {
+                    // Nothing is added to the marked nodes; the rest fade back.
+                    u.borderWidth = prevWidth;
+                    u.color = { ...(n.color || {}), background: prevBg, border: prevBorder };
+                    u.shapeProperties = { borderDashes: false };
+                } else {
+                    u.borderWidth = 4;
+                    u.color = { ...(n.color || {}), background: prevBg, border: color };
+                    u.shapeProperties = { borderDashes: [12, 4] };
+                }
+                updates.push(u);
+            } else {
+                // Fade the unmarked ones only while something is marked.
+                const wantDim = style === 'dim' && wanted.size > 0;
+                if (n._cvHl || n._cvDim || wantDim) {
+                    updates.push({
+                        id: n.id, _cvHl: false, _cvDim: wantDim,
+                        borderWidth: n._cvPrevBorderWidth ?? prevWidth,
+                        color: { ...(n.color || {}),
+                                 background: n._cvPrevBg ?? prevBg,
+                                 border: n._cvPrevBorder ?? prevBorder },
+                        shapeProperties: { borderDashes: false },
+                        opacity: wantDim ? 0.25 : 1
+                    });
+                }
             }
         });
         if (updates.length) this.networkData.nodes.update(updates);
         this._netHighlightText = String(text || '');
+        if (note !== undefined) this._netHighlightNote = String(note || '');
+        if (!wanted.size) this._netHighlightNote = '';
+        this._renderNetHighlightNote();
         this.updateHighlightedNodesList();
         return matched;
+    }
+
+    // The caption over the network. Kept in the picture rather than only in the
+    // Enrichr window, so what the marks mean travels with an export.
+    _renderNetHighlightNote() {
+        const el = document.getElementById('networkHighlightNote');
+        if (!el) return;
+        const txt = this._netHighlightNote || '';
+        el.textContent = txt;
+        el.style.display = txt ? 'block' : 'none';
+        if (this._netHighlightNoteSize) el.style.fontSize = this._netHighlightNoteSize + 'px';
+        if (this._netHighlightNoteColor) el.style.color = this._netHighlightNoteColor;
+        el.style.borderLeftColor = this._netHighlightColor || '#7c3aed';
     }
 
     // The highlighted genes are listed under View controls like Select Mode's
@@ -35702,7 +35794,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (this._enrichrFromNetwork) {
             html = '<div id="enrichrHlNote" style="margin:0 0 8px; padding:6px 10px; border-left:3px solid #7c3aed;'
                  + ' background:#faf7ff; border-radius:4px; font-size:11px; color:#4b5563;">'
-                 + 'Click a row to highlight its genes in the network.</div>' + html;
+                 + 'Click a row to mark its genes in the network behind this window.</div>' + html;
         }
         contentEl.innerHTML = html;
 
@@ -35713,16 +35805,31 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     if (ev.target.closest('.enrichr-gene-cell')) return;
                     const genes = (tr.dataset.enrichrHl || '').split(',').filter(Boolean);
                     if (!genes.length) return;
-                    this.applyNetworkHighlight(genes.join(', '));
+                    // The term travels with the genes, so the network says
+                    // what the marks mean without the Enrichr window open.
+                    const _q = parseFloat(tr.dataset.enrichrQ);
+                    this.applyNetworkHighlight(genes.join(', '),
+                        `Highlighted: ${tr.dataset.enrichrTerm} `
+                        + `(${tr.dataset.enrichrN} of ${this._enrichrData?.genes?.length || '?'} genes, `
+                        + `adjusted p = ${this.formatPValue(_q)})`);
                     contentEl.querySelectorAll('tr[data-enrichr-hl]').forEach(o => {
                         o.style.background = o === tr ? '#f5f3ff' : '';
                     });
                     const note = document.getElementById('enrichrHlNote');
                     if (note) {
                         const q = parseFloat(tr.dataset.enrichrQ);
-                        note.innerHTML = `<b>${this.esc(tr.dataset.enrichrTerm)}</b>`
+                        // This window sits over the network, so saying the genes
+                        // are highlighted is no use on its own: say it is behind
+                        // this, and give the way through to it.
+                        note.innerHTML = `<div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">`
+                            + `<div style="flex:1 1 240px; min-width:0;"><b>${this.esc(tr.dataset.enrichrTerm)}</b>`
                             + `<br><span style="color:#6b7280;">${tr.dataset.enrichrN} of the ${this._enrichrData?.genes?.length || '?'} genes sent`
-                            + `, adjusted p = ${this.formatPValue(q)}. Highlighted in the network.</span>`;
+                            + `, adjusted p = ${this.formatPValue(q)}. Marked in the network behind this window.</span></div>`
+                            + `<button id="enrichrShowNetworkBtn" class="btn btn-sm" style="flex:0 0 auto; background:#7c3aed; color:#fff; border:none; padding:5px 12px; border-radius:4px; cursor:pointer; font-size:11px;">Close and show me</button>`
+                            + `</div>`;
+                        document.getElementById('enrichrShowNetworkBtn')?.addEventListener('click', () => {
+                            document.getElementById('enrichrCloseBtn')?.click();
+                        });
                     }
                 });
             });
