@@ -2267,7 +2267,13 @@
             #inspectSwapAxes { flex: 0 0 44px !important; }
             /* The gene box is the one thing you type into on a phone, and with
                the sections around it collapsed there is room to give it back. */
+            /* Both gene boxes, not just the plain one. Enlarging only the
+               first left the with-statistics box at the size it has on a
+               desktop, so the same panel offered two different boxes. The
+               statistics box keeps its monospace face, its columns line up on
+               it. */
             #geneTextarea { min-height: 240px !important; font-size: 15px !important; }
+            #manualStatsTextarea { min-height: 240px !important; }
             /* "With Stats" offers manual entry or a file upload. Nobody uploads
                a file from a phone, so the choice is not a choice: hide the
                sub-tabs and leave manual entry, which is what the panel opens on. */
@@ -2279,11 +2285,19 @@
                put your finger. Zoom and drag are already disabled here, so the
                drag layer has nothing to do with a vertical swipe: let it
                through. A tap still reaches the points. */
+            /* Every chart, not a list of the ones noticed so far. The named
+               ids covered the outer div of five charts, so a chart drawn into
+               any other container still swallowed the drag and the page would
+               not scroll with a finger on it. .js-plotly-plot is on every
+               Plotly chart there is, and the svg layers sit above the drag
+               layers already listed. */
+            .js-plotly-plot,
+            .js-plotly-plot .main-svg,
+            .js-plotly-plot .plot-container,
+            .js-plotly-plot .svg-container,
             .js-plotly-plot .nsewdrag,
             .js-plotly-plot .drag,
-            .js-plotly-plot .draglayer,
-            #geneEffectPlot, #scatterPlot, #geneEffectHotspotPlot,
-            #exprCorrelateScatterPlot, [id$="Volcano"] {
+            .js-plotly-plot .draglayer {
                 touch-action: pan-y !important;
             }
             /* 2. The cell-line detail stacked under the whole list, so tapping
@@ -3128,6 +3142,23 @@
                                 <!-- Hidden master switch for the node border; several renderers read
                                      its state. The visible control lives in the Settings popout. -->
                                 <input type="checkbox" id="networkNodeBorder" checked style="display:none;">
+                            </div>
+                            <!-- Pathway enrichment for the picture on screen. The
+                                 network is usually a smaller, filtered set than the
+                                 genes that were typed in, and which of the two you
+                                 mean is the whole question, so it is asked rather
+                                 than assumed. -->
+                            <div class="button-group-horizontal mobile-hide" style="margin-bottom: 4px; position:relative;">
+                                <button class="btn btn-secondary" id="netEnrichrBtn" aria-haspopup="true" aria-expanded="false" title="Pathway enrichment via Enrichr, for the genes you typed in or for the ones actually drawn">Enrichr &#9662;</button>
+                                <div id="netEnrichrMenu" style="display:none; position:absolute; top:calc(100% + 4px); left:0; z-index:1500; background:#fff; border:1px solid var(--gray-200); border-radius:6px; box-shadow:0 6px 18px rgba(0,0,0,0.14); min-width:230px; padding:4px;">
+                                    <div style="font-size:10px; color:#9ca3af; padding:3px 10px 4px;">Which genes to send?</div>
+                                    <button class="options-menu-item" data-net-enrichr="input" title="The genes in the box above, whether or not they reached the picture">All input genes</button>
+                                    <button class="options-menu-item" data-net-enrichr="network" title="Every gene drawn: the input genes that survived the cutoff plus the correlated genes brought in with them">Genes in the network</button>
+                                    <button class="options-menu-item" data-net-enrichr="partners" title="Only the correlated genes the search added, without the ones you typed in">Correlated genes only</button>
+                                    <div style="border-top:1px solid #e5e7eb; margin:4px 0 0; padding-top:4px;">
+                                        <a href="https://maayanlab.cloud/Enrichr/" target="_blank" rel="noopener" class="options-menu-item" style="color:#9ca3af; font-size:10px; text-decoration:none; display:block;">About Enrichr &#8599;</a>
+                                    </div>
+                                </div>
                             </div>
                             <p class="help-text" id="networkHelpText" style="font-size: 9px; margin-bottom: 6px;">Double-click node for Gene Effect, edge for Correlation</p>
                             <div id="selectedNodesList" style="display: none; font-size: 9px; margin-bottom: 6px; padding: 4px; background: #dbeafe; border-radius: 3px;">
@@ -5123,6 +5154,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v88_12"></script>
+    <script src="app.js?v=v88_13"></script>
 </body>
 </html>

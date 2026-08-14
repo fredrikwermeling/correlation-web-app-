@@ -6512,6 +6512,32 @@ class CorrelationExplorer {
             });
             document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeEnr(); });
         }
+        // Enrichr for the network. Same shape as the mutation-analysis menu
+        // above: the button opens a list of gene sets rather than guessing one.
+        const netEnrBtn = document.getElementById('netEnrichrBtn');
+        const netEnrMenu = document.getElementById('netEnrichrMenu');
+        if (netEnrBtn && netEnrMenu) {
+            const closeNetEnr = () => {
+                netEnrMenu.style.display = 'none';
+                netEnrBtn.setAttribute('aria-expanded', 'false');
+            };
+            netEnrBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const willOpen = netEnrMenu.style.display !== 'block';
+                netEnrMenu.style.display = willOpen ? 'block' : 'none';
+                netEnrBtn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+            });
+            netEnrMenu.querySelectorAll('[data-net-enrichr]').forEach(item => {
+                item.addEventListener('click', () => {
+                    closeNetEnr();
+                    this.openNetworkEnrichr(item.dataset.netEnrichr);
+                });
+            });
+            document.addEventListener('click', (e) => {
+                if (!netEnrMenu.contains(e.target) && e.target !== netEnrBtn) closeNetEnr();
+            });
+            document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeNetEnr(); });
+        }
         document.getElementById('enrichrCloseBtn')?.addEventListener('click', () => {
             document.getElementById('enrichrModal').style.display = 'none';
         });
@@ -35455,6 +35481,43 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }).map(r => r.gene);
     }
 
+    // Enrichr from the network. Three sets, because they answer different
+    // questions: what was asked about, what the search actually drew, and what
+    // the search added. Nodes removed by hand are gone from networkData, so
+    // "genes in the network" means what is on screen, not what was built.
+    async openNetworkEnrichr(scope) {
+        const input = (this.results?.geneList || []).map(g => String(g).toUpperCase());
+        const drawn = this.networkData?.nodes
+            ? this.networkData.nodes.getIds().map(g => String(g).toUpperCase())
+            : [];
+        const inputSet = new Set(input);
+        let genes;
+        if (scope === 'input') genes = input;
+        else if (scope === 'partners') genes = drawn.filter(g => !inputSet.has(g));
+        else genes = drawn;
+
+        genes = [...new Set(genes)].filter(Boolean);
+        if (genes.length < 2) {
+            this.showCopyNotification(scope === 'partners'
+                ? 'No correlated genes were added to this network.'
+                : 'Need at least 2 genes for Enrichr analysis');
+            return;
+        }
+        const label = scope === 'input' ? 'input genes'
+                    : scope === 'partners' ? 'correlated genes' : 'network genes';
+        const modal = document.getElementById('enrichrModal');
+        const content = document.getElementById('enrichrContent');
+        const title = document.getElementById('enrichrTitle');
+        if (title) title.textContent = `Enrichr / ${genes.length} ${label}`;
+        if (content) content.innerHTML = '<div style="text-align:center; padding:60px; color:#aaa;"><div style="font-size:24px; margin-bottom:12px;">&#9203;</div>Submitting to Enrichr...</div>';
+        if (modal) modal.style.display = 'block';
+        try {
+            await this.submitToEnrichr(genes);
+        } catch (err) {
+            if (content) content.innerHTML = '<div style="text-align:center; padding:60px; color:#ef4444;">Failed to connect to Enrichr. Check internet connection.</div>';
+        }
+    }
+
     async openEnrichr(source) {
         const genes = this.getGenesFromTable(source);
         if (genes.length < 2) {
@@ -46099,6 +46162,69 @@ ${clone.innerHTML}
     // everything) was invisible and could only be guessed at from a ranked
     // list. Genes passing the sidebar cutoffs are drawn in colour, the rest in
     // grey, so the plot and the table below it always agree.
+    // Push volcano labels off each other once the chart is drawn. Position has
+    // to be resolved in pixels, and the data-to-pixel mapping is only known
+    // after Plotly has worked out its own axis ranges, so this runs on the
+    // render's promise rather than being computed alongside the annotations.
+    // Each label keeps a thin leader line back to its dot, which is what makes
+    // a moved label still readable as belonging to that point.
+    _spreadVolcanoLabels(el, lab) {
+        const fl = el && el._fullLayout;
+        if (!fl || !fl.xaxis || !Array.isArray(fl.annotations) || !fl.annotations.length) return;
+        const xa = fl.xaxis, ya = fl.yaxis;
+        if (typeof xa.d2p !== 'function' || typeof ya.d2p !== 'function') return;
+
+        const FONT = 8, LH = 11;
+        // Start from the offsets the annotations were built with, in pixels
+        // relative to the dot, then move only in y: moving in x would carry a
+        // label across the zero line and read as the wrong side.
+        const items = lab.map((r, i) => {
+            const left = r.delta < 0;
+            return {
+                i, left,
+                px: xa.d2p(r.delta), py: ya.d2p(el.layout.annotations[i].y),
+                w: String(r.gene).length * FONT * 0.62 + 4,
+                ax: left ? -14 : 14,
+                ay: -10
+            };
+        }).filter(it => isFinite(it.px) && isFinite(it.py));
+        if (items.length < 2) { return; }
+
+        const overlaps = (a, b) => {
+            const ax1 = a.px + a.ax - (a.left ? a.w : 0), ax2 = ax1 + a.w;
+            const bx1 = b.px + b.ax - (b.left ? b.w : 0), bx2 = bx1 + b.w;
+            if (ax2 < bx1 - 2 || bx2 < ax1 - 2) return false;
+            return Math.abs((a.py + a.ay) - (b.py + b.ay)) < LH;
+        };
+        // A few passes of "if these two collide, move them apart" settles a
+        // handful of labels; there are at most eight.
+        for (let pass = 0; pass < 24; pass++) {
+            let moved = false;
+            for (let a = 0; a < items.length; a++) {
+                for (let b = a + 1; b < items.length; b++) {
+                    if (!overlaps(items[a], items[b])) continue;
+                    const up = (items[a].py + items[a].ay) <= (items[b].py + items[b].ay) ? items[a] : items[b];
+                    const dn = up === items[a] ? items[b] : items[a];
+                    up.ay -= LH / 2; dn.ay += LH / 2;
+                    moved = true;
+                }
+            }
+            if (!moved) break;
+        }
+        // Keep every label inside the plot area, then let the leader lines do
+        // the rest of the work.
+        const h = fl.height - fl.margin.t - fl.margin.b;
+        const upd = {};
+        for (const it of items) {
+            const y = it.py + it.ay;
+            if (y < 6) it.ay += 6 - y;
+            if (y > h - 6) it.ay -= y - (h - 6);
+            upd[`annotations[${it.i}].ax`] = it.ax;
+            upd[`annotations[${it.i}].ay`] = it.ay;
+        }
+        Plotly.relayout(el, upd).catch(() => {});
+    }
+
     _drawGEVolcano(side, allRows, shownRows, cut, qCut, anyQ, measure, xTitle) {
         const el = document.getElementById(`ge${side}Volcano`);
         if (!el || typeof Plotly === 'undefined') return;
@@ -46141,18 +46267,21 @@ ${clone.innerHTML}
             hovermode: 'closest',
             xaxis: { title: { text: xTitle, font: { size: 9 } }, tickfont: { size: 9 }, zeroline: true, zerolinecolor: '#9ca3af' },
             yaxis: { title: { text: anyQ ? '−log10(q)' : '|Δ|', font: { size: 9 } }, tickfont: { size: 9 } },
-            annotations: lab.map((r, i) => ({
+            // Placed properly once the chart is drawn, see below. Alternating
+            // the labels above and below their dot was not enough: the hits
+            // worth labelling are the ones that cluster, so two of them at
+            // almost the same height still overprinted.
+            annotations: lab.map((r) => ({
                 x: r.delta, y: yOf(r), text: r.gene, font: { size: 8, color: '#374151' },
-                showarrow: false,
-                // Alternate above and below: neighbouring hits often sit at
-                // almost the same height and their labels would overprint.
-                yshift: i % 2 ? -9 : 9,
-                xanchor: r.delta < 0 ? 'right' : 'left',
-                xshift: r.delta < 0 ? -3 : 3
+                showarrow: true, arrowhead: 0, arrowwidth: 0.7, arrowcolor: '#b8bec9',
+                standoff: 3,
+                ax: r.delta < 0 ? -14 : 14, ay: -10,
+                xanchor: r.delta < 0 ? 'right' : 'left', yanchor: 'middle'
             })),
             paper_bgcolor: '#fff', plot_bgcolor: '#fff'
         };
-        Plotly.react(el, traces, layout, { displayModeBar: false, responsive: true });
+        Plotly.react(el, traces, layout, { displayModeBar: false, responsive: true })
+            .then(() => this._spreadVolcanoLabels(el, lab));
         if (!el.dataset.wired) {
             el.dataset.wired = '1';
             el.on('plotly_click', (ev) => {
