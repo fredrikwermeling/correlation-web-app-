@@ -7163,6 +7163,7 @@ class CorrelationExplorer {
         });
 
         this.setupCellLineBrowserEvents();
+        this.setupHeatmapModal();
     }
 
     updateGeneCount() {
@@ -36323,6 +36324,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 category: 'Breast, receptor subtype (measured)',
                 description: '<b>Selects:</b> breast lines the Lehmann panels classified as triple-negative whose own expression or copy number reads HR+ or HER2+ instead. <b>Use for:</b> spotting lines whose receptor status is unsettled, worth checking against the receptor histograms in the Wiki before relying on either call. Elsewhere in the app the published call is the one shown, with the measured reading given alongside it. Neither is the clinical test, which is done on protein.'
             },
+            ifn_high: {
+                label: 'Interferon-high (type I ISG signature)',
+                category: 'Immunology',
+                description: '<b>Inclusion:</b> cell lines whose mean z-score across 34 type-I interferon-stimulated genes is at least +0.5, i.e. half a standard deviation above the panel on average. <b>Why:</b> tumour-cell-intrinsic interferon signalling shapes immune visibility, and is the readout for viral mimicry, where de-repressed endogenous nucleic acid drives an interferon response. IFN-high lines are also where ADAR1 dependency concentrates. <b>Method:</b> mean of per-gene z-scores over the whole expression cohort, so the score says how a line sits relative to the panel rather than in absolute units. Lines measured on fewer than 60% of the genes are left unscored. <b>Caveat:</b> this is the cell-intrinsic signature only. There is no immune infiltrate in a cell line, so it does not report on the interferon environment of a tumour.'
+            },
+            ifn_low: {
+                label: 'Interferon-low (type I ISG signature)',
+                category: 'Immunology',
+                description: '<b>Inclusion:</b> cell lines whose mean z-score across the same 34 interferon-stimulated genes is at most \u22120.5. <b>Why:</b> the comparison group for the interferon-high set, and candidates for lines that have silenced interferon signalling. <b>Caveat:</b> a low score can mean the pathway is intact but unstimulated, or that it is broken. The two are not separated here; check JAK1, STAT1 and IFNAR1 for damaging mutations if that distinction matters.'
+            },
             class_i_reduced: {
                 label: 'Class-I antigen presentation reduced/lost',
                 category: 'Immunology',
@@ -37228,6 +37239,91 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             : `Derived from this line: ${d.pairs.map(p => `${nm(p.derivative)} (${p.changeShort})`).join(', ')}.`;
     }
 
+    // ===== Interferon signature =====
+    // A type-I interferon score per cell line, from genes the app already has.
+    //
+    // The clinical standard in the interferonopathy / SLE / Sjogren field is
+    // Crow's six-gene score (IFI27, IFI44L, IFIT1, ISG15, RSAD2, SIGLEC1),
+    // measured in whole blood. SIGLEC1 is a macrophage marker, so in a cancer
+    // cell line it reports on a cell type that is not there; the set below is
+    // the cell-intrinsic version, the ISGs a tumour cell expresses itself.
+    // Both are offered, and which one is in use is stated wherever the score
+    // is shown.
+    _ISG_SETS() {
+        return {
+            intrinsic: {
+                label: 'Type I IFN, cell-intrinsic',
+                genes: ['ISG15', 'IFIT1', 'IFIT2', 'IFIT3', 'MX1', 'MX2', 'OAS1', 'OAS2', 'OAS3',
+                        'OASL', 'IFI6', 'IFI27', 'IFI44', 'IFI44L', 'RSAD2', 'STAT1', 'STAT2',
+                        'IRF7', 'IRF9', 'BST2', 'XAF1', 'HERC5', 'USP18', 'RIGI', 'IFIH1',
+                        'CMPK2', 'EPSTI1', 'LY6E', 'SAMD9', 'SAMD9L', 'IFITM1', 'IFITM3',
+                        'PARP9', 'DTX3L'],
+                note: 'Interferon-stimulated genes a tumour cell expresses itself. Use this one for cell lines.'
+            },
+            clinical6: {
+                label: 'Type I IFN, clinical 6-gene',
+                genes: ['IFI27', 'IFI44L', 'IFIT1', 'ISG15', 'RSAD2', 'SIGLEC1'],
+                note: 'The six-gene score used clinically in interferonopathies and lupus. Included so numbers can be compared with that literature. SIGLEC1 is a macrophage gene and means little in a cell line.'
+            }
+        };
+    }
+
+    // Mean z-score across the set. z is taken per gene over every cell line
+    // with expression data, so a line's score says how far it sits from the
+    // panel, not how much interferon signalling it has in absolute terms.
+    // Genes missing from the expression file are skipped and reported, rather
+    // than counted as zero, which would drag every score toward the middle.
+    _computeIfnScores(which = 'intrinsic') {
+        this._ifnScores = this._ifnScores || {};
+        if (this._ifnScores[which]) return this._ifnScores[which];
+        const set = this._ISG_SETS()[which];
+        if (!set || !this.expressionLoaded || !this.expressionData || !this.expressionMetadata) return null;
+        const nC = this.expressionMetadata.nCellLines;
+        const cls = this.expressionMetadata.cellLines;
+        const used = [], missing = [];
+        const zRows = [];
+        for (const g of set.genes) {
+            const gi = this.expressionGeneIndex?.get(g.toUpperCase());
+            if (gi === undefined) { missing.push(g); continue; }
+            const off = gi * nC;
+            const vals = new Float64Array(nC);
+            let n = 0, sum = 0;
+            for (let i = 0; i < nC; i++) {
+                const v = this.expressionData[off + i];
+                vals[i] = v;
+                if (!isNaN(v)) { sum += v; n++; }
+            }
+            if (n < 10) { missing.push(g); continue; }
+            const mean = sum / n;
+            let ss = 0;
+            for (let i = 0; i < nC; i++) if (!isNaN(vals[i])) ss += (vals[i] - mean) ** 2;
+            const sd = Math.sqrt(ss / Math.max(1, n - 1));
+            if (!(sd > 0)) { missing.push(g); continue; }
+            used.push(g);
+            zRows.push({ vals, mean, sd });
+        }
+        if (!used.length) return null;
+        const score = {};
+        for (let i = 0; i < nC; i++) {
+            let s = 0, k = 0;
+            for (const r of zRows) {
+                const v = r.vals[i];
+                if (!isNaN(v)) { s += (v - r.mean) / r.sd; k++; }
+            }
+            // A line scored on a handful of the genes is not comparable with
+            // one scored on all of them.
+            if (k >= Math.ceil(used.length * 0.6)) score[cls[i]] = s / k;
+        }
+        this._ifnScores[which] = { score, used, missing, label: set.label, note: set.note };
+        return this._ifnScores[which];
+    }
+
+    // The score for one cell line under the set currently chosen.
+    ifnScore(cellLineId, which) {
+        const r = this._computeIfnScores(which || this._ifnSet || 'intrinsic');
+        return r ? r.score[cellLineId] : undefined;
+    }
+
     // Compute which cell lines belong to each curated collection. Called
     // once after the heavy data is loaded (by _precomputeCellLineCounts's
     // caller). Expression-based collections are skipped when expression
@@ -37274,6 +37370,23 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         // Class-I antigen presentation reduced / lost, uses the same
         // functional inference shown on the per-cell-line "Immunology" flag.
+        // Interferon-high and -low lines, from the cell-intrinsic ISG score.
+        // Thresholds are on the mean z-score, so they read directly: half a
+        // standard deviation above or below the panel, per gene on average.
+        mem.ifn_high = new Set();
+        mem.ifn_low = new Set();
+        {
+            const r = this._computeIfnScores('intrinsic');
+            if (r) {
+                for (const cl of clLines) {
+                    const v = r.score[cl];
+                    if (v === undefined) continue;
+                    if (v >= 0.5) mem.ifn_high.add(cl);
+                    else if (v <= -0.5) mem.ifn_low.add(cl);
+                }
+            }
+        }
+
         mem.class_i_reduced = new Set();
         for (const cl of clLines) {
             const co = this._classOnePresentation?.(cl);
@@ -38018,6 +38131,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             tnbc_bl1: 'Lehmann publication', tnbc_bl2: 'Lehmann publication',
             tnbc_m:   'Lehmann publication', tnbc_lar: 'Lehmann publication',
             // Immunology
+            ifn_high: 'ISG expression score',
+            ifn_low: 'ISG expression score',
             class_i_reduced: 'integrated immunophenotype',
             pdl1_high: 'expression',
             likely_immunogenic: 'mutation count + immunophenotype',
@@ -40591,6 +40706,22 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 const vb = countMap.get(b);
                 if (va == null && vb == null) return this.getCellLineName(a).localeCompare(this.getCellLineName(b));
                 if (va == null) return 1;   // missing → end
+                if (vb == null) return -1;
+                if (va === vb) return this.getCellLineName(a).localeCompare(this.getCellLineName(b));
+                return (va - vb) * dir;
+            };
+        } else if (mode === 'ifn') {
+            // Interferon score. Same shape as the genome-signature sorts:
+            // lines with no expression data have no score and go to the end.
+            const r = this._computeIfnScores(this._ifnSet || 'intrinsic');
+            countMap = new Map();
+            if (r) for (const [cl, v] of Object.entries(r.score)) countMap.set(cl, v);
+            geGenesLabel = r ? `${r.used.length} ISGs` : '';
+            secondaryCmp = (a, b) => {
+                const va = countMap.get(a);
+                const vb = countMap.get(b);
+                if (va == null && vb == null) return this.getCellLineName(a).localeCompare(this.getCellLineName(b));
+                if (va == null) return 1;
                 if (vb == null) return -1;
                 if (va === vb) return this.getCellLineName(a).localeCompare(this.getCellLineName(b));
                 return (va - vb) * dir;
@@ -51830,6 +51961,572 @@ ${clone.innerHTML}
         if (!plotEl?.data) return;
         Plotly.downloadImage(plotEl, { format: 'svg', filename: plotDivId + '_export' });
     }
+
+    // ===== Gene set x cell line heatmap =====
+    // Presets, controls and canvases live in the static markup; everything
+    // else (matrix build, sort, clustering, paint, export) is driven from
+    // here. Rendering follows the oncoprint's pattern: a frozen label canvas
+    // beside a horizontally-scrolling grid canvas, both painted at device
+    // resolution from the same logical-coordinate functions the exports use.
+    setupHeatmapModal() {
+        const presetSel = document.getElementById('hmPreset');
+        if (presetSel) {
+            const sets = this._ISG_SETS();
+            presetSel.innerHTML =
+                `<option value="intrinsic">${this.esc(sets.intrinsic.label)} (${sets.intrinsic.genes.length})</option>` +
+                `<option value="clinical6">${this.esc(sets.clinical6.label)}</option>` +
+                `<option value="custom">Custom…</option>`;
+        }
+        const openModal = () => {
+            const modal = document.getElementById('heatmapModal');
+            if (modal) modal.style.display = 'flex';
+            this._hmRedraw();
+        };
+        document.getElementById('showHeatmapDirect')?.addEventListener('click', openModal);
+        document.getElementById('clbHeatmapBtn')?.addEventListener('click', openModal);
+        const close = () => {
+            const modal = document.getElementById('heatmapModal');
+            if (modal) modal.style.display = 'none';
+            this._hmHideTooltip();
+        };
+        document.getElementById('heatmapClose')?.addEventListener('click', close);
+        document.getElementById('heatmapClose2')?.addEventListener('click', close);
+        document.getElementById('heatmapModal')?.addEventListener('click', (e) => {
+            if (e.target.id === 'heatmapModal') close();
+        });
+        presetSel?.addEventListener('change', () => this._hmSyncCustomVisibility());
+        document.getElementById('hmRedrawBtn')?.addEventListener('click', () => this._hmRedraw());
+        document.getElementById('hmExportImageBtn')?.addEventListener('click', () => this._hmExportImage());
+        document.getElementById('hmCopyBtn')?.addEventListener('click', () => this._hmCopy());
+        document.getElementById('hmCsvBtn')?.addEventListener('click', () => this._hmExportCsv());
+    }
+
+    _hmSyncCustomVisibility() {
+        const wrap = document.getElementById('hmCustomWrap');
+        if (wrap) wrap.style.display = document.getElementById('hmPreset')?.value === 'custom' ? '' : 'none';
+    }
+
+    // Reads the controls, resolves genes and cohort, and (re)builds the
+    // matrix. Only runs on open or Redraw, so a half-typed custom gene list
+    // doesn't repaint on every keystroke.
+    async _hmRedraw() {
+        this._hmSyncCustomVisibility();
+        const hint = document.getElementById('hmHint');
+        if (!this.metadata) { if (hint) hint.textContent = 'Data is still loading.'; return; }
+
+        const dataType = document.getElementById('hmDataType')?.value || 'expr';
+        const scaleMode = document.getElementById('hmScale')?.value || 'z';
+        const cohortMode = document.getElementById('hmCohort')?.value || 'visible';
+        const sortMode = document.getElementById('hmSort')?.value || 'score';
+        const presetKey = document.getElementById('hmPreset')?.value || 'intrinsic';
+
+        if (dataType === 'expr' && !this.expressionLoaded) {
+            const redrawBtn = document.getElementById('hmRedrawBtn');
+            if (hint) hint.textContent = 'Loading expression data…';
+            if (redrawBtn) redrawBtn.disabled = true;
+            try { await this.loadExpressionData?.(); }
+            catch (e) {
+                if (hint) hint.textContent = 'Expression data failed to load.';
+                if (redrawBtn) redrawBtn.disabled = false;
+                return;
+            }
+            if (redrawBtn) redrawBtn.disabled = false;
+        }
+
+        let enteredGenes;
+        if (presetKey === 'custom') {
+            const raw = document.getElementById('hmGenes')?.value || '';
+            enteredGenes = Array.from(new Set(raw.split(/[,;\s]+/).map(g => g.trim().toUpperCase()).filter(Boolean)));
+        } else {
+            const set = this._ISG_SETS()[presetKey];
+            enteredGenes = set ? set.genes.slice() : [];
+        }
+        if (!enteredGenes.length) {
+            if (hint) hint.textContent = presetKey === 'custom' ? 'Enter at least one gene.' : 'This gene set has no genes.';
+            this._hmClearCanvases();
+            return;
+        }
+
+        const hasGene = (g) => dataType === 'expr'
+            ? !!this.expressionGeneIndex?.has(g.toUpperCase())
+            : !!this.geneIndex?.has(g.toUpperCase());
+        const genes = enteredGenes.filter(hasGene);
+        const missingGenes = enteredGenes.filter(g => !hasGene(g));
+
+        if (!genes.length) {
+            if (hint) hint.textContent = `None of the ${enteredGenes.length} genes entered have ${dataType === 'expr' ? 'expression' : 'gene effect'} data. Check spelling or try the other data type.`;
+            this._hmClearCanvases();
+            return;
+        }
+
+        // Cohort falls back down the chain the control describes, so opening
+        // the modal cold (no browser opened, nothing ticked) still draws
+        // something rather than an empty grid.
+        let cohort, cohortNote = '';
+        if (cohortMode === 'selected') {
+            cohort = Array.from(this._clbSelectedCellLines || []);
+            if (!cohort.length) {
+                cohortNote = 'No cell lines are ticked, showing the browser list instead. ';
+                cohort = (this._clbVisibleCellLines?.length) ? this._clbVisibleCellLines.slice() : this.metadata.cellLines.slice();
+            }
+        } else if (cohortMode === 'all') {
+            cohort = this.metadata.cellLines.slice();
+        } else {
+            cohort = (this._clbVisibleCellLines?.length) ? this._clbVisibleCellLines.slice() : this.metadata.cellLines.slice();
+        }
+        const knownCL = new Set(this.metadata.cellLines);
+        cohort = Array.from(new Set(cohort)).filter(cl => knownCL.has(cl));
+
+        if (!cohort.length) {
+            if (hint) hint.textContent = 'No cell lines to show.';
+            this._hmClearCanvases();
+            return;
+        }
+
+        this._hmBuildAndPaint({ genes, missingGenes, cohort, cohortNote, dataType, scaleMode, sortMode });
+    }
+
+    _hmBuildAndPaint({ genes, missingGenes, cohort, cohortNote, dataType, scaleMode, sortMode }) {
+        const geIndexByCL = new Map(this.metadata.cellLines.map((cl, i) => [cl, i]));
+        const cohortIndex = new Map(cohort.map((cl, i) => [cl, i]));
+
+        // Raw values, one Float64Array per gene, aligned to `cohort`.
+        const rawRows = genes.map(gene => {
+            const row = new Float64Array(cohort.length);
+            if (dataType === 'ge') {
+                const geData = this.getGeneData(this.geneIndex.get(gene));
+                cohort.forEach((cl, ci) => {
+                    const gi = geIndexByCL.get(cl);
+                    const v = gi === undefined ? NaN : geData[gi];
+                    row[ci] = Number.isNaN(v) ? NaN : v;
+                });
+            } else {
+                cohort.forEach((cl, ci) => { row[ci] = this.getExpressionValueByGEIndex(gene, geIndexByCL.get(cl)); });
+            }
+            return row;
+        });
+
+        const scaledRows = scaleMode === 'z' ? rawRows.map(r => this._hmZRow(r)) : rawRows;
+        const geneIndexInResult = new Map(genes.map((g, i) => [g, i]));
+
+        // Per-cell-line mean of the values as shown: used by the score sort,
+        // and as the clustering fallback when the cohort is too large.
+        const clScore = new Map();
+        cohort.forEach((cl, ci) => {
+            let s = 0, k = 0;
+            for (const row of scaledRows) { const v = row[ci]; if (!Number.isNaN(v)) { s += v; k++; } }
+            clScore.set(cl, k ? s / k : NaN);
+        });
+        const sortByScore = (list) => list.slice().sort((a, b) => {
+            const va = clScore.get(a), vb = clScore.get(b);
+            const na = Number.isNaN(va), nb = Number.isNaN(vb);
+            if (na && nb) return this.getCellLineName(a).localeCompare(this.getCellLineName(b));
+            if (na) return 1;
+            if (nb) return -1;
+            return vb - va;
+        });
+
+        let orderedGenes = genes.slice();
+        let orderedCLs;
+        let clusterNote = '';
+        const CLUSTER_CAP = 400;
+        if (sortMode === 'lineage') {
+            orderedCLs = cohort.slice().sort((a, b) => {
+                const la = this.getCellLineLineage(a) || '', lb = this.getCellLineLineage(b) || '';
+                if (la !== lb) return la.localeCompare(lb);
+                const sa = this.getCellLineSublineage(a) || '', sb = this.getCellLineSublineage(b) || '';
+                if (sa !== sb) return sa.localeCompare(sb);
+                return this.getCellLineName(a).localeCompare(this.getCellLineName(b));
+            });
+        } else if (sortMode === 'name') {
+            orderedCLs = cohort.slice().sort((a, b) => this.getCellLineName(a).localeCompare(this.getCellLineName(b)));
+        } else if (sortMode === 'cluster') {
+            // Rows always cluster; the cell-line cap only guards the far more
+            // expensive column clustering (cohorts run into the thousands).
+            orderedGenes = this._hmClusterOrder(genes, scaledRows);
+            if (cohort.length > CLUSTER_CAP) {
+                clusterNote = `Clustering is limited to ${CLUSTER_CAP} cell lines (this cohort has ${cohort.length}); narrow it with the browser's filters first. Cell lines are sorted by score instead. `;
+                orderedCLs = sortByScore(cohort);
+            } else {
+                const cellLineVectors = cohort.map((cl, ci) => {
+                    const v = new Float64Array(genes.length);
+                    scaledRows.forEach((row, gi) => { v[gi] = row[ci]; });
+                    return v;
+                });
+                orderedCLs = this._hmClusterOrder(cohort, cellLineVectors);
+            }
+        } else {
+            orderedCLs = sortByScore(cohort);
+        }
+
+        // Colour domain: z-score is always clamped to +-2.5; raw expression
+        // is scaled to the data's own range; raw gene effect is symmetric
+        // around 0 so a depleted line and an enriched one read as mirror
+        // colours.
+        let domain;
+        if (scaleMode === 'z') {
+            domain = { lo: -2.5, hi: 2.5 };
+        } else if (dataType === 'expr') {
+            let lo = Infinity, hi = -Infinity;
+            for (const row of rawRows) for (const v of row) if (!Number.isNaN(v)) { if (v < lo) lo = v; if (v > hi) hi = v; }
+            domain = isFinite(lo) ? { lo, hi } : { lo: 0, hi: 1 };
+        } else {
+            let m = 0;
+            for (const row of rawRows) for (const v of row) if (!Number.isNaN(v)) m = Math.max(m, Math.abs(v));
+            domain = { lo: -(m || 1), hi: (m || 1) };
+        }
+
+        this._hmData = {
+            genes, orderedGenes, cohort, orderedCLs, geneIndexInResult, cohortIndex,
+            rawRows, scaledRows, dataType, scaleMode, domain, missingGenes
+        };
+        this._hmPaintAndWire(cohortNote + clusterNote);
+    }
+
+    _hmZRow(raw) {
+        let s = 0, k = 0;
+        for (const v of raw) if (!Number.isNaN(v)) { s += v; k++; }
+        if (k < 2) return raw.map(() => NaN);
+        const mean = s / k;
+        let ss = 0;
+        for (const v of raw) if (!Number.isNaN(v)) ss += (v - mean) ** 2;
+        const sd = Math.sqrt(ss / (k - 1));
+        if (!(sd > 0)) return raw.map(() => NaN);
+        return Float64Array.from(raw, v => Number.isNaN(v) ? NaN : (v - mean) / sd);
+    }
+
+    // Correlation distance, pairwise-complete over the two vectors. Fewer
+    // than 3 shared points counts as maximally far, so a mostly-missing
+    // profile doesn't randomly latch onto something.
+    _hmCorrDist(a, b) {
+        let sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0, n = 0;
+        for (let i = 0; i < a.length; i++) {
+            const x = a[i], y = b[i];
+            if (Number.isNaN(x) || Number.isNaN(y)) continue;
+            sx += x; sy += y; sxx += x * x; syy += y * y; sxy += x * y; n++;
+        }
+        if (n < 3) return 2;
+        const mx = sx / n, my = sy / n;
+        const cov = sxy / n - mx * my;
+        const vx = sxx / n - mx * mx, vy = syy / n - my * my;
+        if (!(vx > 0) || !(vy > 0)) return 2;
+        const r = cov / Math.sqrt(vx * vy);
+        return 1 - Math.max(-1, Math.min(1, r));
+    }
+
+    // Average-linkage agglomerative clustering: a plain distance matrix plus
+    // a greedy nearest-pair merge, using the Lance-Williams update for the
+    // average-link recurrence so a merge costs O(n) rather than a full
+    // recompute. No dendrogram, just the leaf order the merges produce.
+    _hmClusterOrder(keys, vectors) {
+        const n = keys.length;
+        if (n <= 2) return keys.slice();
+        const dist = [];
+        for (let i = 0; i < n; i++) dist.push(new Float64Array(n));
+        for (let i = 0; i < n; i++) {
+            for (let j = i + 1; j < n; j++) {
+                const d = this._hmCorrDist(vectors[i], vectors[j]);
+                dist[i][j] = d; dist[j][i] = d;
+            }
+        }
+        const size = new Array(n).fill(1);
+        const order = keys.map((_, i) => [i]);
+        const active = keys.map((_, i) => i);
+        while (active.length > 1) {
+            let bi = 0, bj = 1, bd = Infinity;
+            for (let x = 0; x < active.length; x++) {
+                for (let y = x + 1; y < active.length; y++) {
+                    const a = active[x], b = active[y];
+                    if (dist[a][b] < bd) { bd = dist[a][b]; bi = x; bj = y; }
+                }
+            }
+            const a = active[bi], b = active[bj];
+            for (const c of active) {
+                if (c === a || c === b) continue;
+                const nd = (size[a] * dist[a][c] + size[b] * dist[b][c]) / (size[a] + size[b]);
+                dist[a][c] = nd; dist[c][a] = nd;
+            }
+            size[a] += size[b];
+            order[a] = order[a].concat(order[b]);
+            active.splice(bj, 1);
+        }
+        return order[active[0]].map(i => keys[i]);
+    }
+
+    _hmColorFor(v, scaleMode, dataType, domain) {
+        if (v == null || Number.isNaN(v)) return '#f3f4f6';
+        if (scaleMode === 'z') return this._hmDivergingColor(Math.max(-1, Math.min(1, v / 2.5)));
+        if (dataType === 'expr') {
+            const span = (domain.hi - domain.lo) || 1;
+            return this._hmSequentialGreen(Math.max(0, Math.min(1, (v - domain.lo) / span)));
+        }
+        // Raw gene effect: negative (depleted) reads as red, the same
+        // convention the app's other gene-effect views use.
+        const m = domain.hi || 1;
+        return this._hmDivergingColor(Math.max(-1, Math.min(1, -v / m)));
+    }
+
+    // t in [-1,1]: -1 blue (#2166ac), 0 white, 1 red (#b2182b). ColorBrewer RdBu.
+    _hmDivergingColor(t) {
+        const lerp = (a, b, f) => Math.round(a + (b - a) * f);
+        if (t < 0) { const f = 1 + t; return `rgb(${lerp(33, 255, f)},${lerp(102, 255, f)},${lerp(172, 255, f)})`; }
+        const f = 1 - t;
+        return `rgb(${lerp(178, 255, f)},${lerp(24, 255, f)},${lerp(43, 255, f)})`;
+    }
+
+    // t in [0,1]: 0 white, 1 dark green.
+    _hmSequentialGreen(t) {
+        const lerp = (a, b, f) => Math.round(a + (b - a) * f);
+        return `rgb(${lerp(255, 6, t)},${lerp(255, 78, t)},${lerp(255, 44, t)})`;
+    }
+
+    // Sizes and paints the label, grid and legend canvases at device
+    // resolution, wires the scroll hint and the hover tooltip, and writes the
+    // hint line. `paintLabels`/`paintGrid`/`paintLegend` work in logical
+    // (unscaled) coordinates so the same functions draw the on-screen copy
+    // and the high-resolution export.
+    _hmPaintAndWire(noteText) {
+        const d = this._hmData;
+        const labelCanvas = document.getElementById('hmLabelCanvas');
+        const gridCanvas = document.getElementById('hmGridCanvas');
+        const legendCanvas = document.getElementById('hmLegendCanvas');
+        const scroller = document.getElementById('hmGridScroll');
+        if (!labelCanvas || !gridCanvas || !legendCanvas) return;
+
+        const nGenes = d.orderedGenes.length, nCL = d.orderedCLs.length;
+        const cellH = 14;
+        const targetW = 620;
+        const cellW = Math.max(2, Math.min(14, Math.floor(targetW / Math.max(1, nCL))));
+        const probe = document.createElement('canvas').getContext('2d');
+        probe.font = '10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        let labelW = 40;
+        for (const g of d.orderedGenes) labelW = Math.max(labelW, Math.ceil(probe.measureText(g).width) + 12);
+        labelW = Math.min(labelW, 160);
+        const gridW = nCL * cellW;
+        const gridH = nGenes * cellH;
+        const legendW = 260, legendH = 46;
+
+        const paintLabels = (ctx) => {
+            ctx.fillStyle = '#f9fafb';
+            ctx.fillRect(0, 0, labelW, gridH);
+            ctx.font = '10px Arial';
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = '#374151';
+            d.orderedGenes.forEach((g, rowIdx) => ctx.fillText(g, labelW - 6, rowIdx * cellH + cellH / 2));
+        };
+        const paintGrid = (ctx) => {
+            ctx.fillStyle = '#f3f4f6';
+            ctx.fillRect(0, 0, gridW, gridH);
+            d.orderedGenes.forEach((g, rowIdx) => {
+                const row = d.scaledRows[d.geneIndexInResult.get(g)];
+                const y = rowIdx * cellH;
+                d.orderedCLs.forEach((cl, colIdx) => {
+                    const v = row[d.cohortIndex.get(cl)];
+                    ctx.fillStyle = this._hmColorFor(v, d.scaleMode, d.dataType, d.domain);
+                    ctx.fillRect(colIdx * cellW, y, Math.max(1, cellW - (cellW > 3 ? 1 : 0)), cellH - 1);
+                });
+            });
+        };
+        const paintLegend = (ctx) => {
+            ctx.clearRect(0, 0, legendW, legendH);
+            const barX = 6, barY = 6, barW = legendW - 12, barH = 12;
+            for (let x = 0; x < barW; x++) {
+                const t = x / Math.max(1, barW - 1);
+                const v = d.domain.lo + t * (d.domain.hi - d.domain.lo);
+                ctx.fillStyle = this._hmColorFor(v, d.scaleMode, d.dataType, d.domain);
+                ctx.fillRect(barX + x, barY, 1, barH);
+            }
+            ctx.strokeStyle = '#d1d5db'; ctx.lineWidth = 1;
+            ctx.strokeRect(barX, barY, barW, barH);
+            ctx.fillStyle = '#6b7280';
+            ctx.font = '9px Arial';
+            ctx.textBaseline = 'top';
+            ctx.textAlign = 'left';
+            ctx.fillText(d.domain.lo.toFixed(1), barX, barY + barH + 4);
+            ctx.textAlign = 'right';
+            ctx.fillText(d.domain.hi.toFixed(1), barX + barW, barY + barH + 4);
+            if (d.scaleMode === 'z' || d.dataType === 'ge') {
+                ctx.textAlign = 'center';
+                ctx.fillText('0', barX + barW * (0 - d.domain.lo) / (d.domain.hi - d.domain.lo), barY + barH + 4);
+            }
+        };
+
+        this._hmPaint = { paintLabels, paintGrid, paintLegend };
+        Object.assign(this._hmData, { labelW, gridW, gridH, cellW, cellH, legendW, legendH });
+
+        const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
+        const sizeCanvas = (cv, w, h) => {
+            cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+            cv.style.width = w + 'px'; cv.style.height = h + 'px';
+        };
+        sizeCanvas(labelCanvas, labelW, gridH);
+        sizeCanvas(gridCanvas, gridW, gridH);
+        sizeCanvas(legendCanvas, legendW, legendH);
+
+        const lc = labelCanvas.getContext('2d');
+        lc.setTransform(dpr, 0, 0, dpr, 0, 0); lc.clearRect(0, 0, labelW, gridH); paintLabels(lc);
+        const gc = gridCanvas.getContext('2d');
+        gc.setTransform(dpr, 0, 0, dpr, 0, 0); gc.clearRect(0, 0, gridW, gridH); paintGrid(gc);
+        const lgc = legendCanvas.getContext('2d');
+        lgc.setTransform(dpr, 0, 0, dpr, 0, 0); paintLegend(lgc);
+
+        // Hint line: what's drawn, plus anything that didn't resolve.
+        const hint = document.getElementById('hmHint');
+        if (hint) {
+            const scaleWord = d.scaleMode === 'z' ? 'z-scored per gene' : 'raw values';
+            const dataWord = d.dataType === 'expr' ? 'mRNA expression' : 'CRISPR gene effect';
+            const colourWord = d.scaleMode === 'z'
+                ? 'Blue is low, red is high.'
+                : d.dataType === 'expr' ? 'White is low, dark green is high.' : 'Blue is enriched, red is depleted.';
+            let text = `${nGenes} genes x ${nCL} cell lines, ${dataWord}, ${scaleWord}. ${colourWord}`;
+            if (noteText) text = noteText + text;
+            if (d.missingGenes.length) {
+                text += ` ${d.missingGenes.length} gene${d.missingGenes.length === 1 ? '' : 's'} not found: ${d.missingGenes.slice(0, 12).join(', ')}${d.missingGenes.length > 12 ? '…' : ''}.`;
+            }
+            hint.textContent = text;
+        }
+
+        const scrollHint = document.getElementById('hmScrollHint');
+        const updateScrollHint = () => {
+            if (!scrollHint || !scroller) return;
+            if (scroller.scrollWidth <= scroller.clientWidth + 1) { scrollHint.textContent = ''; return; }
+            const first = Math.floor(scroller.scrollLeft / cellW) + 1;
+            const last = Math.min(nCL, Math.ceil((scroller.scrollLeft + scroller.clientWidth) / cellW));
+            scrollHint.textContent = `Scroll sideways to see all cell lines, showing ${first}-${last} of ${nCL}.`;
+        };
+        updateScrollHint();
+        this._hmScrollHintUpdater = updateScrollHint;
+        if (scroller && !scroller._hmScrollWired) {
+            scroller.addEventListener('scroll', () => this._hmScrollHintUpdater?.());
+            scroller._hmScrollWired = true;
+        }
+
+        if (!gridCanvas._hmWired) {
+            gridCanvas.addEventListener('mousemove', (e) => this._hmOnGridHover(e));
+            gridCanvas.addEventListener('mouseleave', () => this._hmHideTooltip());
+            gridCanvas._hmWired = true;
+        }
+    }
+
+    _hmOnGridHover(e) {
+        const d = this._hmData;
+        if (!d) return;
+        const gridCanvas = document.getElementById('hmGridCanvas');
+        const rect = gridCanvas.getBoundingClientRect();
+        const x = e.clientX - rect.left, y = e.clientY - rect.top;
+        const rowIdx = Math.floor(y / d.cellH), colIdx = Math.floor(x / d.cellW);
+        if (rowIdx < 0 || rowIdx >= d.orderedGenes.length || colIdx < 0 || colIdx >= d.orderedCLs.length) {
+            this._hmHideTooltip();
+            return;
+        }
+        const gene = d.orderedGenes[rowIdx];
+        const cl = d.orderedCLs[colIdx];
+        const gi = d.geneIndexInResult.get(gene);
+        const ci = d.cohortIndex.get(cl);
+        const rawV = d.rawRows[gi][ci];
+        const shownV = d.scaledRows[gi][ci];
+        const valueText = Number.isNaN(rawV) ? 'no data'
+            : d.scaleMode === 'z' ? `${rawV.toFixed(2)} (z=${Number.isNaN(shownV) ? 'n/a' : shownV.toFixed(2)})`
+            : rawV.toFixed(2);
+        const lineage = this.getCellLineLineage(cl) || 'unknown lineage';
+        this._hmShowTooltip(e.clientX, e.clientY, `${gene} · ${this.getCellLineName(cl)} · ${lineage} · ${valueText}`);
+    }
+
+    _hmTooltipEl() {
+        let el = document.getElementById('hmTooltip');
+        if (!el) {
+            el = document.createElement('div');
+            el.id = 'hmTooltip';
+            el.style.cssText = 'position:fixed; z-index:10050; display:none; pointer-events:none; background:#111827; color:#fff; font-size:11px; padding:4px 8px; border-radius:4px; box-shadow:0 4px 10px rgba(0,0,0,0.25); white-space:nowrap;';
+            document.body.appendChild(el);
+        }
+        return el;
+    }
+    _hmShowTooltip(x, y, text) {
+        const el = this._hmTooltipEl();
+        el.textContent = text;
+        el.style.display = 'block';
+        el.style.left = Math.max(4, Math.min(x + 14, window.innerWidth - el.offsetWidth - 8)) + 'px';
+        el.style.top = Math.max(4, Math.min(y + 14, window.innerHeight - el.offsetHeight - 8)) + 'px';
+    }
+    _hmHideTooltip() {
+        const el = document.getElementById('hmTooltip');
+        if (el) el.style.display = 'none';
+    }
+    _hmClearCanvases() {
+        ['hmLabelCanvas', 'hmGridCanvas', 'hmLegendCanvas'].forEach(id => {
+            const cv = document.getElementById(id);
+            if (cv) { cv.width = 0; cv.height = 0; }
+        });
+        this._hmData = null;
+        this._hmPaint = null;
+    }
+
+    async _hmExportImage() {
+        const d = this._hmData, paint = this._hmPaint;
+        if (!d || !paint) return;
+        const totalW = d.labelW + d.gridW;
+        const totalH = d.gridH + 10 + d.legendH;
+        const dlg = await this._showExportDialog({ format: 'png', plotW: totalW, plotH: totalH, rasterOnly: true, restorable: false });
+        if (!dlg) return;
+        const CM_TO_IN = 1 / 2.54;
+        const scale = (dlg.widthCm * dlg.dpi * CM_TO_IN) / totalW;
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(totalW * scale);
+        canvas.height = Math.round(totalH * scale);
+        const ctx = canvas.getContext('2d');
+        ctx.scale(scale, scale);
+        if (dlg.background !== 'transparent') { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, totalW, totalH); }
+        paint.paintLabels(ctx);
+        ctx.save(); ctx.translate(d.labelW, 0); paint.paintGrid(ctx); ctx.restore();
+        ctx.save(); ctx.translate(0, d.gridH + 10); paint.paintLegend(ctx); ctx.restore();
+        await this._downloadCanvasAs(canvas, dlg.format, 'heatmap', {
+            dpi: dlg.dpi, widthCm: dlg.widthCm, heightCm: dlg.widthCm * (totalH / totalW), skipSidecar: true
+        });
+    }
+
+    async _hmCopy() {
+        const d = this._hmData, paint = this._hmPaint;
+        if (!d || !paint) return;
+        if (!navigator.clipboard || typeof ClipboardItem === 'undefined') {
+            this.showCopyNotification?.('This browser cannot copy images to the clipboard. Use Export image instead.');
+            return;
+        }
+        this.showCopyNotification?.('Copying…');
+        try {
+            const totalW = d.labelW + d.gridW, totalH = d.gridH + 10 + d.legendH;
+            const scale = 2;
+            const canvas = document.createElement('canvas');
+            canvas.width = totalW * scale; canvas.height = totalH * scale;
+            const ctx = canvas.getContext('2d');
+            ctx.scale(scale, scale);
+            ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, totalW, totalH);
+            paint.paintLabels(ctx);
+            ctx.save(); ctx.translate(d.labelW, 0); paint.paintGrid(ctx); ctx.restore();
+            ctx.save(); ctx.translate(0, d.gridH + 10); paint.paintLegend(ctx); ctx.restore();
+            const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+            await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+            this.showCopyNotification?.('Heatmap copied, paste it anywhere');
+        } catch (e) {
+            console.warn('Copy heatmap failed:', e);
+            this.showCopyNotification?.('Copy failed. Use Export image instead.');
+        }
+    }
+
+    _hmExportCsv() {
+        const d = this._hmData;
+        if (!d) return;
+        const header = 'Gene,' + d.orderedCLs.map(cl => this.getCellLineName(cl)).join(',');
+        const rows = d.orderedGenes.map(g => {
+            const row = d.scaledRows[d.geneIndexInResult.get(g)];
+            return g + ',' + d.orderedCLs.map(cl => {
+                const v = row[d.cohortIndex.get(cl)];
+                return Number.isNaN(v) ? '' : v.toFixed(3);
+            }).join(',');
+        });
+        this.downloadFile(header + '\n' + rows.join('\n') + '\n', csvName('heatmap'), 'text/csv');
+    }
 }
 
 // Initialize app
@@ -51868,7 +52565,7 @@ const MODAL_IDS = [
     'referenceDataModal', 'inspectModal', 'geneEffectModal', 'corrAnalysisModal',
     'exportOptionsModal', 'infographicModal', 'changelogModal', 'inspectCorrelatesModal',
     'collectionsInfoModal', 'selectionInspectModal', 'mutCompareModal', 'enrichrModal',
-    'clbWikiModal', 'clbInfoModal', 'cellLineBrowserModal', 'exportPreviewModal',
+    'clbWikiModal', 'clbInfoModal', 'cellLineBrowserModal', 'exportPreviewModal', 'heatmapModal',
     // The AI export dialog opens over whichever view raised it, so being able
     // to slide it aside and read what is underneath matters as much here as
     // anywhere else.

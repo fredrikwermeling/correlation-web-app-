@@ -2709,6 +2709,7 @@
                                 <button class="options-menu-item" id="modeMutationBtn" title="Split the cohort into altered vs wild-type lines for a chosen gene and rank the genes whose gene effect differs most">Mutation analysis</button>
                                 <button class="options-menu-item" id="showGeneEffectDirect">Gene Effect</button>
                                 <button class="options-menu-item" id="showCorrelationDirect">Correlation</button>
+                                <button class="options-menu-item" id="showHeatmapDirect" title="Show a gene set across the cell lines currently listed, as a heatmap">Gene set heatmap</button>
                                 <button class="options-menu-item" id="customAIExportBtn" title="Build a file for a language model with exactly the data you choose, including layers the standard export leaves out. An assistant reading a standard export can write the settings for you.">Custom export for AI&hellip;</button>
                                 <label class="options-menu-item" for="restoreFromExportInput" title="Open a Correlate metadata file (.correlate.json, saved alongside every image export) to recreate the figure. Older SVG/PNG exports with embedded settings also work.">Open saved figure...</label>
                             </div>
@@ -4465,6 +4466,76 @@
         </div>
     </div>
 
+    <!-- Gene set x cell line heatmap. Controls stay in a single row that wraps
+         as a unit, so picking Custom never shoves a sibling control sideways;
+         the gene textarea it reveals sits on its own row below instead. -->
+    <div id="heatmapModal" class="modal-overlay" style="z-index:1380;">
+        <div class="modal" style="max-width:min(96vw,1180px);">
+            <div class="modal-header">
+                <h3>Gene set heatmap</h3>
+                <button id="heatmapClose" class="modal-close" title="Close">&times;</button>
+            </div>
+            <div class="modal-body" style="font-size:12px; color:#374151;">
+                <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; margin-bottom:8px;">
+                    <div>
+                        <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">Gene set</label>
+                        <select id="hmPreset" style="font-size:11px; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px;"></select>
+                    </div>
+                    <div>
+                        <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">Data</label>
+                        <select id="hmDataType" style="font-size:11px; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px;" title="mRNA expression (log2 TPM+1) or CRISPR gene effect (Chronos)">
+                            <option value="expr" selected>mRNA expression</option>
+                            <option value="ge">CRISPR gene effect</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">Cell lines</label>
+                        <select id="hmCohort" style="font-size:11px; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px;">
+                            <option value="visible" selected>Cell lines listed in the browser</option>
+                            <option value="selected">Only ticked cell lines</option>
+                            <option value="all">All cell lines</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">Scaling</label>
+                        <select id="hmScale" style="font-size:11px; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px;" title="Z-score compares each gene to its own spread across the cell lines shown; raw values keep their original units">
+                            <option value="z" selected>Z-score per gene</option>
+                            <option value="raw">Raw values</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">Sort cell lines</label>
+                        <select id="hmSort" style="font-size:11px; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px;">
+                            <option value="score" selected>Score (mean of shown genes)</option>
+                            <option value="lineage">Lineage</option>
+                            <option value="name">Name</option>
+                            <option value="cluster">Cluster (similar profiles together)</option>
+                        </select>
+                    </div>
+                    <button id="hmRedrawBtn" class="btn btn-success btn-sm" style="font-size:11px;">Redraw</button>
+                </div>
+                <div id="hmCustomWrap" style="display:none; margin-bottom:8px;">
+                    <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">Genes, separated by commas, spaces or new lines</label>
+                    <textarea id="hmGenes" rows="3" style="width:100%; font-size:11px; padding:5px 7px; border:1px solid #d1d5db; border-radius:4px; font-family:inherit; resize:vertical;" placeholder="ISG15, IFIT1, MX1, OAS1 ..."></textarea>
+                </div>
+                <div id="hmHint" style="font-size:10px; color:#9ca3af; margin-bottom:8px;"></div>
+                <div style="display:flex; align-items:flex-start; width:100%;">
+                    <canvas id="hmLabelCanvas" style="flex:none; cursor:default;"></canvas>
+                    <div id="hmGridScroll" style="flex:1 1 auto; min-width:0; overflow-x:auto; overflow-y:hidden;"><canvas id="hmGridCanvas" style="display:block; cursor:default;"></canvas></div>
+                </div>
+                <div id="hmScrollHint" style="font-size:9px; color:#9ca3af; margin-top:3px;"></div>
+                <div style="margin-top:10px;"><canvas id="hmLegendCanvas"></canvas></div>
+            </div>
+            <div class="modal-footer" style="justify-content:flex-start; flex-wrap:wrap; gap:6px;">
+                <button id="hmExportImageBtn" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px;" title="Choose format, print size and resolution">Export image...</button>
+                <button id="hmCopyBtn" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px;" title="Copy the heatmap as an image to the clipboard, ready to paste into an email or slide">Copy</button>
+                <button id="hmCsvBtn" class="btn btn-outline btn-sm" style="font-size:11px;" title="The gene x cell line matrix as data, values as currently shown (z-scored or raw)">.csv</button>
+                <span style="flex:1 1 auto;"></span>
+                <button id="heatmapClose2" class="btn btn-secondary btn-sm">Close</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Progress overlay used by long-running analyzes (correlation inspect). -->
     <div id="progressOverlay" style="display:none; position:fixed; inset:0; z-index:1400; background:rgba(0,0,0,0.6); align-items:center; justify-content:center;">
         <div style="background:#fff; max-width:420px; width:90%; border-radius:8px; padding:20px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.35);">
@@ -4873,6 +4944,7 @@
           <div style="margin-left:auto; display:flex; align-items:center; gap:6px;">
             <button id="clbInfoBtn" class="btn btn-outline btn-sm clb-icon-btn" title="How the Cell Line Browser works: the filters, sorts, quick filters, symbols, warnings and where each piece of data comes from">?</button>
             <button id="clbExportImageBtn" class="btn btn-outline btn-sm mobile-hide" title="Capture the Cell Line Browser as an image (PNG / TIFF / PDF / PowerPoint)">Export image...</button>
+            <button id="clbHeatmapBtn" class="btn btn-outline btn-sm mobile-hide" title="Show a gene set across the cell lines currently listed, as a heatmap">Heatmap</button>
             <button id="clbExportAIBtn" class="btn btn-outline btn-sm mobile-hide" title="Send the cell lines currently listed, with their alterations and gene-effect data, to an AI assistant for analysis">Export for AI</button>
             <button id="clbResetFilters" class="btn btn-outline btn-sm" title="Clear every filter, sort and selection">Reset</button>
             <button id="clbCloseBtn" class="modal-close" title="Close the Cell Line Browser">&times;</button>
@@ -4908,6 +4980,7 @@
                 <option value="ge">Sort: GE for gene(s)</option>
                 <option value="expr">Sort: Expression of gene(s)</option>
                 <option value="drug">Sort: Drug response (PRISM AUC)</option>
+                <option value="ifn">Sort: Interferon score (ISG)</option>
               </select>
               <button id="clbSortDir" title="Switch the sort direction" class="btn btn-outline btn-sm" style="width:32px;">&#x25B2;</button>
               <div id="clbSortGeneWrap" class="clb-anchor" style="visibility:hidden;">
@@ -5260,6 +5333,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v88_31"></script>
+    <script src="app.js?v=v88_32"></script>
 </body>
 </html>
