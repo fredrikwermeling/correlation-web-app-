@@ -40781,6 +40781,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                       : mode === 'cin' ? 'CIN, chromosomal instability (0–1)'
                       : mode === 'cn' ? `Copy number of <b>${geGenesLabel || '(no gene picked)'}</b>, DepMap relative scale (1.0 = diploid). Tier shown next to each line: <b>deep del</b> &lt; 0.3, <b>het loss</b> 0.3&ndash;0.7, <b>WT</b> 0.7&ndash;1.3, <b>low gain</b> 1.3&ndash;2.0, <b>gain</b> 2.0&ndash;3.0, <b>amp</b> 3.0&ndash;5.0, <b>strong amp</b> &ge; 5.0. Hybrid source: WGS-derived calls (latest, cleanest) by default; lines tagged <code>wes</code> are filled from DepMap's 24Q4 OmicsCNGene fallback for lines never WGS'd (Jurkat, K562, etc.), slightly noisier for focal events. ${cnScope}; lines without CN data show &ldquo;&mdash;&rdquo;.`
                       : mode === 'drug' ? `Drug-response AUC for <b>${geGenesLabel || '(no compound matched)'}</b>, 0 = all cells killed, 1 = no killing; ascending = most sensitive first`
+                      : mode === 'ifn' ? `Interferon score: the average of ${geGenesLabel || '34 ISGs'}, each expressed as how far the line sits from the panel average for that gene (a z-score). 0 is typical, +1 means the line runs a standard deviation high on these genes, &minus;1 a standard deviation low. Lines with no expression data, or measured on under 60% of the genes, are unscored and sit at the end.`
                       : mode;
             caption = `<div style="${captionStyle}">
                 Values shown: <b>${lbl}</b> per cell line.
@@ -40802,6 +40803,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     : mode === 'cin' ? 'CIN'
                     : mode === 'cn' ? `Copy number${geGenesLabel ? ` for ${geGenesLabel}` : ''}`
                     : mode === 'drug' ? `Drug response AUC${geGenesLabel ? ` for ${geGenesLabel}` : ''}`
+                    : mode === 'ifn' ? 'Interferon score (mean ISG z-score)'
                     : String(mode))
                 : '';
 
@@ -42113,6 +42115,30 @@ CIN (chromosomal instability): how scrambled the genome is at fine scale. Scale 
                 top += `<div class="clb-stat-row" style="padding-left:12px;"><span class="clb-stat-label" style="font-weight:400;">CIN</span><span class="clb-stat-value" style="font-weight:500;">${gs.CIN.toFixed(2)}${cinDesc ? muted('(' + cinDesc + ')') : ''}</span></div>`;
             }
         }
+        // Interferon score for this line, with the panel it is measured
+        // against, so the number reads as a position rather than a bare
+        // figure. Only where there is expression data to compute it from.
+        {
+            const ifn = this.ifnScore?.(cellLineId, 'intrinsic');
+            const r = this._ifnScores?.intrinsic;
+            if (ifn !== undefined && r) {
+                const helpIfn = `Type I interferon score.
+
+The average of ${r.used.length} interferon-stimulated genes, each turned into a z-score across every cell line with expression data. So the number says where this line sits relative to the panel, not how much interferon signalling it has in absolute terms.
+
+0 is typical. Above +0.5 counts as interferon-high here, below -0.5 as interferon-low.
+
+Why it matters: tumour-cell-intrinsic interferon signalling shapes how visible a line is to the immune system, and it is the readout for viral mimicry, where de-repressed endogenous nucleic acid drives an interferon response.
+
+Caveat: a cell line has no immune infiltrate, so this is the cell's own signalling only, not the interferon environment of a tumour.`;
+                const band = ifn >= 0.5 ? 'interferon-high' : ifn <= -0.5 ? 'interferon-low' : 'typical';
+                const ifnHelpSpan = ` <span style="color:#9ca3af; font-size:10px; cursor:help; border:1px solid #d1d5db; border-radius:50%; padding:0 4px;" title="${helpIfn.replace(/"/g, '&quot;')}">?</span>`;
+                top += `<div class="clb-stat-row"><span class="clb-stat-label">Interferon score${ifnHelpSpan}</span>`
+                     + `<span class="clb-stat-value">${ifn >= 0 ? '+' : ''}${ifn.toFixed(2)}`
+                     + `<span style="color:#9ca3af; font-weight:400;"> (${band})</span></span></div>`;
+            }
+        }
+
         top += `</div>`;
 
         // Phenotype flags, MSI / Class-I antigen presentation, displayed

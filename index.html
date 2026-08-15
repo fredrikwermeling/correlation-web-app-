@@ -4865,6 +4865,8 @@
             <li><b>Disease</b>: searchable, and scoped by whatever else is filtered, so choosing Skin leaves only the skin diseases. Abbreviations work: type CLL, AML, GBM, PDAC.</li>
             <li><b>Alteration grids</b> (&#9638; beside each alteration box): a grid of the cell lines currently shown, one for hotspot mutations, one for curated driver fusions, one for copy number. Click a gene in the grid to require it altered or wild-type.</li>
             <li><b>Quick filters</b>: curated cell-line collections to include or exclude, among them the two provenance sets below.</li>
+            <li><b>Interferon score</b> (<i>Sort: Interferon score</i>, and the interferon-high / interferon-low quick filters): the average of 34 interferon-stimulated genes, each expressed as how far the line sits from the panel average for that gene. 0 is typical, above +0.5 is called interferon-high here and below &minus;0.5 interferon-low. It measures the cell's own interferon signalling, which shapes how visible a line is to the immune system, and is the readout for viral mimicry. A cell line has no immune infiltrate, so it says nothing about the interferon environment of a tumor. Lines with no expression data are unscored and sort to the end. The score also appears on each cell line's own card.</li>
+            <li><b>Heatmap</b>: draws a gene set across the cell lines the filters leave showing. Open it from the <b>Heatmap</b> button in this header, or from Options / Other / Gene set heatmap. Pick a preset (the interferon sets) or paste your own genes, choose mRNA or gene effect, and order the lines by score, lineage, name, or by clustering similar profiles together. Saves as an image, to the clipboard, or as a .csv.</li>
           </ul>
 
           <p style="margin-top:14px;"><strong>&#9888; Warning marks</strong>: a triangle beside a cell line's name means <a href="https://www.cellosaurus.org/" target="_blank" style="color:#0066cc;" rel="noopener noreferrer">Cellosaurus</a> records a problem with it. 56 of the 1,208 lines are flagged. Hover the mark for the full explanation, or open the line to see it with a link to the source.</p>
@@ -5333,6 +5335,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v88_32"></script>
+    <script src="app.js?v=v88_33"></script>
 </body>
 </html>
