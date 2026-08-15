@@ -30373,6 +30373,44 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 cellLineGroups = this._aiMutationGroups(mData, cellLines, mr);
                 const filterParts = [tissueF, subtypeF].filter(Boolean).join(', ');
                 description = `${gene} gene effect stratified by ${hg} ${this._aiAlterationWord(mr)}${filterParts ? ' in ' + filterParts : ''} cell lines.`;
+            } else if (this._geCompareMode && this._geCompareSides?.selection?.length) {
+                // The chart is a TWO-GROUP comparison, not a survey of the
+                // gene. Exporting it as "across all cell lines" is what made a
+                // reader answer about the gene in general and miss the point
+                // of the picture entirely. Name both groups, both sizes, and
+                // what separates them.
+                const sides = this._geCompareSides;
+                const inPlot = new Set((this.currentGeneEffect?.data || []).map(d => d.cellLineId));
+                const selIds = sides.selection.filter(c => inPlot.has(c));
+                const cmpIds = sides.comparison.filter(c => inPlot.has(c));
+                const selLabel = sides.selLabel || `${selIds.length} selected`;
+                const cmpLabel = sides.cmpLabel || 'the comparison group';
+                cellLineGroups = { [selLabel]: selIds, [cmpLabel]: cmpIds };
+                const gi = this.geneIndex?.get((gene || '').toUpperCase());
+                const stat = (ids) => {
+                    if (gi === undefined) return null;
+                    const row = this.getGeneData(gi);
+                    const idx = new Map(this.metadata.cellLines.map((c, i) => [c, i]));
+                    const v = ids.map(c => row[idx.get(c)]).filter(x => x != null && !isNaN(x) && x !== -999);
+                    if (!v.length) return null;
+                    const m = v.reduce((a, b) => a + b, 0) / v.length;
+                    const sd = Math.sqrt(v.reduce((a, b) => a + (b - m) ** 2, 0) / Math.max(1, v.length - 1));
+                    return { n: v.length, mean: +m.toFixed(3), sd: +sd.toFixed(3) };
+                };
+                const sSel = stat(selIds), sCmp = stat(cmpIds);
+                context.comparison = {
+                    isTwoGroupComparison: true,
+                    groupA: { label: selLabel, ...(sSel || {}) },
+                    groupB: { label: cmpLabel, ...(sCmp || {}) },
+                    difference: (sSel && sCmp) ? +(sSel.mean - sCmp.mean).toFixed(3) : null,
+                    readAs: 'Gene effect: more negative means the cell lines depend on the gene more. groupA minus groupB is the difference the chart shows.'
+                };
+                context.stratification = 'two chosen groups of cell lines';
+                context.plotDescribesWhat = `A box plot with one row per group. Row 1 is ${selLabel} (n=${sSel ? sSel.n : selIds.length}), row 2 is ${cmpLabel} (n=${sCmp ? sCmp.n : cmpIds.length}). The x axis is ${gene} gene effect.`;
+                description = `${gene} gene effect, comparing ${selLabel} (n=${sSel ? sSel.n : selIds.length}) against ${cmpLabel} (n=${sCmp ? sCmp.n : cmpIds.length}).`
+                    + (sSel && sCmp
+                        ? ` The chart is this contrast, not a survey of ${gene}: means are ${sSel.mean} and ${sCmp.mean}, a difference of ${(sSel.mean - sCmp.mean).toFixed(3)}.`
+                        : '');
             } else {
                 description = `${gene} gene effect across ${tissueF || 'all'} cell lines${subtypeF ? ' (' + subtypeF + ')' : ''}.`;
             }
@@ -32694,6 +32732,33 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             }
         }
 
+        // The picture, saved beside the data under a matching name. A reader
+        // given only numbers cannot see what the user was looking at, and the
+        // user cannot go back to it either. Same stem as the .json.gz so the
+        // pair stays together and can be uploaded together. Written BEFORE
+        // serialising, or the reference to it would not be inside the file.
+        const _label = analysisGene || context.gene1 || 'analysis';
+        const _stem = `correlate_export_${source}_${_label}_${n}cl`;
+        let _pngUrl = null;
+        try {
+            const plotId = source === 'ge'
+                ? (this.geneEffectViewMode === 'mutation' ? 'geneEffectHotspotPlot' : 'geneEffectPlot')
+                : source === 'scatter' ? 'scatterPlot'
+                : source === 'ca' ? 'corrAnalysisTissuePlot' : null;
+            const el = plotId && document.getElementById(plotId);
+            if (el && el.data && typeof Plotly !== 'undefined') {
+                _pngUrl = await Plotly.toImage(el, {
+                    format: 'png',
+                    width: (el._fullLayout?.width || el.clientWidth || 900) * 2,
+                    height: (el._fullLayout?.height || el.clientHeight || 600) * 2
+                });
+                if (exportData.context) {
+                    exportData.context.companionImage = `${_stem}.png`;
+                    exportData.context.companionImageNote = 'The chart the user was looking at when this file was made, saved beside it under the same name. If it was provided, read it: it shows the grouping and the axis this file describes. If it was not, rely on context.plotDescribesWhat.';
+                }
+            }
+        } catch (e) { console.warn('Companion PNG not produced:', e); }
+
         const jsonStr = JSON.stringify(exportData);
         const compressed = pako.gzip(jsonStr);
 
@@ -32706,6 +32771,15 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(a.href);
+
+        if (_pngUrl) {
+            const ia = document.createElement('a');
+            ia.href = _pngUrl;
+            ia.download = `${_stem}.png`;
+            document.body.appendChild(ia);
+            ia.click();
+            document.body.removeChild(ia);
+        }
 
         const sizeMB = (compressed.length / (1024 * 1024)).toFixed(1);
         const infoParts = [`${n} cell lines`, `${Object.keys(geMatrix).length} GE genes`];
