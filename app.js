@@ -1929,6 +1929,26 @@ class CorrelationExplorer {
         return groups;
     }
 
+    // The Cell Line Browser's active filters, as plain-text bits. Shared by
+    // the `selection` and `clb` export branches, which both need to say what
+    // produced the list of lines; `clb` used to build its own shorter
+    // version that dropped the hotspot / fusion / CN / quick-filter kinds,
+    // so a browser list filtered on a mutation exported with no mention of
+    // the mutation at all.
+    _clbFilterBits() {
+        const v = (id) => document.getElementById(id)?.value || '';
+        const bits = [];
+        if (v('clbTissueFilter')) bits.push(`tissue = ${v('clbTissueFilter')}`);
+        if (v('clbSubtypeFilter')) bits.push(`subtype = ${v('clbSubtypeFilter')}`);
+        if (v('clbOncotreeFilter')) bits.push(`disease = ${v('clbOncotreeFilter')}`);
+        if (v('clbHotspotFilter')) bits.push(`hotspot mutation in ${v('clbHotspotFilter')}`);
+        if (v('clbTranslocationFilter')) bits.push(`fusion ${v('clbTranslocationFilter')}`);
+        if (v('clbCnFilter')) bits.push(`copy-number event in ${v('clbCnFilter')}`);
+        for (const f of (this._activeOncoprintFilters || [])) bits.push(`${f.gene} ${this._gridStateWord(f.state)}`);
+        for (const [k, s] of (this._clbCollectionStates || new Map())) bits.push(`quick filter "${k}" ${s}`);
+        return bits;
+    }
+
     // Subgroup (mutation-level) labels for the detailed / compare views. Binary
     // axes (fusion, functional loss, CN amp/del) collapse the 0/1/2 levels into
     // reference vs carrier; hotspot keeps the graded levels.
@@ -30356,12 +30376,24 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const oncotreeF = geOncF === '__mr_multi__'
                 ? (mr?.oncotreeFilterMulti || []).join(' + ')
                 : geOncF;
+            // A custom cell-line list can narrow this chart to a hand-picked
+            // set (the "ge-only" action from the browser) without touching
+            // any of the filter inputs above, the same invisible-narrowing
+            // shape that made the compare-mode bug possible in the first
+            // place. Name it so it isn't missed.
+            const geCustomCLCount = this._customCellLineFilterGE?.size || 0;
+            // Cell lines marked in red from elsewhere in the app (the
+            // "ge-hl" action). Not a cohort restriction, a marker: every line
+            // is still plotted, these are just picked out visually.
+            const geHighlight = this._geSelectionHighlight instanceof Set ? this._geSelectionHighlight : null;
             context = {
                 type: 'gene_effect_analysis', gene, plotType: this.currentGEView || 'tissue',
                 stratification: hotspotF || (this.geneEffectViewMode === 'mutation' && mr?.hotspotGene) || 'tissue',
                 stratificationKind: this.geneEffectViewMode === 'mutation' ? this._aiAlterationWord(mr) : null,
                 measure: (this.geneEffectViewMode === 'mutation' && mr?.metric === 'expr') ? 'mRNA expression' : 'gene effect',
-                tissueFilter: tissueF, subtypeFilter: subtypeF, oncotreeFilter: oncotreeF, hotspotFilter: hotspotF
+                tissueFilter: tissueF, subtypeFilter: subtypeF, oncotreeFilter: oncotreeF, hotspotFilter: hotspotF,
+                customCellLineListCount: geCustomCLCount || null,
+                highlightedCellLines: geHighlight?.size ? [...geHighlight] : null
             };
             // Cell line groups (#1)
             if (this.geneEffectViewMode === 'mutation' && mr?.hotspotGene) {
@@ -30372,6 +30404,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 const mData = (mr.isTranslocation ? this._fusionAxisData?.geneData?.[hg]?.translocations : mr.isDamaging ? this._lossAxisData?.geneData?.[hg]?.mutations : this.mutations?.geneData?.[hg]?.mutations) || {};
                 cellLineGroups = this._aiMutationGroups(mData, cellLines, mr);
                 const filterParts = [tissueF, subtypeF].filter(Boolean).join(', ');
+                context.plotDescribesWhat = `A box/strip plot, one row per ${this._aiAlterationWord(mr)} group of ${hg}: `
+                    + Object.entries(cellLineGroups).map(([k, v]) => `${k} (n=${v.length})`).join(', ')
+                    + `. The x axis is ${gene} ${context.measure}.`;
                 description = `${gene} gene effect stratified by ${hg} ${this._aiAlterationWord(mr)}${filterParts ? ' in ' + filterParts : ''} cell lines.`;
             } else if (this._geCompareMode && this._geCompareSides?.selection?.length) {
                 // The chart is a TWO-GROUP comparison, not a survey of the
@@ -30412,6 +30447,17 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                         ? ` The chart is this contrast, not a survey of ${gene}: means are ${sSel.mean} and ${sCmp.mean}, a difference of ${(sSel.mean - sCmp.mean).toFixed(3)}.`
                         : '');
             } else {
+                // Rows are tissue lineages with no tissue picked; once a
+                // lineage is picked the next level down is primary disease,
+                // or the finer Oncotree disease when the split toggle is on
+                // (setGeScopeMode). That toggle changes what a row IS, so a
+                // reader has to be told which one it's looking at.
+                const groupCount = this.currentGEStats?.length ?? null;
+                const groupKind = tissueF
+                    ? (this._geSplitByOncotree ? 'Oncotree disease within ' + tissueF : 'primary disease within ' + tissueF)
+                    : 'tissue lineage';
+                context.plotDescribesWhat = `A box plot, one row per ${groupKind}${groupCount != null ? ` (${groupCount} rows)` : ''}. The x axis is ${gene} gene effect.`
+                    + (geHighlight?.size ? ` ${geHighlight.size} cell line(s) are marked in red because they were highlighted from elsewhere in the app.` : '');
                 description = `${gene} gene effect across ${tissueF || 'all'} cell lines${subtypeF ? ' (' + subtypeF + ')' : ''}.`;
             }
         } else if (source === 'scatter') {
@@ -30425,6 +30471,17 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const hotspotOverlayF = document.getElementById('hotspotGene')?.value || '';
             const transOverlayF = document.getElementById('translocationGene')?.value || '';
             const customCLCount = this._customCellLineFilter?.size || 0;
+            // How points are coloured, when set. Distinct from the overlay
+            // genes above: this recolours every point by tissue / subtype /
+            // disease rather than by one gene's mutation status.
+            const colorBy = document.getElementById('colorByCategory')?.value || '';
+            // Names typed onto specific points by clicking them. Not a cohort
+            // filter, a labelling of some of the same points everyone else
+            // sees.
+            const clickedLabelled = this.clickedCells?.size ? [...this.clickedCells] : null;
+            // Grid picks scoped to this scatter alone (distinct from the
+            // shared alteration-grid filters, which apply everywhere).
+            const scatterGridBits = (this._scatterGridActive || []).map(f => `${f.gene} ${this._gridStateWord(f.state)}`);
             context = {
                 type: 'scatter_correlation', gene1: ci?.gene1, gene2: ci?.gene2,
                 correlation: ci?.correlation, xType: ci?.xType, yType: ci?.yType,
@@ -30435,7 +30492,20 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 fusionFilter: transGeneF && transLevelF !== 'all' ? `${transGeneF} ${transLevelF}` : '',
                 hotspotOverlayGene: hotspotOverlayF,
                 fusionOverlayGene: transOverlayF,
-                customCellLineListCount: customCLCount
+                colorBy: colorBy || null,
+                scatterGridFilters: scatterGridBits.length ? scatterGridBits : null,
+                labelledCellLines: clickedLabelled,
+                customCellLineListCount: customCLCount,
+                // A gate restricts the cohort WITHOUT touching any filter
+                // input above (clearGateFilter is the only thing that undoes
+                // it), the exact shape of invisible narrowing that once made
+                // an export describe the wrong cohort entirely. customCLCount
+                // above already counts these lines (gate and pasted list
+                // share one mechanism); this says WHERE the restriction
+                // actually came from.
+                gateFilterApplied: this._gateFilter
+                    ? `Restricted to the ${this._gateFilter.n} cell lines inside gate ${this._gateFilter.gate}, drawn by hand on the ${this._gateFilter.genes} plot. Lines outside the gate are not in this file.`
+                    : null
             };
             // Description with explicit axis labels, earlier version
             // produced "Scatter of FAM167A vs FAM167A" when both axes were
@@ -30451,6 +30521,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 context.fusionFilter,
                 customCLCount ? `custom CL list (n=${customCLCount})` : ''
             ].filter(Boolean);
+            context.plotDescribesWhat = `A scatter plot. Each point is a cell line. X axis is ${xLabel}, Y axis is ${yLabel}. ${n.toLocaleString()} points.`
+                + (colorBy ? ` Points are coloured by ${colorBy}.` : '')
+                + (clickedLabelled?.length ? ` ${clickedLabelled.length} point(s) carry a visible name label because they were clicked on screen; every other point is unlabelled but present.` : '')
+                + (this._gateFilter ? ` Only the cell lines inside gate ${this._gateFilter.gate} are plotted; the rest of the panel is excluded.` : '');
             description = `Scatter of ${xLabel} (x) vs ${yLabel} (y)${parts.length ? ', filtered by ' + parts.join(', ') : ''}.`;
         } else if (source === 'mutation') {
             const excludedList = mr?.excludedTissues?.size ? [...mr.excludedTissues] : [];
@@ -30501,7 +30575,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 additionalHotspot: mr?.additionalHotspot && mr?.additionalHotspotLevel !== 'all'
                     ? `${mr.additionalHotspot} ${mr.additionalHotspotLevel}` : '',
                 oncoprintFilters: this._activeOncoprintFilters?.map(f => `${f.gene} ${f.state}`) || [],
-                customCellLineListCount: this._customCellLineFilter?.size || 0
+                customCellLineListCount: this._customCellLineFilter?.size || 0,
+                measure: mr?.metric === 'expr' ? 'mRNA expression' : 'gene effect'
             };
             // Cell line groups for mutation analysis
             if (mr?.hotspotGene) {
@@ -30511,6 +30586,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 cellLineGroups = this._aiMutationGroups(mData, cellLines, mr);
             }
             const filterParts = [mr?.lineageFilter, mr?.subLineageFilter].filter(Boolean).join(', ');
+            // This view is a table, not a chart: the companion image (when
+            // produced) is a screenshot of that table, not a plotted figure.
+            context.plotDescribesWhat = `A ranked table of genes whose ${context.measure} differs most between the ${mr?.hotspotGene || '?'} ${this._aiAlterationWord(mr)} lines and the rest (n=${context.nMutated ?? '?'} vs n=${context.nWT ?? '?'}), sorted by that difference.`;
             description = `Differential gene effect analysis for ${mr?.hotspotGene} ${this._aiAlterationWord(mr)}${filterParts ? ' in ' + filterParts : ''}.`;
             // Source-specific extras: per-gene differential analysis results.
             if (mr?.allResults) {
@@ -30571,6 +30649,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             };
             // Stratification, gates are the analysis axis here.
             cellLineGroups = { gateA: gA.map(d => d.cellLineId), gateB: gB.map(d => d.cellLineId) };
+            context.plotDescribesWhat = `A scatter plot with two hand-drawn gate regions, A and B. X axis is ${ci?.gene1 || '?'} (${ci?.xType || 'ge'}), Y axis is ${ci?.gene2 || '?'} (${ci?.yType || 'ge'}). Gate A holds ${gA.length} points, gate B holds ${gB.length} points; points outside both gates are visible on the plot but not in this file.`;
             description = `Two-population gate comparison on ${ci?.gene1} (${ci?.xType || 'ge'}) vs ${ci?.gene2} (${ci?.yType || 'ge'}).`;
             // Source-specific extras: precomputed enrichment + diff results
             // from the gate-compare run, if available.
@@ -30655,6 +30734,28 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             description = source === 'correlations'
                 ? `Correlation analysis of ${inputGenes.length} input genes on ${this._runBasis === 'expr' ? 'mRNA expression' : 'CRISPR gene effect'}, at cutoff ${this.results?.cutoff || ''}, across ${cellLines.length.toLocaleString()} cell lines${filterParts.length ? ' (' + filterParts.join(', ') + ')' : ' (the whole panel, not restricted to any tissue)'}.`
                 : `Correlation network of ${inputGenes.length} input genes on ${this._runBasis === 'expr' ? 'mRNA expression' : 'CRISPR gene effect'}, edges drawn at |r| >= ${this.results?.cutoff || ''}, across ${cellLines.length.toLocaleString()} cell lines${filterParts.length ? ' (' + filterParts.join(', ') + ')' : ' (the whole panel, not restricted to any tissue)'}.`;
+            // The network's node/edge counts, when a network is actually
+            // built (it always is alongside a correlation or cluster run).
+            const netNodes = this.networkData?.nodes?.length ?? null;
+            const netEdges = this.networkData?.edges?.length ?? null;
+            const netDesc = (netNodes != null && netEdges != null)
+                ? `A correlation network. Nodes are genes, edges join genes whose ${this._runBasis === 'expr' ? 'expression' : 'gene-effect'} profiles correlate at |r| >= ${this.results?.cutoff || ''}. ${netNodes} nodes, ${netEdges} edges.`
+                : null;
+            context.plotDescribesWhat = source === 'clusters'
+                ? (netDesc || `A correlation network of ${inputGenes.length} input genes.`)
+                : `A ranked table, one row per gene pair among the input genes that reached the cutoff: gene1, gene2, r, slope, n.`
+                    + (netDesc ? ` The same run also draws a network of these genes, attached as the companion image when available: ${netDesc}` : '');
+            // Genes ringed or filled on the network, set by hand or by
+            // clicking an Enrichr term; the caption (when one was given)
+            // travels with them, because a mark with no stated reason means
+            // nothing once the picture leaves the app.
+            const netHlGenes = (this._netHighlightText || '').split(/[\s,;]+/).filter(Boolean);
+            if (netHlGenes.length) {
+                context.networkHighlight = {
+                    genes: netHlGenes,
+                    caption: this._netHighlightNote || null
+                };
+            }
             // Source-specific extras
             if (source === 'correlations' && this.results?.correlations) {
                 extras = {
@@ -30871,21 +30972,17 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 // out of a filter; when it came from hand-picking it does not,
                 // and saying which is which stops a reader inventing a rule.
                 selectionRule: (() => {
-                    const v = (id) => document.getElementById(id)?.value || '';
-                    const bits = [];
-                    if (v('clbTissueFilter')) bits.push(`tissue = ${v('clbTissueFilter')}`);
-                    if (v('clbSubtypeFilter')) bits.push(`subtype = ${v('clbSubtypeFilter')}`);
-                    if (v('clbOncotreeFilter')) bits.push(`disease = ${v('clbOncotreeFilter')}`);
-                    if (v('clbHotspotFilter')) bits.push(`hotspot mutation in ${v('clbHotspotFilter')}`);
-                    if (v('clbTranslocationFilter')) bits.push(`fusion ${v('clbTranslocationFilter')}`);
-                    if (v('clbCnFilter')) bits.push(`copy-number event in ${v('clbCnFilter')}`);
-                    for (const f of (this._activeOncoprintFilters || [])) bits.push(`${f.gene} ${this._gridStateWord(f.state)}`);
-                    for (const [k, s] of (this._clbCollectionStates || new Map())) bits.push(`quick filter "${k}" ${s}`);
+                    const bits = this._clbFilterBits();
                     return bits.length
                         ? `The browser was filtered to: ${bits.join('; ')}. Those filters are what the selection was drawn from, though lines may also have been ticked or unticked by hand on top of them.`
                         : 'No filter was active in the Cell Line Browser, so these lines were picked by hand. Whatever they have in common is not recorded anywhere in this file: work it out from cellLineMetadata rather than assuming a rule, and say which rule you inferred.';
-                })()
+                })(),
+                // The differential lists' p-values come from whichever test
+                // was selected in the panel when this was run; the two are
+                // not interchangeable and the readMe below states this one.
+                testMethod: "Welch's t-test"
             };
+            context.plotDescribesWhat = `A table, one row per gene, comparing the ${sel.length} selected cell lines against ${sides?.cmpLabel || 'all other cell lines'} on gene effect (and on expression where extras.selectionDifferentialExpression is present). Not a chart: the table itself, ranked by |difference|, is what was on screen.`;
             description = `${sel.length} cell lines picked out in the Cell Line Browser, compared with ${sides?.cmpLabel || 'all other cell lines'}.`;
             const rows = this._geInspectResults?.rows || [];
             const exprRows = this._geInspectResults?.exprRows || [];
@@ -30907,25 +31004,24 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 // left behind, so "is the dependency matched by expression"
                 // could not be asked of the file at all.
                 if (exprRows.length) extras.selectionDifferentialExpression = _byDelta(exprRows, 200);
-                extras.selectionDifferential_readMe = `One row per gene, Welch's two-sample t-test on the ${sel.length} selected lines vs ${sides?.cmpLabel || 'all other cell lines'}, gene by gene. p is the raw two-sided value; q is Benjamini-Hochberg across every gene tested (${rows.length} for gene effect${exprRows.length ? `, ${exprRows.length} for expression` : ''}), so q is the number to read, not p. Both lists are sorted by |difference| and cut at the strongest 200, which is a display cap on THIS list only and unrelated to context.dataTier: a gene absent from here was tested, it simply was not in the top 200 by effect size. Genes measured in fewer than the minimum number of selected lines were not tested at all.`;
+                extras.selectionDifferential_readMe = `One row per gene, ${context.testMethod} on the ${sel.length} selected lines vs ${sides?.cmpLabel || 'all other cell lines'}, gene by gene (context.testMethod names whichever test was actually selected in the panel; the two are not interchangeable). p is the raw two-sided value; q is Benjamini-Hochberg across every gene tested (${rows.length} for gene effect${exprRows.length ? `, ${exprRows.length} for expression` : ''}), so q is the number to read, not p. Both lists are sorted by |difference| and cut at the strongest 200, which is a display cap on THIS list only and unrelated to context.dataTier: a gene absent from here was tested, it simply was not in the top 200 by effect size. Genes measured in fewer than the minimum number of selected lines were not tested at all.`;
             }
         } else if (source === 'clb') {
             const ticked = (this._clbSelectedCellLines?.size || 0);
-            const bits = [];
-            const v = (id) => document.getElementById(id)?.value || '';
-            if (v('clbTissueFilter')) bits.push(v('clbTissueFilter'));
-            if (v('clbSubtypeFilter')) bits.push(v('clbSubtypeFilter'));
-            if (v('clbOncotreeFilter')) bits.push(v('clbOncotreeFilter'));
-            for (const f of (this._activeOncoprintFilters || [])) bits.push(`${f.gene} ${this._gridStateWord(f.state)}`);
+            // Shared with the `selection` branch's selectionRule, which
+            // already knew about the hotspot / fusion / CN / quick-filter
+            // kinds this branch used to leave out.
+            const bits = this._clbFilterBits();
             context = {
                 type: 'cell_line_browser',
                 selection: ticked ? `${ticked} cell lines ticked` : 'everything the filters leave showing',
-                filters: bits.join(' \u00b7 ') || 'none',
+                filters: bits.join('; ') || 'none',
                 plotType: 'cell_line_list', stratification: 'none'
             };
+            context.plotDescribesWhat = `Not a chart: a list, one row per cell line, from the Cell Line Browser, with its alterations, signatures and gene-effect data. ${ticked ? `${ticked} lines were ticked by hand.` : bits.length ? `Filtered to: ${bits.join('; ')}.` : 'No filter was active; every line in the panel is listed.'}`;
             description = ticked
                 ? `${ticked} cell lines picked out in the Cell Line Browser.`
-                : `The cell lines the Cell Line Browser is showing${bits.length ? ` (${bits.join(' \u00b7 ')})` : ''}.`;
+                : `The cell lines the Cell Line Browser is showing${bits.length ? ` (${bits.join('; ')})` : ''}.`;
         } else if (source === 'wiki') {
             const cl = this._wikiCellLineId;
             const name = cl ? (this.getCellLineName(cl) || cl) : '?';
@@ -30935,6 +31031,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 cellLineName: name,
                 plotType: 'cell_line_profile', stratification: 'none'
             };
+            context.plotDescribesWhat = `Not a chart: a structured profile of the single cell line ${name}, covering its alterations, signatures and other computed properties, the same fields the wiki page's text is generated from.`;
             description = `Everything the app holds on the single cell line ${name}.`;
             extras = {
                 cellLine: { id: cl, name },
@@ -30956,6 +31053,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 plotType: 'expression_correlate_table', stratification: 'none'
             };
             description = `Expression correlates of ${ctx.targetGene || '?'} gene effect${ctx.subgroup ? ` (${ctx.subgroup})` : ''}.`;
+            context.plotDescribesWhat = `A ranked table, one row per gene: that gene's mRNA expression correlated against ${ctx.targetGene || '?'} gene effect${ctx.subgroup ? `, within the subgroup ${ctx.subgroup}` : ''}. ${Array.isArray(this.expressionCorrelateResults) ? this.expressionCorrelateResults.length.toLocaleString() : 0} genes tested.`
+                + (this._currentExprScatterGene ? ` A scatter plot for ${this._currentExprScatterGene} expression vs ${ctx.targetGene} gene effect was also open; the companion image, when produced, shows that scatter rather than the table.` : '');
             if (Array.isArray(this.expressionCorrelateResults)) {
                 extras = {
                     expressionCorrelates: this.expressionCorrelateResults.map(r => ({
@@ -30978,6 +31077,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 const n = cellLines.length;
                 description = `${n} cell line${n === 1 ? '' : 's'} from the ${source || 'current'} view.`;
             }
+            context.plotDescribesWhat = `This source ("${source || 'unknown'}") has no specific description built for it. Treat context and the matrices as the only reliable statement of what this file covers.`;
         }
         // A custom export can replace the cohort outright. When it does, the
         // view's own precomputed results were computed over a DIFFERENT set of
@@ -31019,6 +31119,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                         : 'The open view had no precomputed results, so nothing had to be dropped.',
                     whatToAnalyse: 'There is no precomputed contrast in this file. Work from the matrices, cellLineMetadata and any optional layers: define whatever grouping the question needs (by mutation, tissue, disease or anything else in cellLineMetadata) yourself, over cellLineOrder, and compute it.'
                 };
+                context.plotDescribesWhat = `Not a picture of anything on screen: this cohort of ${cellLines.length.toLocaleString()} cell lines was typed into the Custom export for AI dialog, not read off a chart. There is no companion image.`;
                 description = `${cellLines.length.toLocaleString()} cell lines requested through the Custom export for AI dialog, with the genes named in the request.`;
             }
         }
@@ -32157,8 +32258,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         };
 
         const exportData = {
-            _description: 'Correlate V2, Unified Data Export (gzipped). Same shape regardless of source view (gene effect / scatter / mutation analysis / gate comparison / correlation / cluster / expression correlate). The `context` field tells you which view this came from.',
-            schemaVersion: '3.4',
+            _description: 'Correlate V2, Unified Data Export (gzipped). Same shape regardless of source view (gene effect / scatter / mutation analysis / gate comparison / correlation / cluster / expression correlate). The `context` field tells you which view this came from. Schema 3.5 adds context.plotDescribesWhat (a plain-text statement of what the on-screen picture showed, present for every source) and context.companionImage (the filename of a picture saved alongside this file, when one could be produced).',
+            schemaVersion: '3.5',
             nTotal: cellLines.length,
             dataStructure: {
                 cellLineOrder: 'Array of DepMap cell line IDs. Defines column order for geneEffect and expression matrices. Length = nTotal.',
@@ -32741,21 +32842,53 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const _stem = `correlate_export_${source}_${_label}_${n}cl`;
         let _pngUrl = null;
         try {
-            const plotId = source === 'ge'
-                ? (this.geneEffectViewMode === 'mutation' ? 'geneEffectHotspotPlot' : 'geneEffectPlot')
-                : source === 'scatter' ? 'scatterPlot'
-                : source === 'ca' ? 'corrAnalysisTissuePlot' : null;
-            const el = plotId && document.getElementById(plotId);
-            if (el && el.data && typeof Plotly !== 'undefined') {
-                _pngUrl = await Plotly.toImage(el, {
-                    format: 'png',
-                    width: (el._fullLayout?.width || el.clientWidth || 900) * 2,
-                    height: (el._fullLayout?.height || el.clientHeight || 600) * 2
-                });
-                if (exportData.context) {
-                    exportData.context.companionImage = `${_stem}.png`;
-                    exportData.context.companionImageNote = 'The chart the user was looking at when this file was made, saved beside it under the same name. If it was provided, read it: it shows the grouping and the axis this file describes. If it was not, rely on context.plotDescribesWhat.';
+            if (source === 'correlations' || source === 'clusters') {
+                // The network is a vis-network canvas, not a Plotly chart:
+                // reuse the same composition path "Copy network" / "Export
+                // image" use, so the companion picture carries the same
+                // banner, nodes, edges and legend the user actually saw.
+                if (this.network && this._networkExportGeometry()) {
+                    const geo = this._networkExportGeometry();
+                    const widthCm = 20;
+                    const heightCm = Math.round(widthCm * (geo.totalHeight / geo.totalWidth) * 100) / 100;
+                    const canvas = await this._composeNetworkExportCanvas({
+                        widthCm, heightCm, dpi: 150, background: 'white', legendFrame: false
+                    });
+                    if (canvas) _pngUrl = this._trimCanvasWhitespace(canvas).toDataURL('image/png');
                 }
+            } else if (source === 'mutation') {
+                // A table, not a Plotly chart: same html2canvas fallback
+                // copyPlotToClipboard uses for non-Plotly panels.
+                const el = document.getElementById('mutationTable');
+                if (el && typeof window.html2canvas !== 'undefined') {
+                    const canvas = await window.html2canvas(el, { scale: 2, backgroundColor: '#ffffff', logging: false });
+                    _pngUrl = this._trimCanvasWhitespace(canvas).toDataURL('image/png');
+                }
+            } else {
+                // geneEffectViewMode 'mutation' always renders into
+                // geneEffectPlot (showGeneEffectDistribution); only the
+                // ordinary tissue/hotspot toggle (currentGEView) ever uses
+                // geneEffectHotspotPlot, and only when not in mutation mode.
+                const plotId = source === 'ge'
+                    ? (this.geneEffectViewMode !== 'mutation' && this.currentGEView === 'hotspot' ? 'geneEffectHotspotPlot' : 'geneEffectPlot')
+                    : (source === 'scatter' || source === 'gates') ? 'scatterPlot'
+                    : source === 'exprCorrelates' ? 'exprCorrelateScatterPlot'
+                    : null;
+                const el = plotId && document.getElementById(plotId);
+                if (el && el.data && typeof Plotly !== 'undefined') {
+                    _pngUrl = await Plotly.toImage(el, {
+                        format: 'png',
+                        width: (el._fullLayout?.width || el.clientWidth || 900) * 2,
+                        height: (el._fullLayout?.height || el.clientHeight || 600) * 2
+                    });
+                }
+            }
+            // wiki, clb and a question-less exprCorrelates table have no
+            // chart at all: plotId/canvas stays null above and this is
+            // skipped without error, exactly as intended.
+            if (_pngUrl && exportData.context) {
+                exportData.context.companionImage = `${_stem}.png`;
+                exportData.context.companionImageNote = 'The chart the user was looking at when this file was made, saved beside it under the same name. If it was provided, read it: it shows the grouping and the axis this file describes. If it was not, rely on context.plotDescribesWhat.';
             }
         } catch (e) { console.warn('Companion PNG not produced:', e); }
 
@@ -45890,12 +46023,8 @@ ${clone.innerHTML}
         if (sidebar) {
             sidebar.innerHTML =
                 card('Compare with', '<div id="geInspectScopeBox"></div>')
-                + card('Test', `
-                    <select id="geInspectTest" style="width:100%; font-size:11px; padding:3px 5px; border:1px solid #d1d5db; border-radius:3px; background:#fff;" title="Welch's t compares the means and is punished by spread, which bites hardest on small groups. The rank test asks only whether one group sits above the other, so a clean separation survives a wide spread, but it cannot resolve very small groups at all.">
-                        <option value="welch">Welch's t (means)</option>
-                        <option value="rank">Rank sum (order)</option>
-                    </select>
-                    <div id="geInspectStatNote" style="color:#6b7280; font-size:10px; margin-top:5px;"></div>`, '', 'mobile-hide')
+                + card('Group sizes', `
+                    <div id="geInspectStatNote" style="color:#6b7280; font-size:10px;"></div>`, '', 'mobile-hide')
                 + card('Find gene', `
                     <div style="display:flex; gap:4px; align-items:center;">
                         <input type="text" id="geInspectSearch" placeholder="e.g. BRAF, SOX10" title="Show these genes in both tables whatever the cutoffs are set to. Separate several with commas or spaces." style="flex:1; min-width:0; font-size:11px; padding:3px 5px; border:1px solid #d1d5db; border-radius:3px;">
@@ -45978,16 +46107,6 @@ ${clone.innerHTML}
                 renderSides();
             });
         }
-        const testSel = document.getElementById('geInspectTest');
-        if (testSel) {
-            testSel.value = this._geInspectTest === 'rank' ? 'rank' : 'welch';
-            testSel.addEventListener('change', () => {
-                this._geInspectTest = testSel.value === 'rank' ? 'rank' : 'welch';
-                // The p-values are computed in the scan, so changing the test
-                // re-runs it rather than re-filtering what is already here.
-                this.inspectSelectionGE();
-            });
-        }
         this._renderGEStatNote();
         renderSides();
     }
@@ -46003,14 +46122,9 @@ ${clone.innerHTML}
         const cov = this._geInspectResults?.geCoverage;
         if (!cov) { el.textContent = ''; return; }
         const n1 = cov.selMeasured || 0, n2 = cov.othMeasured || 0;
-        const floor = this._rankTestFloor(n1, n2);
-        const bits = [`${n1} vs ${n2} lines with a screen`];
-        if (this._geInspectTest === 'rank') {
-            bits.push(floor > 0.001
-                ? `the strongest result possible at these sizes is p = ${floor < 0.01 ? floor.toExponential(1) : floor.toFixed(3)}, so a stricter cutoff than that will show nothing whatever the difference`
-                : 'group sizes are large enough for the rank test to resolve small p-values');
-        } else if (n1 < 6 || n2 < 6) {
-            bits.push('with groups this small a t-test is punished by ordinary spread; the rank test asks only whether one group sits above the other, though it cannot resolve very small groups either');
+        const bits = [`n=${n1} vs n=${n2} lines with a screen`];
+        if (n1 < 6 || n2 < 6) {
+            bits.push('with groups this small the test is punished by ordinary spread, so read a large difference carrying a weak q as suggestive rather than as nothing');
         }
         el.textContent = bits.join(' · ');
     }
@@ -46547,7 +46661,10 @@ ${clone.innerHTML}
         // any reasonable spread even when the two groups separate cleanly, so
         // the rank test is offered as an alternative; it needs the values
         // themselves, not just their sums.
-        const useRank = this._geInspectTest === 'rank';
+        // Welch only. The rank test needed the values themselves, so it built
+        // and sorted an array for each of 18,531 genes on the main thread,
+        // which froze the tab for minutes. It is no longer offered.
+        const useRank = false;
         for (let g = 0; g < this.nGenes; g++) {
             if (_minCov && _cov[g] < _minCov) continue;
             const off = g * this.nCellLines;
@@ -46675,7 +46792,7 @@ ${clone.innerHTML}
             + `</span>`
             + `each gene's average in the selection minus its average in the comparison group`
             + (canTest
-                ? `, tested with ${this._geInspectTest === 'rank' ? 'a Wilcoxon rank sum' : "Welch's t"} per gene and q from Benjamini-Hochberg`
+                ? `, tested with Welch's t per gene and q from Benjamini-Hochberg`
                 : `. Fewer than three cell lines means no spread to test, so there is no p or q`)
             + `. <a href="#" id="geInspectHelpLink" style="color:#5d9239;">How to read this</a>`;
         document.getElementById('geInspectHelpLink')?.addEventListener('click', (e) => {
@@ -47061,7 +47178,7 @@ ${clone.innerHTML}
         Plotly.relayout(el, upd).catch(() => {});
     }
 
-    _drawGEVolcano(side, allRows, shownRows, cut, qCut, anyQ, measure, xTitle) {
+    _drawGEVolcano(side, allRows, shownRows, cut, qCut, anyQ, measure, xTitle, searchRows) {
         const el = document.getElementById(`ge${side}Volcano`);
         if (!el || typeof Plotly === 'undefined') return;
         if (!allRows || !allRows.length) { el.innerHTML = ''; return; }
@@ -47083,15 +47200,36 @@ ${clone.innerHTML}
         // Taking the top N outright piles every label into one corner when the
         // strongest hits all move the same way, so take the best few in each
         // direction and stagger them.
+        // Searched genes: their own trace, in amber so it reads as "you asked
+        // for this one" rather than as another point on the red/blue scale,
+        // and always labelled whatever the cutoffs are set to.
+        const found = { x: [], y: [], t: [] };
+        const foundLab = [];
+        for (const r of (searchRows || [])) {
+            const y = yOf(r);
+            if (y == null || !isFinite(y) || !isFinite(r.delta)) continue;
+            found.x.push(r.delta); found.y.push(y);
+            found.t.push(`${r.gene}<br>Δ ${r.delta.toFixed(2)}${anyQ && r.q != null ? `<br>q ${r.q < 0.001 ? r.q.toExponential(1) : r.q.toFixed(3)}` : ''}`);
+            foundLab.push(r);
+        }
         const labelable = shownRows.filter(r => isFinite(r.delta) && yOf(r) != null);
         const lab = [...labelable.filter(r => r.delta < 0).slice(0, 4),
                      ...labelable.filter(r => r.delta > 0).slice(0, 4)];
+        // Searched genes are always labelled, and never twice.
+        const labNames = new Set(lab.map(r => r.gene));
+        for (const r of foundLab) if (!labNames.has(r.gene)) { lab.push(r); labNames.add(r.gene); }
         const traces = [
             { x: bg.x, y: bg.y, text: bg.t, type: 'scattergl', mode: 'markers', name: 'below cutoff',
               hoverinfo: 'text', marker: { size: 4, color: '#d1d5db', opacity: 0.55 } },
             { x: hi.x, y: hi.y, text: hi.t, type: 'scattergl', mode: 'markers', name: 'shown in table',
               hoverinfo: 'text', marker: { size: 6, color: hi.x.map(v => v < 0 ? '#dc2626' : '#2563eb'), opacity: 0.85 } }
         ];
+        if (found.x.length) {
+            traces.push({ x: found.x, y: found.y, text: found.t, type: 'scattergl', mode: 'markers',
+                name: 'searched', hoverinfo: 'text',
+                marker: { size: 11, color: '#f59e0b', opacity: 1,
+                          line: { color: '#7c4a03', width: 1.5 } } });
+        }
         // The heading, so an exported chart says on its own what was compared.
         // The words come from _geVolcanoHeader, which quotes the modal's own
         // title and comparator sentence; here they are only wrapped to this
@@ -47169,7 +47307,9 @@ ${clone.innerHTML}
             // in _spreadVolcanoLabels; the heading annotations sit after them.
             // _dotLabel is what gives them a size control in Settings.
             annotations: lab.map((r) => ({
-                x: r.delta, y: yOf(r), text: r.gene, font: { size: 8, color: '#374151' },
+                x: r.delta, y: yOf(r), text: r.gene,
+                font: { size: foundLab.some(f => f.gene === r.gene) ? 10 : 8,
+                        color: foundLab.some(f => f.gene === r.gene) ? '#b45309' : '#374151' },
                 showarrow: true, arrowhead: 0, arrowwidth: 0.7, arrowcolor: '#b8bec9',
                 standoff: 3,
                 ax: r.delta < 0 ? -14 : 14, ay: -10,
@@ -47423,10 +47563,8 @@ ${clone.innerHTML}
             left:  { key: 'delta', dir: -1, absolute: true },
             right: { key: 'delta', dir: -1, absolute: true },
         };
-        const testSel = document.getElementById('geInspectTest');
-        const wasRank = this._geInspectTest === 'rank';
         this._geInspectTest = 'welch';
-        if (testSel) testSel.value = 'welch';
+        const wasRank = false;
         // Changing the comparison group or the test means recomputing, which
         // rebuilds the whole panel; otherwise just redraw what is here.
         if (this._geInspectScope !== 'all' || wasRank) {
@@ -47526,10 +47664,18 @@ ${clone.innerHTML}
         this._geInspectShown = { left: leftRows, right: rightRows };
         // The volcano follows the same cutoffs the table does, so what is
         // highlighted in the plot and what is listed below it are one set.
-        this._drawGEVolcano('Left', rows, leftRows, leftCut, anyQ ? leftQ : 1, anyQ,
-            'CRISPR gene effect', 'Δ gene effect (selection − comparison)');
-        this._drawGEVolcano('Right', exprRows, rightRows, rightCut, anyQ ? rightQ : 1, anyQ,
-            'mRNA expression', 'Δ log2(TPM+1) (selection − comparison)');
+        // A gene search narrows the TABLE to the matches, which is what the
+        // table is for. The volcano keeps the cutoff set it was already
+        // showing and marks the searched genes on top of it, so looking a gene
+        // up adds it to the picture instead of emptying the picture.
+        const cutLeft = applySort(rows.filter(r => Math.abs(r.delta) >= leftCut && passQ(r, leftQ)), this._geInspectSort.left).slice(0, leftN);
+        const cutRight = applySort(exprRows.filter(r => Math.abs(r.delta) >= rightCut && passQ(r, rightQ)), this._geInspectSort.right).slice(0, rightN);
+        const foundLeft = terms.length ? rows.filter(matches) : [];
+        const foundRight = terms.length ? exprRows.filter(matches) : [];
+        this._drawGEVolcano('Left', rows, cutLeft, leftCut, anyQ ? leftQ : 1, anyQ,
+            'CRISPR gene effect', 'Δ gene effect (selection − comparison)', foundLeft);
+        this._drawGEVolcano('Right', exprRows, cutRight, rightCut, anyQ ? rightQ : 1, anyQ,
+            'mRNA expression', 'Δ log2(TPM+1) (selection − comparison)', foundRight);
 
         // Stash the currently displayed gene lists so the Network button
         // can pull from them directly.
