@@ -37239,6 +37239,58 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             : `Derived from this line: ${d.pairs.map(p => `${nm(p.derivative)} (${p.changeShort})`).join(', ')}.`;
     }
 
+    // ===== Gene set library =====
+    // Sets for the heatmap: compact, well-known programmes rather than whole
+    // hallmark collections, so a heatmap stays readable and every gene is one
+    // a reader can argue with. Each carries a note saying what it reads out
+    // and, where it matters, what it cannot tell you.
+    _GENE_SET_LIBRARY() {
+        return {
+            ifn_type1: { label: 'Interferon, type I', category: 'Immune',
+                genes: this._ISG_SETS().intrinsic.genes,
+                note: 'Interferon-stimulated genes a tumour cell expresses itself. The cell line has no immune infiltrate, so this is cell-intrinsic signalling only.' },
+            ifn_gamma: { label: 'Interferon gamma response', category: 'Immune',
+                genes: ['CXCL9','CXCL10','CXCL11','IDO1','GBP1','GBP2','GBP4','GBP5','STAT1','IRF1','HLA-DRA','CIITA','SOCS1','PSMB9','TAP1','NLRC5'],
+                note: 'Type II interferon output. Overlaps type I at STAT1 and the proteasome subunits, but the chemokines and CIITA are gamma-specific.' },
+            antigen_presentation: { label: 'Antigen presentation (MHC-I)', category: 'Immune',
+                genes: ['B2M','HLA-A','HLA-B','HLA-C','TAP1','TAP2','TAPBP','PSMB8','PSMB9','NLRC5','CALR','CANX'],
+                note: 'The machinery for showing peptides to CD8 T cells. Low across the row is a candidate immune-escape line.' },
+            sensing: { label: 'Nucleic acid sensing', category: 'Immune',
+                genes: ['CGAS','STING1','TBK1','IRF3','IFIH1','RIGI','MAVS','ZBP1','EIF2AK2','OAS1','ADAR','TREX1','SAMHD1','RNASEH2A','RNASEH2B','RNASEH2C','DDX41','PYHIN1'],
+                note: 'Cytosolic DNA and RNA sensors with their brakes. The brakes (ADAR, TREX1, SAMHD1, RNASEH2) are the genes whose loss causes interferonopathy.' },
+            retroelement_silencing: { label: 'Retroelement silencing', category: 'Immune',
+                genes: ['TRIM28','SETDB1','MPHOSPH8','TASOR','MORC2','DNMT1','DNMT3A','DNMT3B','ATRX','ZNF91','ZNF93','MOV10','APOBEC3A','APOBEC3B','L1TD1','MAEL','PIWIL1','PIWIL2','PIWIL4','TEX15','HELLS'],
+                note: 'The machinery that keeps transposable elements quiet, including the HUSH complex. Expression of the silencers, not of the elements themselves.' },
+            tp53: { label: 'TP53 targets', category: 'Pathway output',
+                genes: ['CDKN1A','MDM2','BBC3','PMAIP1','BAX','GADD45A','SESN1','SESN2','TP53I3','RRM2B','ZMAT3','TIGAR','FAS','TNFRSF10B','DDB2','XPC','POLH','TRIAP1','AEN','CCNG1','TP53INP1','PLK3','TNFRSF10A'],
+                note: 'Genes p53 switches on. Reads out whether the pathway is running, which is not the same as whether TP53 is mutated: check the mutation columns alongside.' },
+            nfkb: { label: 'NF-kB targets', category: 'Pathway output',
+                genes: ['NFKBIA','TNFAIP3','RELB','NFKB2','BIRC3','CXCL8','IL6','CCL2','CCL20','ICAM1','VCAM1','TRAF1','CD83','PTGS2','BCL3','NFKB1','TNF','LTB','CXCL1','CXCL2','NFKBIE','PLAU'],
+                note: 'NF-kB output, including its own negative feedback (NFKBIA, TNFAIP3). High here usually means the pathway is active rather than merely present.' },
+            mapk: { label: 'MAPK output (RAS / RAF / MEK)', category: 'Pathway output',
+                genes: ['DUSP4','DUSP6','SPRY1','SPRY2','SPRY4','ETV1','ETV4','ETV5','PHLDA1','EPHA2','CCND1','MYC','FOSL1','SPRED1','SPRED2','IER3','TRIB1'],
+                note: 'The transcriptional footprint of MAPK signalling. KRAS-, NRAS- and BRAF-driven lines converge here, so this reads pathway activity rather than which gene is mutated.' },
+            myc: { label: 'MYC targets', category: 'Pathway output',
+                genes: ['NPM1','NCL','RPL3','RPS5','EIF4E','SRM','ODC1','CAD','NOP56','FBL','PPAT','TFRC','LDHA','CDK4','SLC7A5','GNL3','MRTO4'],
+                note: 'Ribosome biogenesis and metabolism genes MYC drives. Tracks proliferation closely, so compare against the cell cycle set before calling it MYC-specific.' },
+            e2f: { label: 'Cell cycle / E2F', category: 'Cell state',
+                genes: ['MKI67','CCNE1','CCNE2','CDK1','CDC20','MCM2','MCM3','MCM4','MCM5','MCM6','MCM7','PCNA','TYMS','RRM2','E2F1','TK1','BIRC5','AURKB','PLK1','TOP2A'],
+                note: 'Proliferation. Useful mostly as a control: many apparent differences between lines are really differences in how fast they divide.' },
+            emt: { label: 'EMT / mesenchymal', category: 'Cell state',
+                genes: ['VIM','CDH2','FN1','SNAI1','SNAI2','ZEB1','ZEB2','TWIST1','SPARC','TGFB1','SERPINE1','ITGB1','MMP2','COL1A1','TAGLN'],
+                note: 'Mesenchymal programme. In cell lines this is often a stable identity rather than an ongoing transition.' },
+            hypoxia: { label: 'Hypoxia', category: 'Cell state',
+                genes: ['CA9','VEGFA','SLC2A1','LDHA','PGK1','ADM','NDRG1','P4HA1','ALDOA','ENO1','BNIP3','EGLN3','HK2'],
+                note: 'HIF output. Cultured cells are not hypoxic, so a high score usually means constitutive HIF activity, for example VHL-null kidney lines.' },
+            senescence: { label: 'Senescence / SASP', category: 'Cell state',
+                genes: ['CDKN1A','CDKN2A','IL6','CXCL8','IGFBP7','SERPINE1','IL1A','IL1B','MMP1','MMP3','CCL2','TNFRSF10C'],
+                note: 'The secretory programme of senescent cells. Proliferating lines can still score high on the secreted half, so read it with the cell cycle set.' },
+            apoptosis: { label: 'Apoptosis core', category: 'Cell state',
+                genes: ['BAX','BAK1','BCL2','BCL2L1','MCL1','BID','BBC3','PMAIP1','BAD','CASP3','CASP7','CASP8','CASP9','APAF1','XIAP','BIRC5'],
+                note: 'The intrinsic pathway plus its guardians. Which anti-apoptotic gene a line leans on (BCL2, BCL2L1 or MCL1) is the actionable part.' }
+        };
+    }
+
     // ===== Interferon signature =====
     // A type-I interferon score per cell line, from genes the app already has.
     //
@@ -51997,11 +52049,20 @@ ${clone.innerHTML}
     setupHeatmapModal() {
         const presetSel = document.getElementById('hmPreset');
         if (presetSel) {
-            const sets = this._ISG_SETS();
-            presetSel.innerHTML =
-                `<option value="intrinsic">${this.esc(sets.intrinsic.label)} (${sets.intrinsic.genes.length})</option>` +
-                `<option value="clinical6">${this.esc(sets.clinical6.label)}</option>` +
-                `<option value="custom">Custom…</option>`;
+            const library = this._GENE_SET_LIBRARY();
+            const byCategory = new Map();
+            for (const [key, set] of Object.entries(library)) {
+                if (!byCategory.has(set.category)) byCategory.set(set.category, []);
+                byCategory.get(set.category).push({ key, ...set });
+            }
+            let html = '';
+            for (const [category, sets] of byCategory) {
+                html += `<optgroup label="${this.esc(category)}">`;
+                for (const s of sets) html += `<option value="${this.esc(s.key)}">${this.esc(s.label)} (${s.genes.length})</option>`;
+                html += `</optgroup>`;
+            }
+            html += `<option value="custom">Custom…</option>`;
+            presetSel.innerHTML = html;
         }
         const openModal = () => {
             const modal = document.getElementById('heatmapModal');
@@ -52020,23 +52081,32 @@ ${clone.innerHTML}
         document.getElementById('heatmapModal')?.addEventListener('click', (e) => {
             if (e.target.id === 'heatmapModal') close();
         });
-        presetSel?.addEventListener('change', () => this._hmSyncCustomVisibility());
+        presetSel?.addEventListener('change', () => this._hmSyncPresetUI());
         document.getElementById('hmRedrawBtn')?.addEventListener('click', () => this._hmRedraw());
         document.getElementById('hmExportImageBtn')?.addEventListener('click', () => this._hmExportImage());
         document.getElementById('hmCopyBtn')?.addEventListener('click', () => this._hmCopy());
         document.getElementById('hmCsvBtn')?.addEventListener('click', () => this._hmExportCsv());
     }
 
-    _hmSyncCustomVisibility() {
+    // Toggles the custom-gene textarea and refreshes the preset's note. Both
+    // live under the same select, so one sync keeps them in step with a
+    // change event or a redraw.
+    _hmSyncPresetUI() {
+        const presetKey = document.getElementById('hmPreset')?.value;
         const wrap = document.getElementById('hmCustomWrap');
-        if (wrap) wrap.style.display = document.getElementById('hmPreset')?.value === 'custom' ? '' : 'none';
+        if (wrap) wrap.style.display = presetKey === 'custom' ? '' : 'none';
+        const noteEl = document.getElementById('hmSetNote');
+        if (noteEl) {
+            const set = presetKey && presetKey !== 'custom' ? this._GENE_SET_LIBRARY()[presetKey] : null;
+            noteEl.textContent = set?.note || '';
+        }
     }
 
     // Reads the controls, resolves genes and cohort, and (re)builds the
     // matrix. Only runs on open or Redraw, so a half-typed custom gene list
     // doesn't repaint on every keystroke.
     async _hmRedraw() {
-        this._hmSyncCustomVisibility();
+        this._hmSyncPresetUI();
         const hint = document.getElementById('hmHint');
         if (!this.metadata) { if (hint) hint.textContent = 'Data is still loading.'; return; }
 
@@ -52044,7 +52114,8 @@ ${clone.innerHTML}
         const scaleMode = document.getElementById('hmScale')?.value || 'z';
         const cohortMode = document.getElementById('hmCohort')?.value || 'visible';
         const sortMode = document.getElementById('hmSort')?.value || 'score';
-        const presetKey = document.getElementById('hmPreset')?.value || 'intrinsic';
+        const groupByMode = document.getElementById('hmGroupBy')?.value || 'none';
+        const presetKey = document.getElementById('hmPreset')?.value || Object.keys(this._GENE_SET_LIBRARY())[0];
 
         if (dataType === 'expr' && !this.expressionLoaded) {
             const redrawBtn = document.getElementById('hmRedrawBtn');
@@ -52064,7 +52135,7 @@ ${clone.innerHTML}
             const raw = document.getElementById('hmGenes')?.value || '';
             enteredGenes = Array.from(new Set(raw.split(/[,;\s]+/).map(g => g.trim().toUpperCase()).filter(Boolean)));
         } else {
-            const set = this._ISG_SETS()[presetKey];
+            const set = this._GENE_SET_LIBRARY()[presetKey];
             enteredGenes = set ? set.genes.slice() : [];
         }
         if (!enteredGenes.length) {
@@ -52109,10 +52180,47 @@ ${clone.innerHTML}
             return;
         }
 
-        this._hmBuildAndPaint({ genes, missingGenes, cohort, cohortNote, dataType, scaleMode, sortMode });
+        // The lineage gate narrows whatever cohort was resolved above; its
+        // own options are rebuilt from that cohort every redraw, so the list
+        // always matches what's actually on offer rather than every lineage
+        // in the panel.
+        const lineageLabel = this._hmPopulateLineageSelect(cohort);
+        if (lineageLabel) {
+            cohort = cohort.filter(cl => (this.getCellLineLineage(cl) || 'Not recorded') === lineageLabel);
+        }
+        if (!cohort.length) {
+            if (hint) hint.textContent = `No cell lines in ${lineageLabel} for this cohort. Try a different lineage or "All lineages".`;
+            this._hmClearCanvases();
+            return;
+        }
+
+        this._hmBuildAndPaint({ genes, missingGenes, cohort, cohortNote, dataType, scaleMode, sortMode, groupByMode, lineageLabel });
     }
 
-    _hmBuildAndPaint({ genes, missingGenes, cohort, cohortNote, dataType, scaleMode, sortMode }) {
+    // Rebuilds the lineage-gate options from whatever cohort is currently in
+    // play (rather than every lineage in the panel), so the list only ever
+    // offers lineages that actually narrow something. Keeps the previous
+    // selection if it's still on offer, otherwise falls back to "All
+    // lineages". Returns the (possibly reset) selected lineage, or '' for
+    // no gate.
+    _hmPopulateLineageSelect(cohort) {
+        const sel = document.getElementById('hmLineage');
+        if (!sel) return '';
+        const counts = new Map();
+        for (const cl of cohort) {
+            const lin = this.getCellLineLineage(cl) || 'Not recorded';
+            counts.set(lin, (counts.get(lin) || 0) + 1);
+        }
+        const entries = Array.from(counts.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+        const prev = sel.value;
+        let html = `<option value="">All lineages (${cohort.length})</option>`;
+        for (const [lin, n] of entries) html += `<option value="${this.esc(lin)}">${this.esc(lin)} (${n})</option>`;
+        sel.innerHTML = html;
+        sel.value = (prev && counts.has(prev)) ? prev : '';
+        return sel.value;
+    }
+
+    _hmBuildAndPaint({ genes, missingGenes, cohort, cohortNote, dataType, scaleMode, sortMode, groupByMode = 'none', lineageLabel = '' }) {
         const geIndexByCL = new Map(this.metadata.cellLines.map((cl, i) => [cl, i]));
         const cohortIndex = new Map(cohort.map((cl, i) => [cl, i]));
 
@@ -52153,36 +52261,89 @@ ${clone.innerHTML}
         });
 
         let orderedGenes = genes.slice();
-        let orderedCLs;
-        let clusterNote = '';
         const CLUSTER_CAP = 400;
-        if (sortMode === 'lineage') {
-            orderedCLs = cohort.slice().sort((a, b) => {
-                const la = this.getCellLineLineage(a) || '', lb = this.getCellLineLineage(b) || '';
-                if (la !== lb) return la.localeCompare(lb);
-                const sa = this.getCellLineSublineage(a) || '', sb = this.getCellLineSublineage(b) || '';
-                if (sa !== sb) return sa.localeCompare(sb);
-                return this.getCellLineName(a).localeCompare(this.getCellLineName(b));
-            });
-        } else if (sortMode === 'name') {
-            orderedCLs = cohort.slice().sort((a, b) => this.getCellLineName(a).localeCompare(this.getCellLineName(b)));
-        } else if (sortMode === 'cluster') {
-            // Rows always cluster; the cell-line cap only guards the far more
-            // expensive column clustering (cohorts run into the thousands).
+        if (sortMode === 'cluster') {
+            // Rows always cluster in full; only the column (cell-line)
+            // clustering is expensive enough to need the cap below.
             orderedGenes = this._hmClusterOrder(genes, scaledRows);
-            if (cohort.length > CLUSTER_CAP) {
-                clusterNote = `Clustering is limited to ${CLUSTER_CAP} cell lines (this cohort has ${cohort.length}); narrow it with the browser's filters first. Cell lines are sorted by score instead. `;
-                orderedCLs = sortByScore(cohort);
-            } else {
-                const cellLineVectors = cohort.map((cl, ci) => {
+        }
+
+        // Orders one list of cell lines per `sortMode`. Used both for the
+        // whole cohort (no grouping) and for each group's slice in turn
+        // (grouping on), so clustering, when chosen, runs within a group
+        // rather than across the whole set.
+        const orderList = (list, allowCluster) => {
+            if (sortMode === 'lineage') {
+                return list.slice().sort((a, b) => {
+                    const la = this.getCellLineLineage(a) || '', lb = this.getCellLineLineage(b) || '';
+                    if (la !== lb) return la.localeCompare(lb);
+                    const sa = this.getCellLineSublineage(a) || '', sb = this.getCellLineSublineage(b) || '';
+                    if (sa !== sb) return sa.localeCompare(sb);
+                    return this.getCellLineName(a).localeCompare(this.getCellLineName(b));
+                });
+            }
+            if (sortMode === 'name') {
+                return list.slice().sort((a, b) => this.getCellLineName(a).localeCompare(this.getCellLineName(b)));
+            }
+            if (sortMode === 'cluster') {
+                if (!allowCluster) return sortByScore(list);
+                const vectors = list.map(cl => {
+                    const ci = cohortIndex.get(cl);
                     const v = new Float64Array(genes.length);
                     scaledRows.forEach((row, gi) => { v[gi] = row[ci]; });
                     return v;
                 });
-                orderedCLs = this._hmClusterOrder(cohort, cellLineVectors);
+                return this._hmClusterOrder(list, vectors);
+            }
+            return sortByScore(list);
+        };
+
+        const groupKeyFor = (cl) => {
+            if (groupByMode === 'lineage') return this.getCellLineLineage(cl) || 'Not recorded';
+            if (groupByMode === 'subtype') return this.getCellLineSublineage(cl) || 'Not recorded';
+            if (groupByMode === 'disease') return this.cellLineMetadata?.oncotreeSubtype?.[cl] || 'Not recorded';
+            return null;
+        };
+
+        let groups = null;
+        let orderedCLs;
+        let clusterNote = '';
+        if (groupByMode !== 'none') {
+            const byKey = new Map();
+            for (const cl of cohort) {
+                const k = groupKeyFor(cl);
+                if (!byKey.has(k)) byKey.set(k, []);
+                byKey.get(k).push(cl);
+            }
+            // Biggest group first, so the strip reads roughly left-to-right
+            // by prevalence rather than alphabetically.
+            groups = Array.from(byKey.entries())
+                .map(([key, cellLines]) => ({ key, cellLines }))
+                .sort((a, b) => b.cellLines.length - a.cellLines.length || a.key.localeCompare(b.key));
+            const palette = this._HM_GROUP_PALETTE();
+            const cappedGroupNames = [];
+            orderedCLs = [];
+            let col = 0;
+            groups.forEach((g, i) => {
+                g.color = palette[i % palette.length];
+                const allowCluster = g.cellLines.length <= CLUSTER_CAP;
+                if (sortMode === 'cluster' && !allowCluster) cappedGroupNames.push(g.key);
+                g.orderedCellLines = orderList(g.cellLines, allowCluster);
+                g.startCol = col;
+                g.count = g.orderedCellLines.length;
+                col += g.count;
+                g.endCol = col;
+                orderedCLs.push(...g.orderedCellLines);
+            });
+            if (cappedGroupNames.length) {
+                clusterNote = `Clustering is limited to ${CLUSTER_CAP} cell lines per group; ${cappedGroupNames.length} group${cappedGroupNames.length === 1 ? '' : 's'} (${cappedGroupNames.join(', ')}) exceed that and are sorted by score instead. `;
             }
         } else {
-            orderedCLs = sortByScore(cohort);
+            const allowCluster = cohort.length <= CLUSTER_CAP;
+            if (sortMode === 'cluster' && !allowCluster) {
+                clusterNote = `Clustering is limited to ${CLUSTER_CAP} cell lines (this cohort has ${cohort.length}); narrow it with the browser's filters first. Cell lines are sorted by score instead. `;
+            }
+            orderedCLs = orderList(cohort, allowCluster);
         }
 
         // Colour domain: z-score is always clamped to +-2.5; raw expression
@@ -52204,9 +52365,19 @@ ${clone.innerHTML}
 
         this._hmData = {
             genes, orderedGenes, cohort, orderedCLs, geneIndexInResult, cohortIndex,
-            rawRows, scaledRows, dataType, scaleMode, domain, missingGenes
+            rawRows, scaledRows, dataType, scaleMode, domain, missingGenes,
+            groups, groupByMode, lineageLabel
         };
         this._hmPaintAndWire(cohortNote + clusterNote);
+    }
+
+    // Qualitative palette for the group annotation strip: distinct at a
+    // glance, muted enough that the red/blue data colours in the grid still
+    // read as the dominant signal, and cycled if there are more groups than
+    // colours.
+    _HM_GROUP_PALETTE() {
+        return ['#4c78a8', '#f58518', '#54a24b', '#b79a20', '#439894', '#e45756',
+                '#d67195', '#b279a2', '#9e765f', '#8c8c8c', '#6a9f58', '#c47ba0'];
     }
 
     _hmZRow(raw) {
@@ -52316,6 +52487,7 @@ ${clone.innerHTML}
         const labelCanvas = document.getElementById('hmLabelCanvas');
         const gridCanvas = document.getElementById('hmGridCanvas');
         const legendCanvas = document.getElementById('hmLegendCanvas');
+        const groupLegendCanvas = document.getElementById('hmGroupLegendCanvas');
         const scroller = document.getElementById('hmGridScroll');
         if (!labelCanvas || !gridCanvas || !legendCanvas) return;
 
@@ -52329,7 +52501,14 @@ ${clone.innerHTML}
         for (const g of d.orderedGenes) labelW = Math.max(labelW, Math.ceil(probe.measureText(g).width) + 12);
         labelW = Math.min(labelW, 160);
         const gridW = nCL * cellW;
-        const gridH = nGenes * cellH;
+        const geneAreaH = nGenes * cellH;
+        // The group strip, its boundary ticks and its labels are drawn on
+        // the grid canvas directly beneath the last gene row: that
+        // guarantees column alignment for free, rather than trying to keep a
+        // second canvas in sync with the first as it scrolls.
+        const GROUP_STRIP_H = 14, GROUP_TICK_H = 4, GROUP_LABEL_H = 12;
+        const groupExtra = d.groups ? (GROUP_STRIP_H + GROUP_TICK_H + GROUP_LABEL_H) : 0;
+        const gridH = geneAreaH + groupExtra;
         const legendW = 260, legendH = 46;
 
         const paintLabels = (ctx) => {
@@ -52343,7 +52522,7 @@ ${clone.innerHTML}
         };
         const paintGrid = (ctx) => {
             ctx.fillStyle = '#f3f4f6';
-            ctx.fillRect(0, 0, gridW, gridH);
+            ctx.fillRect(0, 0, gridW, geneAreaH);
             d.orderedGenes.forEach((g, rowIdx) => {
                 const row = d.scaledRows[d.geneIndexInResult.get(g)];
                 const y = rowIdx * cellH;
@@ -52352,6 +52531,37 @@ ${clone.innerHTML}
                     ctx.fillStyle = this._hmColorFor(v, d.scaleMode, d.dataType, d.domain);
                     ctx.fillRect(colIdx * cellW, y, Math.max(1, cellW - (cellW > 3 ? 1 : 0)), cellH - 1);
                 });
+            });
+            if (!d.groups) return;
+            const stripY = geneAreaH;
+            d.groups.forEach(g => {
+                ctx.fillStyle = g.color;
+                ctx.fillRect(g.startCol * cellW, stripY, (g.endCol - g.startCol) * cellW, GROUP_STRIP_H);
+            });
+            ctx.strokeStyle = '#9ca3af';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            d.groups.forEach(g => {
+                const x = Math.round(g.startCol * cellW) + 0.5;
+                ctx.moveTo(x, stripY);
+                ctx.lineTo(x, stripY + GROUP_STRIP_H + GROUP_TICK_H);
+            });
+            const xEnd = Math.round(gridW) + 0.5;
+            ctx.moveTo(xEnd, stripY);
+            ctx.lineTo(xEnd, stripY + GROUP_STRIP_H + GROUP_TICK_H);
+            ctx.stroke();
+            // Labels only where the band is wide enough to hold them, so a
+            // cohort with many small groups skips crowded labels rather than
+            // overlapping them.
+            ctx.font = '9px Arial';
+            ctx.fillStyle = '#374151';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            const labelY = stripY + GROUP_STRIP_H + GROUP_TICK_H + 1;
+            d.groups.forEach(g => {
+                const bandW = (g.endCol - g.startCol) * cellW;
+                const tw = ctx.measureText(g.key).width;
+                if (tw + 4 <= bandW) ctx.fillText(g.key, g.startCol * cellW + bandW / 2, labelY);
             });
         };
         const paintLegend = (ctx) => {
@@ -52378,8 +52588,50 @@ ${clone.innerHTML}
             }
         };
 
-        this._hmPaint = { paintLabels, paintGrid, paintLegend };
-        Object.assign(this._hmData, { labelW, gridW, gridH, cellW, cellH, legendW, legendH });
+        // Group legend: name, swatch and n per group, wrapping across lines
+        // rather than scrolling, since it sits below the grid rather than
+        // inside its horizontal scroller. Laid out once here (logical
+        // coordinates) so the same layout drives the on-screen canvas and
+        // the exported image.
+        let groupLegendLayout = null;
+        if (d.groups) {
+            const probe2 = document.createElement('canvas').getContext('2d');
+            probe2.font = '10px Arial';
+            const swatch = 10, textGap = 4, itemGapX = 14, itemH = 16;
+            const legendWidth = Math.max(320, Math.min(900, labelW + gridW));
+            let x = 0, y = 0;
+            const items = [];
+            d.groups.forEach(g => {
+                const text = `${g.key} (${g.count})`;
+                const tw = probe2.measureText(text).width;
+                const itemW = swatch + textGap + tw;
+                if (x > 0 && x + itemW > legendWidth) { x = 0; y += itemH; }
+                items.push({ x, y, color: g.color, text, swatch });
+                x += itemW + itemGapX;
+            });
+            groupLegendLayout = { items, width: legendWidth, height: y + itemH };
+        }
+        const paintGroupLegend = (ctx) => {
+            if (!groupLegendLayout) return;
+            ctx.font = '10px Arial';
+            ctx.textBaseline = 'middle';
+            ctx.textAlign = 'left';
+            groupLegendLayout.items.forEach(it => {
+                ctx.fillStyle = it.color;
+                ctx.fillRect(it.x, it.y + 3, it.swatch, it.swatch);
+                ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(it.x + 0.5, it.y + 3.5, it.swatch, it.swatch);
+                ctx.fillStyle = '#374151';
+                ctx.fillText(it.text, it.x + it.swatch + 4, it.y + 3 + it.swatch / 2);
+            });
+        };
+
+        this._hmPaint = { paintLabels, paintGrid, paintLegend, paintGroupLegend };
+        Object.assign(this._hmData, {
+            labelW, gridW, gridH, cellW, cellH, legendW, legendH, geneAreaH, groupStripH: GROUP_STRIP_H,
+            groupLegendW: groupLegendLayout?.width || 0, groupLegendH: groupLegendLayout?.height || 0
+        });
 
         const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
         const sizeCanvas = (cv, w, h) => {
@@ -52397,6 +52649,23 @@ ${clone.innerHTML}
         const lgc = legendCanvas.getContext('2d');
         lgc.setTransform(dpr, 0, 0, dpr, 0, 0); paintLegend(lgc);
 
+        // The group legend canvas is sized to zero (and its top margin
+        // dropped) when grouping is off, so switching grouping off leaves no
+        // gap where the legend used to be.
+        if (groupLegendCanvas) {
+            if (groupLegendLayout) {
+                sizeCanvas(groupLegendCanvas, groupLegendLayout.width, groupLegendLayout.height);
+                groupLegendCanvas.style.marginTop = '8px';
+                const glc = groupLegendCanvas.getContext('2d');
+                glc.setTransform(dpr, 0, 0, dpr, 0, 0);
+                glc.clearRect(0, 0, groupLegendLayout.width, groupLegendLayout.height);
+                paintGroupLegend(glc);
+            } else {
+                groupLegendCanvas.width = 0; groupLegendCanvas.height = 0;
+                groupLegendCanvas.style.marginTop = '0';
+            }
+        }
+
         // Hint line: what's drawn, plus anything that didn't resolve.
         const hint = document.getElementById('hmHint');
         if (hint) {
@@ -52405,7 +52674,11 @@ ${clone.innerHTML}
             const colourWord = d.scaleMode === 'z'
                 ? 'Blue is low, red is high.'
                 : d.dataType === 'expr' ? 'White is low, dark green is high.' : 'Blue is enriched, red is depleted.';
-            let text = `${nGenes} genes x ${nCL} cell lines, ${dataWord}, ${scaleWord}. ${colourWord}`;
+            const groupWord = d.groupByMode === 'lineage' ? 'lineage' : d.groupByMode === 'subtype' ? 'subtype' : d.groupByMode === 'disease' ? 'disease' : '';
+            let base = `${nGenes} genes x ${nCL} cell lines`;
+            if (d.lineageLabel) base += `, ${d.lineageLabel} only`;
+            if (d.groups) base += `, grouped by ${groupWord} (${d.groups.length} group${d.groups.length === 1 ? '' : 's'})`;
+            let text = `${base}, ${dataWord}, ${scaleWord}. ${colourWord}`;
             if (noteText) text = noteText + text;
             if (d.missingGenes.length) {
                 text += ` ${d.missingGenes.length} gene${d.missingGenes.length === 1 ? '' : 's'} not found: ${d.missingGenes.slice(0, 12).join(', ')}${d.missingGenes.length > 12 ? '…' : ''}.`;
@@ -52441,7 +52714,14 @@ ${clone.innerHTML}
         const gridCanvas = document.getElementById('hmGridCanvas');
         const rect = gridCanvas.getBoundingClientRect();
         const x = e.clientX - rect.left, y = e.clientY - rect.top;
-        const rowIdx = Math.floor(y / d.cellH), colIdx = Math.floor(x / d.cellW);
+        const colIdx = Math.floor(x / d.cellW);
+        if (d.groups && y >= d.geneAreaH && y < d.geneAreaH + d.groupStripH) {
+            const g = (colIdx >= 0 && colIdx < d.orderedCLs.length) ? d.groups.find(gr => colIdx >= gr.startCol && colIdx < gr.endCol) : null;
+            if (g) this._hmShowTooltip(e.clientX, e.clientY, `${g.key} · ${g.count} cell line${g.count === 1 ? '' : 's'}`);
+            else this._hmHideTooltip();
+            return;
+        }
+        const rowIdx = Math.floor(y / d.cellH);
         if (rowIdx < 0 || rowIdx >= d.orderedGenes.length || colIdx < 0 || colIdx >= d.orderedCLs.length) {
             this._hmHideTooltip();
             return;
@@ -52481,19 +52761,31 @@ ${clone.innerHTML}
         if (el) el.style.display = 'none';
     }
     _hmClearCanvases() {
-        ['hmLabelCanvas', 'hmGridCanvas', 'hmLegendCanvas'].forEach(id => {
+        ['hmLabelCanvas', 'hmGridCanvas', 'hmLegendCanvas', 'hmGroupLegendCanvas'].forEach(id => {
             const cv = document.getElementById(id);
             if (cv) { cv.width = 0; cv.height = 0; }
         });
+        const groupLegendCanvas = document.getElementById('hmGroupLegendCanvas');
+        if (groupLegendCanvas) groupLegendCanvas.style.marginTop = '0';
         this._hmData = null;
         this._hmPaint = null;
+    }
+
+    // Total export/copy canvas height: grid (with its group strip, if any),
+    // the colour legend, and, only when grouping is on, the group legend
+    // beneath it. Kept as one function so image export, clipboard copy and
+    // the on-screen layout can't drift apart.
+    _hmTotalCanvasSize(d) {
+        const totalW = d.labelW + d.gridW;
+        let totalH = d.gridH + 10 + d.legendH;
+        if (d.groups) totalH += 8 + d.groupLegendH;
+        return { totalW, totalH };
     }
 
     async _hmExportImage() {
         const d = this._hmData, paint = this._hmPaint;
         if (!d || !paint) return;
-        const totalW = d.labelW + d.gridW;
-        const totalH = d.gridH + 10 + d.legendH;
+        const { totalW, totalH } = this._hmTotalCanvasSize(d);
         const dlg = await this._showExportDialog({ format: 'png', plotW: totalW, plotH: totalH, rasterOnly: true, restorable: false });
         if (!dlg) return;
         const CM_TO_IN = 1 / 2.54;
@@ -52507,6 +52799,7 @@ ${clone.innerHTML}
         paint.paintLabels(ctx);
         ctx.save(); ctx.translate(d.labelW, 0); paint.paintGrid(ctx); ctx.restore();
         ctx.save(); ctx.translate(0, d.gridH + 10); paint.paintLegend(ctx); ctx.restore();
+        if (d.groups) { ctx.save(); ctx.translate(0, d.gridH + 10 + d.legendH + 8); paint.paintGroupLegend(ctx); ctx.restore(); }
         await this._downloadCanvasAs(canvas, dlg.format, 'heatmap', {
             dpi: dlg.dpi, widthCm: dlg.widthCm, heightCm: dlg.widthCm * (totalH / totalW), skipSidecar: true
         });
@@ -52521,7 +52814,7 @@ ${clone.innerHTML}
         }
         this.showCopyNotification?.('Copying…');
         try {
-            const totalW = d.labelW + d.gridW, totalH = d.gridH + 10 + d.legendH;
+            const { totalW, totalH } = this._hmTotalCanvasSize(d);
             const scale = 2;
             const canvas = document.createElement('canvas');
             canvas.width = totalW * scale; canvas.height = totalH * scale;
@@ -52531,6 +52824,7 @@ ${clone.innerHTML}
             paint.paintLabels(ctx);
             ctx.save(); ctx.translate(d.labelW, 0); paint.paintGrid(ctx); ctx.restore();
             ctx.save(); ctx.translate(0, d.gridH + 10); paint.paintLegend(ctx); ctx.restore();
+            if (d.groups) { ctx.save(); ctx.translate(0, d.gridH + 10 + d.legendH + 8); paint.paintGroupLegend(ctx); ctx.restore(); }
             const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
             await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
             this.showCopyNotification?.('Heatmap copied, paste it anywhere');
@@ -52551,7 +52845,15 @@ ${clone.innerHTML}
                 return Number.isNaN(v) ? '' : v.toFixed(3);
             }).join(',');
         });
-        this.downloadFile(header + '\n' + rows.join('\n') + '\n', csvName('heatmap'), 'text/csv');
+        let csv = header + '\n' + rows.join('\n') + '\n';
+        if (d.groups) {
+            const groupOf = new Map();
+            d.groups.forEach(g => g.orderedCellLines.forEach(cl => groupOf.set(cl, g.key)));
+            const csvField = (s) => `"${String(s).replace(/"/g, '""')}"`;
+            const groupRow = 'Group,' + d.orderedCLs.map(cl => csvField(groupOf.get(cl) || '')).join(',');
+            csv = groupRow + '\n' + csv;
+        }
+        this.downloadFile(csv, csvName('heatmap'), 'text/csv');
     }
 }
 

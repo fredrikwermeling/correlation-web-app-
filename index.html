@@ -4497,6 +4497,12 @@
                         </select>
                     </div>
                     <div>
+                        <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">Lineage</label>
+                        <select id="hmLineage" style="font-size:11px; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px;" title="Narrows the cell lines above to one lineage, on top of whatever cohort is chosen">
+                            <option value="">All lineages</option>
+                        </select>
+                    </div>
+                    <div>
                         <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">Scaling</label>
                         <select id="hmScale" style="font-size:11px; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px;" title="Z-score compares each gene to its own spread across the cell lines shown; raw values keep their original units">
                             <option value="z" selected>Z-score per gene</option>
@@ -4512,8 +4518,18 @@
                             <option value="cluster">Cluster (similar profiles together)</option>
                         </select>
                     </div>
+                    <div>
+                        <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">Group by</label>
+                        <select id="hmGroupBy" style="font-size:11px; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px;" title="Blocks cell lines by lineage, subtype or disease, sorting within each block, and draws a colour strip under the grid">
+                            <option value="none" selected>No grouping</option>
+                            <option value="lineage">Lineage</option>
+                            <option value="subtype">Subtype</option>
+                            <option value="disease">Disease</option>
+                        </select>
+                    </div>
                     <button id="hmRedrawBtn" class="btn btn-success btn-sm" style="font-size:11px;">Redraw</button>
                 </div>
+                <div id="hmSetNote" style="font-size:10px; color:#9ca3af; margin-bottom:8px;"></div>
                 <div id="hmCustomWrap" style="display:none; margin-bottom:8px;">
                     <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">Genes, separated by commas, spaces or new lines</label>
                     <textarea id="hmGenes" rows="3" style="width:100%; font-size:11px; padding:5px 7px; border:1px solid #d1d5db; border-radius:4px; font-family:inherit; resize:vertical;" placeholder="ISG15, IFIT1, MX1, OAS1 ..."></textarea>
@@ -4525,6 +4541,7 @@
                 </div>
                 <div id="hmScrollHint" style="font-size:9px; color:#9ca3af; margin-top:3px;"></div>
                 <div style="margin-top:10px;"><canvas id="hmLegendCanvas"></canvas></div>
+                <canvas id="hmGroupLegendCanvas" style="display:block;"></canvas>
             </div>
             <div class="modal-footer" style="justify-content:flex-start; flex-wrap:wrap; gap:6px;">
                 <button id="hmExportImageBtn" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px;" title="Choose format, print size and resolution">Export image...</button>
@@ -5335,6 +5352,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v88_33"></script>
+    <script src="app.js?v=v88_34"></script>
 </body>
 </html>
