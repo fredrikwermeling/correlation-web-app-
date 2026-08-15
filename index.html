@@ -4491,9 +4491,9 @@
                     <div>
                         <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">Cell lines</label>
                         <select id="hmCohort" style="font-size:11px; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px;">
-                            <option value="visible" selected>Cell lines listed in the browser</option>
-                            <option value="selected">Only ticked cell lines</option>
-                            <option value="all">All cell lines</option>
+                            <option value="visible" selected>The cell lines the browser is filtered to</option>
+                            <option value="selected">Only the cell lines I ticked in the browser</option>
+                            <option value="all" id="hmCohortAllOpt">Every cell line</option>
                         </select>
                     </div>
                     <div>
@@ -4520,14 +4520,52 @@
                     </div>
                     <div>
                         <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">Group by</label>
-                        <select id="hmGroupBy" style="font-size:11px; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px;" title="Blocks cell lines by lineage, subtype or disease, sorting within each block, and draws a colour strip under the grid">
+                        <select id="hmGroupBy" style="font-size:11px; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px;" title="Blocks cell lines by lineage, subtype, disease or a gene's mutation status, sorting within each block, and draws a colour strip under the grid">
                             <option value="none" selected>No grouping</option>
                             <option value="lineage">Lineage</option>
                             <option value="subtype">Subtype</option>
                             <option value="disease">Disease</option>
+                            <option value="alteration">Genetic alteration</option>
                         </select>
                     </div>
+                    <div>
+                        <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">Alteration gene</label>
+                        <input type="text" id="hmGroupGene" list="hmGroupGeneList" disabled placeholder="e.g. BRAF" style="width:90px; font-size:11px; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px; opacity:0.45;" title="Split cell lines into mutated / wild-type for this gene. Uses hotspot mutations, or damaging mutations if the gene has no hotspot data.">
+                        <datalist id="hmGroupGeneList"></datalist>
+                    </div>
+                    <div>
+                        <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">Group order</label>
+                        <select id="hmGroupOrder" disabled style="font-size:11px; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px; opacity:0.45;" title="How the groups are ordered left to right">
+                            <option value="size" selected>By size</option>
+                            <option value="score">By score</option>
+                        </select>
+                    </div>
+                    <label style="display:flex; align-items:center; gap:3px; font-size:10px; color:#6b7280; cursor:pointer; opacity:0.45;" id="hmShowMedianWrap" title="Show each group's median score (of the genes shown) beside its count">
+                        <input type="checkbox" id="hmShowMedian" disabled style="margin:0;"> Show median
+                    </label>
+                    <label style="display:flex; align-items:center; gap:3px; font-size:10px; color:#6b7280; cursor:pointer;" title="Order the gene rows by how alike their profiles are, regardless of how cell lines are sorted, and draw the tree that produced the order">
+                        <input type="checkbox" id="hmClusterGenes" checked style="margin:0;"> Cluster genes
+                    </label>
                     <button id="hmRedrawBtn" class="btn btn-success btn-sm" style="font-size:11px;">Redraw</button>
+                </div>
+                <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:8px;">
+                    <label style="font-size:10px; color:#6b7280; white-space:nowrap;">Genetic alteration filters:</label>
+                    <div id="hmHotspotFilterWrap" class="filter-input-wrap" style="position:relative; width:130px;">
+                        <input type="text" id="hmHotspotFilter" class="form-control" placeholder="Hotspot gene..." autocomplete="off" style="width:124px; font-size:11px; padding:3px 6px;" title="Only show cell lines mutated (or wild-type) in this gene">
+                        <div id="hmHotspotDropdown" style="display:none; position:absolute; top:100%; left:0; min-width:240px; max-height:300px; overflow-y:auto; background:#fff; border:1px solid #d1d5db; border-radius:5px; box-shadow:0 6px 16px rgba(0,0,0,0.18); z-index:1450; font-size:11px;"></div>
+                    </div>
+                    <select id="hmHotspotLevel" class="form-control" style="width:96px; font-size:11px; padding:3px 4px; display:none;" title="Keep the cell lines carrying this mutation, or only those without it"><option value="1+2" selected>Mutated (1+2)</option><option value="1">Only 1 mut</option><option value="2">Only 2 mut</option><option value="0">Only WT</option></select>
+                    <div id="hmFusionFilterWrap" class="filter-input-wrap" style="position:relative; width:130px;">
+                        <input type="text" id="hmFusionFilter" class="form-control" placeholder="Fusion / gene..." autocomplete="off" style="width:124px; font-size:11px; padding:3px 6px;" title="Fusion filter, driver pairs (★) and validated fusion genes">
+                        <div id="hmFusionDropdown" style="display:none; position:absolute; top:100%; left:0; min-width:280px; max-height:300px; overflow-y:auto; background:#fff; border:1px solid #d1d5db; border-radius:5px; box-shadow:0 6px 16px rgba(0,0,0,0.18); z-index:1450; font-size:11px;"></div>
+                    </div>
+                    <select id="hmFusionLevel" class="form-control" style="width:96px; font-size:11px; padding:3px 4px; display:none;" title="Keep the cell lines carrying this fusion, or only those without it"><option value="1+2" selected>Fused</option><option value="0">Only WT</option></select>
+                    <div id="hmCnFilterWrap" class="filter-input-wrap" style="position:relative; width:130px;">
+                        <input type="text" id="hmCnFilter" class="form-control" placeholder="Amp / deletion..." autocomplete="off" style="width:124px; font-size:11px; padding:3px 6px;" title="Focal copy-number filter: amplifications and deletions from the curated panel">
+                        <div id="hmCnDropdown" style="display:none; position:absolute; top:100%; left:0; min-width:280px; max-height:300px; overflow-y:auto; background:#fff; border:1px solid #d1d5db; border-radius:5px; box-shadow:0 6px 16px rgba(0,0,0,0.18); z-index:1450; font-size:11px;"></div>
+                    </div>
+                    <select id="hmCnLevel" class="form-control" style="width:96px; font-size:11px; padding:3px 4px; display:none;" title="Keep the cell lines carrying this copy-number event, or only those without it"><option value="altered" selected>With event</option><option value="wt">Only WT</option></select>
+                    <span id="hmActiveFilters" style="display:inline-flex; gap:4px; flex-wrap:wrap; align-items:center;"></span>
                 </div>
                 <div id="hmSetNote" style="font-size:10px; color:#9ca3af; margin-bottom:8px;"></div>
                 <div id="hmCustomWrap" style="display:none; margin-bottom:8px;">
@@ -4547,6 +4585,7 @@
                 <button id="hmExportImageBtn" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px;" title="Choose format, print size and resolution">Export image...</button>
                 <button id="hmCopyBtn" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px;" title="Copy the heatmap as an image to the clipboard, ready to paste into an email or slide">Copy</button>
                 <button id="hmCsvBtn" class="btn btn-outline btn-sm" style="font-size:11px;" title="The gene x cell line matrix as data, values as currently shown (z-scored or raw)">.csv</button>
+                <button id="hmExportAIBtn" class="btn btn-outline btn-sm" style="font-size:11px;" title="Package this heatmap for a language model: the gene set, the matrix, the cohort and the grouping, plus a picture of what's on screen">Export for AI</button>
                 <span style="flex:1 1 auto;"></span>
                 <button id="heatmapClose2" class="btn btn-secondary btn-sm">Close</button>
             </div>
@@ -5352,6 +5391,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v88_36"></script>
+    <script src="app.js?v=v88_37"></script>
 </body>
 </html>

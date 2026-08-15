@@ -7019,7 +7019,7 @@ class CorrelationExplorer {
         document.getElementById('downloadGECellLineCSV')?.addEventListener('click', () => this.downloadGECellLineCSV());
 
         // AI export dialog, shared fixed-position modal at body level (see
-        // index.html). All eight ".json.gz" / "Export for AI" buttons open
+        // index.html). All nine ".json.gz" / "Export for AI" buttons open
         // this same dialog so the user always sees: source name, cohort
         // size, exactly what data is going into the file, an optional
         // question textarea, and an LLM upload suggestion. Replaces the
@@ -7034,7 +7034,8 @@ class CorrelationExplorer {
             clusters: 'Cluster network, correlation network',
             exprCorrelates: 'Expression correlates, target gene',
             wiki: 'Cell line wiki, one cell line',
-            clb: 'Cell Line Browser, the cell lines listed'
+            clb: 'Cell Line Browser, the cell lines listed',
+            heatmap: 'Gene set heatmap, genes x cell lines'
         };
         // What each source adds on top of the shared matrices, so the dialog
         // names the actual contents rather than "source-specific extras".
@@ -7048,7 +7049,8 @@ class CorrelationExplorer {
             clusters: 'the network edges above the cutoff, the cluster assignments, and the gene-effect values for every gene in the network',
             exprCorrelates: 'the expression-versus-gene-effect correlations for the target gene',
             wiki: 'every section of the wiki for this cell line, including the alterations, pathway read-out, dependencies and drug response',
-            clb: 'the cell lines the browser is currently showing, with their alterations, signatures and gene-effect data'
+            clb: 'the cell lines the browser is currently showing, with their alterations, signatures and gene-effect data',
+            heatmap: 'the gene set heatmap matrix (genes x cell lines, values as shown), the grouping and every group\'s n and score, and the alteration filters that shaped the cohort'
         };
 
         const aiShowDialog = (source) => {
@@ -29795,6 +29797,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             }
             return [];
         }
+        if (source === 'heatmap') {
+            // orderedCLs already excludes any legend-hidden groups, so a
+            // hidden group is left out of the export the same way it is
+            // left out of the drawing and the CSV.
+            return this._hmData?.orderedCLs ? this._hmData.orderedCLs.slice() : [];
+        }
         return [];
     }
 
@@ -31065,6 +31073,80 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                         pValue: r.p
                     }))
                 };
+            }
+        } else if (source === 'heatmap') {
+            const d = this._hmData;
+            if (!d) {
+                context = { type: 'gene_set_heatmap', plotType: 'heatmap', stratification: 'none' };
+                description = 'The gene set heatmap has not been drawn yet.';
+                context.plotDescribesWhat = 'Not drawn: open the heatmap, pick a gene set and Redraw before exporting.';
+            } else {
+                const presetKey = document.getElementById('hmPreset')?.value;
+                const setLabel = presetKey && presetKey !== 'custom'
+                    ? (this._GENE_SET_LIBRARY()[presetKey]?.label || presetKey)
+                    : 'Custom gene list';
+                const measure = d.dataType === 'ge' ? 'CRISPR gene effect (Chronos)' : 'mRNA expression (log2 TPM+1)';
+                const scaling = d.scaleMode === 'z' ? 'z-scored per gene across the cell lines shown' : 'raw values';
+                const cohortMode = document.getElementById('hmCohort')?.value || 'visible';
+                const cohortWord = {
+                    visible: 'the cell lines the browser is filtered to',
+                    selected: 'only the cell lines ticked in the browser',
+                    all: 'every cell line'
+                }[cohortMode] || cohortMode;
+                const filterParts = this._hmActiveFilterParts();
+                const groupWord = this._hmGroupByLabel(d.groupByMode, d.altInfo);
+                const visibleGroups = (d.groups || []).filter(g => !g.hidden);
+                const hiddenGroupKeys = (d.groups || []).filter(g => g.hidden).map(g => g.key);
+
+                context = {
+                    type: 'gene_set_heatmap',
+                    geneSet: setLabel,
+                    genes: d.genes.slice(),
+                    measure, scaling,
+                    cohort: cohortWord,
+                    cohortBuiltFrom: [
+                        `starting cohort: ${cohortWord}`,
+                        d.lineageLabel ? `lineage gate: ${d.lineageLabel} only` : 'lineage gate: none, all lineages in the cohort',
+                        filterParts.length ? `alteration filters: ${filterParts.join(', ')}` : 'alteration filters: none'
+                    ].join('; '),
+                    groupBy: d.groupByMode === 'none' ? 'none' : groupWord,
+                    groups: d.groups ? visibleGroups.map(g => ({
+                        key: g.key, n: g.count,
+                        score: Number.isNaN(g.score) ? null : parseFloat(g.score.toFixed(3)),
+                        median: Number.isNaN(g.median) ? null : parseFloat(g.median.toFixed(3))
+                    })) : null,
+                    hiddenGroups: hiddenGroupKeys.length ? hiddenGroupKeys : null,
+                    hiddenGroupsNote: hiddenGroupKeys.length
+                        ? 'These groups were hidden by the user via the legend and are excluded from everything in this file: the matrix, cellLines, groups and their scores.'
+                        : null,
+                    missingGenes: d.missingGenes.length ? d.missingGenes : null,
+                    plotType: 'heatmap', stratification: d.groupByMode === 'none' ? 'none' : groupWord
+                };
+                description = `Gene set heatmap: ${setLabel} (${d.genes.length} genes) across ${d.orderedCLs.length} cell lines (${cohortWord}${d.lineageLabel ? `, ${d.lineageLabel} only` : ''}), ${measure}, ${scaling}${d.groupByMode !== 'none' ? `, grouped by ${groupWord}` : ''}.`;
+                const colourWord = d.scaleMode === 'z' ? 'blue is low, red is high' : d.dataType === 'expr' ? 'white is low, dark green is high' : 'blue is enriched, red is depleted';
+                context.plotDescribesWhat = `A heatmap: each row is one of the ${d.genes.length} genes in the "${setLabel}" set, each column is one cell line (${d.orderedCLs.length} shown). Colour is ${measure}, ${scaling}: ${colourWord}.`
+                    + (d.groups ? ` A coloured band beneath the grid marks the ${visibleGroups.length} group${visibleGroups.length === 1 ? '' : 's'} the columns are split into by ${groupWord}${hiddenGroupKeys.length ? `; ${hiddenGroupKeys.length} more group${hiddenGroupKeys.length === 1 ? '' : 's'} (${hiddenGroupKeys.join(', ')}) were hidden by the user and are not in this file` : ''}.` : '')
+                    + (d.geneTree ? ' A small tree to the left of the gene labels shows how the rows were clustered.' : '');
+
+                // The matrix itself, exactly as drawn: rows and columns in
+                // display order, values as shown (z-scored or raw), so a
+                // reader can recompute anything the picture shows.
+                context.matrix = {
+                    genes: d.orderedGenes.slice(),
+                    cellLines: d.orderedCLs.map(cl => this.getCellLineName(cl)),
+                    cellLineIds: d.orderedCLs.slice(),
+                    values: d.orderedGenes.map(g => {
+                        const row = d.scaledRows[d.geneIndexInResult.get(g)];
+                        return d.orderedCLs.map(cl => {
+                            const v = row[d.cohortIndex.get(cl)];
+                            return Number.isNaN(v) ? null : parseFloat(v.toFixed(3));
+                        });
+                    })
+                };
+                // Filename nicety only: not read as a real gene symbol
+                // anywhere downstream (the focal-gene carve-outs all guard
+                // on geneIndex.has() first, which this will simply miss).
+                context.gene1 = setLabel.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'gene_set';
             }
         }
         // Every source above sets `context`, except any that falls through the
@@ -32864,6 +32946,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     const canvas = await window.html2canvas(el, { scale: 2, backgroundColor: '#ffffff', logging: false });
                     _pngUrl = this._trimCanvasWhitespace(canvas).toDataURL('image/png');
                 }
+            } else if (source === 'heatmap') {
+                // Also not a Plotly chart: the same composed canvas Export
+                // image / Copy use (labels + dendrogram, grid + group strip,
+                // colour legend, group legend), so the picture matches what
+                // was on screen exactly.
+                const canvas = this._hmComposeCanvas(2, '#ffffff');
+                if (canvas) _pngUrl = canvas.toDataURL('image/png');
             } else {
                 // geneEffectViewMode 'mutation' always renders into
                 // geneEffectPlot (showGeneEffectDistribution); only the
@@ -37494,8 +37583,37 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 note: 'The secretory programme of senescent cells. Proliferating lines can still score high on the secreted half, so read it with the cell cycle set.' },
             apoptosis: { label: 'Apoptosis core', category: 'Cell state',
                 genes: ['BAX','BAK1','BCL2','BCL2L1','MCL1','BID','BBC3','PMAIP1','BAD','CASP3','CASP7','CASP8','CASP9','APAF1','XIAP','BIRC5'],
-                note: 'The intrinsic pathway plus its guardians. Which anti-apoptotic gene a line leans on (BCL2, BCL2L1 or MCL1) is the actionable part.' }
+                note: 'The intrinsic pathway plus its guardians. Which anti-apoptotic gene a line leans on (BCL2, BCL2L1 or MCL1) is the actionable part.' },
+            top_hotspot: this._hmTopHotspotGeneSet()
         };
+    }
+
+    // Built at runtime rather than curated: the 25 genes hotspot-mutated in
+    // the most cell lines panel-wide. Cached, since counting every gene
+    // across every cell line on every dropdown open would add up.
+    _hmTopHotspotGeneSet() {
+        const empty = { label: 'Top hotspot-mutated genes', category: 'Computed from this panel', genes: [],
+            note: 'Mutation data is still loading.' };
+        if (this._hmTopHotspotCache) return this._hmTopHotspotCache;
+        const geneData = this.mutations?.geneData;
+        if (!geneData) return empty;
+        const counts = [];
+        for (const g of Object.keys(geneData)) {
+            if (this._isPolymorphicLocus(g)) continue; // HLA/MIC/KIR: germline divergence, not somatic hotspots
+            const muts = geneData[g]?.mutations || {};
+            let n = 0;
+            for (const cl in muts) if (muts[cl] >= 1) n++;
+            if (n > 0) counts.push([g, n]);
+        }
+        counts.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+        const top = counts.slice(0, 25);
+        const set = {
+            label: 'Top hotspot-mutated genes', category: 'Computed from this panel',
+            genes: top.map(([g]) => g),
+            note: `The ${top.length} genes most often hotspot-mutated across the panel (out of ${counts.length} with at least one hit), ranked by how many cell lines carry a hotspot call. This heatmap shows their EXPRESSION or gene effect, not their mutation status: check the mutation columns or a hotspot filter separately for that.`
+        };
+        this._hmTopHotspotCache = set;
+        return set;
     }
 
     // ===== Interferon signature =====
@@ -41295,6 +41413,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 fusion:  { geneId: 'caFusionFilter', levelId: 'caFusionLevel', options: opts(FUS, ['1+2', '0', 'nocall']) },
                 cn:      { geneId: 'caCnFilter', levelId: 'caCnLevel', options: opts(CN, ['altered', 'wt']) },
                 apply: () => this._reapplyCorrAnalysisFilters?.(),
+            },
+            // The heatmap has no tissue/subtype/disease selectors of its own
+            // (it has a single lineage gate, wired separately): only the
+            // alteration filters and their chip strip are shared here.
+            heatmap: {
+                chips: 'hmActiveFilters',
+                hotspot: { geneId: 'hmHotspotFilter', levelId: 'hmHotspotLevel', options: opts(HOT, ['1+2', '1', '2', '0']) },
+                fusion:  { geneId: 'hmFusionFilter', levelId: 'hmFusionLevel', options: opts(FUS, ['1+2', '0']) },
+                cn:      { geneId: 'hmCnFilter', levelId: 'hmCnLevel', options: opts(CN, ['altered', 'wt']) },
+                apply: () => this._hmRedraw(),
             },
         };
         return ctx;
@@ -52267,26 +52395,19 @@ ${clone.innerHTML}
     // beside a horizontally-scrolling grid canvas, both painted at device
     // resolution from the same logical-coordinate functions the exports use.
     setupHeatmapModal() {
-        const presetSel = document.getElementById('hmPreset');
-        if (presetSel) {
-            const library = this._GENE_SET_LIBRARY();
-            const byCategory = new Map();
-            for (const [key, set] of Object.entries(library)) {
-                if (!byCategory.has(set.category)) byCategory.set(set.category, []);
-                byCategory.get(set.category).push({ key, ...set });
-            }
-            let html = '';
-            for (const [category, sets] of byCategory) {
-                html += `<optgroup label="${this.esc(category)}">`;
-                for (const s of sets) html += `<option value="${this.esc(s.key)}">${this.esc(s.label)} (${s.genes.length})</option>`;
-                html += `</optgroup>`;
-            }
-            html += `<option value="custom">Custom…</option>`;
-            presetSel.innerHTML = html;
-        }
+        this._hmBuildPresetOptions();
         const openModal = () => {
             const modal = document.getElementById('heatmapModal');
             if (modal) modal.style.display = 'flex';
+            // Rebuilt on open, not just at startup: mutation data (behind the
+            // "Top hotspot-mutated genes" preset) and the cell-line total
+            // (behind "Every cell line (n)") can both still be loading when
+            // setupHeatmapModal first runs.
+            this._hmBuildPresetOptions();
+            this._hmRefreshCohortLabel();
+            this._hmSyncGroupControls();
+            this._hmPopulateGroupGeneList();
+            this._renderFilterChips('heatmap');
             this._hmRedraw();
         };
         document.getElementById('showHeatmapDirect')?.addEventListener('click', openModal);
@@ -52301,11 +52422,101 @@ ${clone.innerHTML}
         document.getElementById('heatmapModal')?.addEventListener('click', (e) => {
             if (e.target.id === 'heatmapModal') close();
         });
-        presetSel?.addEventListener('change', () => this._hmSyncPresetUI());
+        document.getElementById('hmPreset')?.addEventListener('change', () => this._hmSyncPresetUI());
         document.getElementById('hmRedrawBtn')?.addEventListener('click', () => this._hmRedraw());
         document.getElementById('hmExportImageBtn')?.addEventListener('click', () => this._hmExportImage());
         document.getElementById('hmCopyBtn')?.addEventListener('click', () => this._hmCopy());
         document.getElementById('hmCsvBtn')?.addEventListener('click', () => this._hmExportCsv());
+        document.getElementById('hmExportAIBtn')?.addEventListener('click', () => this._aiShowDialog?.('heatmap'));
+
+        // Genetic-alteration filters: same searchable hotspot/fusion/CN
+        // widget the browser, params, scatter, GE and CA popouts use, wired
+        // through the shared filter-bar registry (_FILTER_BAR_SPEC 'heatmap').
+        const _hmFilterChanged = () => { this._renderFilterChips('heatmap'); this._hmRedraw(); };
+        this._setupMutFilterWidget('hotspot', 'hmHotspotFilter', 'hmHotspotDropdown', _hmFilterChanged, () => this._hmCohortExcluding('hotspot'));
+        this._setupMutFilterWidget('fusion', 'hmFusionFilter', 'hmFusionDropdown', _hmFilterChanged, () => this._hmCohortExcluding('fusion'));
+        this._setupMutFilterWidget('cn', 'hmCnFilter', 'hmCnDropdown', _hmFilterChanged, () => this._hmCohortExcluding('cn'));
+        [['hmHotspotFilter', 'hmHotspotLevel'], ['hmFusionFilter', 'hmFusionLevel'], ['hmCnFilter', 'hmCnLevel']]
+            .forEach(([inputId, levelId]) => {
+                const input = document.getElementById(inputId);
+                const level = document.getElementById(levelId);
+                if (!input || !level) return;
+                const sync = () => { level.style.display = input.value.trim() ? '' : 'none'; };
+                input.addEventListener('input', sync);
+                input.addEventListener('change', sync);
+                level.addEventListener('change', _hmFilterChanged);
+                sync();
+            });
+
+        // Group-by: lineage/subtype/disease behave as before; "Genetic
+        // alteration" also needs a gene, kept present but disabled rather
+        // than appearing/disappearing so nothing beside it jumps sideways.
+        document.getElementById('hmGroupBy')?.addEventListener('change', () => {
+            this._hmSyncGroupControls();
+            this._hmPopulateGroupGeneList();
+            this._hmRedraw();
+        });
+        document.getElementById('hmGroupGene')?.addEventListener('change', () => this._hmRedraw());
+        document.getElementById('hmGroupOrder')?.addEventListener('change', () => this._hmRedraw());
+        document.getElementById('hmShowMedian')?.addEventListener('change', () => this._hmRedraw());
+        document.getElementById('hmClusterGenes')?.addEventListener('change', () => this._hmRedraw());
+        this._hmSyncGroupControls();
+    }
+
+    // Rebuilds the preset dropdown (curated sets + the runtime "Top
+    // hotspot-mutated genes" set), keeping the current pick if it still
+    // exists. Called at startup and again whenever the modal opens, since
+    // the runtime set depends on mutation data that may load after startup.
+    _hmBuildPresetOptions() {
+        const presetSel = document.getElementById('hmPreset');
+        if (!presetSel) return;
+        const prev = presetSel.value;
+        const library = this._GENE_SET_LIBRARY();
+        const byCategory = new Map();
+        for (const [key, set] of Object.entries(library)) {
+            if (!byCategory.has(set.category)) byCategory.set(set.category, []);
+            byCategory.get(set.category).push({ key, ...set });
+        }
+        let html = '';
+        for (const [category, sets] of byCategory) {
+            html += `<optgroup label="${this.esc(category)}">`;
+            for (const s of sets) html += `<option value="${this.esc(s.key)}">${this.esc(s.label)} (${s.genes.length})</option>`;
+            html += `</optgroup>`;
+        }
+        html += `<option value="custom">Custom…</option>`;
+        presetSel.innerHTML = html;
+        if (prev && Array.from(presetSel.options).some(o => o.value === prev)) presetSel.value = prev;
+    }
+
+    // "Every cell line" reads as a vague catch-all without a number attached.
+    _hmRefreshCohortLabel() {
+        const opt = document.getElementById('hmCohortAllOpt');
+        if (opt && this.metadata?.cellLines) opt.textContent = `Every cell line (${this.metadata.cellLines.length.toLocaleString()})`;
+    }
+
+    // Enables/disables the group-only controls without ever hiding them, so
+    // picking "Genetic alteration" never shoves the redraw button sideways.
+    _hmSyncGroupControls() {
+        const mode = document.getElementById('hmGroupBy')?.value || 'none';
+        const geneInput = document.getElementById('hmGroupGene');
+        if (geneInput) { geneInput.disabled = mode !== 'alteration'; geneInput.style.opacity = mode === 'alteration' ? '1' : '0.45'; }
+        const orderSel = document.getElementById('hmGroupOrder');
+        if (orderSel) { orderSel.disabled = mode === 'none'; orderSel.style.opacity = mode === 'none' ? '0.45' : '1'; }
+        const medianCb = document.getElementById('hmShowMedian');
+        if (medianCb) medianCb.disabled = mode === 'none';
+        const medianWrap = document.getElementById('hmShowMedianWrap');
+        if (medianWrap) medianWrap.style.opacity = mode === 'none' ? '0.45' : '1';
+    }
+
+    // Suggestions for the "group by alteration" gene box: every gene with
+    // hotspot OR damaging-mutation data, since either can supply the split.
+    _hmPopulateGroupGeneList() {
+        const dl = document.getElementById('hmGroupGeneList');
+        if (!dl) return;
+        const names = new Set();
+        (this.mutations?.genes || []).forEach(g => names.add(g));
+        (this.damagingMutations?.genes || []).forEach(g => names.add(g));
+        dl.innerHTML = Array.from(names).sort().map(g => `<option value="${this.esc(g)}"></option>`).join('');
     }
 
     // Toggles the custom-gene textarea and refreshes the preset's note. Both
@@ -52334,7 +52545,9 @@ ${clone.innerHTML}
         const scaleMode = document.getElementById('hmScale')?.value || 'z';
         const cohortMode = document.getElementById('hmCohort')?.value || 'visible';
         const sortMode = document.getElementById('hmSort')?.value || 'score';
-        const groupByMode = document.getElementById('hmGroupBy')?.value || 'none';
+        // Reassigned below when "Genetic alteration" grouping has no usable
+        // gene, falling back to no grouping rather than an empty band.
+        let groupByMode = document.getElementById('hmGroupBy')?.value || 'none';
         const presetKey = document.getElementById('hmPreset')?.value || Object.keys(this._GENE_SET_LIBRARY())[0];
 
         if (dataType === 'expr' && !this.expressionLoaded) {
@@ -52414,7 +52627,44 @@ ${clone.innerHTML}
             return;
         }
 
-        this._hmBuildAndPaint({ genes, missingGenes, cohort, cohortNote, dataType, scaleMode, sortMode, groupByMode, lineageLabel });
+        // Hotspot / fusion / CN filters, same predicates and level meanings
+        // every other panel uses, applied on top of the cohort + lineage gate.
+        const filterNote = this._hmActiveFilterNote();
+        cohort = this._hmApplyAlterationFilters(cohort);
+        if (!cohort.length) {
+            if (hint) hint.textContent = `${filterNote}No cell lines match these alteration filters. Loosen a filter or remove it.`;
+            this._hmClearCanvases();
+            return;
+        }
+
+        // "Genetic alteration" grouping needs a gene; resolved here so a
+        // typo or an ungrouped gene falls back to no grouping with an
+        // explanation, rather than a silent empty band.
+        let altInfo = null, groupNote = '';
+        if (groupByMode === 'alteration') {
+            altInfo = this._hmResolveAlterationGroupGene();
+            if (!altInfo) { groupByMode = 'none'; groupNote = 'Enter a gene to group by its mutation status. '; }
+            else if (!altInfo.source) { groupByMode = 'none'; groupNote = `${altInfo.gene} has no hotspot or damaging mutation data in this panel, showing no grouping. `; }
+            // Hotspot is the default matrix; damaging mutations only stand
+            // in when the gene has no hotspot calls (typical for a tumour
+            // suppressor scored by loss-of-function), and that substitution
+            // is worth saying rather than leaving it to be inferred.
+            else if (altInfo.source === 'damaging') { groupNote = `${altInfo.gene} has no hotspot mutation data, grouped by damaging mutations instead. `; }
+        }
+        // A hidden legend group from a previous grouping scheme means
+        // nothing under a different one (its key won't recur), so it is
+        // dropped rather than silently carried over.
+        const hiddenSig = `${groupByMode}|${altInfo?.gene || ''}`;
+        if (this._hmHiddenGroupsSig !== hiddenSig) { this._hmHiddenGroups = new Set(); this._hmHiddenGroupsSig = hiddenSig; }
+
+        const groupOrderMode = document.getElementById('hmGroupOrder')?.value || 'size';
+        const showMedian = !!document.getElementById('hmShowMedian')?.checked;
+        const clusterGenes = !!document.getElementById('hmClusterGenes')?.checked;
+
+        this._hmBuildAndPaint({
+            genes, missingGenes, cohort, cohortNote: cohortNote + filterNote + groupNote, dataType, scaleMode, sortMode,
+            groupByMode, altInfo, groupOrderMode, showMedian, clusterGenes, lineageLabel
+        });
     }
 
     // Rebuilds the lineage-gate options from whatever cohort is currently in
@@ -52440,7 +52690,122 @@ ${clone.innerHTML}
         return sel.value;
     }
 
-    _hmBuildAndPaint({ genes, missingGenes, cohort, cohortNote, dataType, scaleMode, sortMode, groupByMode = 'none', lineageLabel = '' }) {
+    // Human-readable pieces of whatever hotspot/fusion/CN filter is active,
+    // shared by the on-screen hint, the CSV corner cell and the AI export.
+    _hmActiveFilterParts() {
+        const parts = [];
+        const hot = document.getElementById('hmHotspotFilter')?.value;
+        if (hot) {
+            const lvl = document.getElementById('hmHotspotLevel')?.value || '1+2';
+            parts.push(`${hot} ${this._filterIsWildType('hotspot', lvl) ? 'wild-type' : 'hotspot-mutated'}`);
+        }
+        const fus = this._stripFusionFilterDecoration(document.getElementById('hmFusionFilter')?.value || '');
+        if (fus) {
+            const lvl = document.getElementById('hmFusionLevel')?.value || '1+2';
+            parts.push(`${fus} ${this._filterIsWildType('fusion', lvl) ? 'not fused' : 'fused'}`);
+        }
+        const cnRaw = document.getElementById('hmCnFilter')?.value;
+        if (cnRaw) {
+            const lvl = document.getElementById('hmCnLevel')?.value || 'altered';
+            const label = this._stripCnFilterDecoration(cnRaw).replace(/_(amp|del)$/, (_, k) => k === 'amp' ? ' amp' : ' del');
+            parts.push(`${label} ${this._filterIsWildType('cn', lvl) ? 'absent' : 'present'}`);
+        }
+        return parts;
+    }
+    _hmActiveFilterNote() {
+        const parts = this._hmActiveFilterParts();
+        return parts.length ? `Filtered to ${parts.join(', ')}. ` : '';
+    }
+
+    // Applies the hotspot/fusion/CN filters to a cohort, using the same
+    // predicates every other panel's filter bar uses.
+    _hmApplyAlterationFilters(cohort) {
+        const hot = document.getElementById('hmHotspotFilter')?.value || '';
+        const hotLvl = document.getElementById('hmHotspotLevel')?.value || '1+2';
+        const fus = document.getElementById('hmFusionFilter')?.value || '';
+        const fusLvl = document.getElementById('hmFusionLevel')?.value || '1+2';
+        const cn = document.getElementById('hmCnFilter')?.value || '';
+        const cnLvl = document.getElementById('hmCnLevel')?.value || 'altered';
+        if (!hot && !fus && !cn) return cohort;
+        return cohort.filter(cl => {
+            if (hot) {
+                const mm = this.mutations?.geneData?.[hot]?.mutations || this.damagingMutations?.geneData?.[hot]?.mutations;
+                if (!this._mutLevelPasses(hotLvl, mm ? (mm[cl] || 0) : 0)) return false;
+            }
+            if (fus) { const has = this._geFusionPasses(cl, fus); if (fusLvl === '0' ? has : !has) return false; }
+            if (cn) { const has = this._cellLinePassesCnFilter(cl, cn); if (cnLvl === 'wt' ? has : !has) return false; }
+            return true;
+        });
+    }
+
+    // Cohort passing the heatmap's own cohort/lineage pick and its OTHER
+    // active alteration filters (excluding `kind`), so that filter's
+    // dropdown counts stay context-aware, e.g. picking a lineage floats the
+    // hotspot genes common in it to the top.
+    _hmCohortExcluding(kind) {
+        const cohortMode = document.getElementById('hmCohort')?.value || 'visible';
+        let base;
+        if (cohortMode === 'selected') base = Array.from(this._clbSelectedCellLines || []);
+        else if (cohortMode === 'all') base = (this.metadata?.cellLines || []).slice();
+        else base = (this._clbVisibleCellLines?.length) ? this._clbVisibleCellLines.slice() : (this.metadata?.cellLines || []).slice();
+        if (!base.length) base = (this.metadata?.cellLines || []).slice();
+        const lineage = document.getElementById('hmLineage')?.value || '';
+        const hot = document.getElementById('hmHotspotFilter')?.value || '';
+        const hotLvl = document.getElementById('hmHotspotLevel')?.value || '1+2';
+        const fus = document.getElementById('hmFusionFilter')?.value || '';
+        const fusLvl = document.getElementById('hmFusionLevel')?.value || '1+2';
+        const cn = document.getElementById('hmCnFilter')?.value || '';
+        const cnLvl = document.getElementById('hmCnLevel')?.value || 'altered';
+        const set = new Set();
+        for (const cl of base) {
+            if (lineage && (this.getCellLineLineage(cl) || 'Not recorded') !== lineage) continue;
+            if (kind !== 'hotspot' && hot) {
+                const mm = this.mutations?.geneData?.[hot]?.mutations || this.damagingMutations?.geneData?.[hot]?.mutations;
+                if (!this._mutLevelPasses(hotLvl, mm ? (mm[cl] || 0) : 0)) continue;
+            }
+            if (kind !== 'fusion' && fus) { const has = this._geFusionPasses(cl, fus); if (fusLvl === '0' ? has : !has) continue; }
+            if (kind !== 'cn' && cn) { const has = this._cellLinePassesCnFilter(cl, cn); if (cnLvl === 'wt' ? has : !has) continue; }
+            set.add(cl);
+        }
+        return set;
+    }
+
+    // Which gene the "group by genetic alteration" gene box names, and
+    // which matrix answers for it: hotspot first, damaging mutations as a
+    // fallback for genes with no hotspot calls (e.g. tumour suppressors
+    // scored only by loss-of-function). Returns null for an empty box, or
+    // { gene, source: null } when the gene is in neither matrix.
+    _hmResolveAlterationGroupGene() {
+        const raw = (document.getElementById('hmGroupGene')?.value || '').trim().toUpperCase();
+        if (!raw) return null;
+        if (this.mutations?.geneData?.[raw]) return { gene: raw, source: 'hotspot' };
+        if (this.damagingMutations?.geneData?.[raw]) return { gene: raw, source: 'damaging' };
+        return { gene: raw, source: null };
+    }
+
+    // The grouping key for one cell line, shared by the bucketing pass and
+    // the hidden-group filter so both agree on what a group "is".
+    _hmGroupKeyFor(cl, groupByMode, altInfo) {
+        if (groupByMode === 'lineage') return this.getCellLineLineage(cl) || 'Not recorded';
+        if (groupByMode === 'subtype') return this.getCellLineSublineage(cl) || 'Not recorded';
+        if (groupByMode === 'disease') return this.cellLineMetadata?.oncotreeSubtype?.[cl] || 'Not recorded';
+        if (groupByMode === 'alteration' && altInfo?.source) {
+            const matrix = altInfo.source === 'hotspot' ? this.mutations : this.damagingMutations;
+            const level = matrix?.geneData?.[altInfo.gene]?.mutations?.[cl] || 0;
+            return level >= 1 ? `${altInfo.gene} mutated` : `${altInfo.gene} wild-type`;
+        }
+        return 'All';
+    }
+    // Words for the grouping dimension, used in the hint line and exports.
+    _hmGroupByLabel(groupByMode, altInfo) {
+        if (groupByMode === 'lineage') return 'lineage';
+        if (groupByMode === 'subtype') return 'subtype';
+        if (groupByMode === 'disease') return 'disease';
+        if (groupByMode === 'alteration') return altInfo?.gene ? `${altInfo.gene} status` : 'genetic alteration';
+        return 'none';
+    }
+
+    _hmBuildAndPaint({ genes, missingGenes, cohort, cohortNote, dataType, scaleMode, sortMode, groupByMode = 'none', altInfo = null, groupOrderMode = 'size', showMedian = false, clusterGenes = true, lineageLabel = '' }) {
         const geIndexByCL = new Map(this.metadata.cellLines.map((cl, i) => [cl, i]));
         const cohortIndex = new Map(cohort.map((cl, i) => [cl, i]));
 
@@ -52481,11 +52846,16 @@ ${clone.innerHTML}
         });
 
         let orderedGenes = genes.slice();
+        let geneTree = null;
         const CLUSTER_CAP = 400;
-        if (sortMode === 'cluster') {
-            // Rows always cluster in full; only the column (cell-line)
-            // clustering is expensive enough to need the cap below.
-            orderedGenes = this._hmClusterOrder(genes, scaledRows);
+        // Row (gene) clustering runs off its own checkbox, independent of
+        // how the cell-line columns are sorted: genes that behave alike sit
+        // together whether the columns are by score, name or their own
+        // cluster, which is the point of defaulting it on.
+        if (clusterGenes && genes.length >= 2) {
+            const tree = this._hmClusterTree(genes, scaledRows);
+            orderedGenes = tree.order;
+            geneTree = tree.root;
         }
 
         // Orders one list of cell lines per `sortMode`. Used both for the
@@ -52518,34 +52888,68 @@ ${clone.innerHTML}
             return sortByScore(list);
         };
 
-        const groupKeyFor = (cl) => {
-            if (groupByMode === 'lineage') return this.getCellLineLineage(cl) || 'Not recorded';
-            if (groupByMode === 'subtype') return this.getCellLineSublineage(cl) || 'Not recorded';
-            if (groupByMode === 'disease') return this.cellLineMetadata?.oncotreeSubtype?.[cl] || 'Not recorded';
-            return null;
+        // Mean/median of the shown genes over one list of cell lines: the
+        // same "score" the cell-line sort uses, reused here to order and
+        // label groups.
+        const meanScoreOf = (list) => {
+            let s = 0, k = 0;
+            for (const cl of list) { const v = clScore.get(cl); if (!Number.isNaN(v)) { s += v; k++; } }
+            return k ? s / k : NaN;
+        };
+        const medianScoreOf = (list) => {
+            const vals = list.map(cl => clScore.get(cl)).filter(v => !Number.isNaN(v)).sort((a, b) => a - b);
+            if (!vals.length) return NaN;
+            const mid = Math.floor(vals.length / 2);
+            return vals.length % 2 ? vals[mid] : (vals[mid - 1] + vals[mid]) / 2;
         };
 
         let groups = null;
         let orderedCLs;
         let clusterNote = '';
+        let hiddenCount = 0;
         if (groupByMode !== 'none') {
             const byKey = new Map();
             for (const cl of cohort) {
-                const k = groupKeyFor(cl);
+                const k = this._hmGroupKeyFor(cl, groupByMode, altInfo);
                 if (!byKey.has(k)) byKey.set(k, []);
                 byKey.get(k).push(cl);
             }
-            // Biggest group first, so the strip reads roughly left-to-right
-            // by prevalence rather than alphabetically.
-            groups = Array.from(byKey.entries())
-                .map(([key, cellLines]) => ({ key, cellLines }))
-                .sort((a, b) => b.cellLines.length - a.cellLines.length || a.key.localeCompare(b.key));
+            const hiddenSet = this._hmHiddenGroups || new Set();
+            // `count` is set here, from the full membership, so a hidden
+            // group's legend entry still reads its true size ("n=42,
+            // hidden") rather than "n=undefined"; the visible loop below
+            // only narrows startCol/endCol/orderedCellLines to what's drawn.
+            groups = Array.from(byKey.entries()).map(([key, cellLines]) => ({
+                key, cellLines, count: cellLines.length, hidden: hiddenSet.has(key),
+                score: meanScoreOf(cellLines), median: medianScoreOf(cellLines)
+            }));
+            // The order is fixed once here, by size or by score, and does
+            // NOT depend on which entries are hidden: clicking a legend
+            // entry greys it in place rather than reshuffling its neighbours.
+            if (groupOrderMode === 'score') {
+                groups.sort((a, b) => {
+                    const na = Number.isNaN(a.score), nb = Number.isNaN(b.score);
+                    if (na && nb) return a.key.localeCompare(b.key);
+                    if (na) return 1;
+                    if (nb) return -1;
+                    return b.score - a.score;
+                });
+            } else {
+                groups.sort((a, b) => b.cellLines.length - a.cellLines.length || a.key.localeCompare(b.key));
+            }
             const palette = this._HM_GROUP_PALETTE();
+            groups.forEach((g, i) => { g.color = palette[i % palette.length]; });
+            hiddenCount = groups.filter(g => g.hidden).length;
+
+            // Hidden groups keep their legend entry (greyed, still
+            // clickable) but contribute nothing to the grid, the per-group
+            // score/median of anyone else, the CSV, or the AI export: they
+            // are simply left out of the visible set built below.
+            const visibleGroups = groups.filter(g => !g.hidden);
             const cappedGroupNames = [];
             orderedCLs = [];
             let col = 0;
-            groups.forEach((g, i) => {
-                g.color = palette[i % palette.length];
+            visibleGroups.forEach(g => {
                 const allowCluster = g.cellLines.length <= CLUSTER_CAP;
                 if (sortMode === 'cluster' && !allowCluster) cappedGroupNames.push(g.key);
                 g.orderedCellLines = orderList(g.cellLines, allowCluster);
@@ -52557,6 +52961,12 @@ ${clone.innerHTML}
             });
             if (cappedGroupNames.length) {
                 clusterNote = `Clustering is limited to ${CLUSTER_CAP} cell lines per group; ${cappedGroupNames.length} group${cappedGroupNames.length === 1 ? '' : 's'} (${cappedGroupNames.join(', ')}) exceed that and are sorted by score instead. `;
+            }
+            if (hiddenCount) {
+                clusterNote += `${hiddenCount} group${hiddenCount === 1 ? '' : 's'} hidden from the legend, click to bring back. `;
+            }
+            if (orderedCLs.length === 0) {
+                clusterNote += 'Every group is hidden, so there is nothing to draw. Click a legend entry below to bring one back. ';
             }
         } else {
             const allowCluster = cohort.length <= CLUSTER_CAP;
@@ -52584,9 +52994,9 @@ ${clone.innerHTML}
         }
 
         this._hmData = {
-            genes, orderedGenes, cohort, orderedCLs, geneIndexInResult, cohortIndex,
+            genes, orderedGenes, geneTree, cohort, orderedCLs, geneIndexInResult, cohortIndex,
             rawRows, scaledRows, dataType, scaleMode, domain, missingGenes,
-            groups, groupByMode, lineageLabel
+            groups, groupByMode, altInfo, groupOrderMode, showMedian, hiddenCount, lineageLabel
         };
         this._hmPaintAndWire(cohortNote + clusterNote);
     }
@@ -52634,10 +53044,13 @@ ${clone.innerHTML}
     // Average-linkage agglomerative clustering: a plain distance matrix plus
     // a greedy nearest-pair merge, using the Lance-Williams update for the
     // average-link recurrence so a merge costs O(n) rather than a full
-    // recompute. No dendrogram, just the leaf order the merges produce.
-    _hmClusterOrder(keys, vectors) {
+    // recompute. Builds the merge tree (for the gene dendrogram) and returns
+    // its leaf order (an in-order walk) in the same pass, so the cell-line
+    // "Cluster" sort and the gene rows share one implementation.
+    _hmClusterTree(keys, vectors) {
         const n = keys.length;
-        if (n <= 2) return keys.slice();
+        if (n === 0) return { order: [], root: null };
+        if (n === 1) return { order: keys.slice(), root: { leaf: keys[0] } };
         const dist = [];
         for (let i = 0; i < n; i++) dist.push(new Float64Array(n));
         for (let i = 0; i < n; i++) {
@@ -52647,7 +53060,10 @@ ${clone.innerHTML}
             }
         }
         const size = new Array(n).fill(1);
-        const order = keys.map((_, i) => [i]);
+        // nodes[i] holds whatever (sub)tree currently occupies distance-
+        // matrix slot i; slot `a` is overwritten with the merged node each
+        // round, mirroring how the distance matrix itself is updated in place.
+        const nodes = keys.map(k => ({ leaf: k }));
         const active = keys.map((_, i) => i);
         while (active.length > 1) {
             let bi = 0, bj = 1, bd = Infinity;
@@ -52663,11 +53079,54 @@ ${clone.innerHTML}
                 const nd = (size[a] * dist[a][c] + size[b] * dist[b][c]) / (size[a] + size[b]);
                 dist[a][c] = nd; dist[c][a] = nd;
             }
+            nodes[a] = { height: bd, left: nodes[a], right: nodes[b] };
             size[a] += size[b];
-            order[a] = order[a].concat(order[b]);
             active.splice(bj, 1);
         }
-        return order[active[0]].map(i => keys[i]);
+        const root = nodes[active[0]];
+        const order = [];
+        (function walk(node) {
+            if (node.leaf !== undefined) { order.push(node.leaf); return; }
+            walk(node.left); walk(node.right);
+        })(root);
+        return { order, root };
+    }
+
+    // Leaf order only, for the cell-line "Cluster" sort, which doesn't draw
+    // a dendrogram and doesn't need the tree.
+    _hmClusterOrder(keys, vectors) {
+        if (keys.length <= 2) return keys.slice();
+        return this._hmClusterTree(keys, vectors).order;
+    }
+
+    // Rectangular dendrogram layout for a gene tree: leaves at the right
+    // edge (touching the labels), the deepest merge at the left edge, height
+    // scaled linearly so the tallest merge spans the full width. Returns the
+    // line segments to stroke, in the same (unscaled) coordinates the label
+    // canvas paints in.
+    _hmDendroLayout(root, leafRowIndex, cellH, dendroW) {
+        if (!root || root.leaf !== undefined) return [];
+        let maxH = 0;
+        (function findMax(node) {
+            if (node.height == null) return;
+            maxH = Math.max(maxH, node.height);
+            findMax(node.left); findMax(node.right);
+        })(root);
+        const xOf = (h) => maxH > 0 ? dendroW * (1 - h / maxH) : dendroW * 0.15;
+        const segments = [];
+        const layout = (node) => {
+            if (node.leaf !== undefined) {
+                return { x: dendroW, y: (leafRowIndex.get(node.leaf) ?? 0) * cellH + cellH / 2 };
+            }
+            const L = layout(node.left), R = layout(node.right);
+            const x = xOf(node.height);
+            segments.push({ x1: x, y1: L.y, x2: L.x, y2: L.y });
+            segments.push({ x1: x, y1: R.y, x2: R.x, y2: R.y });
+            segments.push({ x1: x, y1: L.y, x2: x, y2: R.y });
+            return { x, y: (L.y + R.y) / 2 };
+        };
+        layout(root);
+        return segments;
     }
 
     _hmColorFor(v, scaleMode, dataType, domain) {
@@ -52717,9 +53176,16 @@ ${clone.innerHTML}
         const cellW = Math.max(2, Math.min(14, Math.floor(targetW / Math.max(1, nCL))));
         const probe = document.createElement('canvas').getContext('2d');
         probe.font = '10px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-        let labelW = 40;
-        for (const g of d.orderedGenes) labelW = Math.max(labelW, Math.ceil(probe.measureText(g).width) + 12);
-        labelW = Math.min(labelW, 160);
+        let textLabelW = 40;
+        for (const g of d.orderedGenes) textLabelW = Math.max(textLabelW, Math.ceil(probe.measureText(g).width) + 12);
+        textLabelW = Math.min(textLabelW, 160);
+        // A small tree to the left of the gene labels when rows are
+        // clustered, drawn from the merge heights the clustering already
+        // produced. Skipped for a single gene (nothing to merge).
+        const DENDRO_W = 60;
+        const hasDendro = !!d.geneTree && nGenes >= 2;
+        const dendroW = hasDendro ? DENDRO_W : 0;
+        const labelW = textLabelW + dendroW;
         const gridW = nCL * cellW;
         const geneAreaH = nGenes * cellH;
         // The group strip, its boundary ticks and its labels are drawn on
@@ -52731,9 +53197,23 @@ ${clone.innerHTML}
         const gridH = geneAreaH + groupExtra;
         const legendW = 260, legendH = 46;
 
+        // Group label text shared by the under-band label and the legend,
+        // so "n=42" (never a bare "42") and the optional median read the
+        // same everywhere they appear.
+        const groupLabelText = (g) => `${g.key} (n=${g.count}${d.showMedian && !Number.isNaN(g.median) ? `, median ${g.median.toFixed(2)}` : ''})`;
+
         const paintLabels = (ctx) => {
             ctx.fillStyle = '#f9fafb';
             ctx.fillRect(0, 0, labelW, gridH);
+            if (hasDendro) {
+                const leafRowIndex = new Map(d.orderedGenes.map((g, i) => [g, i]));
+                const segments = this._hmDendroLayout(d.geneTree, leafRowIndex, cellH, dendroW);
+                ctx.strokeStyle = '#9ca3af';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                for (const s of segments) { ctx.moveTo(s.x1, s.y1); ctx.lineTo(s.x2, s.y2); }
+                ctx.stroke();
+            }
             ctx.font = '10px Arial';
             ctx.textAlign = 'right';
             ctx.textBaseline = 'middle';
@@ -52754,14 +53234,18 @@ ${clone.innerHTML}
             });
             if (!d.groups) return;
             const stripY = geneAreaH;
-            d.groups.forEach(g => {
+            // Hidden groups have no startCol/endCol (they contribute no
+            // columns at all), so every loop over the strip works from the
+            // visible subset, not the full legend list.
+            const visibleGroups = d.groups.filter(g => !g.hidden);
+            visibleGroups.forEach(g => {
                 ctx.fillStyle = g.color;
                 ctx.fillRect(g.startCol * cellW, stripY, (g.endCol - g.startCol) * cellW, GROUP_STRIP_H);
             });
             ctx.strokeStyle = '#9ca3af';
             ctx.lineWidth = 1;
             ctx.beginPath();
-            d.groups.forEach(g => {
+            visibleGroups.forEach(g => {
                 const x = Math.round(g.startCol * cellW) + 0.5;
                 ctx.moveTo(x, stripY);
                 ctx.lineTo(x, stripY + GROUP_STRIP_H + GROUP_TICK_H);
@@ -52778,10 +53262,12 @@ ${clone.innerHTML}
             ctx.textAlign = 'center';
             ctx.textBaseline = 'top';
             const labelY = stripY + GROUP_STRIP_H + GROUP_TICK_H + 1;
-            d.groups.forEach(g => {
+            visibleGroups.forEach(g => {
                 const bandW = (g.endCol - g.startCol) * cellW;
-                const tw = ctx.measureText(g.key).width;
-                if (tw + 4 <= bandW) ctx.fillText(g.key, g.startCol * cellW + bandW / 2, labelY);
+                const text = groupLabelText(g);
+                const tw = ctx.measureText(text).width;
+                if (tw + 4 <= bandW) ctx.fillText(text, g.startCol * cellW + bandW / 2, labelY);
+                else if (ctx.measureText(g.key).width + 4 <= bandW) ctx.fillText(g.key, g.startCol * cellW + bandW / 2, labelY);
             });
         };
         const paintLegend = (ctx) => {
@@ -52808,11 +53294,12 @@ ${clone.innerHTML}
             }
         };
 
-        // Group legend: name, swatch and n per group, wrapping across lines
-        // rather than scrolling, since it sits below the grid rather than
-        // inside its horizontal scroller. Laid out once here (logical
-        // coordinates) so the same layout drives the on-screen canvas and
-        // the exported image.
+        // Group legend: name, swatch and n per group (plus every hidden
+        // group, greyed, so it stays clickable to bring back), wrapping
+        // across lines rather than scrolling, since it sits below the grid
+        // rather than inside its horizontal scroller. Laid out once here
+        // (logical coordinates) so the same layout drives the on-screen
+        // canvas, the exported image and the click hit-test below.
         let groupLegendLayout = null;
         if (d.groups) {
             const probe2 = document.createElement('canvas').getContext('2d');
@@ -52822,11 +53309,11 @@ ${clone.innerHTML}
             let x = 0, y = 0;
             const items = [];
             d.groups.forEach(g => {
-                const text = `${g.key} (${g.count})`;
+                const text = groupLabelText(g);
                 const tw = probe2.measureText(text).width;
                 const itemW = swatch + textGap + tw;
                 if (x > 0 && x + itemW > legendWidth) { x = 0; y += itemH; }
-                items.push({ x, y, color: g.color, text, swatch });
+                items.push({ x, y, w: itemW, h: itemH, color: g.color, text, swatch, key: g.key, hidden: g.hidden });
                 x += itemW + itemGapX;
             });
             groupLegendLayout = { items, width: legendWidth, height: y + itemH };
@@ -52837,20 +53324,30 @@ ${clone.innerHTML}
             ctx.textBaseline = 'middle';
             ctx.textAlign = 'left';
             groupLegendLayout.items.forEach(it => {
-                ctx.fillStyle = it.color;
+                ctx.fillStyle = it.hidden ? '#e5e7eb' : it.color;
                 ctx.fillRect(it.x, it.y + 3, it.swatch, it.swatch);
                 ctx.strokeStyle = 'rgba(0,0,0,0.15)';
                 ctx.lineWidth = 1;
                 ctx.strokeRect(it.x + 0.5, it.y + 3.5, it.swatch, it.swatch);
-                ctx.fillStyle = '#374151';
+                ctx.fillStyle = it.hidden ? '#9ca3af' : '#374151';
                 ctx.fillText(it.text, it.x + it.swatch + 4, it.y + 3 + it.swatch / 2);
+                if (it.hidden) {
+                    // A strike-through, not just a colour change, so the
+                    // hidden state reads even to a colour-blind viewer.
+                    ctx.strokeStyle = '#9ca3af';
+                    ctx.beginPath();
+                    ctx.moveTo(it.x, it.y + 3 + it.swatch / 2);
+                    ctx.lineTo(it.x + it.w, it.y + 3 + it.swatch / 2);
+                    ctx.stroke();
+                }
             });
         };
 
         this._hmPaint = { paintLabels, paintGrid, paintLegend, paintGroupLegend };
         Object.assign(this._hmData, {
             labelW, gridW, gridH, cellW, cellH, legendW, legendH, geneAreaH, groupStripH: GROUP_STRIP_H,
-            groupLegendW: groupLegendLayout?.width || 0, groupLegendH: groupLegendLayout?.height || 0
+            groupLegendW: groupLegendLayout?.width || 0, groupLegendH: groupLegendLayout?.height || 0,
+            groupLegendLayout
         });
 
         const dpr = Math.max(1, Math.min(3, window.devicePixelRatio || 1));
@@ -52876,6 +53373,8 @@ ${clone.innerHTML}
             if (groupLegendLayout) {
                 sizeCanvas(groupLegendCanvas, groupLegendLayout.width, groupLegendLayout.height);
                 groupLegendCanvas.style.marginTop = '8px';
+                groupLegendCanvas.style.cursor = 'pointer';
+                groupLegendCanvas.title = 'Click a group to hide its cell lines, click again to bring them back';
                 const glc = groupLegendCanvas.getContext('2d');
                 glc.setTransform(dpr, 0, 0, dpr, 0, 0);
                 glc.clearRect(0, 0, groupLegendLayout.width, groupLegendLayout.height);
@@ -52883,7 +53382,13 @@ ${clone.innerHTML}
             } else {
                 groupLegendCanvas.width = 0; groupLegendCanvas.height = 0;
                 groupLegendCanvas.style.marginTop = '0';
+                groupLegendCanvas.style.cursor = 'default';
+                groupLegendCanvas.title = '';
             }
+        }
+        if (groupLegendCanvas && !groupLegendCanvas._hmWired) {
+            groupLegendCanvas.addEventListener('click', (e) => this._hmOnGroupLegendClick(e));
+            groupLegendCanvas._hmWired = true;
         }
 
         // Hint line: what's drawn, plus anything that didn't resolve.
@@ -52894,7 +53399,7 @@ ${clone.innerHTML}
             const colourWord = d.scaleMode === 'z'
                 ? 'Blue is low, red is high.'
                 : d.dataType === 'expr' ? 'White is low, dark green is high.' : 'Blue is enriched, red is depleted.';
-            const groupWord = d.groupByMode === 'lineage' ? 'lineage' : d.groupByMode === 'subtype' ? 'subtype' : d.groupByMode === 'disease' ? 'disease' : '';
+            const groupWord = this._hmGroupByLabel(d.groupByMode, d.altInfo);
             let base = `${nGenes} genes x ${nCL} cell lines`;
             if (d.lineageLabel) base += `, ${d.lineageLabel} only`;
             if (d.groups) base += `, grouped by ${groupWord} (${d.groups.length} group${d.groups.length === 1 ? '' : 's'})`;
@@ -52926,6 +53431,23 @@ ${clone.innerHTML}
             gridCanvas.addEventListener('mouseleave', () => this._hmHideTooltip());
             gridCanvas._hmWired = true;
         }
+    }
+
+    // Toggles a group's visibility on click. Reads the layout fresh off
+    // `this._hmData` (reassigned on every redraw) rather than a closure, so
+    // this one listener, wired once, always hit-tests the current legend.
+    _hmOnGroupLegendClick(e) {
+        const layout = this._hmData?.groupLegendLayout;
+        if (!layout) return;
+        const canvas = document.getElementById('hmGroupLegendCanvas');
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left, y = e.clientY - rect.top;
+        const hit = layout.items.find(it => x >= it.x && x <= it.x + it.w && y >= it.y && y <= it.y + it.h);
+        if (!hit) return;
+        this._hmHiddenGroups = this._hmHiddenGroups || new Set();
+        if (this._hmHiddenGroups.has(hit.key)) this._hmHiddenGroups.delete(hit.key);
+        else this._hmHiddenGroups.add(hit.key);
+        this._hmRedraw();
     }
 
     _hmOnGridHover(e) {
@@ -53002,49 +53524,50 @@ ${clone.innerHTML}
         return { totalW, totalH };
     }
 
-    async _hmExportImage() {
+    // Composes the whole picture (labels + dendrogram, grid + group strip,
+    // colour legend, group legend) onto one canvas at the given scale. Used
+    // by Export image, Copy and the AI export's companion PNG, so the three
+    // can never drift apart into three slightly different pictures.
+    _hmComposeCanvas(scale = 1, background = '#ffffff') {
         const d = this._hmData, paint = this._hmPaint;
-        if (!d || !paint) return;
+        if (!d || !paint) return null;
         const { totalW, totalH } = this._hmTotalCanvasSize(d);
-        const dlg = await this._showExportDialog({ format: 'png', plotW: totalW, plotH: totalH, rasterOnly: true, restorable: false });
-        if (!dlg) return;
-        const CM_TO_IN = 1 / 2.54;
-        const scale = (dlg.widthCm * dlg.dpi * CM_TO_IN) / totalW;
         const canvas = document.createElement('canvas');
         canvas.width = Math.round(totalW * scale);
         canvas.height = Math.round(totalH * scale);
         const ctx = canvas.getContext('2d');
         ctx.scale(scale, scale);
-        if (dlg.background !== 'transparent') { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, totalW, totalH); }
+        if (background !== 'transparent') { ctx.fillStyle = background; ctx.fillRect(0, 0, totalW, totalH); }
         paint.paintLabels(ctx);
         ctx.save(); ctx.translate(d.labelW, 0); paint.paintGrid(ctx); ctx.restore();
         ctx.save(); ctx.translate(0, d.gridH + 10); paint.paintLegend(ctx); ctx.restore();
         if (d.groups) { ctx.save(); ctx.translate(0, d.gridH + 10 + d.legendH + 8); paint.paintGroupLegend(ctx); ctx.restore(); }
+        return canvas;
+    }
+
+    async _hmExportImage() {
+        const d = this._hmData;
+        if (!d || !this._hmPaint) return;
+        const { totalW, totalH } = this._hmTotalCanvasSize(d);
+        const dlg = await this._showExportDialog({ format: 'png', plotW: totalW, plotH: totalH, rasterOnly: true, restorable: false });
+        if (!dlg) return;
+        const CM_TO_IN = 1 / 2.54;
+        const scale = (dlg.widthCm * dlg.dpi * CM_TO_IN) / totalW;
+        const canvas = this._hmComposeCanvas(scale, dlg.background === 'transparent' ? 'transparent' : '#ffffff');
         await this._downloadCanvasAs(canvas, dlg.format, 'heatmap', {
             dpi: dlg.dpi, widthCm: dlg.widthCm, heightCm: dlg.widthCm * (totalH / totalW), skipSidecar: true
         });
     }
 
     async _hmCopy() {
-        const d = this._hmData, paint = this._hmPaint;
-        if (!d || !paint) return;
+        if (!this._hmData || !this._hmPaint) return;
         if (!navigator.clipboard || typeof ClipboardItem === 'undefined') {
             this.showCopyNotification?.('This browser cannot copy images to the clipboard. Use Export image instead.');
             return;
         }
         this.showCopyNotification?.('Copying…');
         try {
-            const { totalW, totalH } = this._hmTotalCanvasSize(d);
-            const scale = 2;
-            const canvas = document.createElement('canvas');
-            canvas.width = totalW * scale; canvas.height = totalH * scale;
-            const ctx = canvas.getContext('2d');
-            ctx.scale(scale, scale);
-            ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, totalW, totalH);
-            paint.paintLabels(ctx);
-            ctx.save(); ctx.translate(d.labelW, 0); paint.paintGrid(ctx); ctx.restore();
-            ctx.save(); ctx.translate(0, d.gridH + 10); paint.paintLegend(ctx); ctx.restore();
-            if (d.groups) { ctx.save(); ctx.translate(0, d.gridH + 10 + d.legendH + 8); paint.paintGroupLegend(ctx); ctx.restore(); }
+            const canvas = this._hmComposeCanvas(2, '#ffffff');
             const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
             await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
             this.showCopyNotification?.('Heatmap copied, paste it anywhere');
@@ -53057,7 +53580,22 @@ ${clone.innerHTML}
     _hmExportCsv() {
         const d = this._hmData;
         if (!d) return;
-        const header = 'Gene,' + d.orderedCLs.map(cl => this.getCellLineName(cl)).join(',');
+        const csvField = (s) => `"${String(s).replace(/"/g, '""')}"`;
+        const measureWord = d.dataType === 'expr' ? 'mRNA expression' : 'CRISPR gene effect';
+        const scaleWord = d.scaleMode === 'z' ? 'z-scored per gene' : 'raw values';
+        const cohortMode = document.getElementById('hmCohort')?.value || 'visible';
+        const cohortWord = { visible: 'cell lines the browser is filtered to', selected: 'ticked cell lines', all: 'all cell lines' }[cohortMode] || cohortMode;
+        const lineageWord = d.lineageLabel ? `${d.lineageLabel} only` : 'all lineages';
+        const filterParts = this._hmActiveFilterParts();
+        const filterWord = filterParts.length ? `, filtered to ${filterParts.join(', ')}` : '';
+        const groupWord = d.groups ? `grouped by ${this._hmGroupByLabel(d.groupByMode, d.altInfo)}` : 'not grouped';
+        const dateStr = new Date().toISOString().slice(0, 10);
+        // Provenance lives in the CORNER CELL, not a line of its own: a
+        // plain sentence above the header once made a spreadsheet read the
+        // real column names as a row of data, because a header row only
+        // works as a header if row 1 IS the header row.
+        const corner = `Gene [${measureWord}, ${scaleWord}, ${cohortWord}${filterWord}, ${lineageWord}, ${groupWord}, DepMap ${DEPMAP_VERSION}, ${dateStr}]`;
+        const header = csvField(corner) + ',' + d.orderedCLs.map(cl => this.getCellLineName(cl)).join(',');
         const rows = d.orderedGenes.map(g => {
             const row = d.scaledRows[d.geneIndexInResult.get(g)];
             return g + ',' + d.orderedCLs.map(cl => {
@@ -53065,14 +53603,14 @@ ${clone.innerHTML}
                 return Number.isNaN(v) ? '' : v.toFixed(3);
             }).join(',');
         });
-        let csv = header + '\n' + rows.join('\n') + '\n';
+        let csv = header + '\n';
         if (d.groups) {
             const groupOf = new Map();
-            d.groups.forEach(g => g.orderedCellLines.forEach(cl => groupOf.set(cl, g.key)));
-            const csvField = (s) => `"${String(s).replace(/"/g, '""')}"`;
+            d.groups.filter(g => !g.hidden).forEach(g => g.orderedCellLines.forEach(cl => groupOf.set(cl, g.key)));
             const groupRow = 'Group,' + d.orderedCLs.map(cl => csvField(groupOf.get(cl) || '')).join(',');
-            csv = groupRow + '\n' + csv;
+            csv += groupRow + '\n';
         }
+        csv += rows.join('\n') + '\n';
         this.downloadFile(csv, csvName('heatmap'), 'text/csv');
     }
 }
