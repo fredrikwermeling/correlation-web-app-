@@ -4503,6 +4503,18 @@
                         </select>
                     </div>
                     <div>
+                        <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">Subtype</label>
+                        <select id="hmSubtype" style="font-size:11px; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px;" title="Narrows further to one subtype, within whatever lineage is chosen">
+                            <option value="">All subtypes</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">Disease</label>
+                        <select id="hmDisease" style="font-size:11px; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px;" title="Narrows further to one Oncotree disease, within whatever lineage is chosen">
+                            <option value="">All diseases</option>
+                        </select>
+                    </div>
+                    <div>
                         <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">Scaling</label>
                         <select id="hmScale" style="font-size:11px; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px;" title="Z-score compares each gene to its own spread across the cell lines shown; raw values keep their original units">
                             <option value="z" selected>Z-score per gene</option>
@@ -4521,8 +4533,8 @@
                     <div>
                         <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">Group by</label>
                         <select id="hmGroupBy" style="font-size:11px; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px;" title="Blocks cell lines by lineage, subtype, disease or a gene's mutation status, sorting within each block, and draws a colour strip under the grid">
-                            <option value="none" selected>No grouping</option>
-                            <option value="lineage">Lineage</option>
+                            <option value="none">No grouping</option>
+                            <option value="lineage" selected>Lineage</option>
                             <option value="subtype">Subtype</option>
                             <option value="disease">Disease</option>
                             <option value="alteration">Genetic alteration</option>
@@ -4540,9 +4552,36 @@
                             <option value="score">By score</option>
                         </select>
                     </div>
+                    <div>
+                        <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">&nbsp;</label>
+                        <span style="display:inline-flex; align-items:center; gap:8px; opacity:0.45;" id="hmMinGroupSizeWrap">
+                            <span style="font-size:10px; color:#6b7280; white-space:nowrap;" title="Groups with fewer cell lines than this are left out of the heatmap entirely">Min n:</span>
+                            <button type="button" onclick="app.adjustNumber('hmMinGroupSize', -1)" style="font-size:10px; padding:0 5px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer;">−</button>
+                            <input type="number" id="hmMinGroupSize" value="1" min="1" max="50" disabled style="width:36px; font-size:11px; padding:2px 4px; border:1px solid #d1d5db; border-radius:4px; text-align:center;" title="Minimum cell lines per group to show" onchange="app._hmRedraw()">
+                            <button type="button" onclick="app.adjustNumber('hmMinGroupSize', 1)" style="font-size:10px; padding:0 5px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer;">+</button>
+                        </span>
+                    </div>
                     <label style="display:flex; align-items:center; gap:3px; font-size:10px; color:#6b7280; cursor:pointer; opacity:0.45;" id="hmShowMedianWrap" title="Show each group's median score (of the genes shown) beside its count">
                         <input type="checkbox" id="hmShowMedian" disabled style="margin:0;"> Show median
                     </label>
+                    <div>
+                        <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">Second row</label>
+                        <select id="hmAnnotation2" style="font-size:11px; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px;" title="Draws a second colour band under the group band, for a different attribute, so two things can be compared at once">
+                            <option value="none" selected>None</option>
+                            <option value="lineage">Lineage</option>
+                            <option value="hotspot">Hotspot mutation in a gene</option>
+                            <option value="cn">Amplification / deletion of a gene</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">Second row gene</label>
+                        <input type="text" id="hmAnn2Gene" list="hmGroupGeneList" disabled placeholder="e.g. BRAF" style="width:90px; font-size:11px; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px; opacity:0.45;" title="Colour the second row by this gene's hotspot mutation status (0 / 1 / 2 copies)">
+                    </div>
+                    <div>
+                        <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">Second row CN gene</label>
+                        <input type="text" id="hmAnn2CnGene" list="hmAnn2CnGeneList" disabled placeholder="e.g. MYC" style="width:90px; font-size:11px; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px; opacity:0.45;" title="Colour the second row by this gene's curated amplification / deletion status">
+                        <datalist id="hmAnn2CnGeneList"></datalist>
+                    </div>
                     <label style="display:flex; align-items:center; gap:3px; font-size:10px; color:#6b7280; cursor:pointer;" title="Order the gene rows by how alike their profiles are, regardless of how cell lines are sorted, and draw the tree that produced the order">
                         <input type="checkbox" id="hmClusterGenes" checked style="margin:0;"> Cluster genes
                     </label>
@@ -4572,7 +4611,10 @@
                     <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">Genes, separated by commas, spaces or new lines</label>
                     <textarea id="hmGenes" rows="3" style="width:100%; font-size:11px; padding:5px 7px; border:1px solid #d1d5db; border-radius:4px; font-family:inherit; resize:vertical;" placeholder="ISG15, IFIT1, MX1, OAS1 ..."></textarea>
                 </div>
-                <div id="hmHint" style="font-size:10px; color:#9ca3af; margin-bottom:8px;"></div>
+                <div id="hmHint" style="font-size:10px; color:#9ca3af; margin-bottom:4px;"></div>
+                <div style="min-height:20px; margin-bottom:4px;">
+                    <button type="button" id="hmDrillBackBtn" class="btn btn-outline btn-sm" style="font-size:10px; padding:2px 8px; visibility:hidden;" title="Undo the double-click drill-down, restoring the grouping and cell lines shown before it">Show all</button>
+                </div>
                 <div style="display:flex; align-items:flex-start; width:100%;">
                     <canvas id="hmLabelCanvas" style="flex:none; cursor:default;"></canvas>
                     <div id="hmGridScroll" style="flex:1 1 auto; min-width:0; overflow-x:auto; overflow-y:hidden;"><canvas id="hmGridCanvas" style="display:block; cursor:default;"></canvas></div>
@@ -4580,6 +4622,7 @@
                 <div id="hmScrollHint" style="font-size:9px; color:#9ca3af; margin-top:3px;"></div>
                 <div style="margin-top:10px;"><canvas id="hmLegendCanvas"></canvas></div>
                 <canvas id="hmGroupLegendCanvas" style="display:block;"></canvas>
+                <canvas id="hmAnn2LegendCanvas" style="display:block;"></canvas>
             </div>
             <div class="modal-footer" style="justify-content:flex-start; flex-wrap:wrap; gap:6px;">
                 <button id="hmExportImageBtn" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px;" title="Choose format, print size and resolution">Export image...</button>
@@ -5391,6 +5434,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v88_37"></script>
+    <script src="app.js?v=v88_38"></script>
 </body>
 </html>
