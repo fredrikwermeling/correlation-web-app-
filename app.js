@@ -13958,6 +13958,25 @@ Results:
     // Layout of a network export: a header strip for the filter banner, the
     // network canvas, then the legend block underneath. The export dialog needs
     // these numbers before the canvas is built, so they live on their own.
+    // The sentence saying WHY genes are marked (set by Enrichr, or typed in
+    // the network settings). It is drawn on screen above the network, and an
+    // exported figure without it shows rings whose meaning is lost.
+    _netExportNoteLines(text, maxWidth, fontPx) {
+        if (!text) return [];
+        const ctx = (this._netNoteCtx ||= document.createElement('canvas').getContext('2d'));
+        ctx.font = `${fontPx}px Arial`;
+        const words = String(text).split(/\s+/).filter(Boolean);
+        const lines = [];
+        let cur = '';
+        for (const w of words) {
+            const t = cur ? cur + ' ' + w : w;
+            if (ctx.measureText(t).width > maxWidth && cur) { lines.push(cur); cur = w; }
+            else cur = t;
+        }
+        if (cur) lines.push(cur);
+        return lines.slice(0, 3);          // three lines is plenty for a caption
+    }
+
     _networkExportGeometry() {
         const networkCanvas = document.querySelector('#networkPlot canvas');
         const container = document.getElementById('networkPlot');
@@ -13968,13 +13987,20 @@ Results:
         const padding = 30;
         const filterText = this._getNetworkFilterText();
         const bannerFs = this._netBannerFontSize || 20;
+        // The highlight note travels with the figure: rings with no caption
+        // are meaningless once the picture leaves the app.
+        const hlNote = this._netHighlightNote || '';
+        const noteFs = Math.max(10, Math.round(bannerFs * 0.62));
+        const noteLines = this._netExportNoteLines(hlNote, cssWidth - 40, noteFs);
         // Reserve a header strip ABOVE the network for the filter banner so
         // it doesn't overlap nodes (matches the on-screen layout). Height
         // scales with banner font size.
-        const headerH = filterText ? Math.round(bannerFs * 1.6 + 12) : 0;
+        const bannerH = filterText ? Math.round(bannerFs * 1.6) : 0;
+        const noteH = noteLines.length ? Math.round(noteLines.length * noteFs * 1.35 + 6) : 0;
+        const headerH = (filterText || noteLines.length) ? bannerH + noteH + 12 : 0;
         return {
             networkCanvas, cssWidth, cssHeight, legendHeight, padding,
-            filterText, bannerFs, headerH,
+            filterText, bannerFs, headerH, bannerH, noteLines, noteFs,
             totalWidth: cssWidth,
             totalHeight: headerH + cssHeight + legendHeight + padding
         };
@@ -14060,7 +14086,8 @@ Results:
         if (!geo) return null;
         const {
             networkCanvas, cssWidth, cssHeight, legendHeight, padding,
-            filterText, bannerFs, headerH, totalWidth, totalHeight
+            filterText, bannerFs, headerH, bannerH, noteLines, noteFs,
+            totalWidth, totalHeight
         } = geo;
 
         const transparentBg = background === 'transparent';
@@ -14105,7 +14132,19 @@ Results:
             ctx.fillStyle = '#374151';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
-            ctx.fillText(filterText, totalWidth / 2, headerH / 2);
+            ctx.fillText(filterText, totalWidth / 2, bannerH / 2 + 6);
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'alphabetic';
+        }
+        // The highlight caption, under the filter banner and in the same grey
+        // the app shows it in.
+        if (noteLines && noteLines.length) {
+            ctx.font = `${noteFs}px Arial`;
+            ctx.fillStyle = '#4b5563';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            let y = (filterText ? bannerH + 6 : 6) + noteFs * 0.9;
+            for (const ln of noteLines) { ctx.fillText(ln, totalWidth / 2, y); y += noteFs * 1.35; }
             ctx.textAlign = 'left';
             ctx.textBaseline = 'alphabetic';
         }
@@ -14480,9 +14519,15 @@ Results:
         const legendHeight = 160;
         const filterText = this._getNetworkFilterText();
         const svgBannerFs = this._netBannerFontSize || 20;
+        // The highlight caption travels with the figure too: a ring with no
+        // sentence explaining it means nothing once the picture leaves the app.
+        const svgNoteFs = Math.max(10, Math.round(svgBannerFs * 0.62));
+        const svgNoteLines = this._netExportNoteLines(this._netHighlightNote || '', width - 40, svgNoteFs);
         // Reserve a header strip ABOVE the network for the filter banner —
         // mirrors the on-screen layout and the PNG export.
-        const headerH = filterText ? Math.round(svgBannerFs * 1.6 + 12) : 0;
+        const svgBannerH = filterText ? Math.round(svgBannerFs * 1.6) : 0;
+        const svgNoteH = svgNoteLines.length ? Math.round(svgNoteLines.length * svgNoteFs * 1.35 + 6) : 0;
+        const headerH = (filterText || svgNoteLines.length) ? svgBannerH + svgNoteH + 12 : 0;
         const totalHeight = headerH + networkHeight + legendHeight;
 
         const dlg = dlgOverride || await this._showExportDialog({ format: 'svg', plotW: width, plotH: totalHeight, hasLegendFrame: true });
@@ -14526,8 +14571,9 @@ Results:
   .legend-small { font-family: Arial, sans-serif; font-size: 13px; fill: #333; }
 </style>
 ${transparentBg ? '' : '<rect width="100%" height="100%" fill="white"/>'}
-${filterText && !transparentBg ? `<rect x="0" y="0" width="${width}" height="${headerH}" fill="#f9fafb"/><line x1="0" y1="${headerH - 0.5}" x2="${width}" y2="${headerH - 0.5}" stroke="#e5e7eb" stroke-width="1"/>` : ''}
-${filterText ? `<text x="${width / 2}" y="${headerH / 2}" dominant-baseline="middle" text-anchor="middle" style="font-family: Arial, sans-serif; font-size: ${svgBannerFs}px; fill: #374151;">${this.escapeXml(filterText)}</text>` : ''}
+${(filterText || svgNoteLines.length) && !transparentBg ? `<rect x="0" y="0" width="${width}" height="${headerH}" fill="#f9fafb"/><line x1="0" y1="${headerH - 0.5}" x2="${width}" y2="${headerH - 0.5}" stroke="#e5e7eb" stroke-width="1"/>` : ''}
+${filterText ? `<text x="${width / 2}" y="${svgBannerH / 2 + 6}" dominant-baseline="middle" text-anchor="middle" style="font-family: Arial, sans-serif; font-size: ${svgBannerFs}px; fill: #374151;">${this.escapeXml(filterText)}</text>` : ''}
+${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBannerH + 6 : 6) + svgNoteFs * 0.9 + i * svgNoteFs * 1.35}" dominant-baseline="middle" text-anchor="middle" style="font-family: Arial, sans-serif; font-size: ${svgNoteFs}px; fill: #4b5563;">${this.escapeXml(ln)}</text>`).join('\n')}
 `;
 
         // Get current scale for sizing elements
