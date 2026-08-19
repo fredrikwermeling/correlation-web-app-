@@ -29283,6 +29283,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             return this._wikiCellLineId ? [this._wikiCellLineId] : [];
         }
         if (source === 'selection') {
+            // Gate mode ships BOTH sides (v.88.84): the export exists to
+            // carry the contrast, and with only side A in the matrices a
+            // reader could not re-split or even inspect the other half.
+            // context.cellLineGroups says which line belongs to which gate.
+            if (this._geInspectMode === 'gateAB' && this._geGateAB) {
+                return [...new Set([...this._geGateAB.aIds, ...this._geGateAB.bIds])];
+            }
             return this._geInspectResults?.selected || [];
         }
         if (source === 'clb') {
@@ -30466,6 +30473,65 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             };
             context.plotDescribesWhat = `A table, one row per gene, comparing the ${sel.length} selected cell lines against ${sides?.cmpLabel || 'all other cell lines'} on gene effect (and on expression where extras.selectionDifferentialExpression is present). Not a chart: the table itself, ranked by |difference|, is what was on screen.`;
             description = `${sel.length} cell lines picked out in the Cell Line Browser, compared with ${sides?.cmpLabel || 'all other cell lines'}.`;
+            // Gate mode (v.88.84): the two sides are hand-drawn gates, both
+            // shipped in full, so several of the sentences above are replaced
+            // with ones that are true here. Fields only appear in this mode;
+            // a non-gate export says nothing about gates (standing rule:
+            // never document what the file does not contain).
+            if (this._geInspectMode === 'gateAB' && this._geGateAB) {
+                const { aIds, bIds } = this._geGateAB;
+                const origin = this._geGateABOrigin === 'scatter' ? 'scatter' : 'heatmap';
+                context.plotType = 'gate_vs_gate';
+                context.cellLineGroups = {
+                    _readMe: 'Which exported cell line belongs to which gate. BOTH gates are in the matrices and per-line annotation of this file, so the contrast can be recomputed or re-split (by lineage, mutation, anything in cellLineMetadata) directly from the file.',
+                    gateA: aIds.slice(),
+                    gateB: bIds.slice()
+                };
+                context.comparedLinesIncluded = 'yes - both gates are fully in this file: matrices and per-line annotation cover every line of gate A and gate B, and context.cellLineGroups states the membership.';
+                const provenance = {
+                    _readMe: 'Where the two groups came from. They are hand-drawn regions, not a rule: no threshold or annotation produced them, so do not infer a criterion beyond what is stated here.',
+                    drawnOn: origin === 'scatter'
+                        ? `the scatter plot of ${this.currentInspect?.gene1 || '?'} vs ${this.currentInspect?.gene2 || '?'} (CRISPR gene effect on both axes)`
+                        : 'the gene set heatmap (gates painted across its columns)',
+                    gateSizes: { gateA: aIds.length, gateB: bIds.length }
+                };
+                if (origin === 'scatter') {
+                    const shapeOf = (s) => !s ? null
+                        : s.path ? { kind: 'lasso', note: 'freehand region; its outline is not exported' }
+                        : { kind: 'rectangle',
+                            x: [Math.min(s.x0, s.x1), Math.max(s.x0, s.x1)].map(v => parseFloat(Number(v).toFixed(3))),
+                            y: [Math.min(s.y0, s.y1), Math.max(s.y0, s.y1)].map(v => parseFloat(Number(v).toFixed(3))) };
+                    const shpA = shapeOf(this._gateAShape), shpB = shapeOf(this._gateBShape);
+                    if (shpA) provenance.gateABounds = shpA;
+                    if (shpB) provenance.gateBBounds = shpB;
+                    // Two rectangles covering much the same range on one axis
+                    // are really a one-dimensional split on the other; a
+                    // reader treating both axes as informative would over-read
+                    // the geometry.
+                    if (shpA?.kind === 'rectangle' && shpB?.kind === 'rectangle') {
+                        const overlapFrac = (r1, r2) => {
+                            const lo = Math.max(r1[0], r2[0]), hi = Math.min(r1[1], r2[1]);
+                            const span = Math.min(r1[1] - r1[0], r2[1] - r2[0]);
+                            return span > 0 ? Math.max(0, hi - lo) / span : 0;
+                        };
+                        if (overlapFrac(shpA.x, shpB.x) >= 0.8) {
+                            provenance.effectiveCriterion = `both gates span nearly the same range of ${this.currentInspect?.gene1 || 'the x axis'}, so the split is effectively one-dimensional: it separates the lines by ${this.currentInspect?.gene2 || 'the y axis'}.`;
+                        } else if (overlapFrac(shpA.y, shpB.y) >= 0.8) {
+                            provenance.effectiveCriterion = `both gates span nearly the same range of ${this.currentInspect?.gene2 || 'the y axis'}, so the split is effectively one-dimensional: it separates the lines by ${this.currentInspect?.gene1 || 'the x axis'}.`;
+                        }
+                    }
+                }
+                const big = Math.max(aIds.length, bIds.length), small = Math.min(aIds.length, bIds.length);
+                if (small > 0 && big / small >= 10) {
+                    provenance.groupSizeImbalance = `the gates are very unequal (${big} vs ${small}); with the small side this thin, single unusual lines move its mean, so weigh the per-gene n columns rather than treating both sides as equally solid.`;
+                }
+                context.gateProvenance = provenance;
+                context.selectionRule = origin === 'scatter'
+                    ? 'Both groups are gates drawn by hand on the scatter plot. No browser filter or annotation defines them; gateProvenance carries the geometry that does.'
+                    : 'Both groups are gates painted by hand across the heatmap columns. No browser filter or annotation defines them; they are kept by cell-line identity.';
+                context.plotDescribesWhat = `A table, one row per gene, comparing gate A (${aIds.length} cell lines) against gate B (${bIds.length} cell lines) on gene effect (and on expression where extras.selectionDifferentialExpression is present). Not a chart: the table itself, ranked by |difference|, is what was on screen.`;
+                description = `Gate A (${aIds.length} cell lines) vs gate B (${bIds.length} cell lines), hand-drawn on ${origin === 'scatter' ? 'the scatter plot' : 'the heatmap'}.`;
+            }
             const rows = this._geInspectResults?.rows || [];
             const exprRows = this._geInspectResults?.exprRows || [];
             const _diffRow = (r) => ({
