@@ -30481,13 +30481,37 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (this._geInspectMode === 'gateAB' && this._geGateAB) {
                 const { aIds, bIds } = this._geGateAB;
                 const origin = this._geGateABOrigin === 'scatter' ? 'scatter' : 'heatmap';
+                // gate_comparison, not cell_line_selection: the blind-reader
+                // audit found the selection label dragging in boilerplate that
+                // is false here (a comparison arm described as missing when
+                // both arms are in the file).
+                context.type = 'gate_comparison';
                 context.plotType = 'gate_vs_gate';
-                context.cellLineGroups = {
-                    _readMe: 'Which exported cell line belongs to which gate. BOTH gates are in the matrices and per-line annotation of this file, so the contrast can be recomputed or re-split (by lineage, mutation, anything in cellLineMetadata) directly from the file.',
-                    gateA: aIds.slice(),
-                    gateB: bIds.slice()
+                // Top-level cellLineGroups, the same mechanism the mutation
+                // export uses, so whatIsInThisFile.present lists it. The
+                // audit's worst finding was this exact field sitting inside
+                // context while the inventory declared it absent, which an
+                // obedient reader never looks past.
+                cellLineGroups = { gateA: aIds.slice(), gateB: bIds.slice() };
+                context.comparedLinesIncluded = 'yes - both gates are fully in this file: matrices and per-line annotation cover every line of gate A and gate B, and the top-level cellLineGroups section states the membership, so the contrast can be recomputed or re-split (by lineage, mutation, anything in cellLineMetadata) directly from this file.';
+                // Both sides tallied, replacing the one-sided block whose
+                // wording ("the comparison lines themselves are not in this
+                // file") is false in gate mode.
+                delete context.comparisonGroupComposition;
+                const tallyFor = (list, fn) => {
+                    const c = {};
+                    for (const cl of list) { const k = fn(cl) || 'unlabelled'; c[k] = (c[k] || 0) + 1; }
+                    return Object.fromEntries(Object.entries(c).sort((x, y) => y[1] - x[1]).slice(0, 12));
                 };
-                context.comparedLinesIncluded = 'yes - both gates are fully in this file: matrices and per-line annotation cover every line of gate A and gate B, and context.cellLineGroups states the membership.';
+                const compBlock = (list) => ({
+                    byTissue: tallyFor(list, cl => this.getCellLineLineage(cl)),
+                    byDisease: tallyFor(list, cl => this.cellLineMetadata?.oncotreeSubtype?.[cl] || this.cellLineMetadata?.primaryDisease?.[cl])
+                });
+                context.groupComposition = {
+                    _readMe: 'Both gates tallied by tissue and disease. byDisease uses the fine Oncotree subtype where a line has one and falls back to the broader disease label where it does not, so its categories mix the two granularities; cellLineMetadata carries both fields per line if you need them kept apart.',
+                    gateA: compBlock(aIds),
+                    gateB: compBlock(bIds)
+                };
                 const provenance = {
                     _readMe: 'Where the two groups came from. They are hand-drawn regions, not a rule: no threshold or annotation produced them, so do not infer a criterion beyond what is stated here.',
                     drawnOn: origin === 'scatter'
@@ -30548,11 +30572,45 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (rows.length) {
                 extras = extras || {};
                 extras.selectionDifferential = _byDelta(rows, 200);
+                _listTotals.selectionDifferential = rows.length;
                 // The expression side was computed in the same pass and then
                 // left behind, so "is the dependency matched by expression"
                 // could not be asked of the file at all.
-                if (exprRows.length) extras.selectionDifferentialExpression = _byDelta(exprRows, 200);
-                extras.selectionDifferential_readMe = `One row per gene, ${context.testMethod} on the ${sel.length} selected lines vs ${sides?.cmpLabel || 'all other cell lines'}, gene by gene (context.testMethod names whichever test was actually selected in the panel; the two are not interchangeable). p is the raw two-sided value; q is Benjamini-Hochberg across every gene tested (${rows.length} for gene effect${exprRows.length ? `, ${exprRows.length} for expression` : ''}), so q is the number to read, not p. Both lists are sorted by |difference| and cut at the strongest 200, which is a display cap on THIS list only and unrelated to context.dataTier: a gene absent from here was tested, it simply was not in the top 200 by effect size. Genes measured in fewer than the minimum number of selected lines were not tested at all.`;
+                if (exprRows.length) {
+                    extras.selectionDifferentialExpression = _byDelta(exprRows, 200);
+                    _listTotals.selectionDifferentialExpression = exprRows.length;
+                }
+                // Significance-first companions (blind-reader audit): the
+                // |difference| cut buried the only genes that survived
+                // correction outside the exported lists, recoverable only by
+                // recomputing thousands of t-tests. Top 50 by q each, plus a
+                // one-glance summary so a ranking of nothing-significant is
+                // never mistaken for a findings list.
+                const _byQ = (arr) => arr.filter(r => r.q != null)
+                    .sort((x, y) => x.q - y.q || Math.abs(y.delta) - Math.abs(x.delta))
+                    .slice(0, 50).map(_diffRow);
+                const qGE = _byQ(rows);
+                if (qGE.length) { extras.selectionDifferentialTopByQ = qGE; _listTotals.selectionDifferentialTopByQ = rows.filter(r => r.q != null).length; }
+                if (exprRows.length) {
+                    const qEx = _byQ(exprRows);
+                    if (qEx.length) { extras.selectionDifferentialExpressionTopByQ = qEx; _listTotals.selectionDifferentialExpressionTopByQ = exprRows.filter(r => r.q != null).length; }
+                }
+                const _sigStats = (arr) => {
+                    const qs = arr.map(r => r.q).filter(q => q != null);
+                    if (!qs.length) return { tested: arr.length, withQ: 0 };
+                    let b05 = 0, b50 = 0, min = Infinity;
+                    for (const q of qs) { if (q < 0.05) b05++; if (q < 0.5) b50++; if (q < min) min = q; }
+                    return { tested: arr.length, withQ: qs.length, qBelow0_05: b05, qBelow0_5: b50, minQ: parseFloat(min.toFixed(4)) };
+                };
+                extras.significanceSummary = {
+                    _readMe: 'The whole comparison at one glance, so the |difference| rankings above are never mistaken for a findings list. If qBelow0_05 is 0 for a measure, nothing on that measure survives multiple-testing correction, however large the top differences look.',
+                    geneEffect: _sigStats(rows),
+                    ...(exprRows.length ? { expression: _sigStats(exprRows) } : {})
+                };
+                extras.selectionDifferential_readMe = `One row per gene, ${context.testMethod} on the ${sel.length} selected lines vs ${sides?.cmpLabel || 'all other cell lines'}, gene by gene (context.testMethod names whichever test was actually selected in the panel; the two are not interchangeable). p is the raw two-sided value; q is Benjamini-Hochberg across every gene tested (${rows.length} for gene effect${exprRows.length ? `, ${exprRows.length} for expression` : ''}), so q is the number to read, not p. Both lists are sorted by |difference| and cut at the strongest 200, which is a display cap on THIS list only and unrelated to context.dataTier: a gene absent from here was tested, it simply was not in the top 200 by effect size (selectionDifferentialTopByQ is the significance-first companion cut). A gene was tested only when at least three measured lines were available on each side (or a whole side, when a side holds fewer than three); genes under that floor were not tested at all. WATCH THE n COLUMNS: genes screened in only a small library subset can top a |difference| ranking on a handful of lines, so read nSelection/nCompared before treating a top row as a finding, and read extras.significanceSummary before treating this ranking as a findings list.`
+                    + (this._geInspectMode === 'gateAB'
+                        ? ' In this gate comparison, meanSelection / nSelection are GATE A and meanCompared / nCompared are GATE B, and difference = meanSelection - meanCompared, so a NEGATIVE difference means gate A depends more (gene effect is negative for a dependency) and a POSITIVE one means gate B depends more.'
+                        : '');
             }
         } else if (source === 'clb') {
             const ticked = (this._clbSelectedCellLines?.size || 0);
@@ -31954,6 +32012,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             focalGeneVarianceCheck: 'The variance check having run and passed, stated rather than left to be inferred from a missing warning.',
             pairCorrelation: 'Scatter views. Pearson, Spearman, n and a two-sided p between the two axes actually plotted, in the filtered cohort. sameGenesOtherPairings carries the same two genes on other axis pairings where they were computed.',
             selectionDifferential: 'Selected cell lines vs the comparison set, gene by gene, on gene effect. See selectionDifferential_readMe for the test, the multiple-testing correction and the cap.',
+            selectionDifferentialTopByQ: 'The same per-gene comparison as selectionDifferential, cut by q ascending instead of |difference|, so the most significant genes are on hand even when they are not among the largest differences.',
+            selectionDifferentialExpressionTopByQ: 'The same per-gene expression comparison, cut by q ascending instead of |difference|.',
+            significanceSummary: 'Counts of genes below q 0.05 and q 0.5 per measure, and the minimum q reached. Read this before reading any ranked list.',
             selectionDifferentialExpression: 'As selectionDifferential, on expression instead of gene effect.',
             _method: 'How each summary above was computed.'
         };
@@ -31983,9 +32044,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             notIncluded: {
                 _readMe: 'Data the app holds but this file does not carry. If any of it would materially change the answer, say so and tell the user exactly which of these to fetch, rather than guessing or treating the absence as evidence.',
                 drugResponse: 'PRISM Repurposing drug sensitivity (AUC per cell line per compound) is NOT here. The user can get it from the Cell Line Browser: sort by "Drug response (PRISM AUC)", pick the compound, then "List on screen: CSV" for the visible cohort with its AUC values.',
-                growthRate: 'Where the app has it, CRISPR-inferred proliferation rate IS carried per cell line as cellLineMetadata[id].growthRate, because proliferation is the standard alternative explanation for a dependency of modest size. Lines without the field have no growth-rate estimate. The app also offers it as a pseudo-gene axis in the scatter.',
-                fullCopyNumber: 'Only the focal gene(s) relative copy number and the curated amplification / deletion calls per line are here. The genome-wide relative-CN matrix (~19 000 genes) is NOT, and can be added per gene from the Cell Line Browser copy-number sort.',
-                genesBelowThreshold: `Genes filtered out of the matrices by the data tier in force (${tierLabel}). A gene absent from geneEffect or expression was dropped by that filter or is missing from DepMap; it is not evidence of no effect. The focal gene and its named correlates are always kept.`,
+                fullCopyNumber: 'The genome-wide relative-CN matrix (~19 000 genes) is NOT here. What IS carried per line: the curated amplification / deletion calls (cellLineMetadata[id].cnEvents), plus, in views built around a focal gene, that gene\'s relative copy number. Per-gene values can be added from the Cell Line Browser copy-number sort.',
+                // Only stated when the tier actually filtered something: at
+                // the full tier this described an empty set while reading
+                // like a warning (blind-reader audit).
+                ...(geneCap !== Infinity || geCutoff > 0 ? {
+                    genesBelowThreshold: `Genes filtered out of the matrices by the data tier in force (${tierLabel}). A gene absent from geneEffect or expression was dropped by that filter or is missing from DepMap; it is not evidence of no effect. The focal gene and its named correlates are always kept.`
+                } : {}),
                 cellLinesOutsideCohort: 'Only the cohort described in `context` is here. Cell lines excluded by the active filters are absent by design; conclusions apply to this cohort, not to DepMap as a whole.',
                 rawFusionCalls: 'Only curated / validated driver fusions are here. The full raw RNA-seq fusion output (largely passengers and read-through artefacts) is NOT.',
                 viralTransformation: 'Cellosaurus records which cell lines were transformed by a virus (EBV, HPV16/18, HBV, KSHV, HTLV-1). Those calls are NOT in this file. They matter because viral oncoproteins override host pathways: an HPV-transformed line behaves as p53- and RB-deficient whatever its TP53 and RB1 sequence says, and an EBV-immortalised lymphoblastoid line is not a tumor line at all. The app shows the status on each cell line, and "Confirmed virus-transformed" is one of its curated collections. Note that absence of a record is not evidence a line is free of the virus.',
@@ -32039,7 +32104,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 { when: 'scans', text: "Step 2b - Before concluding a subgroup effect is ABSENT, check whether the precomputed scans could have detected it at that scope. topCorrelates / topCoessentials / topExpressionCorrelates are cohort-wide (see `scanScope`); an effect confined to a few lines is invisible in them by construction. Recompute inside the group, and score the group against extras.groupContrastNull for its size and against focalGeneRankAmongGenes, rather than eyeballing per-line percentiles: one line at the 6th percentile is unremarkable, four lines all there is not." },
                 { when: 'always', text: "Step 2c - Do not enter the data through the raw per-line leaderboard. The lines with the most negative score for any gene are disproportionately lines whose whole screen reads sensitive, so a straight sort surfaces the same tumour-suppressor-loss lines whatever gene you ask about, across unrelated tissues, and it is easy to mistake that for a finding. Enter through the grouped summaries, and check meanGeneEffectPercentile on any line before naming it." },
                 { when: 'groups', text: "Step 3 - Deep analysis: Work data-first. Use the precomputed extras (focalGeneTissueSummary for per-tissue/subtype means, focalGeneMutationSummary for driver-mutation effects) before scanning the matrix gene-by-gene. Characterize unbiased genome-wide hits and annotate by pathway before testing hypothesis-driven candidate gene lists. After finding one explanatory model, actively search for alternative or complementary axes. Report all major signals, not just the first plausible one." },
-                { when: 'always', text: "Step 3b - Name the gaps: if answering the question properly would need something in `notIncluded` (drug response, growth rate, genome-wide copy number, viral transformation status, cell lines outside this cohort), say so plainly and tell the user which export would supply it. Do not treat an absent layer as a negative result." },
+                { when: 'always', text: "Step 3b - Name the gaps: if answering the question properly would need something in `notIncluded` (drug response, genome-wide copy number, viral transformation status, cell lines outside this cohort), say so plainly and tell the user which export would supply it. Do not treat an absent layer as a negative result." },
                 { when: 'always', text: "Step 3c - Write for the person, not the file: the reader has not seen this file and does not know its field names. Translate every internal name into plain language before it reaches your reply, and lead with the biological answer rather than the evidence trail." },
             ],
             context,
@@ -32387,7 +32452,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             exportData.whatIsInThisFile = {
                 _readMe: 'The sections this file actually contains, and the ones it does not. '
                     + 'Check here before hunting for something: a section listed under `absent` is not '
-                    + 'missing data, it simply does not apply to the view this was exported from.',
+                    + 'missing data, it simply does not apply to the view this was exported from. '
+                    + 'present/absent cover the OPTIONAL sections only; context, cellLineOrder, question, '
+                    + 'notIncluded, dataStructure and the instruction blocks are in every export and are '
+                    + 'not listed here.',
                 view: context?.type || 'unknown',
                 present,
                 absent,
@@ -32415,6 +32483,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                         say(has(m => m?.signatures?.ploidy != null), 'ploidy / genome-instability signatures, at cellLineMetadata[id].signatures'),
                         say(has(m => m?.oncotreeSubtype), 'fine-grained Oncotree disease subtype, at cellLineMetadata[id].oncotreeSubtype'),
                         say(has(m => m?.meanGeneEffectPercentile != null), 'how globally sensitive that line\'s whole screen is, at cellLineMetadata[id].meanGeneEffectPercentile'),
+                        say(has(m => m?.meanGeneEffect != null), 'the raw mean gene effect behind that percentile, at cellLineMetadata[id].meanGeneEffect'),
+                        say(has(m => m?.donor), 'donor age, age category, sex, primary-vs-metastasis and collection site, at cellLineMetadata[id].donor'),
+                        say(has(m => m?.oncotreeCode), 'the Oncotree disease CODE, at cellLineMetadata[id].oncotreeCode'),
+                        say(has(m => m?.rrid), 'the Cellosaurus RRID identifier, at cellLineMetadata[id].rrid'),
+                        say(has(m => m?.signatures?.wgd != null), 'whole-genome doubling status, at cellLineMetadata[id].signatures.wgd'),
+                        say(has(m => m?.inferred?.specificVariants?.length), 'specific hotspot variant calls (e.g. KRAS p.G12D), at cellLineMetadata[id].inferred.specificVariants'),
+                        say(has(m => m?.inferred?.namedFusions?.length), 'inferred named fusions, at cellLineMetadata[id].inferred.namedFusions'),
+                        say(has(m => m?.lehmannTnbc), 'Lehmann TNBC subtype, at cellLineMetadata[id].lehmannTnbc'),
                         'Beware when searching this file by keyword: MSI1 and MSI2 are ordinary gene symbols (Musashi RNA-binding proteins) with nothing to do with microsatellite instability, and they appear throughout the mutation blocks.'
                     ];
                 })()
@@ -32506,6 +32582,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 const CAP_RULE = {
                     selectionDifferential: 'sorted by |difference| and cut at the strongest 200',
                     selectionDifferentialExpression: 'sorted by |difference| and cut at the strongest 200',
+                    selectionDifferentialTopByQ: 'sorted by q ascending and cut at 50, the significance-first companion to the |difference| list',
+                    selectionDifferentialExpressionTopByQ: 'sorted by q ascending and cut at 50, the significance-first companion to the |difference| list',
                     correlationsBelowCutoff: 'only pairs clearing a magnitude floor were recorded at all, then sorted by |r| and cut at 300',
                     correlationPairsBelowCutoff: 'sorted by |r| and cut at 30'
                 };
