@@ -1887,6 +1887,9 @@
         .clb-enrichr-btn { font-size: 9px; padding: 1px 5px; background: none; border: 1px solid #9ca3af;
             border-radius: 3px; color: #6b7280; cursor: pointer; margin-left: 4px; vertical-align: middle; }
         .clb-enrichr-btn:hover { border-color: var(--green-500); color: var(--green-700); }
+        .clb-heatmap-btn { font-size: 9px; padding: 1px 5px; background: none; border: 1px solid #9ca3af;
+            border-radius: 3px; color: #6b7280; cursor: pointer; margin-left: 2px; vertical-align: middle; }
+        .clb-heatmap-btn:hover { border-color: var(--green-500); color: var(--green-700); }
         .clb-detail-placeholder { color: var(--gray-500); font-size: 12px; padding: 20px 0; text-align: center; }
         .clb-no-results { text-align: center; color: var(--gray-500); padding: 40px 0; font-size: 13px; }
         .clb-selection-count { font-size: 11px; color: var(--gray-500); white-space: nowrap; }
@@ -2522,7 +2525,7 @@
             .modal-close,
             #clbCloseBtn, #clbWikiCloseBtn, #clbInfoCloseBtn,
             #clbCustomCLClose, #selectionInspectClose, #closeInspect,
-            #closeCorrAnalysis, #closeGeneEffect, #closeGateCompare,
+            #closeCorrAnalysis, #closeGeneEffect,
             #closeGEGateCompare, #closeInfoGraphic, #closeExprCorrelatesPanel,
             #aiAnalysisDialogClose, #enrichrCloseBtn, #exportOptionsClose {
                 min-width: 44px !important;
@@ -2570,6 +2573,13 @@
             #inspectModalInner .modal-header .btn-outline[onclick*="NewTab"],
             #geneEffectModalInner .modal-header .btn-outline[onclick*="NewTab"],
             #corrAnalysisModalInner .modal-header .btn-outline[onclick*="NewTab"] { display: none !important; }
+            /* Network -> Heatmap, view-only on a phone: the grid scroller
+               pans with a finger (default overflow-x:auto, nothing here sets
+               touch-action:none to block it) and the footer's Close button
+               stays a reachable 44px even though .modal-footer isn't covered
+               by the generic .modal-body/.sidebar button upsizing above. */
+            #hmGridScroll { touch-action: pan-x pan-y; -webkit-overflow-scrolling: touch; }
+            #heatmapModal .modal-footer .btn { min-height: 44px !important; }
         }
         /* Expression Correlates needs a mutation-analysis subgroup context, which
            the condensed popout (opened from the Cell Line Browser) doesn't have,
@@ -2641,6 +2651,7 @@
                         <li>OmicsGlobalSignatures.csv <span style="color:#999;">(WGD, ploidy, CIN, aneuploidy)</span></li>
                         <li>Model.csv <span style="color:#999;">(cell-line metadata)</span></li>
                         <li>PRISM Repurposing Secondary <span style="color:#999;">(drug response, curated panel of ~90 compounds)</span></li>
+                        <li>OmicsCNGeneWGS.csv / OmicsCNGene.csv <span style="color:#999;">(full gene-level copy number, all genes; WGS-derived calls first, with the 24Q4 gene matrix filling in lines never WGS'd)</span></li>
                     </ul>
                     <p style="margin: 12px 0 0 0; font-weight:600; color:#374151;">Pathway / complex memberships</p>
                     <ul style="margin: 4px 0 0 0; padding-left: 18px;">
@@ -2655,6 +2666,8 @@
                         <li>Lehmann TNBC subtypes <span style="color:#999;">(Lehmann <em>JCI</em> 2011 + 2016 update; BL1/BL2/IM/M/MSL/LAR for ~22 TNBC lines)</span></li>
                         <li>Focal CN events <span style="color:#999;">(curated panel of ~32 amps + ~14 extended TSG deletions; from <code>OmicsCNGeneWGS.csv</code>)</span></li>
                         <li>HLA copy number <span style="color:#999;">(extracted from <code>OmicsCNGeneWGS.csv</code>; B2M-normalized to control for HLA-C mapping bias)</span></li>
+                        <li>Retroelement signal <span style="color:#999;">(RNA output of 750 full-length LINE-1 / HERV-K / SVA elements outside genes, quantified from the public CCLE RNA sequencing files; 669 lines have data)</span></li>
+                        <li>Interferon score <span style="color:#999;">(computed in-app: mean z-score of 34 interferon-stimulated genes from the expression matrix)</span></li>
                         <li>STR profiles <span style="color:#999;">(Cellosaurus reference panels)</span></li>
                         <li>Published fusion calls <span style="color:#999;">(<a href="https://www.cellosaurus.org/" target="_blank" style="color:#0066cc;" rel="noopener noreferrer">Cellosaurus</a>; fills in cell lines with no RNA-seq, and recurrent driver fusions the caller did not report)</span></li>
                         <li>Problematic cell lines <span style="color:#999;">(<a href="https://www.cellosaurus.org/" target="_blank" style="color:#0066cc;" rel="noopener noreferrer">Cellosaurus</a>; contaminated / misidentified / misclassified flags, 56 lines in this panel)</span></li>
@@ -3251,9 +3264,9 @@
                                 <button class="btn btn-secondary" id="netEnrichrBtn" aria-haspopup="true" aria-expanded="false" title="Pathway enrichment via Enrichr, for the genes you typed in or for the ones actually drawn">Enrichr &#9662;</button>
                                 <div id="netEnrichrMenu" style="display:none; position:absolute; top:calc(100% + 4px); left:0; z-index:1500; background:#fff; border:1px solid var(--gray-200); border-radius:6px; box-shadow:0 6px 18px rgba(0,0,0,0.14); min-width:230px; padding:4px;">
                                     <div style="font-size:10px; color:#9ca3af; padding:3px 10px 4px;">Which genes to send?</div>
-                                    <button class="options-menu-item" data-net-enrichr="input" title="Every gene in the box above, whether or not it reached the picture">All genes</button>
+                                    <button class="options-menu-item" data-net-enrichr="input" title="Every gene in the box above, whether or not it reached the picture">All input genes</button>
                                     <button class="options-menu-item" data-net-enrichr="correlated" title="The genes that are actually connected to something: the clusters, without the unconnected genes parked to the side">Correlated genes (the clusters)</button>
-                                    <button class="options-menu-item" data-net-enrichr="drawn" title="Every gene drawn, clusters and unconnected genes alike">Everything in the image</button>
+                                    <button class="options-menu-item" data-net-enrichr="drawn" title="Every gene drawn, clusters and unconnected genes alike">Everything in the network</button>
                                     <div style="border-top:1px solid #e5e7eb; margin:4px 0 0; padding-top:4px;">
                                         <a href="https://maayanlab.cloud/Enrichr/" target="_blank" rel="noopener" class="options-menu-item" style="color:#9ca3af; font-size:10px; text-decoration:none; display:block;">About Enrichr &#8599;</a>
                                     </div>
@@ -3278,6 +3291,16 @@
                                 <button class="btn btn-secondary mobile-hide" onclick="app.copyNetworkToClipboard()" title="Copy the network as an image to the clipboard, legend included, ready to paste into an email or slide">Copy network</button>
                                 <button class="btn btn-secondary" id="downloadNetworkSVG" style="display:none;">SVG</button>
                                 <button class="btn btn-secondary" id="networkAnalyzeWithAI" title="Package this network as one compressed file for a language model: gene effect, expression and mutation data plus the settings, with a description of every field">Export for AI</button>
+                                <button class="btn btn-secondary mobile-hide" onclick="app.openMethods('network')" title="Write out how this network was made, as a methods paragraph and as a plain walk-through">Methods</button>
+                                <span id="networkHeatmapWrap" style="position:relative; display:inline-flex; flex:1;">
+                                    <button class="btn btn-secondary" id="networkHeatmapBtn" aria-haspopup="true" aria-expanded="false" style="flex:1;" title="Draw the network's genes as a gene set heatmap">Heatmap &#9662;</button>
+                                    <div id="networkHeatmapMenu" style="display:none; position:absolute; top:calc(100% + 4px); left:0; z-index:1500; background:#fff; border:1px solid var(--gray-200); border-radius:6px; box-shadow:0 6px 18px rgba(0,0,0,0.14); min-width:230px; padding:4px;">
+                                        <div style="font-size:10px; color:#9ca3af; padding:3px 10px 4px;">Which genes to draw?</div>
+                                        <button class="options-menu-item" id="networkHeatmapEntered" data-net-heatmap="entered" data-base-title="Only the genes you typed into the input list; when filtered, the heatmap opens on the same cell lines the analysis was run on">Genes I entered (<span data-count>0</span>)</button>
+                                        <button class="options-menu-item" id="networkHeatmapAll" data-net-heatmap="all" data-base-title="Every gene node drawn in the network; when filtered, the heatmap opens on the same cell lines the analysis was run on">All network genes (<span data-count>0</span>)</button>
+                                        <button class="options-menu-item" id="networkHeatmapCorrelating" data-net-heatmap="correlating" data-base-title="Network genes that were not part of your input, the ones the correlation surfaced; when filtered, the heatmap opens on the same cell lines the analysis was run on">Correlating genes only (<span data-count>0</span>)</button>
+                                    </div>
+                                </span>
                                 <button class="btn btn-secondary" id="downloadAllData" title="Download everything behind this run as one zip: the correlation table, the clusters, the gene-effect values for the genes in the network, and the settings used, as CSV files you can open in a spreadsheet, R or similar">All Data (ZIP)</button>
                             </div>
                         </div>
@@ -3338,6 +3361,7 @@
                         <label id="showBelowCutoffWrap" style="display:none; align-items:center; gap:4px; font-size:11px; color:#374151; cursor:pointer; white-space:nowrap;" title="Also list the pairs that fell just short of the correlation cutoff, so a borderline result is still visible. They appear grayed below a divider and are not part of the network or the clusters."><input type="checkbox" id="showBelowCutoff"> below cutoff</label>
                         <button class="btn btn-outline btn-sm" id="copyCorrelationGenes" title="Copy gene names to clipboard">Copy Genes</button>
                         <button class="btn btn-outline btn-sm" id="downloadCorrelations" title="Download the correlation table as a CSV file">Download CSV</button>
+                        <button class="btn btn-outline btn-sm mobile-hide" onclick="app.openMethods('correlations')" title="Write out how this table was made, as a methods paragraph and as a plain walk-through">Methods</button>
                         <button class="btn btn-secondary btn-sm enrichrBtn" data-source="correlations" title="Pathway enrichment analysis via Enrichr">Enrichr</button><a href="https://maayanlab.cloud/Enrichr/" target="_blank" rel="noopener" title="Enrichr, Ma'ayan Lab" style="color:#9ca3af; font-size:10px; margin-left:2px; text-decoration:none;">&#8599;</a>
                         <!-- AI button removed, Full Export supersedes it -->
                     </div>
@@ -3373,6 +3397,7 @@
                         <label id="showBelowCutoffClustersWrap" style="display:none; align-items:center; gap:4px; font-size:11px; color:#374151; cursor:pointer; white-space:nowrap;" title="Also list the input genes without correlations, grayed. Genes whose best pair just missed the cutoff say Below cutoff in the Correlation column; any such gene not otherwise listed is added at the bottom. Context only: these are not in the network and have no cluster."><input type="checkbox" id="showBelowCutoffClusters"> below cutoff</label>
                         <button class="btn btn-outline btn-sm" id="copyClustersGenes" title="Copy gene names to clipboard">Copy Genes</button>
                         <button class="btn btn-outline btn-sm" id="downloadClusters" title="Download the cluster table as a CSV file">Download CSV</button>
+                        <button class="btn btn-outline btn-sm mobile-hide" onclick="app.openMethods('clusters')" title="Write out how these clusters were made, as a methods paragraph and as a plain walk-through">Methods</button>
                         <button class="btn btn-secondary btn-sm enrichrBtn" data-source="clusters" title="Pathway enrichment analysis via Enrichr">Enrichr</button><a href="https://maayanlab.cloud/Enrichr/" target="_blank" rel="noopener" title="Enrichr, Ma'ayan Lab" style="color:#9ca3af; font-size:10px; margin-left:2px; text-decoration:none;">&#8599;</a>
                         <!-- AI button removed, Full Export supersedes it -->
                     </div>
@@ -3442,6 +3467,7 @@
                                 </div>
                             </div>
                         </div>
+                        <button class="btn btn-secondary btn-sm" id="mutHeatmapBtn" title="Open the top genes from this table in the heatmap, on this analysis' own cell lines">Open in heatmap &#9662;</button>
                         <select id="mutEnrichrFilter" style="display:none;">
                             <option value="all">All sig.</option>
                             <option value="top10">Top 10</option>
@@ -3457,6 +3483,7 @@
                         <button class="btn btn-outline btn-sm" id="mutAnalyzeWithAI" style="font-size:10px;" title="Package this view as one compressed file for a language model: gene effect, expression and mutation data plus the settings, with a description of every field">Export for AI</button>
                         <button class="btn btn-outline btn-sm mobile-hide" id="exportMutTablePNG" title="Export the visible table, choose PNG / SVG / TIFF / PDF / PowerPoint in the popup">Export image...</button>
                                 <button class="btn btn-outline btn-sm mobile-hide" onclick="app.copyPlotToClipboard('mutationTable', 'Table')" title="Copy this as an image to the clipboard, ready to paste into an email or slide">Copy</button>
+                        <button class="btn btn-outline btn-sm mobile-hide" onclick="app.openMethods('mutation')" title="Write out how this analysis was made, as a methods paragraph and as a plain walk-through">Methods</button>
                         <span style="border-left: 1px solid #d1d5db; height: 16px; margin: 0 2px;"></span>
                         <button class="btn btn-outline btn-sm" id="copyMutationGenes" title="Copy gene names to clipboard">Copy Genes</button>
                         <button class="btn btn-outline btn-sm" id="filterMutationToggle" title="Toggle column value filters">Filters</button>
@@ -3756,7 +3783,7 @@
                                 <span style="font-size:11px; color:#666;">Gate:</span>
                                 <button class="btn btn-sm" id="setGateABtn" style="font-size:10px; padding:2px 6px; background:#2563eb; color:white;">Set Gate A</button>
                                 <button class="btn btn-sm" id="setGateBBtn" style="font-size:10px; padding:2px 6px; background:#dc2626; color:white;" disabled>Set Gate B</button>
-                                <button class="btn btn-success btn-sm" id="compareGatesBtn" style="font-size:10px; padding:2px 5px; display:none;">Compare</button>
+                                <button class="btn btn-success btn-sm" id="compareGatesBtn" style="font-size:10px; padding:2px 5px; display:none;" title="Compare the two gates: ranked gene tables, where their cell lines come from, and how their alterations differ. Opens the same comparison view the Cell Line Browser and the heatmap use.">Compare</button>
                                 <button class="btn btn-sm" id="gateAsFilterBtn" style="font-size:10px; padding:2px 5px; display:none; background:#7c3aed; color:white;" title="Keep only the cell lines inside a gate, the way a FACS gate carries a population forward. Every other filter still applies on top, and the gating plot is kept underneath and travels into the exported image.">Apply gate as filter</button>
                                 <button class="btn btn-outline btn-sm" id="clearGateFilterBtn" style="font-size:10px; padding:2px 5px; display:none; border-color:#7c3aed; color:#7c3aed;" title="Stop filtering on the gate and go back to the full cohort.">Clear gate filter</button>
                                 <button class="btn btn-outline btn-sm" id="clearGatesBtn" style="font-size:10px; padding:2px 5px; display:none;">Clear</button>
@@ -3790,7 +3817,6 @@
                         <div id="compareTable" style="display: none; max-height: 500px; overflow-y: auto;"></div>
                     </div>
                 </div>
-                <!-- Gate Comparison Results -->
                 <!-- The plot the gate was drawn on, kept so a filtered figure still
                      shows where its population came from. -->
                 <div id="gateFilterPanel" class="mobile-hide" style="display:none; margin-top:15px; border:1px solid #ddd6fe; border-radius:8px; overflow:hidden;">
@@ -3804,33 +3830,6 @@
                     </div>
                 </div>
 
-                <div id="gateComparePanel" class="mobile-hide" style="display: none; margin-top: 15px; border: 2px solid #6ba544; border-radius: 8px; overflow: hidden;">
-                    <div style="background: #6ba544; color: white; padding: 8px 15px; font-weight: 600; font-size: 13px; display: flex; justify-content: space-between; align-items: center;">
-                        <span>Gate Comparison: <span id="gateCompareTitle">Gate A vs Gate B</span></span>
-                        <div style="display: flex; align-items: center; gap: 8px;">
-                            <span style="font-size:10px;color:rgba(255,255,255,0.8);margin-right:2px;">Export:</span>
-                            <button id="exportGateReportImage" class="btn btn-sm" style="font-size: 10px; padding: 2px 8px; background: #374151; color: white;" title="Export the gate comparison, choose PNG or SVG in the popup">Export image...</button>
-                            <button id="gateAnalyzeWithAI" class="btn btn-sm" style="font-size: 10px; padding: 2px 8px; background: #374151; color: white;" title="Package both gates for a language model and ask what distinguishes them, using the omics data behind the plot rather than only what is drawn">Export for AI</button>
-                            <button id="closeGateCompare" style="background: none; border: none; color: white; font-size: 18px; cursor: pointer; padding: 0; line-height: 1;">&times;</button>
-                        </div>
-                    </div>
-                    <div style="padding: 15px;">
-                        <!-- Gate summary -->
-                        <div style="display: flex; gap: 20px; margin-bottom: 15px; font-size: 12px;">
-                            <div><span style="display: inline-block; width: 12px; height: 12px; background: #2563eb; border-radius: 2px; margin-right: 4px; vertical-align: middle;"></span><strong>Gate A:</strong> <span id="gateASummary">-</span></div>
-                            <div><span style="display: inline-block; width: 12px; height: 12px; background: #dc2626; border-radius: 2px; margin-right: 4px; vertical-align: middle;"></span><strong>Gate B:</strong> <span id="gateBSummary">-</span></div>
-                        </div>
-                        <!-- Tabs -->
-                        <div style="display: flex; gap: 4px; margin-bottom: 10px; border-bottom: 1px solid #e5e7eb; padding-bottom: 8px;">
-                            <button class="btn btn-sm gate-tab active" data-gate-tab="tissue" style="font-size: 11px; padding: 3px 10px;">Tissue</button>
-                            <button class="btn btn-sm gate-tab" data-gate-tab="mutations" style="font-size: 11px; padding: 3px 10px;">Mutations</button>
-                            <button class="btn btn-sm gate-tab" data-gate-tab="diffge" style="font-size: 11px; padding: 3px 10px;">Δ Gene Effect</button>
-                            <button class="btn btn-sm gate-tab" data-gate-tab="expression" style="font-size: 11px; padding: 3px 10px;">Expression</button>
-                        </div>
-                        <div id="gateCompareContent" style="max-height: 400px; overflow-y: auto; overscroll-behavior: contain;"></div>
-                    </div>
-                </div>
-
                 <div id="byTissueContainer" style="display: none;"></div>
             </div>
             <div class="modal-footer" style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
@@ -3841,6 +3840,7 @@
                                 <button class="btn btn-outline btn-sm mobile-hide" onclick="app.copyPlotToClipboard('scatterPlot', 'Scatter')" title="Copy this as an image to the clipboard, ready to paste into an email or slide">Copy</button>
                 <button class="btn btn-outline btn-sm" id="downloadScatterCSV" title="Download data as CSV spreadsheet">.csv</button>
                 <button class="btn btn-outline btn-sm" id="scatterAnalyzeWithAI" title="Package this view as one compressed file for a language model: gene effect, expression and mutation data plus the settings, with a description of every field">Export for AI</button>
+                <button class="btn btn-outline btn-sm mobile-hide" onclick="app.openMethods('scatter')" title="Write out how this plot was made, as a methods paragraph and as a plain walk-through">Methods</button>
                 <button class="btn btn-outline btn-sm mobile-hide" id="downloadTissuePNG" style="display:none;" title="Export the tissue chart, choose PNG / SVG / TIFF / PDF / PowerPoint in the popup">Export image...</button>
                                 <button class="btn btn-outline btn-sm mobile-hide" id="copyTissueChart" style="display:none;" onclick="app.copyPlotToClipboard('byTissueChart', 'Chart')" title="Copy this as an image to the clipboard, ready to paste into an email or slide">Copy</button>
                 <button class="btn btn-outline btn-sm" id="downloadTissueCSV" style="display:none;" title="Download tissue table as CSV">.csv</button>
@@ -4150,13 +4150,14 @@
                     </span>
                     <span style="border-left: 1px solid #d1d5db; height: 20px; margin: 0 4px;"></span>
                     <button class="btn btn-outline btn-sm" id="geAnalyzeWithAI" style="font-size:11px;" title="Package this view as one compressed file for a language model: gene effect, expression and mutation data plus the settings, with a description of every field">Export for AI</button>
+                    <button class="btn btn-outline btn-sm mobile-hide" style="font-size:11px;" onclick="app.openMethods('ge')" title="Write out how this chart was made, as a methods paragraph and as a plain walk-through">Methods</button>
                     <button class="btn btn-sm" id="toggleExprCorrelatesBtn" style="background: #6ba544; color: white; display: none;">Expression Correlates</button>
                 </div>
 
                 <!-- Inline placeholder retained so the GE modal still has a
                      vertical anchor; the actual dialog lives at body level
-                     below as a fixed overlay so it works for all 8 source
-                     buttons (gene effect / scatter / mutation / gates /
+                     below as a fixed overlay so it works for every source
+                     button (gene effect / scatter / mutation /
                      correlations / clusters / expression correlates). -->
                 <div id="aiAnalysisDialogAnchor" style="display:none;"></div>
 
@@ -4184,6 +4185,7 @@
                             <button class="btn btn-sm" id="runExprCorrelatesBtn" style="background: #6ba544; color: white;">Run</button>
                             <span id="exprCorrelatesStatus" style="font-size: 12px; color: #6b7280;"></span>
                             <button class="btn btn-outline btn-sm" id="downloadExprCorrelatesCSV" style="display: none; margin-left: auto; border-color: #6ba544; color: #5d9239;" title="Download the correlate list as a CSV file">Export CSV</button>
+                            <button class="btn btn-outline btn-sm mobile-hide" onclick="app.openMethods('exprCorrelates')" style="border-color: #6ba544; color: #5d9239;" title="Write out how this list was made, as a methods paragraph and as a plain walk-through">Methods</button>
                         </div>
 
                         <!-- Loading indicator -->
@@ -4225,6 +4227,7 @@
                                 <div style="display: flex; gap: 6px;">
                                     <button class="btn btn-outline btn-sm mobile-hide" id="downloadExprScatterPNG" style="border-color: #6ba544; color: #5d9239;" title="Export the chart, choose PNG / SVG / TIFF / PDF / PowerPoint in the popup">Export image...</button>
                                     <button class="btn btn-outline btn-sm mobile-hide" style="border-color: #6ba544; color: #5d9239;" onclick="app.copyPlotToClipboard('exprCorrelateScatterPlot', 'Scatter')" title="Copy this as an image to the clipboard, ready to paste into an email or slide">Copy</button>
+                                    <button class="btn btn-outline btn-sm mobile-hide" style="border-color: #6ba544; color: #5d9239;" onclick="app.openMethods('exprCorrelates')" title="Write out how this plot was made, as a methods paragraph and as a plain walk-through">Methods</button>
                                 </div>
                             </div>
                             <div id="exprScatterGeneInputs" style="display:flex; gap:12px; align-items:center; margin-bottom:8px; flex-wrap:wrap;">
@@ -4393,6 +4396,7 @@
                     <button class="btn btn-outline btn-sm" id="downloadCorrAnalysisCSV" title="Download the table above as a CSV file">By Group</button>
                     <button class="btn btn-outline btn-sm" id="downloadCACellLineCSV" title="Download the per-cell-line values behind this view as a CSV file">By Cell Line</button>
                     </span>
+                    <button class="btn btn-outline btn-sm mobile-hide" onclick="app.openMethods('corrAnalysis')" title="Write out how this chart was made, as a methods paragraph and as a plain walk-through">Methods</button>
                 </div>
             </div>
         </div>
@@ -4423,6 +4427,43 @@
                 </div>
             </div>
             <div id="collectionsInfoBody" style="padding:14px 18px; overflow-y:auto; font-size:12px; color:#374151; line-height:1.55;"></div>
+        </div>
+    </div>
+
+    <!-- Methods. One shared dialog for every view that exports an image or a
+         .csv: app.openMethods('<view key>') fills it from live state through
+         _methodsFor(). Two registers of the same facts, a manuscript
+         paragraph and a plain walk-through, each with its own Copy, plus one
+         Download .txt carrying both. z-index sits above every analysis view
+         (heatmap / inspect / browser at 1300-1400) and below the AI export
+         dialog at 2500, since either can be raised over the same view. -->
+    <div id="methodsModal" style="display:none; position:fixed; inset:0; z-index:2400; background:rgba(0,0,0,0.5); align-items:flex-start; justify-content:center; padding:20px; overflow-y:auto;">
+        <div style="background:#fff; width:100%; max-width:min(94vw,880px); max-height:calc(100vh - 40px); border-radius:8px; display:flex; flex-direction:column; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);">
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 18px; border-bottom:1px solid #e5e7eb; background:linear-gradient(90deg,#f0fdf4 0%,#fff 100%);">
+                <div style="min-width:0;">
+                    <h3 style="margin:0; font-size:17px; color:#4c782e;">Methods</h3>
+                    <div id="methodsViewLabel" style="font-size:11px; color:#6b7280; margin-top:2px;"></div>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px; flex:0 0 auto;">
+                    <button id="methodsDownloadBtn" class="btn btn-outline btn-sm" style="font-size:11px;" title="Save both sections as one text file, named with the DepMap release and today's date">Download .txt</button>
+                    <button id="methodsCloseBtn" style="background:none; border:none; font-size:24px; cursor:pointer; line-height:1; color:#6b7280;" title="Close">&times;</button>
+                </div>
+            </div>
+            <div style="padding:14px 18px; overflow-y:auto;">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:6px;">
+                    <b style="font-size:13px; color:#374151;">Condensed</b>
+                    <button id="methodsCopyCondensed" class="btn btn-outline btn-sm" style="font-size:11px;" title="Copy this paragraph to the clipboard">Copy</button>
+                </div>
+                <p style="margin:0 0 6px; font-size:11px; color:#6b7280;">One paragraph, past tense, ready to paste into a materials and methods section.</p>
+                <div id="methodsCondensed" style="white-space:pre-wrap; font-size:12px; line-height:1.6; color:#1f2937; background:#f9fafb; border:1px solid #e5e7eb; border-radius:6px; padding:12px 14px;"></div>
+
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin:18px 0 6px;">
+                    <b style="font-size:13px; color:#374151;">In detail</b>
+                    <button id="methodsCopyLong" class="btn btn-outline btn-sm" style="font-size:11px;" title="Copy this walk-through to the clipboard">Copy</button>
+                </div>
+                <p style="margin:0 0 6px; font-size:11px; color:#6b7280;">A longer walk-through in plain language: what was set up, what the figure or table shows, and what the numbers mean.</p>
+                <div id="methodsLong" style="white-space:pre-wrap; font-size:12px; line-height:1.6; color:#1f2937; background:#f9fafb; border:1px solid #e5e7eb; border-radius:6px; padding:12px 14px;"></div>
+            </div>
         </div>
     </div>
 
@@ -4460,6 +4501,7 @@
                 <button id="selectionInspectCSV" class="btn btn-outline btn-sm" style="font-size:11px; display:none;" title="One row per gene, for EVERY gene tested, not only the ones on screen: its mean in the selection, its mean in the comparison group, the difference, p and q, for both measures.">.csv, all genes</button>
                 <button id="selectionInspectCSVCells" class="btn btn-outline btn-sm" style="font-size:11px; display:none;" title="One row per cell line and a column per gene, so each line's own values are visible rather than the group means. Covers only the genes the tables are currently showing, strongest difference first, up to 300 of them.">.csv, shown genes per cell line</button>
                 <button id="selectionInspectAI" class="btn btn-outline btn-sm" style="font-size:11px; display:none;" title="Package this comparison for a language model: the selected cell lines, the differences for every gene, and the settings that produced them. Not the same file as the browser's own Export for AI, which sends the cell line list without a comparison.">Export for AI</button>
+                <button class="btn btn-outline btn-sm mobile-hide" style="font-size:11px;" onclick="app.openMethods('selection')" title="Write out how this comparison was made, as a methods paragraph and as a plain walk-through">Methods</button>
                 <span style="flex:1 1 auto;"></span>
                 <button id="selectionInspectClose2" class="btn btn-secondary btn-sm">Close</button>
             </div>
@@ -4476,134 +4518,145 @@
                 <button id="heatmapClose" class="modal-close" title="Close">&times;</button>
             </div>
             <div class="modal-body" style="font-size:12px; color:#374151;">
-                <div style="display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; margin-bottom:8px;">
-                    <div>
-                        <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">Gene set</label>
-                        <select id="hmPreset" style="font-size:11px; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px;"></select>
+                <div class="clb-toolbar" style="margin-bottom:8px; border-top:1px solid var(--gray-200);">
+                    <div class="clb-row">
+                        <span class="clb-row-label">Gene set</span>
+                        <div class="clb-row-items">
+                            <select id="hmPreset" style="width:230px;"></select>
+                            <select id="hmDataType" style="width:180px;" title="mRNA expression (log2 TPM+1) or CRISPR gene effect (Chronos)">
+                                <option value="expr" selected>mRNA expression</option>
+                                <option value="ge">CRISPR gene effect</option>
+                            </select>
+                            <select id="hmScale" style="width:200px;" title="Z-score compares each gene to its own spread; choose whether that spread is measured across only the cell lines shown or across the whole panel. Raw values keep their original units">
+                                <option value="z">Z-score, vs shown lines</option>
+                                <option value="zall" selected>Z-score, vs all lines</option>
+                                <option value="raw">Raw values</option>
+                            </select>
+                            <span style="color:#9ca3af; font-size:10px; cursor:help; border:1px solid #d1d5db; border-radius:50%; padding:0 5px;" title="How the colours are computed. Z-score, vs shown lines: each GENE is centred on its own mean and scaled by its own spread across the cell lines currently drawn, so every row uses the full colour range and rows are comparable; a cell says how that line sits for that gene relative to the other shown lines. Z-score, vs all lines: same per-gene scaling but measured across every cell line in the panel, so a cell says how the line sits against all cancers even when only a subset is drawn. Raw values: the actual units (log2 TPM+1 for expression, Chronos score for gene effect), one shared scale for the whole grid, rows with naturally high levels dominate the colours. Normalisation is always per gene, never across the whole gene set.">?</span>
+                        </div>
                     </div>
-                    <div>
-                        <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">Data</label>
-                        <select id="hmDataType" style="font-size:11px; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px;" title="mRNA expression (log2 TPM+1) or CRISPR gene effect (Chronos)">
-                            <option value="expr" selected>mRNA expression</option>
-                            <option value="ge">CRISPR gene effect</option>
-                        </select>
+                    <div class="clb-row clb-row-alt">
+                        <span class="clb-row-label">Clustering</span>
+                        <div class="clb-row-items">
+                            <label style="display:flex; align-items:center; gap:4px; font-size:12px; color:#374151; cursor:pointer;" title="Order the gene rows by how alike their profiles are, regardless of how cell lines are sorted, and draw the tree that produced the order">
+                                <input type="checkbox" id="hmClusterGenes" checked style="margin:0;"> Cluster genes
+                            </label>
+                            <select id="hmGeneClusterK" style="width:150px;" title="Colour the gene tree's branches by subtree: how many groups to cut it into. Tree order only keeps the tree plain gray. Display only, the row order never changes.">
+                                <option value="0" selected>Tree order only</option>
+                                <option value="auto">Auto (suggested)</option>
+                                <option value="2">2 groups</option>
+                                <option value="3">3 groups</option>
+                                <option value="4">4 groups</option>
+                                <option value="5">5 groups</option>
+                                <option value="6">6 groups</option>
+                                <option value="7">7 groups</option>
+                                <option value="8">8 groups</option>
+                                <option value="9">9 groups</option>
+                                <option value="10">10 groups</option>
+                                <option value="11">11 groups</option>
+                                <option value="12">12 groups</option>
+                            </select>
+                            <select id="hmTreeDetailGenes" style="width:110px;" title="Drawing detail only, does not change the clustering: How much branch detail the gene tree on the left draws">
+                                <option value="full" selected>Full</option>
+                                <option value="medium">Medium</option>
+                                <option value="coarse">Coarse</option>
+                                <option value="xcoarse">Very coarse</option>
+                                <option value="minimal">Minimal</option>
+                            </select>
+                            <label style="display:flex; align-items:center; gap:4px; font-size:12px; color:#374151; cursor:pointer;" title="Adds a Cell-line clusters annotation row that orders the columns by similarity. Move it below another toggled row to cluster within that row's blocks instead">
+                                <input type="checkbox" id="hmClusterCells" style="margin:0;"> Cluster cell lines
+                            </label>
+                            <select id="hmClusterK" style="width:150px;" title="How many clusters to cut the tree into; Tree order only draws the dendrogram without colouring clusters">
+                                <option value="auto" selected>Auto (suggested)</option>
+                                <option value="0">Tree order only</option>
+                                <option value="2">2 clusters</option>
+                                <option value="3">3 clusters</option>
+                                <option value="4">4 clusters</option>
+                                <option value="5">5 clusters</option>
+                                <option value="6">6 clusters</option>
+                                <option value="7">7 clusters</option>
+                                <option value="8">8 clusters</option>
+                                <option value="9">9 clusters</option>
+                                <option value="10">10 clusters</option>
+                                <option value="11">11 clusters</option>
+                                <option value="12">12 clusters</option>
+                            </select>
+                            <select id="hmTreeDetailCells" style="width:110px;" title="Drawing detail only, does not change the clustering: How much branch detail the cell-line tree above the grid draws">
+                                <option value="full" selected>Full</option>
+                                <option value="medium">Medium</option>
+                                <option value="coarse">Coarse</option>
+                                <option value="xcoarse">Very coarse</option>
+                                <option value="minimal">Minimal</option>
+                            </select>
+                        </div>
                     </div>
-                    <div>
-                        <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">Cell lines</label>
-                        <select id="hmCohort" style="font-size:11px; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px;">
-                            <option value="visible" selected>The cell lines the browser is filtered to</option>
-                            <option value="selected">Only the cell lines I ticked in the browser</option>
-                            <option value="all" id="hmCohortAllOpt">Every cell line</option>
-                        </select>
+                    <div class="clb-row clb-row-alt">
+                        <span class="clb-row-label">Cell lines</span>
+                        <div class="clb-row-items">
+                            <select id="hmCohort" style="width:230px;">
+                                <option value="visible" selected>The cell lines the browser is filtered to</option>
+                                <option value="selected">Only the cell lines I ticked in the browser</option>
+                                <option value="all" id="hmCohortAllOpt">Every cell line</option>
+                            </select>
+                            <select id="hmLineage" style="width:180px;" title="Narrows the cell lines above to one lineage, on top of whatever cohort is chosen">
+                                <option value="">All lineages</option>
+                            </select>
+                            <select id="hmSubtype" style="width:200px;" title="Narrows further to one subtype, within whatever lineage is chosen">
+                                <option value="">All subtypes</option>
+                            </select>
+                            <select id="hmDisease" style="width:210px;" title="Narrows further to one Oncotree disease, within whatever lineage is chosen">
+                                <option value="">All diseases</option>
+                            </select>
+                            <!-- Line break: the three genetic-alteration filters read as one
+                                 unit on their own line, instead of hotspot straggling above. -->
+                            <span style="flex-basis:100%; height:0;"></span>
+                            <div id="hmHotspotFilterWrap" class="filter-input-wrap" style="position:relative; width:130px;">
+                                <input type="text" id="hmHotspotFilter" class="form-control" placeholder="Hotspot gene..." autocomplete="off" style="width:124px; font-size:11px; padding:3px 6px;" title="Only show cell lines mutated (or wild-type) in this gene">
+                                <div id="hmHotspotDropdown" style="display:none; position:absolute; top:100%; left:0; min-width:240px; max-height:300px; overflow-y:auto; background:#fff; border:1px solid #d1d5db; border-radius:5px; box-shadow:0 6px 16px rgba(0,0,0,0.18); z-index:1450; font-size:11px;"></div>
+                            </div>
+                            <select id="hmHotspotLevel" class="form-control" style="width:96px; font-size:11px; padding:3px 4px; display:none;" title="Keep the cell lines carrying this mutation, or only those without it"><option value="1+2" selected>Mutated (1+2)</option><option value="1">Only 1 mut</option><option value="2">Only 2 mut</option><option value="0">Only WT</option></select>
+                            <div id="hmFusionFilterWrap" class="filter-input-wrap" style="position:relative; width:130px;">
+                                <input type="text" id="hmFusionFilter" class="form-control" placeholder="Fusion / gene..." autocomplete="off" style="width:124px; font-size:11px; padding:3px 6px;" title="Fusion filter, driver pairs (★) and validated fusion genes">
+                                <div id="hmFusionDropdown" style="display:none; position:absolute; top:100%; left:0; min-width:280px; max-height:300px; overflow-y:auto; background:#fff; border:1px solid #d1d5db; border-radius:5px; box-shadow:0 6px 16px rgba(0,0,0,0.18); z-index:1450; font-size:11px;"></div>
+                            </div>
+                            <select id="hmFusionLevel" class="form-control" style="width:96px; font-size:11px; padding:3px 4px; display:none;" title="Keep the cell lines carrying this fusion, or only those without it"><option value="1+2" selected>Fused</option><option value="0">Only WT</option></select>
+                            <div id="hmCnFilterWrap" class="filter-input-wrap" style="position:relative; width:130px;">
+                                <input type="text" id="hmCnFilter" class="form-control" placeholder="Amp / deletion..." autocomplete="off" style="width:124px; font-size:11px; padding:3px 6px;" title="Focal copy-number filter: amplifications and deletions from the curated panel">
+                                <div id="hmCnDropdown" style="display:none; position:absolute; top:100%; left:0; min-width:280px; max-height:300px; overflow-y:auto; background:#fff; border:1px solid #d1d5db; border-radius:5px; box-shadow:0 6px 16px rgba(0,0,0,0.18); z-index:1450; font-size:11px;"></div>
+                            </div>
+                            <select id="hmCnLevel" class="form-control" style="width:96px; font-size:11px; padding:3px 4px; display:none;" title="Keep the cell lines carrying this copy-number event, or only those without it"><option value="altered" selected>With event</option><option value="wt">Only WT</option></select>
+                            <span class="clb-sep"></span>
+                            <label style="display:flex; align-items:center; gap:4px; font-size:12px; color:#374151; cursor:pointer;" title="Cell lines with no value for any gene shown are left out of the grid by default; switch off to include them, their columns are all gray">
+                                <input type="checkbox" id="hmHideNoData" checked style="margin:0;"> Hide lines without data
+                            </label>
+                            <span class="clb-sep"></span>
+                            <span style="display:inline-flex; align-items:center; gap:8px;" id="hmMinGroupSizeWrap">
+                                <span style="font-size:10px; color:#6b7280; white-space:nowrap;" title="Groups with fewer cell lines than this are left out of the heatmap entirely">Min n:</span>
+                                <button type="button" onclick="app.adjustNumber('hmMinGroupSize', -1)" style="font-size:10px; padding:0 5px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer;">−</button>
+                                <input type="number" id="hmMinGroupSize" value="1" min="1" max="50" disabled style="width:36px; font-size:11px; padding:2px 4px; border:1px solid #d1d5db; border-radius:4px; text-align:center;" title="Minimum cell lines per group to show" onchange="app._hmRedraw()">
+                                <button type="button" onclick="app.adjustNumber('hmMinGroupSize', 1)" style="font-size:10px; padding:0 5px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer;">+</button>
+                            </span>
+                            <label style="display:flex; align-items:center; gap:3px; font-size:10px; color:#6b7280; cursor:pointer;" id="hmShowMedianWrap" title="Show each group's median score (of the genes shown) beside its count">
+                                <input type="checkbox" id="hmShowMedian" checked disabled style="margin:0;"> Show median
+                            </label>
+                            <button id="hmRedrawBtn" class="btn btn-success btn-sm">Redraw</button>
+                        </div>
                     </div>
-                    <div>
-                        <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">Lineage</label>
-                        <select id="hmLineage" style="font-size:11px; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px;" title="Narrows the cell lines above to one lineage, on top of whatever cohort is chosen">
-                            <option value="">All lineages</option>
-                        </select>
+                    <div class="clb-row clb-row-alt">
+                        <span class="clb-row-label">Annotation rows</span>
+                        <div class="clb-row-items" style="align-items:flex-start;">
+                            <div id="hmAnnRowsBlock" style="display:flex; flex-direction:column; gap:6px;"></div>
+                            <button type="button" id="hmAnnRowAddBtn" class="btn btn-outline btn-sm" style="font-size:11px;" title="Add another annotation row">+ Add row</button>
+                            <span style="font-size:10px; color:#6b7280; white-space:nowrap;">then by</span>
+                            <select id="hmThenBy" style="width:150px;" title="The final tie-break, inside the innermost blocks, or the whole order when no row's sort arrows are on">
+                                <option value="score" selected>Score (mean of shown genes)</option>
+                                <option value="name">Name (A-Z)</option>
+                            </select>
+                            <span id="hmAnnRowsSortNote" style="display:none; font-size:10px; color:#9ca3af;">&#9638; makes that row the blocks, one row at a time; its &#8597; arrows then set the order of the blocks. Any other row's arrows sort inside the blocks, top row first. Add the Cell-line clusters row (Clustering, above) to cluster within blocks.</span>
+                        </div>
                     </div>
-                    <div>
-                        <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">Subtype</label>
-                        <select id="hmSubtype" style="font-size:11px; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px;" title="Narrows further to one subtype, within whatever lineage is chosen">
-                            <option value="">All subtypes</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">Disease</label>
-                        <select id="hmDisease" style="font-size:11px; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px;" title="Narrows further to one Oncotree disease, within whatever lineage is chosen">
-                            <option value="">All diseases</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">Scaling</label>
-                        <select id="hmScale" style="font-size:11px; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px;" title="Z-score compares each gene to its own spread across the cell lines shown; raw values keep their original units">
-                            <option value="z" selected>Z-score per gene</option>
-                            <option value="raw">Raw values</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">Sort cell lines</label>
-                        <select id="hmSort" style="font-size:11px; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px;">
-                            <option value="score" selected>Score (mean of shown genes)</option>
-                            <option value="lineage">Lineage</option>
-                            <option value="name">Name</option>
-                            <option value="cluster">Cluster (similar profiles together)</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">Group by</label>
-                        <select id="hmGroupBy" style="font-size:11px; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px;" title="Blocks cell lines by lineage, subtype, disease or a gene's mutation status, sorting within each block, and draws a colour strip under the grid">
-                            <option value="none">No grouping</option>
-                            <option value="lineage" selected>Lineage</option>
-                            <option value="subtype">Subtype</option>
-                            <option value="disease">Disease</option>
-                            <option value="alteration">Genetic alteration</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">Alteration gene</label>
-                        <input type="text" id="hmGroupGene" list="hmGroupGeneList" disabled placeholder="e.g. BRAF" style="width:90px; font-size:11px; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px; opacity:0.45;" title="Split cell lines into mutated / wild-type for this gene. Uses hotspot mutations, or damaging mutations if the gene has no hotspot data.">
-                        <datalist id="hmGroupGeneList"></datalist>
-                    </div>
-                    <div>
-                        <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">Group order</label>
-                        <select id="hmGroupOrder" disabled style="font-size:11px; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px; opacity:0.45;" title="How the groups are ordered left to right">
-                            <option value="size" selected>By size</option>
-                            <option value="score">By score</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">&nbsp;</label>
-                        <span style="display:inline-flex; align-items:center; gap:8px; opacity:0.45;" id="hmMinGroupSizeWrap">
-                            <span style="font-size:10px; color:#6b7280; white-space:nowrap;" title="Groups with fewer cell lines than this are left out of the heatmap entirely">Min n:</span>
-                            <button type="button" onclick="app.adjustNumber('hmMinGroupSize', -1)" style="font-size:10px; padding:0 5px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer;">−</button>
-                            <input type="number" id="hmMinGroupSize" value="1" min="1" max="50" disabled style="width:36px; font-size:11px; padding:2px 4px; border:1px solid #d1d5db; border-radius:4px; text-align:center;" title="Minimum cell lines per group to show" onchange="app._hmRedraw()">
-                            <button type="button" onclick="app.adjustNumber('hmMinGroupSize', 1)" style="font-size:10px; padding:0 5px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer;">+</button>
-                        </span>
-                    </div>
-                    <label style="display:flex; align-items:center; gap:3px; font-size:10px; color:#6b7280; cursor:pointer; opacity:0.45;" id="hmShowMedianWrap" title="Show each group's median score (of the genes shown) beside its count">
-                        <input type="checkbox" id="hmShowMedian" disabled style="margin:0;"> Show median
-                    </label>
-                    <div>
-                        <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">Second row</label>
-                        <select id="hmAnnotation2" style="font-size:11px; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px;" title="Draws a second colour band under the group band, for a different attribute, so two things can be compared at once">
-                            <option value="none" selected>None</option>
-                            <option value="lineage">Lineage</option>
-                            <option value="hotspot">Hotspot mutation in a gene</option>
-                            <option value="cn">Amplification / deletion of a gene</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">Second row gene</label>
-                        <input type="text" id="hmAnn2Gene" list="hmGroupGeneList" disabled placeholder="e.g. BRAF" style="width:90px; font-size:11px; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px; opacity:0.45;" title="Colour the second row by this gene's hotspot mutation status (0 / 1 / 2 copies)">
-                    </div>
-                    <div>
-                        <label style="display:block; font-size:10px; color:#6b7280; margin-bottom:2px;">Second row CN gene</label>
-                        <input type="text" id="hmAnn2CnGene" list="hmAnn2CnGeneList" disabled placeholder="e.g. MYC" style="width:90px; font-size:11px; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px; opacity:0.45;" title="Colour the second row by this gene's curated amplification / deletion status">
-                        <datalist id="hmAnn2CnGeneList"></datalist>
-                    </div>
-                    <label style="display:flex; align-items:center; gap:3px; font-size:10px; color:#6b7280; cursor:pointer;" title="Order the gene rows by how alike their profiles are, regardless of how cell lines are sorted, and draw the tree that produced the order">
-                        <input type="checkbox" id="hmClusterGenes" checked style="margin:0;"> Cluster genes
-                    </label>
-                    <button id="hmRedrawBtn" class="btn btn-success btn-sm" style="font-size:11px;">Redraw</button>
                 </div>
                 <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:8px;">
-                    <label style="font-size:10px; color:#6b7280; white-space:nowrap;">Genetic alteration filters:</label>
-                    <div id="hmHotspotFilterWrap" class="filter-input-wrap" style="position:relative; width:130px;">
-                        <input type="text" id="hmHotspotFilter" class="form-control" placeholder="Hotspot gene..." autocomplete="off" style="width:124px; font-size:11px; padding:3px 6px;" title="Only show cell lines mutated (or wild-type) in this gene">
-                        <div id="hmHotspotDropdown" style="display:none; position:absolute; top:100%; left:0; min-width:240px; max-height:300px; overflow-y:auto; background:#fff; border:1px solid #d1d5db; border-radius:5px; box-shadow:0 6px 16px rgba(0,0,0,0.18); z-index:1450; font-size:11px;"></div>
-                    </div>
-                    <select id="hmHotspotLevel" class="form-control" style="width:96px; font-size:11px; padding:3px 4px; display:none;" title="Keep the cell lines carrying this mutation, or only those without it"><option value="1+2" selected>Mutated (1+2)</option><option value="1">Only 1 mut</option><option value="2">Only 2 mut</option><option value="0">Only WT</option></select>
-                    <div id="hmFusionFilterWrap" class="filter-input-wrap" style="position:relative; width:130px;">
-                        <input type="text" id="hmFusionFilter" class="form-control" placeholder="Fusion / gene..." autocomplete="off" style="width:124px; font-size:11px; padding:3px 6px;" title="Fusion filter, driver pairs (★) and validated fusion genes">
-                        <div id="hmFusionDropdown" style="display:none; position:absolute; top:100%; left:0; min-width:280px; max-height:300px; overflow-y:auto; background:#fff; border:1px solid #d1d5db; border-radius:5px; box-shadow:0 6px 16px rgba(0,0,0,0.18); z-index:1450; font-size:11px;"></div>
-                    </div>
-                    <select id="hmFusionLevel" class="form-control" style="width:96px; font-size:11px; padding:3px 4px; display:none;" title="Keep the cell lines carrying this fusion, or only those without it"><option value="1+2" selected>Fused</option><option value="0">Only WT</option></select>
-                    <div id="hmCnFilterWrap" class="filter-input-wrap" style="position:relative; width:130px;">
-                        <input type="text" id="hmCnFilter" class="form-control" placeholder="Amp / deletion..." autocomplete="off" style="width:124px; font-size:11px; padding:3px 6px;" title="Focal copy-number filter: amplifications and deletions from the curated panel">
-                        <div id="hmCnDropdown" style="display:none; position:absolute; top:100%; left:0; min-width:280px; max-height:300px; overflow-y:auto; background:#fff; border:1px solid #d1d5db; border-radius:5px; box-shadow:0 6px 16px rgba(0,0,0,0.18); z-index:1450; font-size:11px;"></div>
-                    </div>
-                    <select id="hmCnLevel" class="form-control" style="width:96px; font-size:11px; padding:3px 4px; display:none;" title="Keep the cell lines carrying this copy-number event, or only those without it"><option value="altered" selected>With event</option><option value="wt">Only WT</option></select>
                     <span id="hmActiveFilters" style="display:inline-flex; gap:4px; flex-wrap:wrap; align-items:center;"></span>
                 </div>
                 <div id="hmSetNote" style="font-size:10px; color:#9ca3af; margin-bottom:8px;"></div>
@@ -4614,21 +4667,60 @@
                 <div id="hmHint" style="font-size:10px; color:#9ca3af; margin-bottom:4px;"></div>
                 <div style="min-height:20px; margin-bottom:4px;">
                     <button type="button" id="hmDrillBackBtn" class="btn btn-outline btn-sm" style="font-size:10px; padding:2px 8px; visibility:hidden;" title="Undo the double-click drill-down, restoring the grouping and cell lines shown before it">Show all</button>
+                    <button type="button" id="hmDrillToBrowserBtn" class="btn btn-outline btn-sm" style="font-size:10px; padding:2px 8px; margin-left:6px; visibility:hidden;" title="Mark exactly these cell lines as ticked in the Cell Line Browser, so they can be filtered, sorted and exported there">Tick these lines in the browser</button>
                 </div>
+                <!-- Only exists when a gene is silenced (click a gene label); see
+                     _hmRenderSilencedNote. No reserved space when empty, same as
+                     hmScrollHint just below the grid. -->
+                <div id="hmSilencedNote" style="display:none; font-size:10px; color:#9ca3af; margin-bottom:4px;"></div>
                 <div style="display:flex; align-items:flex-start; width:100%;">
                     <canvas id="hmLabelCanvas" style="flex:none; cursor:default;"></canvas>
-                    <div id="hmGridScroll" style="flex:1 1 auto; min-width:0; overflow-x:auto; overflow-y:hidden;"><canvas id="hmGridCanvas" style="display:block; cursor:default;"></canvas></div>
+                    <div id="hmGridScroll" style="flex:1 1 auto; min-width:0; overflow-x:auto; overflow-y:hidden;"><canvas id="hmDendroTopCanvas" style="display:block; cursor:default;"></canvas><canvas id="hmGridCanvas" style="display:block; cursor:default;"></canvas></div>
                 </div>
                 <div id="hmScrollHint" style="font-size:9px; color:#9ca3af; margin-top:3px;"></div>
                 <div style="margin-top:10px;"><canvas id="hmLegendCanvas"></canvas></div>
                 <canvas id="hmGroupLegendCanvas" style="display:block;"></canvas>
+                <div id="hmGroupLegendHint" style="display:none; font-size:10px; color:#9ca3af; margin-top:2px;">Click a group to hide or show it. Double-click to keep only that group.</div>
                 <canvas id="hmAnn2LegendCanvas" style="display:block;"></canvas>
             </div>
             <div class="modal-footer" style="justify-content:flex-start; flex-wrap:wrap; gap:6px;">
+                <button id="hmSettingsBtn" class="btn btn-outline btn-sm" style="font-size:11px; font-weight:700;" title="Font sizes and cell dimensions for the heatmap and its exports">Settings</button>
                 <button id="hmExportImageBtn" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px;" title="Choose format, print size and resolution">Export image...</button>
                 <button id="hmCopyBtn" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px;" title="Copy the heatmap as an image to the clipboard, ready to paste into an email or slide">Copy</button>
-                <button id="hmCsvBtn" class="btn btn-outline btn-sm" style="font-size:11px;" title="The gene x cell line matrix as data, values as currently shown (z-scored or raw)">.csv</button>
-                <button id="hmExportAIBtn" class="btn btn-outline btn-sm" style="font-size:11px;" title="Package this heatmap for a language model: the gene set, the matrix, the cohort and the grouping, plus a picture of what's on screen">Export for AI</button>
+                <button id="hmCsvBtn" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px;" title="The gene x cell line matrix as data, values as currently shown (z-scored or raw)">.csv</button>
+                <button id="hmCopyGenesBtn" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px;" title="Copy the genes shown, one per line, in the order they are drawn">Copy genes</button>
+                <button class="btn btn-outline btn-sm mobile-hide" style="font-size:11px;" onclick="app.openMethods('heatmap')" title="Write out how this heatmap was made, as a methods paragraph and as a plain walk-through">Methods</button>
+                <button id="hmExportAIBtn" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px;" title="Package this heatmap for a language model: the gene set, the matrix, the cohort and the grouping, plus a picture of what's on screen">Export for AI</button>
+                <button id="hmSaveViewBtn" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px;" title="Download this exact heatmap as a small .json file; drop it on the app later to reopen it">Save view</button>
+                <!-- Gates A/B (v.88.64): arm one, then drag horizontally across
+                     the grid to collect cell lines into it by column range,
+                     keyed by cell line id so a re-sort doesn't lose them. The
+                     Copy/Inspect buttons and the count chip reserve their
+                     space (visibility:hidden) rather than appearing and
+                     shoving neighbours, only becoming visible once the gate
+                     has a member; see _hmSyncGateUI. Gates need a drag to
+                     paint, which does not work on touch, so the whole block
+                     (mobile-hide) is gone on a phone, CSS-only like every
+                     other mobile-hide element (see the .mobile-hide rule
+                     under the max-width:640px media query). -->
+                <span class="clb-sep mobile-hide"></span>
+                <span class="mobile-hide" style="display:inline-flex; align-items:center; gap:4px;">
+                    <button type="button" id="hmGateABtn" class="btn btn-outline btn-sm" style="font-size:11px;" title="Arm gate A: click-drag across the grid to select cell lines into it by column range. Click again, or Escape, to disarm.">Gate A</button>
+                    <span id="hmGateAChip" style="font-size:10px; visibility:hidden; white-space:nowrap;"></span>
+                    <button type="button" id="hmGateACopyBtn" class="btn btn-outline btn-sm" style="font-size:10px; padding:2px 6px; visibility:hidden;" title="Copy gate A's cell line names, one per line">Copy A</button>
+                    <button type="button" id="hmGateAInspectBtn" class="btn btn-outline btn-sm" style="font-size:10px; padding:2px 6px; visibility:hidden;" title="Open the Cell Line Browser's selection-inspect on gate A's cell lines">Inspect A</button>
+                </span>
+                <span class="mobile-hide" style="display:inline-flex; align-items:center; gap:4px;">
+                    <button type="button" id="hmGateBBtn" class="btn btn-outline btn-sm" style="font-size:11px;" title="Arm gate B: click-drag across the grid to select cell lines into it by column range. Click again, or Escape, to disarm.">Gate B</button>
+                    <span id="hmGateBChip" style="font-size:10px; visibility:hidden; white-space:nowrap;"></span>
+                    <button type="button" id="hmGateBCopyBtn" class="btn btn-outline btn-sm" style="font-size:10px; padding:2px 6px; visibility:hidden;" title="Copy gate B's cell line names, one per line">Copy B</button>
+                    <button type="button" id="hmGateBInspectBtn" class="btn btn-outline btn-sm" style="font-size:10px; padding:2px 6px; visibility:hidden;" title="Open the Cell Line Browser's selection-inspect on gate B's cell lines">Inspect B</button>
+                </span>
+                <!-- Inspect A vs B (v.88.73): reserves its space
+                     (visibility:hidden) like the per-gate buttons above,
+                     only becoming visible once BOTH gates hold a cell line;
+                     see _hmSyncGateUI. -->
+                <button type="button" id="hmInspectABBtn" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px; visibility:hidden;" title="Open the selection-inspect comparing gate A against gate B directly, volcano first">Inspect A vs B</button>
                 <span style="flex:1 1 auto;"></span>
                 <button id="heatmapClose2" class="btn btn-secondary btn-sm">Close</button>
             </div>
@@ -4774,6 +4866,7 @@
                         Two tools cover the main uses: <strong>Gene set analysis</strong> to discover and present the connections within a gene set and extend it into wider networks,
                         and the <strong>Cell Line Browser</strong> to identify cell lines with the features a project needs.
                         Outside tools are integrated for further analysis: any gene list can be sent to <strong>Enrichr</strong> for pathway enrichment, and every view has an <strong>Export for AI</strong> that packages its data and settings into one file an AI assistant can analyse.
+                        Every view also carries a <strong>Methods</strong> button beside its export buttons: it writes out how the picture on screen was made, as one paragraph ready for a materials and methods section and as a longer plain-language walk-through, both read from the view exactly as it stands.
                     </p>
                 </div>
 
@@ -4965,7 +5058,8 @@
             <li><b>Alteration grids</b> (&#9638; beside each alteration box): a grid of the cell lines currently shown, one for hotspot mutations, one for curated driver fusions, one for copy number. Click a gene in the grid to require it altered or wild-type.</li>
             <li><b>Quick filters</b>: curated cell-line collections to include or exclude, among them the two provenance sets below.</li>
             <li><b>Interferon score</b> (<i>Sort: Interferon score</i>, and the interferon-high / interferon-low quick filters): the average of 34 interferon-stimulated genes, each expressed as how far the line sits from the panel average for that gene. 0 is typical, above +0.5 is called interferon-high here and below &minus;0.5 interferon-low. It measures the cell's own interferon signalling, which shapes how visible a line is to the immune system, and is the readout for viral mimicry. A cell line has no immune infiltrate, so it says nothing about the interferon environment of a tumor. Lines with no expression data are unscored and sort to the end. The score also appears on each cell line's own card.</li>
-            <li><b>Heatmap</b>: draws a gene set across the cell lines the filters leave showing. Open it from the <b>Heatmap</b> button in this header, or from Options / Other / Gene set heatmap. Pick a preset (the interferon sets) or paste your own genes, choose mRNA or gene effect, and order the lines by score, lineage, name, or by clustering similar profiles together. Saves as an image, to the clipboard, or as a .csv.</li>
+            <li><b>Retroelement signal</b> (<i>Sort: Retroelement signal</i>, and the retroelement-high quick filter): RNA output of 750 full-length LINE-1, HERV-K and SVA elements outside genes, in counts per million, measured from the public CCLE sequencing files. The panel median is about 40 CPM; the top tenth, about 80 CPM and up, counts as retroelement-high. Lines with a higher signal depend measurably more on ADAR1, beyond what the interferon score predicts. 669 of 1,208 lines have public data; the rest are unscored and sort to the end. The score also appears on each cell line's card and wiki.</li>
+            <li><b>Heatmap</b>: draws a gene set across the cell lines the filters leave showing. Open it from the <b>Heatmap</b> button in this header, or from Options / Other / Gene set heatmap. Pick a preset or paste your own genes, and choose mRNA or gene effect. The column order is carried by the annotation rows under the grid: mark one row as the blocks and the colour strip, legend and Min n follow it, turn on other rows' sort arrows to order the lines within each block, and the score (the mean of the shown genes) settles ties. Rows can show hotspot mutations, fusions, copy number, lineage, subtype, disease, one gene's expression or gene effect, cell-line clustering, or the gates. Saves as an image, to the clipboard, as a .csv or as a reopenable view file, and its Methods button writes out exactly how the picture was made.</li>
           </ul>
 
           <p style="margin-top:14px;"><strong>&#9888; Warning marks</strong>: a triangle beside a cell line's name means <a href="https://www.cellosaurus.org/" target="_blank" style="color:#0066cc;" rel="noopener noreferrer">Cellosaurus</a> records a problem with it. 56 of the 1,208 lines are flagged. Hover the mark for the full explanation, or open the line to see it with a link to the source.</p>
@@ -4979,7 +5073,8 @@
           </ul>
           <p style="margin-top:14px;"><strong>Selecting cell lines</strong>: tick lines (or <b>Select Visible</b>) to build a set for Inspect / Export. <b>Show only my N</b> collapses the list to just your ticked lines and carries the count; it is greyed out until something is ticked, and turns off on Deselect All / Reset. The list fills <b>column by column</b> (down the first column in sort order, then the next).</p>
 
-          <p style="margin-top:10px;"><strong>Inspect selected vs rest</strong>: compares your selection with the cell lines it is measured against, <b>CRISPR gene effect on the left, mRNA expression on the right</b>. Both columns rank by the size of the difference in either direction, so genes higher and lower in your selection appear together. Each gene carries a Welch's t-test adjusted across all genes tested (Benjamini-Hochberg), shown as <b>q</b> and filterable. You can compare against <b>all other cell lines</b> or only those <b>sharing a lineage</b> with your selection, which takes tissue of origin out of the comparison. The two measures cover different cell lines, so each states its own group sizes.</p>
+          <p style="margin-top:10px;"><strong>Inspect selected vs rest</strong>: compares your selection with the cell lines it is measured against, <b>CRISPR gene effect on the left, mRNA expression on the right</b>. Both columns rank by the size of the difference in either direction, so genes higher and lower in your selection appear together. Each gene carries a Welch's t-test adjusted across all genes tested (Benjamini-Hochberg), shown as <b>q</b> and filterable. The comparison group is yours to choose: <b>all other cell lines</b>, only those <b>sharing a lineage</b> with your selection (taking tissue of origin out of the comparison), a <b>group picked from the tissue table</b>, or a <b>pasted list</b> of names. The two measures cover different cell lines, so each states its own group sizes. Either ranked gene list can be opened in the heatmap (top 10 to 100, or any number), carried over with the inspected cell lines.</p>
+          <p style="margin-top:10px;"><strong>Send to another view</strong>: carries the listed cell lines, or just the ticked ones, into the correlation scatter, the gene effect charts or the heatmap, either marking them there or narrowing the view to them, and can set them as the cohort for the mutation and gene set analyses. Each target row explains itself in the popout.</p>
           <p style="margin-top:10px;"><strong>Detail card</strong>: clicking a line opens a card that now leads with a plain-language <b>executive summary</b> (cancer type, patient origin, and standout molecular features), the same overview shown when you hover a cell-line dot on any plot.</p>
           <p style="margin-top:14px;"><strong>Hotspot variants</strong>: when DepMap's inferred-subtype pipeline calls a specific codon (KRAS p.G12D, BRAF p.V600E, EGFR p.L858R, JAK2 p.V617F, EGFR exon-19 del), the variant is appended in green next to the gene name in the Hotspot Mutations list. Generic group calls like KRAS p.G12 (any G12 not specifically D or C) are also shown when no specific call is available. Source: <code>OmicsInferredMolecularSubtypes.csv</code>.</p>
 
@@ -5022,12 +5117,13 @@
             <li><span style="color:#db2777; font-weight:700; font-style:italic;">&#9792;</span> pink, italic: Female by expression only (annotation unknown).</li>
             <li><span style="color:#9ca3af; font-weight:700;">?</span> gray: Unknown in both axes.</li>
           </ul>
-          <p><strong>Sort options</strong>, four in all. The arrow beside the picker reverses the order; for a gene or compound sort it waits until you have entered one.</p>
+          <p><strong>Sort options</strong>, six in all. The arrow beside the picker reverses the order; for a gene or compound sort it waits until you have entered one.</p>
           <ul style="margin:4px 0 10px 20px;">
             <li><b>Name</b>: alphabetical.</li>
             <li><b>GE for gene(s)</b>: type one or more genes; lines are ordered by CRISPR gene effect (Chronos), most essential first. Several genes are averaged, which ranks lines by combined essentiality.</li>
             <li><b>Expression of gene(s)</b>: type one or more genes; lines are ordered by log&#8322;(TPM+1), highest first. Several genes are averaged, so a panel like <code>ASCL1, NEUROD1, CHGA, SYP</code> finds the strongest combined signature.</li>
             <li><b>Drug response (PRISM AUC)</b>: type a compound; the picker lists PRISM Repurposing compounds ranked by how many of the visible lines they kill. Ordered by area under the curve, most sensitive first, so a lower AUC means more killing.</li>
+            <li><b>Interferon score</b> and <b>Retroelement signal</b>: the two scores described above, highest first; the retroelement sort adds a picker for which measurement to use (total signal, LINE-1, HERV-K, SVA, or active elements). Unscored lines sort to the end.</li>
           </ul>
           <p style="color:#6b7280;"><b>Gene-sort input:</b> comma, semicolon, newline or whitespace can separate multiple symbols.</p>
           <p style="color:#6b7280; margin-bottom:0;"><b>Data sources:</b> DepMap 26Q1 for every measurement. Cell-line identity warnings and the published fusion calls come from <a href="https://www.cellosaurus.org/" target="_blank" style="color:#0066cc;" rel="noopener noreferrer">Cellosaurus</a>; the curated fusion and subtype panels draw on COSMIC, OncoKB, WHO and NCCN. All filters and sorts use the data currently loaded in the browser; changing tissue / subtype filters narrows the visible set that subsequent sorts operate on.</p>
@@ -5047,6 +5143,7 @@
             <button id="clbExportImageBtn" class="btn btn-outline btn-sm mobile-hide" title="Capture the Cell Line Browser as an image (PNG / TIFF / PDF / PowerPoint)">Export image...</button>
             <button id="clbHeatmapBtn" class="btn btn-outline btn-sm mobile-hide" title="Show a gene set across the cell lines currently listed, as a heatmap">Heatmap</button>
             <button id="clbExportAIBtn" class="btn btn-outline btn-sm mobile-hide" title="Send the cell lines currently listed, with their alterations and gene-effect data, to an AI assistant for analysis">Export for AI</button>
+            <button class="btn btn-outline btn-sm mobile-hide" onclick="app.openMethods('clb')" title="Write out how this list was arrived at, as a methods paragraph and as a plain walk-through">Methods</button>
             <button id="clbResetFilters" class="btn btn-outline btn-sm" title="Clear every filter, sort and selection">Reset</button>
             <button id="clbCloseBtn" class="modal-close" title="Close the Cell Line Browser">&times;</button>
           </div>
@@ -5082,11 +5179,21 @@
                 <option value="expr">Sort: Expression of gene(s)</option>
                 <option value="drug">Sort: Drug response (PRISM AUC)</option>
                 <option value="ifn">Sort: Interferon score (ISG)</option>
+                <option value="retro">Sort: Retroelement signal (CPM)</option>
               </select>
               <button id="clbSortDir" title="Switch the sort direction" class="btn btn-outline btn-sm" style="width:32px;">&#x25B2;</button>
               <div id="clbSortGeneWrap" class="clb-anchor" style="visibility:hidden;">
                 <input type="text" id="clbSortGene" autocomplete="off" placeholder="TP53, BRCA1, ..." style="width:160px;" title="Gene symbol(s) for GE / Expression sort, or compound name for Drug-response sort (e.g. PALBOCICLIB). Multiple values are averaged per cell line.">
                 <div id="clbSortDrugDropdown" class="clb-dropdown" style="min-width:320px;"></div>
+              </div>
+              <div id="clbSortRetroWrap" class="clb-anchor" style="visibility:hidden;">
+                <select id="clbSortRetroMeasure" style="width:160px;" title="Which retroelement measurement the sort uses">
+                  <option value="t" selected>Total signal</option>
+                  <option value="l1">LINE-1</option>
+                  <option value="hk">HERV-K</option>
+                  <option value="sva">SVA</option>
+                  <option value="a">Active elements</option>
+                </select>
               </div>
             </div>
           </div>
@@ -5180,6 +5287,10 @@
               <button id="clbExportListBtn" class="btn btn-outline btn-sm clb-tall-btn" style="color:var(--earth-700); border-color:var(--earth-300);" title="The list exactly as it is on screen: every visible cell line in its current sort order, with tissue, subtype, disease and whichever value the list is sorted by (expression, drug response, copy number, mutation counts).">List on screen:<br><span>CSV</span></button>
               <button id="clbCopyListBtn" class="btn btn-outline btn-sm clb-tall-btn" style="color:var(--earth-700); border-color:var(--earth-300);" title="Copy the same on-screen list to the clipboard as tab-separated text, ready to paste straight into a spreadsheet.">List on screen:<br><span>copy</span></button>
               <button id="clbExportGenesBtn" class="btn btn-outline btn-sm clb-tall-btn" style="color:var(--earth-700); border-color:var(--earth-300);" title="One or a few genes: full profile (GE, Expression, Hotspot, Damaging, Fusion, focal CN) across the selected / visible cell lines (CSV).">Genes:<br><span>full profile</span></button>
+              <!-- Outside the "Export CSV" label's run of buttons: it writes text,
+                   not a spreadsheet, and sitting under that heading read as one. -->
+              <span class="clb-sep mobile-hide"></span>
+              <button class="btn btn-outline btn-sm clb-tall-btn mobile-hide" onclick="app.openMethods('clb')" style="color:var(--earth-700); border-color:var(--earth-300);" title="Write out how this list was arrived at, as a methods paragraph and as a plain walk-through">Methods:<br><span>how this list was made</span></button>
             </div>
           </div>
         </div>
@@ -5420,20 +5531,43 @@
 
           <!-- LLM upload suggestion. Claude.ai is the natural fit because the
                aiInstructions in the export are tuned for its analysis style;
-               other LLMs that accept .json.gz attachments work too. -->
+               other LLMs that accept file attachments work too. -->
           <div style="margin-top:10px; padding:8px 10px; background:#f0fdf4; border-left:3px solid #5d9239; border-radius:0 4px 4px 0; font-size:11px; line-height:1.5;">
             <div style="font-weight:600; color:#4c782e; margin-bottom:3px;">After download:</div>
-            Upload the <code>.json.gz</code> to any language model that accepts file attachments. The embedded <code>aiInstructions</code> were written and tested against Claude, so that is where the wording fits best, but the file is plain JSON and works with other assistants too. The model will open with a one-line description of what you exported, restate your question, then run the analysis.
+            Upload the file to any language model that accepts file attachments. The embedded <code>aiInstructions</code> were written and tested against Claude, so that is where the wording fits best, but the file is JSON (plain or gzipped, your choice below) and works with other assistants too. The model will open with a one-line description of what you exported, restate your question, then run the analysis.
+          </div>
+
+          <!-- Format choice: some chat assistants (ChatGPT among them) cannot
+               open a .json.gz attachment, so plain JSON is offered and is the
+               default whenever the export is small enough for that to be
+               practical; a large export defaults to compressed instead. The
+               size on each label fills in once an export has actually run. -->
+          <div style="margin-top:10px; padding:8px 10px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:4px; font-size:11px;">
+            <div style="font-weight:600; color:#374151; margin-bottom:5px;">File format</div>
+            <label style="display:block; margin-bottom:4px; cursor:pointer;">
+              <input type="radio" name="aiExportFormat" id="aiFormatPlain" value="plain" checked style="margin-right:5px; vertical-align:middle;">Plain .json (best for chat assistants)<span id="aiFormatPlainSize" style="color:#6b7280;"></span>
+            </label>
+            <label style="display:block; cursor:pointer;">
+              <input type="radio" name="aiExportFormat" id="aiFormatGz" value="gz" style="margin-right:5px; vertical-align:middle;">Compressed (.json.gz, smallest)<span id="aiFormatGzSize" style="color:#6b7280;"></span>
+            </label>
           </div>
 
           <div style="display:flex; gap:8px; align-items:center; margin-top:12px;">
             <button class="btn btn-success btn-sm" id="aiExportBtn">Export</button>
             <span id="aiExportStatus" style="font-size:10px; color:#6b7280;"></span>
           </div>
+
+          <!-- Copyable instruction to paste straight into the chat assistant
+               alongside the upload, so the user does not have to explain the
+               file format themselves. -->
+          <div style="margin-top:10px; padding:8px 10px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:4px; font-size:11px; display:flex; gap:8px; align-items:flex-start;">
+            <span id="aiInstructionText" style="flex:1; color:#374151; line-height:1.4;">Instruction for your AI assistant: This file is JSON (if the name ends in .gz, it is gzip-compressed, decompress it first). Start by reading the readMe fields; every section explains itself.</span>
+            <button class="btn btn-outline btn-sm" id="aiCopyInstructionBtn" style="font-size:10px; white-space:nowrap; flex:none;" title="Copy this instruction to the clipboard">Copy</button>
+          </div>
         </div>
       </div>
     </div>
 
-    <script src="app.js?v=v88_38"></script>
+    <script src="app.js?v=v88_83"></script>
 </body>
 </html>
