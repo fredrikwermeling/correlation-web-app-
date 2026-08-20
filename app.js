@@ -1325,19 +1325,10 @@ class CorrelationExplorer {
         const diseaseVal = (this._paramDiseaseMulti?.length ? this._paramDiseaseMulti : null)
             || document.getElementById('paramOncotreeFilter')?.value || '';
 
-        if (!lineage && !diseaseVal) {
-            // The block stays on screen with nothing chosen. Showing and hiding
-            // it as a lineage is picked made the whole panel jump.
-            subSelect.innerHTML = '<option value="">All subtypes</option>';
-            subSelect.value = '';
-            // Update hotspot counts for all lineages
-            this.updateHotspotCountsForCurrentFilters();
-            return;
-        }
-
-        // A disease alone is enough to scope the subtype list: picking Ewing
-        // sarcoma first shows which subtype (and via the tissue list, which
-        // lineage) it belongs to.
+        // With nothing else chosen the list covers the whole panel: a subtype
+        // can be picked on its own, the same way a disease can (the empty
+        // wait-for-a-lineage list read as a dead control, user feedback
+        // 2026-08-20). A lineage or disease pick rescopes it as before.
         const { items, total } = this._subtypeOptionsFor(lineage, diseaseVal);
 
         if (items.length > 0) {
@@ -1368,17 +1359,17 @@ class CorrelationExplorer {
         const subSelect = document.getElementById('scatterSubtypeFilter');
         const diseaseVal = document.getElementById('scatterOncotreeFilter')?.value || '';
 
-        if ((!lineage && !diseaseVal) || !this.currentInspect?.data) {
-            // Stays on screen with nothing chosen. Appearing and disappearing as
-            // a tissue is picked made the panel jump.
+        if (!this.currentInspect?.data) {
             subSelect.innerHTML = '<option value="">All subtypes</option>';
             subSelect.value = '';
             return;
         }
 
         // Subtypes from current inspect data, scoped by the panel's lineage
-        // AND disease picks (a disease alone is enough) and by the panel's
-        // alteration filters, so the selectors stay consistent with each other.
+        // AND disease picks where set, and covering the whole plot when
+        // neither is (a subtype is pickable on its own, like a disease;
+        // consistency feedback 2026-08-20), plus the panel's alteration
+        // filters, so the selectors stay consistent with each other.
         const { items, total } = this._subtypeOptionsFor(lineage, diseaseVal,
             this._annotationCountCohort('scatter') || this.currentInspect.data.map(d => d.cellLineId));
 
@@ -1495,15 +1486,15 @@ class CorrelationExplorer {
         if (!subSelect) return;
         const diseaseVal = document.getElementById('geOncotreeFilter')?.value || '';
 
-        if ((!lineage && !diseaseVal) || !this.cellLineMetadata?.primaryDisease) {
-            // Stays on screen with nothing chosen, so the panel does not jump.
+        if (!this.cellLineMetadata?.primaryDisease) {
             subSelect.innerHTML = '<option value="">All subtypes</option>';
             subSelect.value = '';
             return;
         }
 
-        // Subtype counts scoped by the panel's lineage AND disease picks (a
-        // disease alone is enough), counted over the popout's own points so
+        // Subtype counts scoped by the panel's lineage AND disease picks
+        // where set, covering the whole popout when neither is (a subtype is
+        // pickable on its own, like a disease), counted over its own points so
         // they agree with the tissue selector: counting the whole metadata
         // here said "Lung n=126" while the tissue list, built from the lines
         // actually measured for this gene, said 123.
@@ -3565,7 +3556,7 @@ class CorrelationExplorer {
         };
 
         // Store data and painters for export and live updates
-        this._oncoprintData = { topGenes, sortedCLs, allFilteredCLs: filteredCLs, cellW, cellH, boxAreaW, labelW, boxW, boxGap, countW, leftW, gridW, gridH };
+        this._oncoprintData = { topGenes, sortedCLs, allFilteredCLs: filteredCLs, filterLabel, cellW, cellH, boxAreaW, labelW, boxW, boxGap, countW, leftW, gridW, gridH };
         this._oncoprintPaint = { paintLabels, paintGrid, leftW, gridW, gridH };
 
         const updateStatus = () => {
@@ -4040,12 +4031,7 @@ class CorrelationExplorer {
             data.topGenes.forEach(g => {
                 csv += g.gene + ',' + data.sortedCLs.map(cl => g.muts[cl] || 0).join(',') + '\n';
             });
-            const blob = new Blob([csv], { type: 'text/csv' });
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = csvName('oncoprint');
-            a.click();
-            URL.revokeObjectURL(a.href);
+            this.downloadFile(csv, csvName('oncoprint' + this._csvSlug(data.filterLabel || '')), 'text/csv');
             return;
         }
 
@@ -6230,7 +6216,7 @@ class CorrelationExplorer {
             }
             this.updateNetworkColors();
         });
-        document.querySelectorAll('input[name="colorGEType"]').forEach(radio => {
+        document.querySelectorAll('input[name="colorGERange"]').forEach(radio => {
             radio.addEventListener('change', () => this.updateNetworkColors());
         });
 
@@ -6672,7 +6658,16 @@ class CorrelationExplorer {
             netEnrBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
                 const willOpen = netEnrMenu.style.display !== 'block';
-                if (willOpen) netEnrOpenedAt = Date.now();
+                if (willOpen) {
+                    netEnrOpenedAt = Date.now();
+                    // Each choice states its gene count for the CURRENT run,
+                    // from the same helper that builds the list it sends.
+                    const BASE = { input: 'All input genes', correlated: 'Correlated genes (the clusters)', drawn: 'Everything in the network' };
+                    netEnrMenu.querySelectorAll('[data-net-enrichr]').forEach(item => {
+                        const scope = item.dataset.netEnrichr;
+                        item.textContent = `${BASE[scope] || scope} (n=${this._netEnrichrGenes(scope).length})`;
+                    });
+                }
                 netEnrMenu.style.display = willOpen ? 'block' : 'none';
                 netEnrBtn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
             });
@@ -6969,20 +6964,7 @@ class CorrelationExplorer {
             }
         });
 
-        // Full-screen compare modal buttons
-        document.getElementById('mutCompareModalClose')?.addEventListener('click', () => {
-            document.getElementById('mutCompareModal').style.display = 'none';
-        });
-        document.getElementById('mutCompareMinN')?.addEventListener('change', () => {
-            if (this._compareModalMode && document.getElementById('mutCompareModal').style.display !== 'none') {
-                this.renderCompareModal();
-            }
-        });
-        document.getElementById('mutCompareExportCSV')?.addEventListener('click', () => this.downloadCompareCSV());
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && document.getElementById('mutCompareModal')?.style.display !== 'none') {
-                document.getElementById('mutCompareModal').style.display = 'none';
-            }
             if (e.key === 'Escape' && document.getElementById('corrAnalysisModal')?.style.display !== 'none') {
                 document.getElementById('corrAnalysisModal').style.display = 'none';
             }
@@ -7154,7 +7136,13 @@ class CorrelationExplorer {
             const cls = this._getAICellLines(source);
             const n = cls.length;
             const sourceEl = document.getElementById('aiDialogSource');
-            if (sourceEl) sourceEl.textContent = `${aiSourceLabels[source] || source}  ·  ${n} cell line${n === 1 ? '' : 's'} in cohort`;
+            // The scatter label names the actual gene pair; the literal
+            // "gene1 vs gene2" placeholder read as a bug in the title bar.
+            let sourceLabel = aiSourceLabels[source] || source;
+            if (source === 'scatter' && this.currentInspect?.gene1) {
+                sourceLabel = `Scatter inspect, ${this.currentInspect.gene1} vs ${this.currentInspect.gene2}`;
+            }
+            if (sourceEl) sourceEl.textContent = `${sourceLabel}  ·  ${n} cell line${n === 1 ? '' : 's'} in cohort`;
 
             // Tier description, same structure for every source so users
             // see consistent file shapes. Variance filter + per-matrix gene
@@ -8928,10 +8916,6 @@ class CorrelationExplorer {
                 // Sort by Δ GE (1+2 vs 0) ascending, most negative first
                 significantResults.sort((a, b) => (a.diff_mut || 0) - (b.diff_mut || 0));
 
-                // Close compare modal on new analysis
-                if (document.getElementById('mutCompareModal')) {
-                    document.getElementById('mutCompareModal').style.display = 'none';
-                }
 
                 this.mutationResults = {
                     hotspotGene,
@@ -10274,9 +10258,19 @@ class CorrelationExplorer {
         // Column names carry the measure actually analysed: GE columns on an
         // mRNA run mislabeled every number in the file.
         const M = mr.metric === 'expr' ? 'Expr' : 'GE';
-        let headers = ['Gene', 'N_WT', `Mean_${M}_WT`, 'N_1+2', `Mean_${M}_1+2`, `Delta_${M}`, 'pValue_1+2_vs_0',
-                        'N_2', `Mean_${M}_2`, `Delta_${M}_2vs0`, 'pValue_2_vs_0',
-                        `Delta_${M}_2vs1`, 'pValue_2_vs_1'];
+        // Functional loss / amp / del is a BINARY call: the 0/1/2-copy
+        // columns meant nothing there (N_2 was 0 on every row and
+        // pValue_2_vs_0 asserted 1 for a test never run), and the WT/1+2
+        // names did not match the Intact/Lost words on screen (audit
+        // 2026-08-20). Hotspot and fusion runs keep their columns unchanged.
+        const binary = !!mr.isDamaging;
+        const refWord = binary && !mr.cnMode ? 'Intact' : 'WT';
+        const altWord = mr.cnMode === 'amp' ? 'Amp' : mr.cnMode === 'del' ? 'DeepDel' : 'Lost';
+        let headers = binary
+            ? ['Gene', `N_${refWord}`, `Mean_${M}_${refWord}`, `N_${altWord}`, `Mean_${M}_${altWord}`, `Delta_${M}`, `pValue_${altWord}_vs_${refWord}`]
+            : ['Gene', 'N_WT', `Mean_${M}_WT`, 'N_1+2', `Mean_${M}_1+2`, `Delta_${M}`, 'pValue_1+2_vs_0',
+                'N_2', `Mean_${M}_2`, `Delta_${M}_2vs0`, 'pValue_2_vs_0',
+                `Delta_${M}_2vs1`, 'pValue_2_vs_1'];
         if (hasFusion) {
             headers.push('N_Fused', `Mean_${M}_Fused`, `Delta_${M}_Fused`, 'pValue_Fused');
         }
@@ -10290,14 +10284,18 @@ class CorrelationExplorer {
                 r.n_mut,
                 r.mean_mut.toFixed(2),
                 r.diff_mut.toFixed(2),
-                this.csvPValue(r.p_mut),
-                r.n_2,
-                isNaN(r.mean_2) ? '' : r.mean_2.toFixed(2),
-                isNaN(r.diff_2) ? '' : r.diff_2.toFixed(2),
-                this.csvPValue(r.p_2),
-                isNaN(r.diff_2v1) ? '' : r.diff_2v1.toFixed(2),
-                isNaN(r.diff_2v1) ? '' : this.csvPValue(r.p_2v1)
+                this.csvPValue(r.p_mut)
             ];
+            if (!binary) {
+                row.push(
+                    r.n_2,
+                    isNaN(r.mean_2) ? '' : r.mean_2.toFixed(2),
+                    isNaN(r.diff_2) ? '' : r.diff_2.toFixed(2),
+                    this.csvPValue(r.p_2),
+                    isNaN(r.diff_2v1) ? '' : r.diff_2v1.toFixed(2),
+                    isNaN(r.diff_2v1) ? '' : this.csvPValue(r.p_2v1)
+                );
+            }
             if (hasFusion) {
                 row.push(
                     r.n_fused || 0,
@@ -11998,18 +11996,10 @@ class CorrelationExplorer {
         setLabel('showGeneEffect', expr ? 'Show expression in label' : 'Show gene effect (GE) in label');
         setLabel('colorByGeneEffect', expr ? 'Color by expression' : 'Color by GE');
 
-        // Signed vs Absolute only makes sense for gene effect, which is
-        // centered on zero; expression (log2 TPM+1) is never negative and
-        // always uses one sequential scale (updateNetworkColors), so that
-        // choice is moot in mRNA mode. Disabled rather than relabeled: there
-        // is no "mRNA" equivalent of "signed vs absolute" to name it with.
-        document.querySelectorAll('input[name="colorGEType"]').forEach(radio => {
-            radio.disabled = expr;
-            const label = radio.parentElement;
-            if (!label) return;
-            label.style.opacity = expr ? '0.5' : '';
-            label.title = expr ? 'Not used for mRNA: expression coloring always uses one scale.' : '';
-        });
+        // The GE / Absolute sub-choice is gone (v.88.103): gene effect always
+        // colours on its signed scale, and the remaining sub-option (scale to
+        // the shown genes or the whole input set) applies to both measures,
+        // so nothing under the checkbox needs relabelling per basis.
     }
 
     displayNetwork() {
@@ -12803,7 +12793,7 @@ class CorrelationExplorer {
             const el = document.getElementById(id); if (el) el.style.display = 'none';
         });
         const radio = (name, val) => { const el = document.querySelector(`input[name="${name}"][value="${val}"]`); if (el) el.checked = true; };
-        radio('colorGEType', 'signed'); radio('colorStatType', 'signed_lfc');
+        radio('colorGERange', 'shown'); radio('colorStatType', 'signed_lfc');
         radio('colorScale', 'all'); radio('statsLabelDisplay', 'lfc');
 
         // Re-render with the restored settings
@@ -13344,8 +13334,15 @@ class CorrelationExplorer {
     // Gene-effect values for the genes actually drawn in the network, which is
     // what the node gradient is scaled to. Falls back to every analysed gene
     // when the network is not built yet, so the legend always has a range.
+    // The values the colour scale is normalised over. "Genes on screen"
+    // (default) uses the drawn nodes; "Whole input set" uses every gene the
+    // analysis holds a value for, so the same gene keeps the same colour
+    // whether or not its neighbours are drawn. Read here, in ONE place, so
+    // the on-screen colours and both export legends can never disagree.
     _networkEffectValues() {
         const all = (this.results?.clusters || []).map(c => c.meanEffect).filter(v => !isNaN(v));
+        const range = document.querySelector('input[name="colorGERange"]:checked')?.value || 'shown';
+        if (range === 'input') return all;
         if (!this.networkData?.nodes?.length) return all;
         const byGene = new Map();
         (this.results?.clusters || []).forEach(c => byGene.set(c.gene, c.meanEffect));
@@ -13906,11 +13903,22 @@ Results:
 
         let csv, filename;
         if (type === 'correlations') {
-            csv = 'Gene1,Gene2,Correlation,Slope,N,Cluster\n';
+            // Same # provenance block its sibling (clusters) has always
+            // carried: without it a Lung-filtered and an unfiltered export
+            // were indistinguishable except by row count (2026-08-20 audit).
+            const lineage = document.getElementById('lineageFilter')?.value || '';
+            const subLineage = document.getElementById('subLineageFilter')?.value || '';
+            csv = `# Correlations Export\n`;
+            csv += `# Analysis mode: ${this.results.mode === 'design' ? 'Expand my set to find correlated genes' : 'Correlate genes within my set'}\n`;
+            csv += `# Lineage filter: ${lineage || 'All lineages'}\n`;
+            if (subLineage) csv += `# Subtype filter: ${subLineage}\n`;
+            csv += `# Cell lines: ${this.results.nCellLines}\n`;
+            csv += `# DepMap release: ${DEPMAP_VERSION}\n`;
+            csv += 'Gene1,Gene2,Correlation,Slope,N,Cluster\n';
             this.results.correlations.forEach(c => {
                 csv += `${c.gene1},${c.gene2},${c.correlation},${c.slope},${c.n},${c.cluster}\n`;
             });
-            filename = csvName('correlations');
+            filename = csvName('correlations' + this._csvSlug([lineage, subLineage].filter(Boolean).join('_')));
         } else {
             const isFiltered = this.results.isFiltered;
             const lineage = document.getElementById('lineageFilter').value || 'All lineages';
@@ -13953,7 +13961,7 @@ Results:
                 }
                 csv += row + '\n';
             });
-            filename = csvName('clusters');
+            filename = csvName('clusters' + this._csvSlug([document.getElementById('lineageFilter')?.value, document.getElementById('subLineageFilter')?.value].filter(Boolean).join('_')));
         }
 
         this.downloadFile(csv, filename, 'text/csv');
@@ -14015,6 +14023,14 @@ Results:
             field += c; i++;
         }
         return out + enc(field, quoted);
+    }
+
+    // A short filesystem-safe fragment of a filter description, for carrying
+    // the export's scope in its filename (the 2026-08-20 audit found four
+    // CSVs whose filtered and unfiltered exports were indistinguishable).
+    _csvSlug(text, max = 40) {
+        const s = String(text || '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, max).replace(/_+$/g, '');
+        return s ? `_${s}` : '';
     }
 
     downloadFile(content, filename, mimeType) {
@@ -14276,7 +14292,9 @@ Results:
         // Trim the empty frame, then recompute the height so the figure keeps its
         // real proportions at the width that was asked for.
         const trimmed = this._trimCanvasWhitespace(canvas);
-        const outHeightCm = (trimmed !== canvas && trimmed.width)
+        // Physical height from the pixels actually written, never from the
+        // dialog's remembered height (which can belong to a different view).
+        const outHeightCm = trimmed.width
             ? Math.round(widthCm * (trimmed.height / trimmed.width) * 100) / 100
             : heightCm;
         await this._downloadCanvasAs(trimmed, dlg.format, 'correlation_network', {
@@ -14303,15 +14321,18 @@ Results:
         const transparentBg = background === 'transparent';
         const CM_TO_IN = 1 / 2.54;
         const targetPxW = Math.round(widthCm * dpi * CM_TO_IN);
-        const targetPxH = Math.round(heightCm * dpi * CM_TO_IN);
-        const sx = targetPxW / totalWidth;
-        const sy = targetPxH / totalHeight;
+        // Height always follows the drawing's own aspect, like the chart
+        // raster path. Filling the requested box stretched the nodes into
+        // ellipses whenever the dialog carried a height remembered from a
+        // different view.
+        const targetPxH = Math.round(targetPxW * (totalHeight / totalWidth));
+        const s = targetPxW / totalWidth;
 
         const canvas = document.createElement('canvas');
         canvas.width = targetPxW;
         canvas.height = targetPxH;
         const ctx = canvas.getContext('2d');
-        ctx.scale(sx, sy);
+        ctx.scale(s, s);
 
         if (!transparentBg) {
             ctx.fillStyle = 'white';
@@ -14780,8 +14801,14 @@ Results:
             domPositions[nodeId] = { x: domPos.x, y: domPos.y + headerH };
         }
 
+        // The chosen print width becomes the SVG's physical size; the height
+        // follows the content's own aspect so nothing letterboxes. Before
+        // this the file opened at the on-screen pixel size (often ~28 cm)
+        // whatever the dialog said.
+        const svgWCm = widthCm || Math.round(width / 37.8 * 10) / 10;
+        const svgHCm = Math.round(svgWCm * (totalHeight / width) * 100) / 100;
         let svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${totalHeight}" viewBox="0 0 ${width} ${totalHeight}">
+<svg xmlns="http://www.w3.org/2000/svg" width="${svgWCm}cm" height="${svgHCm}cm" viewBox="0 0 ${width} ${totalHeight}">
 <defs>
     <linearGradient id="signedGradient" x1="0%" y1="0%" x2="100%" y2="0%">
         <stop offset="0%" style="stop-color:#b2182b;stop-opacity:1" />
@@ -14847,7 +14874,16 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
                 // the same edge on screen.
                 const nodeFontSize = (node.font?.size || 16) * scale;
                 const borderW = node.borderWidth != null ? node.borderWidth : 2;
-                svg += `  <circle cx="${pos.x}" cy="${pos.y}" r="${nodeRadius}" fill="${bgColor}" stroke="${borderW > 0 ? '#000' : 'none'}" stroke-width="${borderW * scale}"/>\n`;
+                // Carry the node's actual border state: highlighted genes
+                // have a coloured, possibly dashed, thicker ring (and dimmed
+                // nodes an opacity) that the PNG kept and this SVG dropped,
+                // exporting a figure whose "Highlighted:" note pointed at
+                // rings that were not drawn.
+                const borderColor = node.color?.border || '#000';
+                const dashes = node.shapeProperties?.borderDashes;
+                const dashAttr = Array.isArray(dashes) ? ` stroke-dasharray="${dashes.map(v => v * scale).join(' ')}"` : '';
+                const opAttr = node.opacity != null && node.opacity < 1 ? ` opacity="${node.opacity}"` : '';
+                svg += `  <circle cx="${pos.x}" cy="${pos.y}" r="${nodeRadius}" fill="${bgColor}" stroke="${borderW > 0 ? borderColor : 'none'}" stroke-width="${borderW * scale}"${dashAttr}${opAttr}/>\n`;
 
                 // Handle multi-line labels. Bold / Italic arrive as markup
                 // inside the label, so they become font attributes here rather
@@ -15039,9 +15075,11 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
         svg += '</svg>';
 
         // Apply user's chosen cm dimensions to the outer svg tag so
-        // Illustrator / Inkscape open at the print size requested.
-        svg = svg.replace(/<svg([^>]*)\bwidth="[^"]*"/, `<svg$1width="${widthCm}cm"`);
-        svg = svg.replace(/<svg([^>]*)\bheight="[^"]*"/, `<svg$1height="${heightCm}cm"`);
+        // Illustrator / Inkscape open at the print size requested. Height is
+        // the aspect-true one: the dialog can carry a height remembered from
+        // a different view, and honouring it would letterbox or stretch.
+        svg = svg.replace(/<svg([^>]*)\bwidth="[^"]*"/, `<svg$1width="${svgWCm}cm"`);
+        svg = svg.replace(/<svg([^>]*)\bheight="[^"]*"/, `<svg$1height="${svgHCm}cm"`);
         if (!transparentBg && !/<rect[^>]*id="correlateExportBg"/.test(svg)) {
             svg = svg.replace(/(<svg[^>]*>)/, `$1<rect id="correlateExportBg" x="0" y="0" width="100%" height="100%" fill="white"/>`);
         }
@@ -15238,13 +15276,10 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
             const effectMap = new Map();
             this.results.clusters.forEach(c => effectMap.set(c.gene, c.meanEffect));
 
-            // Use visible network genes for scale (not all clusters)
-            const visibleEffects = [];
-            this.networkData.nodes.forEach(node => {
-                const effect = effectMap.get(node.id);
-                if (effect !== undefined && !isNaN(effect)) visibleEffects.push(effect);
-            });
-            const effectValues = visibleEffects.length > 0 ? visibleEffects : this.results.clusters.map(c => c.meanEffect).filter(v => !isNaN(v));
+            // The scale's values come from the shared helper, which honours
+            // the "Genes on screen / Whole input set" choice; the export
+            // legends read the same helper.
+            const effectValues = this._networkEffectValues();
 
             if (this.results?.basis === 'expr') {
                 // Expression values (log2 TPM+1) are never negative, so the
@@ -15742,8 +15777,20 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
         const parent = new Map(nodes.map(n => [n.id, n.id]));
         const find = (x) => { while (parent.get(x) !== x) { parent.set(x, parent.get(parent.get(x))); x = parent.get(x); } return x; };
         edges.forEach(e => { const ra = find(e.from), rb = find(e.to); if (ra !== rb) parent.set(ra, rb); });
+        // In Floating mode the edgeless input genes are meant to drift where
+        // the solver leaves them, so they are not components to be packed
+        // into the satellite rows; sweeping them in parked them in a grid
+        // whatever the layout choice said.
+        const floatMode = document.querySelector('input[name="uncorrLayout"]:checked')?.value === 'float';
+        const connected = new Set();
+        edges.forEach(e => { connected.add(e.from); connected.add(e.to); });
         const groups = new Map();
-        nodes.forEach(n => { const r = find(n.id); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(n.id); });
+        nodes.forEach(n => {
+            if (floatMode && !connected.has(n.id)) return;
+            const r = find(n.id);
+            if (!groups.has(r)) groups.set(r, []);
+            groups.get(r).push(n.id);
+        });
         if (groups.size < 2) return false;
         const positions = this.network.getPositions();
         const comps = [...groups.values()].map(ids => {
@@ -15832,45 +15879,84 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
     // for the drag and re-pin it where it is dropped.
     _arrangeUncorrelatedGrid() {
         if (!this.network || !this.networkData?.nodes) return;
-        // The sub-choice under "Show all input genes": Floating leaves these
-        // genes to the solver (unpinned, drifting as before the grid existed).
-        if (document.querySelector('input[name="uncorrLayout"]:checked')?.value === 'float') return;
         const loose = [];
         let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-        let nodeR = 25, fs = 16, longestLine = 4, labelLines = 1;
+        let nodeR = 25, fs = 16, labelLines = 1, maxLabelW = 0;
+        // MEASURE the widest label rather than estimating from character
+        // counts: the estimate first counted the <i></i> markup (block twice
+        // as wide as needed), then a tightened factor under-measured real
+        // capital-heavy gene names and the labels overlapped.
+        const mctx = (this._labelMeasureCanvas || (this._labelMeasureCanvas = document.createElement('canvas'))).getContext('2d');
         const pos = this.network.getPositions();
         for (const n of this.networkData.nodes.get()) {
             if ((this.network.getConnectedEdges(n.id) || []).length === 0) {
                 loose.push(n.id);
                 nodeR = n.size || nodeR;
                 fs = n.font?.size || fs;
-                const lines = String(n.label || n.id).split('\n');
+                const p = this._plainNodeLabel(n.label || n.id);
+                mctx.font = `${p.italic ? 'italic ' : ''}${p.bold ? 'bold ' : ''}${n.font?.size || fs}px ${n.font?.face || 'Arial'}`;
+                const lines = p.text.split('\n');
                 labelLines = Math.max(labelLines, lines.length);
-                for (const line of lines) longestLine = Math.max(longestLine, line.length);
+                for (const line of lines) maxLabelW = Math.max(maxLabelW, mctx.measureText(line).width);
             } else {
-                const p = pos[n.id];
-                if (!p) continue;
-                minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
-                minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+                const pp = pos[n.id];
+                if (!pp) continue;
+                minX = Math.min(minX, pp.x); maxX = Math.max(maxX, pp.x);
+                minY = Math.min(minY, pp.y); maxY = Math.max(maxY, pp.y);
             }
         }
         if (!loose.length) return;
         if (!Number.isFinite(maxX)) { minX = maxX = minY = maxY = 0; }
         loose.sort();
-        // Spacing from what actually needs the room (node diameter, label
-        // width and height), not the spring length: the spring-length grid
-        // sat far below the network and left the block airy, which zoomed
-        // the fitted picture out and shrank every node.
+        // Spacing from what actually needs the room (node diameter, measured
+        // label width and height), not the spring length: the spring-length
+        // grid sat far below the network and left the block airy, which
+        // zoomed the fitted picture out and shrank every node.
         const labelH = fs * 1.2 * labelLines;
-        const stepX = Math.max(nodeR * 2 + 24, longestLine * fs * 0.62 + 14);
-        const stepY = nodeR * 2 + labelH + 22;
-        // Wider than tall, so the block reads as a footnote strip; roughly
-        // match the network's width and centre the block underneath it.
-        let cols = Math.max(Math.round((maxX - minX) / stepX) + 1,
-            Math.ceil(Math.sqrt(loose.length * 2)));
-        cols = Math.min(cols, loose.length);
-        const startY = maxY + nodeR * 2 + labelH + 40;
-        const startX = (minX + maxX) / 2 - ((cols - 1) * stepX) / 2;
+        const stepX = Math.max(nodeR * 2 + 16, maxLabelW + 14);
+        const stepY = nodeR * 2 + labelH + 14;
+        const mode = document.querySelector('input[name="uncorrLayout"]:checked')?.value || 'grid';
+        if (mode === 'float') {
+            // Floating means floating OUTSIDE the network: at Run the loose
+            // genes start at random positions and the post-settle physics
+            // stop froze them wherever they happened to be, including right
+            // among the connected nodes (user-reported 2026-08-20). Place
+            // them on a ring around the connected drawing, unpinned, so a
+            // live solver lets them drift from there and a stopped one
+            // leaves them floating clear of the network.
+            const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+            const reach = (this._netSpringLength || 150) * 1.2;
+            const rx = (maxX - minX) / 2 + reach + stepX / 2;
+            const ry = (maxY - minY) / 2 + reach + stepY / 2;
+            this.networkData.nodes.update(loose.map((id, k) => {
+                const a = (2 * Math.PI * k) / loose.length + 0.4;
+                return { id, x: cx + Math.cos(a) * rx, y: cy + Math.sin(a) * ry, fixed: false, physics: true };
+            }));
+            return;
+        }
+        let cols, startX, startY;
+        if (mode === 'gridRight') {
+            // A column to the RIGHT of the network: taller than wide, rows
+            // roughly matching the network's height, centred on it. The
+            // centring must use the rows the block actually FILLS (from the
+            // final column count), not the target row count: when the two
+            // differed the block sat above centre, pressed toward the top.
+            let rows = Math.max(Math.round((maxY - minY) / stepY) + 1,
+                Math.ceil(Math.sqrt(loose.length / 2)));
+            rows = Math.min(Math.max(rows, 1), loose.length);
+            cols = Math.ceil(loose.length / rows);
+            const actualRows = Math.ceil(loose.length / cols);
+            startX = maxX + stepX + nodeR * 2 + 40;
+            startY = (minY + maxY) / 2 - ((actualRows - 1) * stepY) / 2;
+        } else {
+            // Wider than tall, so the block reads as a footnote strip; roughly
+            // match the network's width and centre the block underneath it.
+            cols = Math.max(Math.round((maxX - minX) / stepX) + 1,
+                Math.ceil(Math.sqrt(loose.length * 2)));
+            cols = Math.min(cols, loose.length);
+            startY = maxY + nodeR * 2 + labelH + 40;
+            startX = (minX + maxX) / 2 - ((cols - 1) * stepX) / 2;
+        }
         // physics:false, not merely pinned: a fixed node still repels the
         // rest, so the parked block used to shove the connected network away
         // from itself, opening a wide gap the fit then had to zoom out over.
@@ -16098,28 +16184,10 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
         if (!document.getElementById('showUncorrelatedGenes')?.checked) return;
         const mode = document.querySelector('input[name="uncorrLayout"]:checked')?.value || 'grid';
         if (mode === 'float') {
-            const loose = [];
-            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-            const pos = this.network.getPositions();
-            for (const n of this.networkData.nodes.get()) {
-                if ((this.network.getConnectedEdges(n.id) || []).length === 0) { loose.push(n.id); continue; }
-                const p = pos[n.id];
-                if (!p) continue;
-                minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
-                minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
-            }
-            if (!loose.length) return;
-            if (!Number.isFinite(maxX)) { minX = maxX = minY = maxY = 0; }
-            // Released straight from the parked row they barely move (the
-            // solver drifts slowly), which does not read as floating at all.
-            // Ring them around the network first, then let the solver drift.
-            const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
-            const reach = (this._netSpringLength || 150) * 1.2;
-            const rx = (maxX - minX) / 2 + reach, ry = (maxY - minY) / 2 + reach;
-            this.networkData.nodes.update(loose.map((id, k) => {
-                const a = (2 * Math.PI * k) / loose.length + 0.4;
-                return { id, x: cx + Math.cos(a) * rx, y: cy + Math.sin(a) * ry, fixed: false, physics: true };
-            }));
+            // The ring placement lives in _arrangeUncorrelatedGrid (shared
+            // with the post-Run settle, which needs it too so floaters never
+            // freeze among the connected nodes).
+            this._arrangeUncorrelatedGrid();
             this.network.fit({ animation: false });
         } else {
             this._arrangeUncorrelatedGrid();
@@ -16589,7 +16657,8 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
         if (statsLabelCb) statsLabelCb.checked = false;
 
         // Reset radio buttons
-        document.querySelector('input[name="colorGEType"][value="signed"]').checked = true;
+        const geRange = document.querySelector('input[name="colorGERange"][value="shown"]');
+        if (geRange) geRange.checked = true;
         document.querySelector('input[name="colorStatType"][value="signed_lfc"]').checked = true;
         document.querySelector('input[name="colorScale"][value="all"]').checked = true;
         document.querySelector('input[name="statsLabelDisplay"][value="lfc"]').checked = true;
@@ -17131,7 +17200,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 // the same edge on screen.
                 const nodeFontSize = (node.font?.size || 16) * scale;
                 const borderW = node.borderWidth != null ? node.borderWidth : 2;
-                svg += `  <circle cx="${pos.x}" cy="${pos.y}" r="${nodeRadius}" fill="${bgColor}" stroke="${borderW > 0 ? '#000' : 'none'}" stroke-width="${borderW * scale}"/>\n`;
+                // Carry the node's actual border state: highlighted genes
+                // have a coloured, possibly dashed, thicker ring (and dimmed
+                // nodes an opacity) that the PNG kept and this SVG dropped,
+                // exporting a figure whose "Highlighted:" note pointed at
+                // rings that were not drawn.
+                const borderColor = node.color?.border || '#000';
+                const dashes = node.shapeProperties?.borderDashes;
+                const dashAttr = Array.isArray(dashes) ? ` stroke-dasharray="${dashes.map(v => v * scale).join(' ')}"` : '';
+                const opAttr = node.opacity != null && node.opacity < 1 ? ` opacity="${node.opacity}"` : '';
+                svg += `  <circle cx="${pos.x}" cy="${pos.y}" r="${nodeRadius}" fill="${bgColor}" stroke="${borderW > 0 ? borderColor : 'none'}" stroke-width="${borderW * scale}"${dashAttr}${opAttr}/>\n`;
 
                 // Handle multi-line labels. Bold / Italic arrive as markup
                 // inside the label, so they become font attributes here rather
@@ -18018,6 +18096,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (stripped) this._cellLineNameToId.set(stripped.toUpperCase(), cl);
             const full = this.cellLineMetadata?.cellLineName?.[cl];
             if (full) this._cellLineNameToId.set(full.toUpperCase(), cl);
+            // getCellLineName() corrects DepMap's stripped name where it lost
+            // a character (RVH421_DAB_R arrives stripped as RVH42DABR). That
+            // corrected name is what the app DISPLAYS and writes into text
+            // fields, so it must resolve back; without this entry the custom
+            // AI export dropped that line on the name round-trip and the
+            // dialog's count disagreed with the file by one.
+            const shown = this.getCellLineName(cl);
+            if (shown) this._cellLineNameToId.set(String(shown).toUpperCase(), cl);
         }
         return this._cellLineNameToId;
     }
@@ -23488,8 +23574,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         //    1 SVG px = 1pt gives ~33% larger rendering (1pt = 1/72", 1px = 1/96")
         //    Cap at 280mm wide so it fits on A4 with margins
         // 2. Remove empty style attribute and Plotly class
+        // A caller that already set a physical print size (cm/mm/in) chose it
+        // in the export dialog; overwriting it here with viewBox-derived pt
+        // made the network SVG open at ~28 cm whatever width was asked for.
+        const hasPhysicalSize = /(cm|mm|in)\s*$/i.test(svgEl.getAttribute('width') || '');
         const vb = svgEl.getAttribute('viewBox');
-        if (vb) {
+        if (vb && !hasPhysicalSize) {
             const parts = vb.trim().split(/\s+/).map(Number);
             if (parts.length === 4) {
                 const vbW = parts[2];
@@ -23976,8 +24066,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 }
                 const cbGE = document.getElementById('colorByGeneEffect');
                 if (cbGE) cbGE.checked = ns.colorByGeneEffect || false;
-                if (ns.colorGEType) {
-                    const r = document.querySelector(`input[name="colorGEType"][value="${ns.colorGEType}"]`);
+                if (ns.colorGERange) {
+                    const r = document.querySelector(`input[name="colorGERange"][value="${ns.colorGERange}"]`);
                     if (r) r.checked = true;
                 }
                 const cbStats = document.getElementById('colorByStats');
@@ -24478,7 +24568,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             labelItalic: this._netLabelItalic === undefined ? null : this._netLabelItalic,
             highlight: this._netHighlightText || '',
             colorByGeneEffect: document.getElementById('colorByGeneEffect')?.checked || false,
-            colorGEType: document.querySelector('input[name="colorGEType"]:checked')?.value || 'signed',
+            colorGEType: 'signed',
+            colorGERange: document.querySelector('input[name="colorGERange"]:checked')?.value || 'shown',
             colorByStats: document.getElementById('colorByStats')?.checked || false,
             colorStatType: document.querySelector('input[name="colorStatType"]:checked')?.value || 'signed_lfc',
             colorScale: document.querySelector('input[name="colorScale"]:checked')?.value || 'all',
@@ -25660,13 +25751,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             });
         }
 
-        const blob = new Blob([csv], { type: 'text/csv' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = csvName(`correlation_${d.gene1}_vs_${d.gene2}_by_${this._caView}`);
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+        this.downloadFile(csv, csvName(`correlation_${d.gene1}_vs_${d.gene2}_by_${this._caView}`), 'text/csv');
     }
 
     downloadCACellLineCSV() {
@@ -25678,13 +25763,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             csv += `${p.cellLineId},"${p.cellLineName}","${p.lineage || ''}",${p.x.toFixed(4)},${p.y.toFixed(4)}\n`;
         });
 
-        const blob = new Blob([csv], { type: 'text/csv' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = csvName(`correlation_${d.gene1}_vs_${d.gene2}_cell_lines`);
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+        this.downloadFile(csv, csvName(`correlation_${d.gene1}_vs_${d.gene2}_cell_lines`), 'text/csv');
     }
 
     switchToInspectWithTissue(tissue) {
@@ -25938,7 +26017,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             csv += row + '\n';
         });
 
-        const suffix = hotspotGene ? `_${hotspotGene}` : '';
+        const csvTissue = document.getElementById('scatterCancerFilter')?.value || '';
+        const suffix = (hotspotGene ? `_${hotspotGene}` : '') + this._csvSlug(csvTissue);
         this.downloadFile(csv,
             csvName(`scatter_${this.currentInspect.gene1}_vs_${this.currentInspect.gene2}${suffix}`),
             'text/csv');
@@ -27354,7 +27434,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const highlightCl = this._geHighlightCellLine;
         const searchCl = document.getElementById('geCellLineSearch')?.value?.trim().toUpperCase();
         if (highlightCl || searchCl) {
-            const annotations = [];
+            // Start from the annotations already on the plot: relayout with
+            // a bare arrow list REPLACED them all, which silently deleted the
+            // title annotation, on screen and in every subsequent export,
+            // whenever a cell-line search or highlight was active.
+            const annotations = [...layout.annotations];
             for (let i = 0; i < stats.length; i++) {
                 const s = stats[i];
                 for (const c of s.cellData) {
@@ -27380,7 +27464,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     }
                 }
             }
-            if (annotations.length > 0) {
+            if (annotations.length > layout.annotations.length) {
                 Plotly.relayout('geneEffectPlot', { annotations });
             }
         }
@@ -28298,7 +28382,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         } catch (e) { /* use original dimensions */ }
         document.body.removeChild(measurer);
 
-        svgEl.querySelectorAll('clipPath').forEach(cp => {
+        // Widen ONLY the legend scrollbox clip (the historic too-narrow-legend
+        // bug). This used to hit every clipPath anchored at 0,0, which
+        // includes Plotly's plot-area clip: the regression line then ran out
+        // of the plot corners across the subtitle and axis labels in every
+        // exported format.
+        svgEl.querySelectorAll('clipPath[id*="legend" i]').forEach(cp => {
             const rect = cp.querySelector('rect');
             if (rect && parseFloat(rect.getAttribute('x') || 0) === 0 && parseFloat(rect.getAttribute('y') || 0) === 0) {
                 rect.setAttribute('x', -500);
@@ -28727,6 +28816,48 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         return this.screenshotPopoutWith(elOrId, fileStem, dlg, metaExtra);
     }
 
+    // One DOM element to a PNG data URL, with every Plotly chart inside it
+    // swapped for its own crisp render in the clone: html2canvas mis-scales
+    // Plotly's stacked SVGs (see screenshotPopoutWith), and the AI export's
+    // companion images of the inspect / browser / wiki panels hit the same
+    // bug through html2canvas directly.
+    async _domToPngUrl(root, scale = 2) {
+        if (!root || typeof html2canvas === 'undefined') return null;
+        const livePlots = [...root.querySelectorAll('.js-plotly-plot')];
+        const plotPngs = [];
+        for (const gd of livePlots) {
+            let img = null;
+            try {
+                const pw = gd.offsetWidth || 600, ph = gd.offsetHeight || 400;
+                if (gd.data && typeof Plotly !== 'undefined') {
+                    const url = await Plotly.toImage(gd, { format: 'png', width: pw, height: ph, scale });
+                    img = new Image();
+                    await new Promise(res => { img.onload = res; img.onerror = () => { img = null; res(); }; img.src = url; });
+                }
+            } catch (e) { img = null; }
+            plotPngs.push({ w: gd.offsetWidth, h: gd.offsetHeight, img });
+        }
+        const rootId = root.id;
+        const canvas = await html2canvas(root, {
+            scale, backgroundColor: '#ffffff', useCORS: true, logging: false,
+            onclone: (doc) => {
+                const scopeEl = (rootId && doc.getElementById(rootId)) || doc.body;
+                scopeEl.querySelectorAll('.js-plotly-plot').forEach((el, i) => {
+                    const p = plotPngs[i];
+                    if (!p?.img) return;
+                    const im = doc.createElement('img');
+                    im.src = p.img.src;
+                    im.style.cssText = `width:${p.w}px;height:${p.h}px;display:block;`;
+                    el.innerHTML = '';
+                    el.style.width = p.w + 'px';
+                    el.style.height = p.h + 'px';
+                    el.appendChild(im);
+                });
+            }
+        });
+        return canvas.toDataURL('image/png');
+    }
+
     async screenshotPopoutWith(elOrId, fileStem, dlg, metaExtra = {}) {
         const root = (typeof elOrId === 'string') ? document.getElementById(elOrId) : elOrId;
         if (!root || !dlg) return;
@@ -28822,6 +28953,27 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 windowWidth: document.documentElement.scrollWidth,
                 onclone: (clonedDoc) => {
                     const scopeEl = (rootId && clonedDoc.getElementById(rootId)) || clonedDoc.body;
+                    // Swap each Plotly chart in the clone for its crisp PNG:
+                    // html2canvas mis-scales Plotly's stacked SVGs (the
+                    // correlation-analysis panel came out with a second,
+                    // hugely magnified copy of the chart smeared over the
+                    // bottom half), and compositing after the fact at
+                    // live-measured coordinates missed, because the clone's
+                    // layout can differ from the live one under a full-content
+                    // stash. An <img> in the clone renders wherever the clone
+                    // puts the div, so it can't land in the wrong place.
+                    // Charts whose PNG failed keep html2canvas's own render
+                    // as the fallback.
+                    scopeEl.querySelectorAll('.js-plotly-plot').forEach((el, i) => {
+                        if (!plotPngs[i]?.img) return;
+                        const im = clonedDoc.createElement('img');
+                        im.src = plotPngs[i].img.src;
+                        im.style.cssText = `width:${plotRects[i].w}px;height:${plotRects[i].h}px;display:block;`;
+                        el.innerHTML = '';
+                        el.style.width = plotRects[i].w + 'px';
+                        el.style.height = plotRects[i].h + 'px';
+                        el.appendChild(im);
+                    });
                     // Replace text inputs with flex-centered divs (reliable centring).
                     scopeEl.querySelectorAll('input').forEach((el, i) => {
                         const snap = inputSnap[i];
@@ -28843,15 +28995,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             alert('Screenshot failed: ' + (e?.message || e));
             return;
         }
-        // Composite the crisp Plotly PNGs over their plot areas.
-        try {
-            const cctx = canvas.getContext('2d');
-            plotPngs.forEach((p, i) => {
-                if (!p.img) return;
-                const r = plotRects[i];
-                cctx.drawImage(p.img, Math.round(r.x * scale), Math.round(r.y * scale), Math.round(r.w * scale), Math.round(r.h * scale));
-            });
-        } catch (e) { /* keep html2canvas's own chart render if compositing fails */ }
+        // The crisp charts are already in the capture: they were swapped into
+        // the clone as <img> elements, which render in the clone's own layout.
+        // The old post-composite at live-measured coordinates is exactly what
+        // painted charts in the wrong place.
         saved.forEach(s => { for (const p in s.prev) s.el.style[p] = s.prev[p]; });
         const date = new Date().toISOString().slice(0, 10);
         const filename = `${fileStem || 'correlate_figure'}_${exportStamp()}`;
@@ -28859,7 +29006,15 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             ? this._buildExportMetadata('popout_screenshot', { scope, ...metaExtra })
             : null;
         const metaJson = (meta && dlg.sidecar !== false) ? JSON.stringify(meta) : null;
-        await this._downloadCanvasAs(canvas, fmt, filename, { dpi, widthCm, heightCm, metaJson });
+        // The canvas is capW×scale pixels whatever width was asked for, so the
+        // physical size has to come from the REQUESTED width: stamping the
+        // dialog dpi made an 18 cm request print at 41 cm. Density = pixels
+        // over the chosen width; height follows the capture's own aspect.
+        const effDpi = widthCm && canvas.width ? Math.max(1, Math.round(canvas.width / (widthCm / 2.54))) : dpi;
+        const effHeightCm = widthCm && canvas.width
+            ? Math.round(widthCm * (canvas.height / canvas.width) * 100) / 100
+            : heightCm;
+        await this._downloadCanvasAs(canvas, fmt, filename, { dpi: effDpi, widthCm, heightCm: effHeightCm, metaJson });
     }
 
     // Inject a small camera button into a popout header that captures the given
@@ -28896,6 +29051,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
     async _downloadCanvasAs(canvas, fmt, filename, opts = {}) {
         const { dpi = 300, widthCm, heightCm, metaJson, svg, skipSidecar, second } = opts;
+        // The promise to the user is widthCm. PDF and PPTX honour it (they
+        // take the cm directly), but PNG and TIFF used to stamp the caller's
+        // dpi, which predates the whitespace trim, so a trimmed file printed
+        // 5-25% narrower than asked (2026-08-20 audit). Stamp the density
+        // that makes THIS canvas print at widthCm instead.
+        const effDpi = (widthCm && canvas?.width) ? Math.max(1, Math.round(canvas.width / (widthCm / 2.54))) : dpi;
         // Date and time on every exported file, so a folder of them can be told
         // apart later. Added here rather than at each call site.
         if (filename && !/_\d{4}-\d{2}-\d{2}_\d{4}$/.test(filename)) filename = `${filename}_${exportStamp()}`;
@@ -28909,7 +29070,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Companion metadata file (unless the caller already emits one).
         if (!skipSidecar) this._downloadMetaSidecar(filename, metaJson);
         try {
-            if (fmt === 'tiff') { save(new Blob([this._canvasToTiff(canvas, dpi)], { type: 'image/tiff' }), 'tiff'); return; }
+            if (fmt === 'tiff') { save(new Blob([this._canvasToTiff(canvas, effDpi)], { type: 'image/tiff' }), 'tiff'); return; }
             if (fmt === 'pdf') {
                 // Prefer a true vector PDF (svg2pdf) when we have the source SVG
                 // and the plugin loaded; otherwise fall back to the raster PDF.
@@ -28931,7 +29092,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             return;
         }
         let buf = await (await fetch(durl)).arrayBuffer();
-        buf = this._setPngDpi(buf, dpi);
+        buf = this._setPngDpi(buf, effDpi);
         if (metaJson && typeof this._addPngTextChunk === 'function') buf = this._addPngTextChunk(buf, 'correlate-meta', metaJson);
         save(new Blob([buf], { type: 'image/png' }), 'png');
     }
@@ -29324,13 +29485,34 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const allResults = mr.allResults || mr.significantResults || [];
             if (allResults.length === 0) return [];
             const cls = new Set();
+            // The additional hotspot / fusion filters DEFINE the analysis
+            // cohort just like the lineage filters do. Leaving them out here
+            // exported the lines the analysis excluded, and the recount over
+            // the file then contradicted the table on screen (an APC/Bowel
+            // run with a TP53 filter exported 20 extra TP53-WT lines and
+            // reported their split as the analysis result).
+            const addMutData = mr.additionalHotspot && mr.additionalHotspotLevel !== 'all'
+                ? this.mutations?.geneData?.[mr.additionalHotspot]?.mutations : null;
+            const addFusionActive = !!(mr.additionalTransGene && mr.additionalTransLevel !== 'all');
             this.metadata.cellLines.forEach(cl => {
                 if (mr.lineageFilter && this.cellLineMetadata?.lineage?.[cl] !== mr.lineageFilter) return;
                 if (mr.subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cl] !== mr.subLineageFilter) return;
                 if (!this._mrOncotreePasses(cl)) return;
                 if (mr.excludedTissues?.size > 0 && mr.excludedTissues.has(this.cellLineMetadata?.lineage?.[cl])) return;
+                if (addMutData) {
+                    const lvl = addMutData[cl] || 0;
+                    if (mr.additionalHotspotLevel === '0' && lvl !== 0) return;
+                    if (mr.additionalHotspotLevel === '1' && lvl !== 1) return;
+                    if (mr.additionalHotspotLevel === '2' && lvl < 2) return;
+                    if (mr.additionalHotspotLevel === '1+2' && lvl === 0) return;
+                }
+                if (addFusionActive) {
+                    const hasFusion = this._geFusionPasses(cl, mr.additionalTransGene);
+                    if (mr.additionalTransLevel === '0' ? hasFusion : !hasFusion) return;
+                }
                 if (this._gridAppliesToAnalysis() && !this._cellLinePassesOncoprintFilters(cl)) return;
                 if (this._customCellLineFilter && !this._customCellLineFilter.has(cl)) return;
+                if (this._analysisCellLineSubset && !this._analysisCellLineSubset.has(cl)) return;
                 cls.add(cl);
             });
             return [...cls];
@@ -30088,6 +30270,22 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 + (clickedLabelled?.length ? ` ${clickedLabelled.length} point(s) carry a visible name label because they were clicked on screen; every other point is unlabelled but present.` : '')
                 + (this._gateFilter ? ` Only the cell lines inside gate ${this._gateFilter.gate} are plotted; the rest of the panel is excluded.` : '');
             description = `Scatter of ${xLabel} (x) vs ${yLabel} (y)${parts.length ? ', filtered by ' + parts.join(', ') : ''}.`;
+            // Gates drawn on the scatter ship as top-level cellLineGroups,
+            // the same mechanism every other grouped source uses. The dialog
+            // has promised "any gates you have drawn" since the copy was
+            // written; until v.88.86 the file silently dropped them.
+            if (this._gateA?.length || this._gateB?.length) {
+                const inFile = new Set(cellLines);
+                const gA = (this._gateA || []).map(d => d.cellLineId).filter(id => inFile.has(id));
+                const gB = (this._gateB || []).map(d => d.cellLineId).filter(id => inFile.has(id));
+                if (gA.length) cellLineGroups.gateA = gA;
+                if (gB.length) cellLineGroups.gateB = gB;
+                const gateWords = [gA.length ? `gate A (n=${gA.length})` : '', gB.length ? `gate B (n=${gB.length})` : ''].filter(Boolean);
+                if (gateWords.length) {
+                    context.gates = `The user drew ${gateWords.join(' and ')} on the scatter; the top-level cellLineGroups section states the membership, so the contrast can be recomputed from this file.`;
+                    context.plotDescribesWhat += ` The user drew ${gateWords.join(' and ')} around subsets of the points; cellLineGroups says which lines each encloses.`;
+                }
+            }
         } else if (source === 'mutation') {
             const excludedList = mr?.excludedTissues?.size ? [...mr.excludedTissues] : [];
             context = {
@@ -30126,7 +30324,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     const drift = (mr?.nWT != null && mr?.nMut != null && (mr.nWT !== wt || mr.nMut !== alt));
                     return {
                         nWT: wt, nMutated: alt,
-                        ...(drift ? { countsNote: `Counted over the ${cellLines.length.toLocaleString()} cell lines in this file, so nWT + nMutated equals nTotal. The analysis on screen ran over ${(mr.nWT + mr.nMut).toLocaleString()} lines (${mr.nMut} altered, ${mr.nWT} unaltered); the difference is lines that have no CRISPR screen and so carry no data to export. Precomputed rows in extras were computed on the analysis cohort, which is why an n there can exceed what you count here by one or two.` } : {})
+                        ...(drift ? { countsNote: `Counted over the ${cellLines.length.toLocaleString()} cell lines in this file, so nWT + nMutated equals nTotal. The analysis on screen ran over ${(mr.nWT + mr.nMut).toLocaleString()} lines (${mr.nMut} altered, ${mr.nWT} unaltered); the two can differ when a line has no CRISPR screen and so carries no data to export, or when a filter was changed after the analysis ran. Where they disagree, the analysis numbers describe the precomputed rows in extras and the recount here describes the matrices.` } : {})
                     };
                 })(),
                 pValueThreshold: mr?.pThreshold,
@@ -30911,7 +31109,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // user noticed). With the gene cap, even a 1186-cell correlation
         // export fits comfortably under the 30 MB limit while still giving
         // the AI matrix context.
-        context.dataTier = `${tierLabel} (this describes the geneEffect / expression MATRICES only${extras ? '; the precomputed lists in extras are governed separately, and extras._listScope says for each one whether it is complete or was cut' : ', and this file carries no precomputed lists for it to be confused with'})`;
+        // context.dataTier is written at composition time, just before the
+        // file is serialized: wording it here, off the `extras` variable,
+        // made the scatter export claim "no precomputed lists" while shipping
+        // three top-30 scans and seven extras that are attached further down.
         // An unfiltered view was arriving with five empty strings and a null
         // ahead of the two fields that carry the answer. A filter that is not
         // set is not information.
@@ -32619,8 +32820,17 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const _label = analysisGene || context.gene1 || 'analysis';
         const _stem = `correlate_export_${source}_${_label}_${n}cl`;
         let _pngUrl = null;
+        // The dialog offers the image and defaults it on; the custom dialog
+        // has no checkbox and keeps its own rule below.
+        const wantCompanionImage = custom ? true : (document.getElementById('aiIncludeImage')?.checked !== false);
         try {
-            if (source === 'correlations' || source === 'clusters') {
+            // A custom export whose request replaced the cohort describes
+            // nothing on screen: its context says so, and a screenshot of
+            // the open view would be a picture of the very results the file
+            // just dropped for not describing this cohort.
+            if (!wantCompanionImage || exportData.context?.type === 'custom_export') {
+                // no companion image, by choice or deliberately
+            } else if (source === 'correlations' || source === 'clusters') {
                 // The network is a vis-network canvas, not a Plotly chart:
                 // reuse the same composition path "Copy network" / "Export
                 // image" use, so the companion picture carries the same
@@ -32642,6 +32852,18 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     const canvas = await window.html2canvas(el, { scale: 2, backgroundColor: '#ffffff', logging: false });
                     _pngUrl = this._trimCanvasWhitespace(canvas).toDataURL('image/png');
                 }
+            } else if (source === 'selection') {
+                // The inspect modal: volcanoes, tables and panels, whatever
+                // mode it is in (selection vs rest, or gate A vs gate B). The
+                // gate export shipped no picture at all before v.88.88.
+                const el = document.getElementById('selectionInspectInner');
+                if (el && el.offsetParent !== null) _pngUrl = await this._domToPngUrl(el);
+            } else if (source === 'clb') {
+                const el = document.getElementById('clbModalCard');
+                if (el && el.offsetParent !== null) _pngUrl = await this._domToPngUrl(el);
+            } else if (source === 'wiki') {
+                const el = document.getElementById('clbWikiBody');
+                if (el && el.offsetParent !== null) _pngUrl = await this._domToPngUrl(el);
             } else if (source === 'heatmap') {
                 // Also not a Plotly chart: the same composed canvas Export
                 // image / Copy use (labels + dendrogram, grid + group strip,
@@ -32668,14 +32890,33 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     });
                 }
             }
-            // wiki, clb and a question-less exprCorrelates table have no
-            // chart at all: plotId/canvas stays null above and this is
-            // skipped without error, exactly as intended.
+            // A question-less exprCorrelates table has no chart: plotId stays
+            // null above and this is skipped without error. Every other
+            // source produces a picture of what was on screen.
             if (_pngUrl && exportData.context) {
                 exportData.context.companionImage = `${_stem}.png`;
                 exportData.context.companionImageNote = 'The chart the user was looking at when this file was made, saved beside it under the same name. If it was provided, read it: it shows the grouping and the axis this file describes. If it was not, rely on context.plotDescribesWhat.';
             }
         } catch (e) { console.warn('Companion PNG not produced:', e); }
+
+        // dataTier is a claim about what THIS file carries, so it is worded
+        // here, where the file is complete, not up in the per-source branches.
+        // Written earlier it read the `extras` variable before the scatter's
+        // focal-gene lists were attached and told the reader the file carried
+        // no precomputed lists while shipping three top-30 scans.
+        {
+            const hasTopLists = !!(exportData.topCorrelates || exportData.topCoessentials || exportData.topExpressionCorrelates);
+            // _listScope only exists when extras holds list-shaped sections;
+            // extras of plain objects has nothing for it to describe, and the
+            // wording must not point at a field the file does not carry.
+            const hasExtrasLists = !!exportData.extras?._listScope;
+            let listWord;
+            if (hasTopLists && hasExtrasLists) listWord = '; the top-30 scan lists and the precomputed lists in extras are governed separately: scanScope describes the scans, and extras._listScope says for each extras list whether it is complete or was cut';
+            else if (hasTopLists) listWord = '; the top-30 scan lists are governed separately, see scanScope';
+            else if (hasExtrasLists) listWord = '; the precomputed lists in extras are governed separately, and extras._listScope says for each one whether it is complete or was cut';
+            else listWord = ', and this file carries no precomputed list for it to be confused with';
+            exportData.context.dataTier = `${tierLabel} (this describes the geneEffect / expression MATRICES only${listWord})`;
+        }
 
         const jsonStr = JSON.stringify(exportData);
         const compressed = pako.gzip(jsonStr);
@@ -32695,6 +32936,15 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 : null;
             const autoFormat = uncompressedBytes < EIGHT_MB ? 'plain' : 'gz';
             useCompressed = (manualFormat || autoFormat) === 'gz';
+            // When the size decided, move the radio to match: the dialog was
+            // showing "Plain .json" selected while writing a .json.gz.
+            if (!manualFormat) {
+                const plainRadio = document.getElementById('aiFormatPlain');
+                const gzRadio = document.getElementById('aiFormatGz');
+                if (plainRadio && gzRadio) {
+                    (useCompressed ? gzRadio : plainRadio).checked = true;
+                }
+            }
             // Sizes are only known now; state them on the format labels.
             const plainSizeEl = document.getElementById('aiFormatPlainSize');
             if (plainSizeEl) plainSizeEl.textContent = ` (~${(uncompressedBytes / (1024 * 1024)).toFixed(1)} MB)`;
@@ -35310,459 +35560,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const filename = csvName(`expression_correlates_${ctx?.targetGene || 'gene'}_${ctx?.hotspotGene || 'hotspot'}`);
         this.downloadFile(csv, filename, 'text/csv');
     }
-    // ===== Full-Screen Compare Modal =====
-
-    showMutationCompareByTissue() {
-        if (!this.mutationResults) return;
-        const mr = this.mutationResults;
-        const hotspotGene = mr.hotspotGene;
-        const isTranslocation = mr.isTranslocation;
-        const isDamaging = mr.isDamaging;
-        if (isDamaging) this._cnAxisMode = mr.cnMode || null;
-        const mutationData = isTranslocation
-            ? this._fusionAxisData?.geneData?.[hotspotGene]
-            : isDamaging
-                ? this._lossAxisData?.geneData?.[hotspotGene]
-                : this.mutations?.geneData?.[hotspotGene];
-        if (!mutationData) return;
-
-        const cellLines = this.metadata.cellLines;
-
-        // Group by the next level down from the analysis filter (tissue →
-        // subtype groups, subtype → disease groups via _geGroupOf).
-        const groupBySubtype = !!(mr.lineageFilter || mr.subLineageFilter) && !!this.cellLineMetadata?.primaryDisease;
-
-        // Build group -> { cellLine indices by mutation status } map
-        const groupMap = {};
-        cellLines.forEach((cellLine, idx) => {
-            // Apply lineage/sublineage filters from analysis params
-            if (mr.lineageFilter && this.cellLineMetadata?.lineage?.[cellLine] !== mr.lineageFilter) return;
-            if (mr.subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cellLine] !== mr.subLineageFilter) return;
-            if (!this._mrOncotreePasses(cellLine)) return;
-            if (mr.excludedTissues && mr.excludedTissues.size > 0) {
-                const lineage = this.cellLineMetadata?.lineage?.[cellLine];
-                if (lineage && mr.excludedTissues.has(lineage)) return;
-            }
-            if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
-                const addMutData = this.mutations?.geneData?.[mr.additionalHotspot];
-                if (addMutData) {
-                    const addMutLevel = addMutData.mutations[cellLine] || 0;
-                    if (mr.additionalHotspotLevel === '0' && addMutLevel !== 0) return;
-                    if (mr.additionalHotspotLevel === '1' && addMutLevel !== 1) return;
-                    if (mr.additionalHotspotLevel === '2' && addMutLevel < 2) return;
-                    if (mr.additionalHotspotLevel === '1+2' && addMutLevel === 0) return;
-                }
-            }
-            const groupKey = groupBySubtype
-                ? this._geGroupOf(cellLine)
-                : (this.cellLineMetadata?.lineage?.[cellLine] || 'Unknown');
-            const mutLevel = isTranslocation
-                ? (mutationData.translocations[cellLine] || 0)
-                : (mutationData.mutations[cellLine] || 0);
-            if (!groupMap[groupKey]) groupMap[groupKey] = { wt: [], mut: [], total: 0 };
-            groupMap[groupKey].total++;
-            if (mutLevel === 0) groupMap[groupKey].wt.push(idx);
-            else groupMap[groupKey].mut.push(idx);
-        });
-
-        // Also build "All" column
-        const allWT = [], allMut = [];
-        Object.values(groupMap).forEach(t => { allWT.push(...t.wt); allMut.push(...t.mut); });
-
-        // Build columns: "All" + each group
-        const cols = [{ label: 'All', wtIdx: allWT, mutIdx: allMut, totalCells: allWT.length + allMut.length, nWT: allWT.length, nMut: allMut.length, isRef: true }];
-        Object.entries(groupMap).forEach(([group, data]) => {
-            cols.push({ label: group, wtIdx: data.wt, mutIdx: data.mut, totalCells: data.total, nWT: data.wt.length, nMut: data.mut.length, tissue: group });
-        });
-
-        // Name the split by what it actually is: the old title said "Hotspot
-        // Mutational Analysis" even for fusion / functional-loss / CN splits,
-        // which read as the wrong window having opened.
-        const L = this._mutAxisLabels(mr);
-        const groupLabel = groupBySubtype ? this._geSplitLabel() : 'Tissue';
-        // Store data for rendering
-        this._compareModalData = {
-            cols,
-            genes: mr.significantResults.map(r => r.gene),
-            hotspotGene,
-            mode: 'tissue',
-            title: `Compare by ${groupLabel}: ${hotspotGene} ${L.carrier} vs ${L.ref}, within each ${groupLabel.toLowerCase()}`,
-            isTranslocation,
-            isDamaging: mr.isDamaging || false,
-            cnMode: mr.cnMode || null
-        };
-        this._compareModalMode = 'tissue';
-        this._compareSortCol = null;
-        this._compareSortAsc = true;
-
-        this.renderCompareModal();
-        document.getElementById('mutCompareModal').style.display = '';
-    }
-
-    // Unreachable since v.84.33: the "Compare by Hotspot" / "Compare by Fusion"
-    // buttons were removed from the mutation analysis to simplify it. Kept so the
-    // feature can be restored by putting the buttons and their listeners back.
-    showMutationCompareByHotspot() {
-        if (!this.mutationResults) return;
-        const mr = this.mutationResults;
-        const mainHotspot = mr.hotspotGene;
-        const isTranslocation = mr.isTranslocation;
-        const isDamaging = mr.isDamaging;
-        if (isDamaging) this._cnAxisMode = mr.cnMode || null;
-        const mainMutData = isTranslocation
-            ? this._fusionAxisData?.geneData?.[mainHotspot]
-            : isDamaging
-                ? this._lossAxisData?.geneData?.[mainHotspot]
-                : this.mutations?.geneData?.[mainHotspot];
-        if (!mainMutData) return;
-
-        const cellLines = this.metadata.cellLines;
-
-        // Build base filtered cell indices
-        const baseCells = [];
-        cellLines.forEach((cellLine, idx) => {
-            if (mr.lineageFilter && this.cellLineMetadata?.lineage?.[cellLine] !== mr.lineageFilter) return;
-            if (mr.subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cellLine] !== mr.subLineageFilter) return;
-            if (!this._mrOncotreePasses(cellLine)) return;
-            if (mr.excludedTissues && mr.excludedTissues.size > 0) {
-                const lineage = this.cellLineMetadata?.lineage?.[cellLine];
-                if (lineage && mr.excludedTissues.has(lineage)) return;
-            }
-            if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
-                const addMutData = this.mutations?.geneData?.[mr.additionalHotspot];
-                if (addMutData) {
-                    const addMutLevel = addMutData.mutations[cellLine] || 0;
-                    if (mr.additionalHotspotLevel === '0' && addMutLevel !== 0) return;
-                    if (mr.additionalHotspotLevel === '1' && addMutLevel !== 1) return;
-                    if (mr.additionalHotspotLevel === '2' && addMutLevel < 2) return;
-                    if (mr.additionalHotspotLevel === '1+2' && addMutLevel === 0) return;
-                }
-            }
-            const mainMut = isTranslocation
-                ? (mainMutData.translocations[cellLine] || 0)
-                : (mainMutData.mutations[cellLine] || 0);
-            baseCells.push({ cellLine, idx, mainMut });
-        });
-
-        // "All" column, no hotspot filter
-        const allWT = baseCells.filter(c => c.mainMut === 0).map(c => c.idx);
-        const allMut = baseCells.filter(c => c.mainMut >= 1).map(c => c.idx);
-        const cols = [{ label: 'All', wtIdx: allWT, mutIdx: allMut, totalCells: baseCells.length, nWT: allWT.length, nMut: allMut.length, isRef: true }];
-
-        // For each other hotspot gene
-        this.mutations?.genes?.forEach(hGene => {
-            if (hGene === mainHotspot && !isTranslocation) return;
-            const hMutData = this.mutations.geneData[hGene];
-            if (!hMutData) return;
-            const filtered = baseCells.filter(c => (hMutData.mutations[c.cellLine] || 0) >= 1);
-            const wt = filtered.filter(c => c.mainMut === 0).map(c => c.idx);
-            const mut = filtered.filter(c => c.mainMut >= 1).map(c => c.idx);
-            if (wt.length > 0 || mut.length > 0) {
-                cols.push({ label: hGene, wtIdx: wt, mutIdx: mut, totalCells: filtered.length, nWT: wt.length, nMut: mut.length, hotspot: hGene });
-            }
-        });
-
-        const typeLabel = isTranslocation ? 'Translocation/Fusion' : 'Hotspot Mutational';
-        this._compareModalData = {
-            cols,
-            genes: mr.significantResults.map(r => r.gene),
-            hotspotGene: mainHotspot,
-            mode: 'hotspot',
-            title: `Compare by Hotspot, ${mainHotspot} ${typeLabel} Analysis`,
-            isTranslocation,
-            isDamaging: mr.isDamaging || false,
-            cnMode: mr.cnMode || null
-        };
-        this._compareModalMode = 'hotspot';
-        this._compareSortCol = null;
-        this._compareSortAsc = true;
-
-        this.renderCompareModal();
-        document.getElementById('mutCompareModal').style.display = '';
-    }
-
-    showMutationCompareByFusion() {
-        if (!this.mutationResults) return;
-        if (!this.translocations?.genes?.length) return;
-        const mr = this.mutationResults;
-        const mainHotspot = mr.hotspotGene;
-        const isTranslocation = mr.isTranslocation;
-        const isDamaging = mr.isDamaging;
-        if (isDamaging) this._cnAxisMode = mr.cnMode || null;
-        const mainMutData = isTranslocation
-            ? this._fusionAxisData?.geneData?.[mainHotspot]
-            : isDamaging
-                ? this._lossAxisData?.geneData?.[mainHotspot]
-                : this.mutations?.geneData?.[mainHotspot];
-        if (!mainMutData) return;
-
-        const cellLines = this.metadata.cellLines;
-
-        // Build base filtered cell indices
-        const baseCells = [];
-        cellLines.forEach((cellLine, idx) => {
-            if (mr.lineageFilter && this.cellLineMetadata?.lineage?.[cellLine] !== mr.lineageFilter) return;
-            if (mr.subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cellLine] !== mr.subLineageFilter) return;
-            if (!this._mrOncotreePasses(cellLine)) return;
-            if (mr.excludedTissues && mr.excludedTissues.size > 0) {
-                const lineage = this.cellLineMetadata?.lineage?.[cellLine];
-                if (lineage && mr.excludedTissues.has(lineage)) return;
-            }
-            if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
-                const addMutData = this.mutations?.geneData?.[mr.additionalHotspot];
-                if (addMutData) {
-                    const addMutLevel = addMutData.mutations[cellLine] || 0;
-                    if (mr.additionalHotspotLevel === '0' && addMutLevel !== 0) return;
-                    if (mr.additionalHotspotLevel === '1' && addMutLevel !== 1) return;
-                    if (mr.additionalHotspotLevel === '2' && addMutLevel < 2) return;
-                    if (mr.additionalHotspotLevel === '1+2' && addMutLevel === 0) return;
-                }
-            }
-            if (mr.additionalTransGene && mr.additionalTransLevel !== 'all') {
-                const addTransData = this.translocations?.geneData?.[mr.additionalTransGene]?.translocations;
-                if (addTransData) {
-                    const tLevel = addTransData[cellLine] || 0;
-                    if (mr.additionalTransLevel === '0' && tLevel !== 0) return;
-                    if (mr.additionalTransLevel === '1' && tLevel !== 1) return;
-                    if (mr.additionalTransLevel === '2' && tLevel < 2) return;
-                    if (mr.additionalTransLevel === '1+2' && tLevel < 1) return;
-                }
-            }
-            const mainMut = isTranslocation
-                ? (mainMutData.translocations[cellLine] || 0)
-                : (mainMutData.mutations[cellLine] || 0);
-            baseCells.push({ cellLine, idx, mainMut });
-        });
-
-        // "All" column, no fusion filter
-        const allWT = baseCells.filter(c => c.mainMut === 0).map(c => c.idx);
-        const allMut = baseCells.filter(c => c.mainMut >= 1).map(c => c.idx);
-        const cols = [{ label: 'All', wtIdx: allWT, mutIdx: allMut, totalCells: baseCells.length, nWT: allWT.length, nMut: allMut.length, isRef: true }];
-
-        // Pre-filter: only fusion genes with fused cells in baseCells
-        const baseCellIds = new Set(baseCells.map(c => c.cellLine));
-        for (const tGene of this.translocations.genes) {
-            if (tGene === mainHotspot && isTranslocation) continue;
-            const tData = this.translocations.geneData[tGene];
-            if (!tData) continue;
-            let hasFused = false;
-            for (const cl of baseCellIds) {
-                if (tData.translocations[cl] && tData.translocations[cl] > 0) { hasFused = true; break; }
-            }
-            if (!hasFused) continue;
-            const filtered = baseCells.filter(c => (tData.translocations[c.cellLine] || 0) >= 1);
-            const wt = filtered.filter(c => c.mainMut === 0).map(c => c.idx);
-            const mut = filtered.filter(c => c.mainMut >= 1).map(c => c.idx);
-            if (wt.length > 0 || mut.length > 0) {
-                cols.push({ label: tGene, wtIdx: wt, mutIdx: mut, totalCells: filtered.length, nWT: wt.length, nMut: mut.length, hotspot: tGene });
-            }
-        }
-
-        const typeLabel = isTranslocation ? 'Translocation/Fusion' : 'Hotspot Mutational';
-        this._compareModalData = {
-            cols,
-            genes: mr.significantResults.map(r => r.gene),
-            hotspotGene: mainHotspot,
-            mode: 'hotspot',
-            title: `Compare by Fusion, ${mainHotspot} ${typeLabel} Analysis`,
-            isTranslocation,
-            isDamaging: mr.isDamaging || false,
-            cnMode: mr.cnMode || null
-        };
-        this._compareModalMode = 'hotspot';
-        this._compareSortCol = null;
-        this._compareSortAsc = true;
-
-        this.renderCompareModal();
-        document.getElementById('mutCompareModal').style.display = '';
-    }
-
-    renderCompareModal() {
-        if (!this._compareModalData) return;
-        const d = this._compareModalData;
-        const minN = parseInt(document.getElementById('mutCompareMinN')?.value) || 5;
-
-        // Filter columns by minN (only requires min N mutated cells)
-        const filteredCols = d.cols.filter(c => c.mutIdx.length >= minN);
-        this._compareModalCols = filteredCols;
-
-        // Compute delta matrix: genes × cols
-        const deltaMatrix = [];
-        d.genes.forEach(gene => {
-            const geneIdx = this.geneIndex.get(gene.toUpperCase());
-            if (geneIdx === undefined) { deltaMatrix.push(null); return; }
-            const row = {};
-            filteredCols.forEach(col => {
-                const wtVals = col.wtIdx.map(i => this.geneEffects[geneIdx * this.nCellLines + i]).filter(v => !isNaN(v));
-                const mutVals = col.mutIdx.map(i => this.geneEffects[geneIdx * this.nCellLines + i]).filter(v => !isNaN(v));
-                if (wtVals.length >= 3 && mutVals.length >= minN) {
-                    const meanWT = wtVals.reduce((a, b) => a + b, 0) / wtVals.length;
-                    const meanMut = mutVals.reduce((a, b) => a + b, 0) / mutVals.length;
-                    row[col.label] = meanMut - meanWT;
-                } else {
-                    row[col.label] = null;
-                }
-            });
-            deltaMatrix.push(row);
-        });
-
-        // Build gene list with indices
-        let geneRows = d.genes.map((gene, i) => ({ gene, deltas: deltaMatrix[i], idx: i })).filter(r => r.deltas !== null);
-
-        // Sort if active
-        if (this._compareSortCol !== null) {
-            const colLabel = this._compareSortCol;
-            const asc = this._compareSortAsc;
-            geneRows.sort((a, b) => {
-                const va = a.deltas[colLabel];
-                const vb = b.deltas[colLabel];
-                if (va === null && vb === null) return 0;
-                if (va === null) return 1;
-                if (vb === null) return -1;
-                return asc ? va - vb : vb - va;
-            });
-        }
-
-        // Find global max |delta| for color scaling
-        let maxAbs = 0;
-        geneRows.forEach(r => {
-            Object.values(r.deltas).forEach(v => { if (v !== null && Math.abs(v) > maxAbs) maxAbs = Math.abs(v); });
-        });
-        if (maxAbs === 0) maxAbs = 1;
-
-        // Title and info
-        document.getElementById('mutCompareModalTitle').textContent = d.title;
-        const isTrans = d.isTranslocation;
-        // Words of the sub-type on display: the info line used to say
-        // "mutated vs WT" under a title correctly reading e.g. "Amp vs Neutral".
-        const Lcm = this._mutAxisLabels(d);
-        const mutLabel = Lcm.countVerb;
-        const refWord = Lcm.ref === 'WT' ? 'WT' : Lcm.ref.toLowerCase();
-        const mutNoun = this._aiAlterationWord(d);
-        const mutAbbr = Lcm.carrier;
-        const modeLabel = d.mode === 'tissue' ? 'tissue/cancer type' : (isTrans ? 'fusion gene' : 'hotspot mutation');
-        document.getElementById('mutCompareModalInfo').innerHTML =
-            `<b>Δ GE = Mean GE(${mutLabel}) − Mean GE(${refWord})</b> for ${d.hotspotGene} ${mutNoun}, stratified by ${modeLabel}. ` +
-            `<span style="color:#dc2626;">Red = more essential when ${mutLabel}</span>, <span style="color:#5d9239;">Green = less essential</span>. ` +
-            `${geneRows.length} genes × ${filteredCols.length} ${d.mode === 'tissue' ? 'tissues' : 'hotspots'} | Min ${mutLabel} cell lines: ${minN} | ` +
-            `Click cell to inspect, hover column header for N(${refWord})/N(${mutAbbr})`;
-
-        // Build table HTML
-        let html = '<table style="border-collapse:collapse; font-size:11px; width:auto; max-width:100%; margin:0 auto;">';
-        html += '<thead style="position:sticky; top:0; z-index:1;"><tr><th style="padding:4px 8px; background:#f0fdf4; border-bottom:2px solid #6ba544; position:sticky; left:0; z-index:2; text-align:left;">Gene</th>';
-        filteredCols.forEach((col, ci) => {
-            let arrow = '';
-            if (this._compareSortCol === col.label) arrow = this._compareSortAsc ? ' ▲' : ' ▼';
-            const isRef = col.isRef ? 'font-weight:700;' : '';
-            html += `<th onclick="app.sortCompareModal('${col.label.replace(/'/g, "\\'")}')" onmouseenter="app.showColumnTooltip(event, ${ci})" onmouseleave="app.hideColumnTooltip()" style="padding:4px 6px; background:#f0fdf4; border-bottom:2px solid #6ba544; cursor:pointer; white-space:nowrap; font-size:10px; ${isRef}">${col.label}${arrow}<br><span style="font-weight:400; font-size:9px; color:#6b7280;">${col.nWT}/${col.nMut}</span></th>`;
-        });
-        html += '</tr></thead><tbody>';
-
-        geneRows.forEach(r => {
-            html += '<tr>';
-            html += `<td onmouseenter="app.showGeneTooltip(event, '${r.gene}')" onmouseleave="app.hideGeneTooltip()" style="padding:3px 8px; border-bottom:1px solid #e5e7eb; position:sticky; left:0; background:white; font-weight:500; cursor:pointer; white-space:nowrap; color:#5d9239;" onclick="app.openCompareInspect('${r.gene}', '', '', '${d.mode}')">${r.gene}</td>`;
-            filteredCols.forEach(col => {
-                const v = r.deltas[col.label];
-                if (v === null) {
-                    html += '<td style="padding:3px 6px; border-bottom:1px solid #e5e7eb; text-align:center; color:#ccc;">-</td>';
-                } else {
-                    const intensity = Math.min(Math.abs(v) / maxAbs, 1);
-                    let red, green, blue;
-                    if (v < 0) {
-                        // Negative (more essential) → white to red
-                        red = 255;
-                        green = Math.round(255 - 140 * intensity);
-                        blue = Math.round(255 - 140 * intensity);
-                    } else {
-                        // Positive (less essential) → white to green
-                        red = Math.round(255 - 140 * intensity);
-                        green = Math.round(255 - 50 * intensity);
-                        blue = Math.round(255 - 140 * intensity);
-                    }
-                    const bgColor = `rgb(${red},${green},${blue})`;
-                    const clickArg = d.mode === 'tissue' ? `'${r.gene}', '${(col.tissue || '').replace(/'/g, "\\'")}', '', 'tissue'` : `'${r.gene}', '', '${(col.hotspot || '').replace(/'/g, "\\'")}', 'hotspot'`;
-                    html += `<td onclick="app.openCompareInspect(${clickArg})" style="padding:3px 6px; border-bottom:1px solid #e5e7eb; text-align:center; background:${bgColor}; cursor:pointer; font-size:10px;" title="${v.toFixed(3)}">${v.toFixed(2)}</td>`;
-                }
-            });
-            html += '</tr>';
-        });
-
-        html += '</tbody></table>';
-        document.getElementById('mutCompareModalBody').innerHTML = html;
-    }
-
-    downloadCompareCSV() {
-        if (!this._compareModalData || !this._compareModalCols) return;
-        const d = this._compareModalData;
-        const filteredCols = this._compareModalCols;
-        const minN = parseInt(document.getElementById('mutCompareMinN')?.value) || 5;
-
-        // Recompute delta matrix (same logic as renderCompareModal)
-        const geneRows = [];
-        d.genes.forEach(gene => {
-            const geneIdx = this.geneIndex.get(gene.toUpperCase());
-            if (geneIdx === undefined) return;
-            const row = { gene };
-            filteredCols.forEach(col => {
-                const wtVals = col.wtIdx.map(i => this.geneEffects[geneIdx * this.nCellLines + i]).filter(v => !isNaN(v));
-                const mutVals = col.mutIdx.map(i => this.geneEffects[geneIdx * this.nCellLines + i]).filter(v => !isNaN(v));
-                if (wtVals.length >= 3 && mutVals.length >= minN) {
-                    const meanWT = wtVals.reduce((a, b) => a + b, 0) / wtVals.length;
-                    const meanMut = mutVals.reduce((a, b) => a + b, 0) / mutVals.length;
-                    row[col.label] = (meanMut - meanWT).toFixed(4);
-                } else {
-                    row[col.label] = '';
-                }
-            });
-            geneRows.push(row);
-        });
-
-        // Build CSV
-        const colLabels = filteredCols.map(c => c.label);
-        let csv = `# Compare by ${d.mode === 'tissue' ? 'Tissue' : 'Hotspot'}, ${d.hotspotGene} ${this._mutAxisLabels(d).noun}\n`;
-        csv += `# Min N: ${minN}\n`;
-        csv += `# Date: ${new Date().toISOString().slice(0, 10)}\n`;
-        csv += '#\n';
-        csv += 'Gene,' + colLabels.map(l => `"${l}"`).join(',') + '\n';
-        geneRows.forEach(r => {
-            csv += r.gene + ',' + colLabels.map(l => r[l]).join(',') + '\n';
-        });
-
-        const filename = csvName(`compare_${d.mode}_${d.hotspotGene}`);
-        this.downloadFile(csv, filename, 'text/csv');
-    }
-
-    sortCompareModal(colLabel) {
-        if (this._compareSortCol === colLabel) {
-            this._compareSortAsc = !this._compareSortAsc;
-        } else {
-            this._compareSortCol = colLabel;
-            this._compareSortAsc = true;
-        }
-        this.renderCompareModal();
-    }
-
-    showColumnTooltip(event, colIdx) {
-        if (window.__hoverQuiet?.()) return;
-        this.hideColumnTooltip();
-        if (!this._compareModalCols || !this._compareModalCols[colIdx]) return;
-        const col = this._compareModalCols[colIdx];
-        const tooltip = document.createElement('div');
-        tooltip.id = 'columnTooltip';
-        tooltip.style.cssText = 'position:fixed; z-index:10001; background:white; border:1px solid #d1d5db; border-radius:8px; padding:8px 12px; max-width:250px; box-shadow:0 4px 12px rgba(0,0,0,0.15); font-size:11px; line-height:1.5;';
-        const Lct = this._mutAxisLabels(this._compareModalData || {});
-        tooltip.innerHTML = `<b>${col.label}</b><br>Total cell lines: ${col.totalCells}<br>N(${Lct.ref}): ${col.nWT}<br>N(${Lct.carrier}): ${col.nMut}`;
-        const x = Math.min(event.clientX + 10, window.innerWidth - 270);
-        const y = Math.min(event.clientY + 10, window.innerHeight - 100);
-        tooltip.style.left = x + 'px';
-        tooltip.style.top = y + 'px';
-        document.body.appendChild(tooltip);
-    }
-
-    hideColumnTooltip() {
-        const existing = document.getElementById('columnTooltip');
-        if (existing) existing.remove();
-    }
+    // The full-screen "Compare by Tissue/Hotspot/Fusion" modal was removed
+    // in v.88.93: its entry points had been unreachable since v.84.33 and
+    // the inline compare tables in the inspect replaced it.
 
     // ===== Enrichr Pathway Analysis =====
 
@@ -35864,7 +35664,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // brought in by the search is not one of the three: by the time it is drawn
     // and correlated it is part of the same answer. Nodes removed by hand are
     // gone from networkData, so both drawn sets mean what is on screen.
-    async openNetworkEnrichr(scope) {
+    // One place computes each scope's gene list, so the n= the menu shows
+    // and the set actually sent to Enrichr cannot drift apart.
+    _netEnrichrGenes(scope) {
         const input = (this.results?.geneList || []).map(g => String(g).toUpperCase());
         const drawn = this.networkData?.nodes
             ? this.networkData.nodes.getIds().map(g => String(g).toUpperCase())
@@ -35882,8 +35684,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             });
             genes = drawn.filter(g => connected.has(g));
         } else genes = drawn;
+        return [...new Set(genes)].filter(Boolean);
+    }
 
-        genes = [...new Set(genes)].filter(Boolean);
+    async openNetworkEnrichr(scope) {
+        let genes = this._netEnrichrGenes(scope);
         if (genes.length < 2) {
             this.showCopyNotification(scope === 'correlated'
                 ? 'No gene in this network is correlated with another.'
@@ -36136,7 +35941,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             // "damaging" and CN amp/deletion analysis sub-types cleanly.
             annMode = 'hotspot';
         }
-        this._hmAnnRows = annMode ? [{ mode: annMode, gene: mr.hotspotGene, sortDir: 'desc', block: true }] : [];
+        this._hmAnnRows = annMode ? [{ mode: annMode, gene: mr.hotspotGene, sortDir: 'desc', sortKey: null }] : [];
         this._hmRenderAnnRowsBlock();
         // hmThenBy stays on its 'score' default: the point of this handoff is
         // the blocked mutated/fused split, with score ordering within it. No
@@ -36508,19 +36313,6 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         const libLabel = this._enrichrData.libraries.find(l => l.key === lib)?.label || lib;
         this.downloadFile(csv, csvName(`enrichr_${libLabel}`), 'text/csv');
-    }
-
-    openCompareInspect(gene, tissue, hotspot, mode) {
-        // Close compare modal
-        document.getElementById('mutCompareModal').style.display = 'none';
-        // Open inspect with appropriate filters
-        if (mode === 'tissue' && tissue) {
-            this.showGeneEffectDistribution(gene, tissue, '');
-        } else if (mode === 'hotspot' && hotspot) {
-            this.showGeneEffectDistribution(gene, '', hotspot);
-        } else {
-            this.showGeneEffectDistribution(gene);
-        }
     }
 
     // The sort-direction button says which way the list will run, in words.
@@ -47554,8 +47346,11 @@ ${clone.innerHTML}
     _geInspectSideWords() {
         const gate = this._geInspectMode === 'gateAB';
         return {
-            sel: gate ? 'A' : 'sel',
-            cmp: gate ? 'B' : 'rest',
+            // Short forms head table columns ("% gate A" / "% selected"):
+            // "sel" and "rest" read as cryptic abbreviations there (user
+            // feedback 2026-08-20), so they are real words now.
+            sel: gate ? 'gate A' : 'selected',
+            cmp: gate ? 'gate B' : 'others',
             selWord: gate ? 'gate A' : 'selection',
             cmpWord: gate ? 'gate B' : 'comparison group',
             deltaSuffix: gate ? '(A − B)' : '(selection − comparison)'
@@ -47651,8 +47446,13 @@ ${clone.innerHTML}
         const compact = (rows, title, cap) => {
             if (!rows.length) return '';
             const shown = rows.slice(0, cap);
+            // table-layout:fixed with one shared colgroup: the three stacked
+            // tables (tissue / subtype / disease) otherwise each auto-size
+            // their columns to their own longest label, so the same headers
+            // land at three different x positions down the panel.
             let html = `<div style="font-size:10px; font-weight:700; color:#6b7280; text-transform:uppercase; letter-spacing:.03em; margin:8px 0 4px;">${title}</div>`
-                + `<table style="width:100%; border-collapse:collapse; font-size:11px;">
+                + `<table style="width:100%; border-collapse:collapse; font-size:11px; table-layout:fixed;">
+                    <colgroup><col style="width:40%"><col style="width:18%"><col style="width:18%"><col style="width:24%"></colgroup>
                     <thead><tr style="color:#6b7280;">
                         <th style="text-align:left; padding:3px 6px; border-bottom:1px solid #e5e7eb;">Category</th>
                         <th style="text-align:center; padding:3px 6px; border-bottom:1px solid #e5e7eb;">% in ${w.sel}</th>
@@ -47702,8 +47502,21 @@ ${clone.innerHTML}
         if (!all.length) {
             return '<div style="color:#6b7280; font-size:11px;">No alteration calls overlap these cell lines, so there is nothing to compare here.</div>';
         }
-        // Biggest gap in percent altered first, chi-squared to break ties.
-        const ranked = [...all].sort((a, b) => (Math.abs(b.diff) - Math.abs(a.diff)) || (b.chi2 - a.chi2));
+        // Default: biggest gap in percent altered first, chi-squared to break
+        // ties. A clicked header sorts by that column instead (click again to
+        // reverse, a third time to come back here); untested rows sink to the
+        // bottom of a p sort rather than pretending p = 1 beats a real value.
+        const SORTS = {
+            gene: (a, b) => a.gene.localeCompare(b.gene),
+            pctA: (a, b) => b.pctA - a.pctA,
+            pctB: (a, b) => b.pctB - a.pctB,
+            diff: (a, b) => Math.abs(b.diff) - Math.abs(a.diff),
+            p: (a, b) => (b.tested - a.tested) || (a.pValue - b.pValue)
+        };
+        const sortCol = SORTS[st.sortCol] ? st.sortCol : null;
+        const baseCmp = sortCol ? SORTS[sortCol] : ((a, b) => (Math.abs(b.diff) - Math.abs(a.diff)) || (b.chi2 - a.chi2));
+        const flip = sortCol && st.sortFlipped ? -1 : 1;
+        const ranked = [...all].sort((a, b) => flip * baseCmp(a, b));
         const CHIPS = [
             { id: 'all', label: 'All' },
             { id: 'hotspot', label: 'Hotspot' },
@@ -47745,13 +47558,18 @@ ${clone.innerHTML}
         if (!filtered.length) {
             return html + '<div style="color:#6b7280; font-size:11px;">Nothing in this type for these two groups.</div>';
         }
+        const th = (col, label, align) => {
+            const on = sortCol === col;
+            const arrow = on ? (st.sortFlipped ? ' &#9650;' : ' &#9660;') : '';
+            return `<th onclick="app._setGEAltSort('${col}')" title="Click to sort by this column; click again to reverse, a third time for the default ranking" style="text-align:${align}; padding:3px 6px; border-bottom:1px solid #e5e7eb; cursor:pointer; white-space:nowrap;${on ? ' color:#111827;' : ''}">${label}${arrow}</th>`;
+        };
         html += `<table style="width:100%; border-collapse:collapse; font-size:11px;">
                 <thead><tr style="color:#6b7280;">
-                    <th style="text-align:left; padding:3px 6px; border-bottom:1px solid #e5e7eb;">Alteration</th>
-                    <th style="text-align:center; padding:3px 6px; border-bottom:1px solid #e5e7eb;">% ${w.sel}</th>
-                    <th style="text-align:center; padding:3px 6px; border-bottom:1px solid #e5e7eb;">% ${w.cmp}</th>
-                    <th style="text-align:center; padding:3px 6px; border-bottom:1px solid #e5e7eb;">&Delta;%</th>
-                    <th style="text-align:center; padding:3px 6px; border-bottom:1px solid #e5e7eb;">p</th>
+                    ${th('gene', 'Alteration', 'left')}
+                    ${th('pctA', `% ${w.sel}`, 'center')}
+                    ${th('pctB', `% ${w.cmp}`, 'center')}
+                    ${th('diff', '&Delta;%', 'center')}
+                    ${th('p', 'p', 'center')}
                 </tr></thead><tbody>`;
         const BADGE = {
             hotspot: '#b58a3c', damaging: '#a8553a', fusion: '#4f6fa8', amp: '#8a5ba8', del: '#3f7f6f'
@@ -47788,6 +47606,23 @@ ${clone.innerHTML}
         if (!this._geAltPanel?.stats) return;
         this._geAltPanel.filter = id;
         this._geAltPanel.showAll = false;
+        const body = document.getElementById('gateABMutBody');
+        if (body) body.innerHTML = this._renderGateMutationPanel();
+    }
+
+    // Column-header sort for the alteration table: first click sorts by that
+    // column (its natural direction), second click reverses, third goes back
+    // to the default rank (gap in percent altered, chi-squared tie-break).
+    _setGEAltSort(col) {
+        const st = this._geAltPanel;
+        if (!st?.stats) return;
+        if (st.sortCol === col) {
+            if (st.sortFlipped) { st.sortCol = null; st.sortFlipped = false; }
+            else st.sortFlipped = true;
+        } else {
+            st.sortCol = col;
+            st.sortFlipped = false;
+        }
         const body = document.getElementById('gateABMutBody');
         if (body) body.innerHTML = this._renderGateMutationPanel();
     }
@@ -47887,8 +47722,14 @@ ${clone.innerHTML}
         // took THAT as the header: the real column names became data and the
         // numbers stopped parsing. Scope belongs in the filename and the
         // on-screen message, not in the file's first row.
-        const head = ['Gene', 'GE_mean_selection', 'GE_mean_others', 'GE_delta', 'GE_p', 'GE_q', 'GE_n_selection', 'GE_n_others',
-                      'Expr_mean_selection', 'Expr_mean_others', 'Expr_delta', 'Expr_p', 'Expr_q', 'Expr_n_selection', 'Expr_n_others'].join(sep) + '\n';
+        // In gate mode the two arms are gate A and gate B, not a selection
+        // and a rest: the per-cell-line export already said so in its Group
+        // column while this file kept calling them "selection"/"others".
+        const gate = this._geInspectMode === 'gateAB';
+        const a = gate ? 'gateA' : 'selection';
+        const b = gate ? 'gateB' : 'others';
+        const head = ['Gene', `GE_mean_${a}`, `GE_mean_${b}`, 'GE_delta', 'GE_p', 'GE_q', `GE_n_${a}`, `GE_n_${b}`,
+                      `Expr_mean_${a}`, `Expr_mean_${b}`, 'Expr_delta', 'Expr_p', 'Expr_q', `Expr_n_${a}`, `Expr_n_${b}`].join(sep) + '\n';
         const body = [...byGene.entries()]
             .sort((a, b) => Math.abs(b[1].ge?.delta ?? b[1].expr?.delta ?? 0)
                           - Math.abs(a[1].ge?.delta ?? a[1].expr?.delta ?? 0))
@@ -49028,7 +48869,10 @@ ${clone.innerHTML}
         };
         const lines = [header.map(esc).join(',')].concat(rows.map(r => r.map(esc).join(',')));
         const tag = valueHeader ? '_' + valueHeader.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '') : '';
-        this.downloadFile(lines.join('\n'), csvName(`cell_lines${tag}`), 'text/csv');
+        // The active browser filters ride in the filename, so a Skin+BRAF
+        // list and the full panel no longer export under the same name.
+        const filterTag = this._csvSlug(this._clbActiveFilterText ? this._clbActiveFilterText() : '');
+        this.downloadFile(lines.join('\n'), csvName(`cell_lines${tag}${filterTag}`), 'text/csv');
         this.showCopyNotification?.(`Exported ${rows.length} cell lines`);
     }
 
@@ -51412,7 +51256,22 @@ ${clone.innerHTML}
         const fmt = dlg.format || format;
         const CM_TO_IN = 1 / 2.54;
 
-        const url = await Plotly.toImage(plotDiv, { format: 'svg', width: w, height: h });
+        // "Transparent" has to reach Plotly itself: skipping our own white
+        // rect still left the plot's paper and panel backgrounds baked into
+        // the SVG, so the exported file came out fully opaque.
+        const prevPaperBg = plotDiv.layout.paper_bgcolor;
+        const prevPlotBg = plotDiv.layout.plot_bgcolor;
+        if (background === 'transparent') {
+            await Plotly.relayout(plotDiv, { paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)' });
+        }
+        let url;
+        try {
+            url = await Plotly.toImage(plotDiv, { format: 'svg', width: w, height: h });
+        } finally {
+            if (background === 'transparent') {
+                await Plotly.relayout(plotDiv, { paper_bgcolor: prevPaperBg ?? '#ffffff', plot_bgcolor: prevPlotBg ?? '#ffffff' });
+            }
+        }
         let plotSvg = url.indexOf('base64,') > -1
             ? atob(url.split('base64,')[1])
             : decodeURIComponent(url.split(',').slice(1).join(','));
@@ -53293,41 +53152,10 @@ ${clone.innerHTML}
         document.getElementById('hmDataType')?.addEventListener('change', () => this._hmRedraw());
         document.getElementById('hmScale')?.addEventListener('change', () => this._hmRedraw());
         document.getElementById('hmThenBy')?.addEventListener('change', () => this._hmRedraw());
-        document.getElementById('hmClusterCells')?.addEventListener('change', (e) => {
-            // The checkbox is the master switch for the "Cell-line clusters"
-            // annotation row (v.88.76): checking it appends that row, toggled
-            // on, so clustering takes its place in the one ordering hierarchy
-            // the annotation rows now carry; unchecking removes it again.
-            // Deleting the row with its own x unchecks the box (see the
-            // remove handler in _hmRenderAnnRowsBlock), so the two can never
-            // disagree.
-            const rows = this._hmAnnRows || (this._hmAnnRows = []);
-            if (e.target.checked) {
-                // The clusters row takes the blocks when nothing else has
-                // them (so ticking the box on a plain heatmap still draws
-                // cluster blocks, as it always has), and otherwise joins as a
-                // sorting row that clusters inside whatever is blocking.
-                // Only the clusters row: nothing else is added on the user's
-                // behalf. (Before v.88.80 this also slipped in a lineage row,
-                // from the days when clustering REPLACED lineage grouping and
-                // its colours would otherwise have been lost; with blocking
-                // and sorting now separate flags nothing is lost, so the
-                // uninvited row is gone.)
-                if (!rows.some(r => r.mode === 'cluster')) {
-                    const blockTaken = rows.some(r => r.block && this._hmAnnRowCanBlock(r.mode));
-                    rows.push({ mode: 'cluster', gene: null, sortDir: 'desc', block: !blockTaken });
-                }
-            } else {
-                this._hmAnnRows = rows.filter(r => r.mode !== 'cluster');
-            }
-            this._hmRenderAnnRowsBlock();
-            this._hmSyncClusterControls();
-            this._hmRedraw();
-        });
-        document.getElementById('hmClusterK')?.addEventListener('change', () => {
-            this._hmSyncClusterControls();
-            this._hmRedraw();
-        });
+        // Cell-line clustering has no toolbar checkbox any more (v.88.90):
+        // it is the "Cell-line clusters" annotation row, added with + Add
+        // row, and its split select (hmClusterK) is rendered on that row and
+        // wired in _hmRenderAnnRowsBlock.
         document.getElementById('hmGeneClusterK')?.addEventListener('change', () => this._hmRedraw());
         // Fires on blur/focus-loss, not on every keystroke, so a half-typed
         // gene list doesn't repaint mid-edit; Redraw stays useful for that.
@@ -53392,11 +53220,8 @@ ${clone.innerHTML}
             this._hmSaveSettingsToStorage();
             this._hmRedraw();
         });
-        document.getElementById('hmTreeDetailCells')?.addEventListener('change', () => {
-            this._hmSettings = Object.assign({}, this._HM_SETTINGS_DEFAULTS(), this._hmSettings || {}, { treeDetailCells: document.getElementById('hmTreeDetailCells').value });
-            this._hmSaveSettingsToStorage();
-            this._hmRedraw();
-        });
+        // Cell-line tree detail moved into the Settings panel (v.88.90,
+        // hm_ts_treeCells via _hmTsApply); no toolbar select to wire.
         document.getElementById('hmDrillBackBtn')?.addEventListener('click', () => this._hmDrillBackToAll());
         document.getElementById('hmDrillToBrowserBtn')?.addEventListener('click', () => this._hmDrillToBrowser());
         // Cohort and lineage define the cell-line set the other selects are
@@ -53427,7 +53252,7 @@ ${clone.innerHTML}
             // of the four the user manages), so a new row goes above it.
             const gatesAt = this._hmAnnRows.findIndex(r => r.mode === 'gates');
             const newIdx = gatesAt >= 0 ? gatesAt : this._hmAnnRows.length;
-            this._hmAnnRows.splice(newIdx, 0, { mode: 'hotspot', gene: null, sortDir: null, block: false });
+            this._hmAnnRows.splice(newIdx, 0, { mode: 'hotspot', gene: null, sortDir: null, sortKey: null });
             this._hmRenderAnnRowsBlock();
             // New row starts in 'hotspot' mode with no gene: put focus on its
             // gene box so the user is looking straight at the picker instead
@@ -53467,13 +53292,12 @@ ${clone.innerHTML}
         this._hmResetControls();
         // Tree detail lives in this._hmSettings (persisted across opens,
         // like the font/cell-size settings), not among the controls
-        // _hmResetControls reverts to their fixed defaults, so the two
-        // toolbar selects are initialized from it here instead.
+        // _hmResetControls reverts to their fixed defaults; the gene tree's
+        // toolbar select is initialized from it here (the cell-line one
+        // lives in the Settings panel, which reads it on open).
         const hmS = Object.assign({}, this._HM_SETTINGS_DEFAULTS(), this._hmSettings || {});
         const genesDetailSel = document.getElementById('hmTreeDetailGenes');
         if (genesDetailSel) genesDetailSel.value = hmS.treeDetailGenes;
-        const cellsDetailSel = document.getElementById('hmTreeDetailCells');
-        if (cellsDetailSel) cellsDetailSel.value = hmS.treeDetailCells;
         this._hmSyncGroupControls();
         this._hmSyncClusterControls();
         this._hmRenderAnnRowsBlock();
@@ -53496,23 +53320,33 @@ ${clone.innerHTML}
         set('hmLineage', '');
         set('hmSubtype', '');
         set('hmDisease', '');
-        // v.88.76: a fresh open sorts by plain score, with no blocks at all.
-        // Blocking is now a deliberate act (toggle a row's sort arrows);
-        // clustering, likewise, is one click away on the Cluster cell lines
-        // checkbox, which adds its own annotation row.
+        // A fresh open sorts by plain score, with no blocks at all. Blocking
+        // is a deliberate act (set a row's Sort); clustering is one Add row
+        // away as the Cell-line clusters row, whose split select defaults to
+        // tree order only.
         set('hmScale', 'zall');
         set('hmThenBy', 'score');
-        const clusterCb = document.getElementById('hmClusterCells');
-        if (clusterCb) clusterCb.checked = false;
-        set('hmClusterK', 'auto');
+        this._hmClusterKChoice = '0';
         set('hmGeneClusterK', '0');
         const medianCb = document.getElementById('hmShowMedian');
         if (medianCb) medianCb.checked = true;
         set('hmMinGroupSize', '1');
-        // TP53 is the most generally useful default annotation. No sortDir and
-        // no block: a fresh open sorts by plain score with no blocks, and the
-        // row is there as colour until one of its two toggles is turned on.
-        this._hmAnnRows = [{ mode: 'hotspot', gene: 'TP53', sortDir: null, block: false }];
+        // Default hierarchy (v.88.90): lineage blocks ordered by median
+        // score, or disease blocks when the open-time cohort is already one
+        // lineage (a lineage strip with one colour says nothing). TP53
+        // hotspot rides below as colour only, the most generally useful
+        // annotation.
+        const defCohort = (this._clbVisibleCellLines?.length) ? this._clbVisibleCellLines : (this.metadata?.cellLines || []);
+        const defLineages = new Set();
+        for (const cl of defCohort) {
+            const l = this.cellLineMetadata?.lineage?.[cl];
+            if (l) defLineages.add(l);
+            if (defLineages.size > 1) break;
+        }
+        this._hmAnnRows = [
+            { mode: defLineages.size <= 1 ? 'disease' : 'lineage', gene: null, sortDir: 'desc', sortKey: 'score' },
+            { mode: 'hotspot', gene: 'TP53', sortDir: null, sortKey: null }
+        ];
         [['hmHotspotFilter', 'hmHotspotLevel', '1+2'], ['hmFusionFilter', 'hmFusionLevel', '1+2'], ['hmCnFilter', 'hmCnLevel', 'altered']]
             .forEach(([inputId, levelId, def]) => {
                 set(inputId, '');
@@ -53522,9 +53356,12 @@ ${clone.innerHTML}
             });
         this._hmHiddenGroups = new Set();
         this._hmHiddenGroupsSig = null;
+        this._hmMinNBlockSig = null;
         this._hmDrillCells = null;
         this._hmDrillBack = null;
         this._hmDrillLabel = null;
+        // Custom figure text belongs to the view it was written for.
+        this._hmCustomText = null;
         // A restored view's frozen cohort snapshot belongs to that one
         // reopen; a fresh open (Options button, CLB button) starts from the
         // ordinary visible/selected/all resolution instead.
@@ -53592,16 +53429,66 @@ ${clone.innerHTML}
         return this._hmAnnRowKind(mode) !== 'continuous';
     }
 
+    // The cluster row's split choice, kept as state because the select is
+    // recreated on every rows re-render (and absent when there is no cluster
+    // row). '0' = tree order only, no band, no Cluster groups.
+    _hmClusterKValue() {
+        return this._hmClusterKChoice || '0';
+    }
+
+    // The <option> list for one row's Sort select, by mode. Values encode
+    // key + direction; '' is off. The default key per mode is the historic
+    // rank (size for categories, altered-level for alterations), so an old
+    // saved sortDir maps straight onto it.
+    _hmSortOptionsHtml(row) {
+        const kind = this._hmAnnRowKind(row.mode);
+        const dir = row.sortDir || null;
+        const key = row.sortKey || null;
+        const cur = !dir ? ''
+            : row.mode === 'cluster' ? 'tree'
+            : key ? `${key}-${dir}`
+            : kind === 'continuous' ? `val-${dir}`
+            : (kind === 'meta' ? `size-${dir}` : `cat-${dir}`);
+        let opts;
+        if (row.mode === 'cluster') {
+            // No off state: a clusters row with Sort off did nothing at all
+            // (no colours to paint, no order to impose), which read as a
+            // broken control (user feedback 2026-08-20). The row clusters
+            // while it exists; its x removes it.
+            opts = [['tree', 'Tree order']];
+        } else if (kind === 'continuous') {
+            opts = [['', 'Sort: off'], ['val-desc', 'High to low'], ['val-asc', 'Low to high']];
+        } else if (row.mode === 'gates') {
+            opts = [['', 'Sort: off'], ['cat-desc', 'Gate A first'], ['cat-asc', 'Ungated first']];
+        } else if (kind === 'meta') {
+            // Direction encodes canonical (desc) vs reversed (asc) against
+            // the rank map, which for 'name' is built A first: so A to Z is
+            // the canonical direction.
+            opts = [['', 'Sort: off'], ['size-desc', 'Largest group first'], ['size-asc', 'Smallest group first'],
+                    ['name-desc', 'A to Z'], ['name-asc', 'Z to A'],
+                    ['score-desc', 'Median gene score, high first'], ['score-asc', 'Median gene score, low first']];
+        } else {
+            // Alteration rows: hotspot 0/1/2, fusion, copy number. No score
+            // options here: with two or three fixed categories, ordering by
+            // median score almost always lands on the same picture as the
+            // level order, so the extra options read as two names for one
+            // thing (user feedback 2026-08-20).
+            opts = [['', 'Sort: off'], ['cat-asc', 'Wild-type first (0, 1, 2)'], ['cat-desc', 'Altered first (2, 1, 0)']];
+        }
+        return opts.map(([v, label]) => `<option value="${v}"${cur === v ? ' selected' : ''}>${label}</option>`).join('');
+    }
+
     // The block + sort structure implied by this._hmAnnRows, shared by the
     // toolbar syncs, the row renderer and the redraw so all three agree on
     // which rows are actually doing something.
     //
-    // v.88.80: blocking and sorting are two separate, explicit per-row
-    // choices. At most ONE row carries block=true, and it makes the blocks
-    // (the colour strip, its labels, the legend, Min n and the drill) from
-    // wherever it sits in the list; its own sort arrows set the BLOCK ORDER.
-    // Every other row with a direction sorts WITHIN those blocks, top-down in
-    // list order. The first sorting cluster or continuous row ends the chain,
+    // v.88.90: the hierarchy IS the row order. The TOPMOST row whose Sort is
+    // on makes the blocks (the colour strip, its labels, the legend, Min n
+    // and the drill) and its own sort choice sets the BLOCK ORDER; every
+    // other sorted row sorts WITHIN those blocks, top-down in list order.
+    // A topmost sorted CONTINUOUS row cannot form blocks (a value has no
+    // categories), so it simply sorts every column and ends the chain. The
+    // first sorting cluster or continuous row below ends the chain likewise,
     // because a tree order and a numeric order both leave nothing for a
     // deeper row to break ties in; a blocking cluster row ends it outright,
     // since its tree fixes the order of every column inside each cluster.
@@ -53609,9 +53496,11 @@ ${clone.innerHTML}
     _hmSortChainInfo() {
         const rows = this._hmAnnRows || [];
         let blockIdx = -1;
-        rows.forEach((r, i) => {
-            if (blockIdx < 0 && r.block && this._hmAnnRowCanBlock(r.mode)) blockIdx = i;
-        });
+        for (let i = 0; i < rows.length; i++) {
+            if (!rows[i].sortDir) continue;
+            if (this._hmAnnRowCanBlock(rows[i].mode)) blockIdx = i;
+            break;
+        }
         const blockIsCluster = blockIdx >= 0 && this._hmAnnRowKind(rows[blockIdx].mode) === 'cluster';
         // The block row's own direction is the block order, not a place in
         // the within-block chain, so it is never one of these.
@@ -53668,7 +53557,7 @@ ${clone.innerHTML}
             minGroupInput.disabled = !minNUsable;
             minGroupInput.title = minNUsable
                 ? 'Minimum cell lines per group to show'
-                : 'Turn on the blocks toggle on a lineage, subtype, disease, alteration or gates row, then this drops the small blocks';
+                : 'Set Sort on a lineage, subtype, disease, alteration or gates row (the first sorted row makes the blocks), then this drops the small blocks';
         }
         const minGroupWrap = document.getElementById('hmMinGroupSizeWrap');
         if (minGroupWrap) {
@@ -53677,7 +53566,7 @@ ${clone.innerHTML}
         }
         // Show median labels blocks AND every annotation row's own legend
         // entries, so it stays live as soon as there is either.
-        const kRaw = document.getElementById('hmClusterK')?.value;
+        const kRaw = this._hmClusterKValue();
         const clustersEligible = !!spec && spec.kind === 'cluster'
             && (kRaw === 'auto' || (parseInt(kRaw, 10) || 0) >= 2);
         const anyRows = (this._hmAnnRows || []).length > 0;
@@ -53688,48 +53577,7 @@ ${clone.innerHTML}
         if (medianWrap) medianWrap.style.opacity = medianUsable ? '1' : '0.45';
     }
 
-    // Title text for one annotation row's sort toggle button, by its current
-    // direction, whether the row is the blocking one (then its arrows set the
-    // BLOCK order rather than an order inside the blocks) and whether another
-    // row has already fixed the order: shared by _hmRenderAnnRowsBlock's own
-    // render and _hmSyncClusterControls (which re-applies titles without a
-    // full re-render), so the two never drift on wording.
-    _hmSortToggleTitle(dir, mode, inertReason, isBlock) {
-        if (inertReason) return inertReason;
-        if (isBlock) {
-            if (dir === 'desc') return 'Blocks in their usual order: biggest, or altered, first. Click to reverse them';
-            if (dir === 'asc') return 'Blocks reversed. Click to go back to the usual order';
-            return 'Set the order of the blocks; off means the usual one (biggest, or altered, first)';
-        }
-        if (mode === 'cluster') {
-            return dir ? 'Clustering the columns. Click to turn it off' : 'Turn clustering back on for the columns';
-        }
-        if (this._hmAnnRowKind(mode) === 'continuous') {
-            if (dir === 'desc') return 'Sorting by this value, highest first. Click for lowest first (strongest dependency, for gene effect)';
-            if (dir === 'asc') return 'Sorting by this value, lowest first. Click to turn off';
-            return 'Sort the columns by this gene\'s value';
-        }
-        if (mode === 'gates') {
-            if (dir === 'desc') return 'Sorting by gate: gate A, then gate B, then both, then the ungated lines. Click for reversed';
-            if (dir === 'asc') return 'Sorting by gate, reversed: ungated lines first. Click to turn off';
-            return 'Sort the columns by gate: gate A, then gate B, then both, then the ungated lines';
-        }
-        if (dir === 'desc') return 'Sorting by this row, altered/biggest first. Click for reversed';
-        if (dir === 'asc') return 'Sorting by this row, reversed. Click to turn off';
-        return 'Sort the columns by this row';
-    }
-
-    // Title text for one row's blocks toggle, by its current state and
-    // whether the row has categories to block by at all.
-    _hmBlockToggleTitle(mode, isBlock) {
-        if (!this._hmAnnRowCanBlock(mode)) {
-            return 'A gene\'s value has no categories to block by, so this row can only sort';
-        }
-        if (isBlock) return 'This row makes the blocks. Click to turn blocking off';
-        return 'Make this row the blocks: the colour strip, its labels, the legend, Min n and the drill all follow it. One row at a time';
-    }
-
-    // Why a given row's sort toggle is dead in place, or '' when it is live.
+    // Why a given row's sort control is dead in place, or '' when it is live.
     _hmSortInertReason(rowIdx, info) {
         // The blocking cluster row's tree fixes the order outright, so its
         // own arrows have nothing left to say about it.
@@ -53754,10 +53602,6 @@ ${clone.innerHTML}
         const clusterOn = info.clusterIdx >= 0 || info.blockIsCluster;
         const clusterCuttable = info.clusterWholeCohort;
         const genesOn = !!document.getElementById('hmClusterGenes')?.checked;
-        // The checkbox mirrors the row's existence, so a restore or a handoff
-        // that rewrote the rows directly can never leave the two disagreeing.
-        const cellsCb = document.getElementById('hmClusterCells');
-        if (cellsCb) cellsCb.checked = !!clusterRow;
         const thenBySel = document.getElementById('hmThenBy');
         if (thenBySel) {
             thenBySel.disabled = clusterOn;
@@ -53766,35 +53610,24 @@ ${clone.innerHTML}
                 : 'The final tie-break, inside the innermost blocks, or the whole order when no row\'s sort arrows are on';
             thenBySel.style.opacity = clusterOn ? '0.45' : '1';
         }
-        document.querySelectorAll('.hm-ann-row-sort').forEach(btn => {
-            const idx = parseInt(btn.dataset.idx, 10);
+        document.querySelectorAll('.hm-ann-row-sortsel').forEach(sel => {
+            const idx = parseInt(sel.dataset.idx, 10);
             const row = rows[idx];
             if (!row) return;
             const reason = this._hmSortInertReason(idx, info);
-            btn.disabled = !!reason;
-            btn.style.opacity = reason ? '0.45' : '1';
-            btn.title = this._hmSortToggleTitle(row.sortDir || null, row.mode, reason, idx === info.blockIdx);
-        });
-        document.querySelectorAll('.hm-ann-row-block').forEach(btn => {
-            const idx = parseInt(btn.dataset.idx, 10);
-            const row = rows[idx];
-            if (!row) return;
-            const canBlock = this._hmAnnRowCanBlock(row.mode);
-            btn.disabled = !canBlock;
-            btn.style.opacity = canBlock ? '1' : '0.45';
-            btn.title = this._hmBlockToggleTitle(row.mode, idx === info.blockIdx);
+            sel.disabled = !!reason;
+            sel.style.opacity = reason ? '0.45' : '1';
+            if (reason) sel.title = reason;
         });
         const kSel = document.getElementById('hmClusterK');
         if (kSel) {
-            kSel.disabled = !clusterCuttable;
-            kSel.title = !clusterRow
-                ? 'Turn on Cluster cell lines to choose a cluster count'
-                : (!clusterOn
-                    ? 'Turn the Cell-line clusters row\'s sort arrows back on, or make it the blocks, to choose a cluster count'
-                    : (clusterCuttable
-                        ? 'How many clusters to cut the tree into; Tree order only draws the dendrogram without colouring clusters'
-                        : 'A cluster count needs one tree over the whole cohort; with another row blocking or sorting above it, it clusters inside each block instead'));
-            kSel.style.opacity = clusterCuttable ? '1' : '0.45';
+            kSel.disabled = !clusterOn || !clusterCuttable;
+            kSel.title = !clusterOn
+                ? 'Set the clusters row\'s Sort to Tree order first'
+                : (clusterCuttable
+                    ? 'No split draws the dendrogram with no coloured band; Auto or a number cuts the tree into that many coloured clusters'
+                    : 'A cluster count needs one tree over the whole cohort; with a sorted row above, this row clusters inside each block instead');
+            kSel.style.opacity = (!clusterOn || !clusterCuttable) ? '0.45' : '1';
         }
         const cellsOn = !!clusterRow;
         // Tree detail selects: each is only meaningful while its own tree is
@@ -53920,47 +53753,46 @@ ${clone.innerHTML}
         const TYPE_OPTIONS = [
             ['lineage', 'Lineage'], ['subtype', 'Subtype'], ['disease', 'Disease'],
             ['hotspot', 'Hotspot mutation'], ['fusion', 'Fusion'], ['cn', 'Copy number'],
-            ['ge', 'CRISPR gene effect'], ['expr', 'mRNA expression']
+            ['ge', 'CRISPR gene effect'], ['expr', 'mRNA expression'],
+            ['cluster', 'Cell-line clusters']
         ];
         const CATEGORICAL_MODES = new Set(['lineage', 'subtype', 'disease']);
         const KINDS = [
             ['hotspot', 'e.g. BRAF', 'Colour this row by this gene\'s hotspot mutation status (0 / 1 / 2 copies)'],
             ['fusion', 'e.g. EWSR1', 'Colour this row by whether this gene is fused'],
             ['cn', 'e.g. MYC', 'Colour this row by this gene\'s curated amplification / deletion status'],
-            ['ge', 'e.g. MYC', 'Colour this row by this gene\'s CRISPR gene effect, z-scored against every cell line'],
-            ['expr', 'e.g. MYC', 'Colour this row by this gene\'s mRNA expression, z-scored against every cell line']
+            ['ge', 'e.g. MYC', 'Colour this row by this gene\'s CRISPR gene effect, coloured from lowest to highest across the shown lines'],
+            ['expr', 'e.g. MYC', 'Colour this row by this gene\'s mRNA expression, coloured from lowest to highest across the shown lines']
         ];
         const VALUE_KINDS = new Set(['ge', 'expr']);
         const cap = (k) => k.charAt(0).toUpperCase() + k.slice(1);
-        // Which toggles are live and which are already overruled by a row
+        // Which sorts are live and which are already overruled by a row
         // above: computed once from the same helper the toolbar syncs use, so
         // a first paint after a restore is already correct rather than
         // waiting for a later sync call to catch up.
         const info = this._hmSortChainInfo();
-        // Precedence badge = this row's position among the rows that sort
-        // INSIDE the blocks, in row order, counted as the map below walks the
-        // rows top-down. The blocking row is not in that chain (its own
-        // arrows order the blocks themselves), so it never carries a badge.
-        let sortPrecedence = 0;
+        // The score keys were withdrawn from alteration and gates rows
+        // (v.88.98); a row that still carries one from an earlier session or
+        // saved view falls back to its level order, same direction.
+        rows.forEach(r => {
+            const k = this._hmAnnRowKind(r.mode);
+            if (r.sortKey === 'score' && (k === 'alteration' || k === 'gates')) r.sortKey = null;
+            // A clusters row is always on (its off state was removed); an
+            // off one from an older session or saved view switches on here.
+            if (r.mode === 'cluster' && !r.sortDir) r.sortDir = 'desc';
+        });
         wrap.innerHTML = rows.map((row, i) => {
             const dir = row.sortDir || null;
             const isBlock = i === info.blockIdx;
-            if (dir && !isBlock) sortPrecedence++;
             const inertReason = this._hmSortInertReason(i, info);
-            const sortBadge = (dir && !isBlock)
-                ? `<span style="position:absolute; top:-5px; right:-5px; background:#111827; color:#fff; border-radius:7px; min-width:13px; height:13px; line-height:13px; font-size:9px; text-align:center; padding:0 2px; pointer-events:none;">${sortPrecedence}</span>` : '';
-            // Neutral up-down glyph when off; a down arrow for desc (altered/
-            // biggest/highest first), an up arrow for asc (reversed). The
-            // clusters row has no meaningful reverse, so it shows a plain
-            // dot when on and cycles on/off only.
-            const sortGlyph = row.mode === 'cluster' ? (dir ? '&bull;' : '&#8597;')
-                : dir === 'asc' ? '&uarr;' : dir === 'desc' ? '&darr;' : '&#8597;';
-            const sortBtn = `<button type="button" class="btn btn-outline btn-sm hm-ann-row-sort" data-idx="${i}" style="font-size:10px; padding:0 6px; position:relative; ${dir ? 'background:#2563eb; border-color:#2563eb; color:#fff;' : ''} opacity:${inertReason ? '0.45' : '1'};"${inertReason ? ' disabled' : ''} title="${this.esc(this._hmSortToggleTitle(dir, row.mode, inertReason, isBlock))}">${sortGlyph}${sortBadge}</button>`;
-            // Blocks toggle: a radio across the rows, always present so the
-            // control strip never shifts, and disabled in place on the two
-            // continuous rows (a gene's value has no categories to block by).
-            const canBlock = this._hmAnnRowCanBlock(row.mode);
-            const blockBtn = `<button type="button" class="btn btn-outline btn-sm hm-ann-row-block" data-idx="${i}" style="font-size:10px; padding:0 6px; ${isBlock ? 'background:#111827; border-color:#111827; color:#fff;' : ''} opacity:${canBlock ? '1' : '0.45'};"${canBlock ? '' : ' disabled'} title="${this.esc(this._hmBlockToggleTitle(row.mode, isBlock))}">&#9638;</button>`;
+            // ONE Sort select per row (v.88.90): off, or a mode-appropriate
+            // key + direction. The topmost sorted row makes the blocks, so
+            // the same options read as "block order" there and "sort inside
+            // the blocks" further down; the title says which this row is.
+            const scoreNote = this._hmAnnRowKind(row.mode) === 'meta'
+                ? ' The median gene score options order the groups by the median, over each group\'s cell lines, of the per-line score (that line\'s mean of the shown genes).'
+                : '';
+            const sortSel = `<select class="hm-ann-row-sortsel" data-idx="${i}" style="width:200px; font-size:11px; opacity:${inertReason ? '0.45' : '1'};"${inertReason ? ' disabled' : ''} title="${this.esc(inertReason || ((isBlock ? 'This row is first with Sort on, so it splits the columns into blocks and this choice orders the blocks.' : dir ? 'Sorts inside the blocks made by the rows above, top row first.' : 'Sort: off, this row only paints colours.') + scoreNote))}">${this._hmSortOptionsHtml(row)}</select>`;
             // Lineage, subtype, disease, the clusters row and the gates row
             // need no gene; the box shown for them is disabled and cleared
             // rather than hidden outright, the same present-but-disabled
@@ -53970,6 +53802,17 @@ ${clone.innerHTML}
             const isGates = row.mode === 'gates';
             const disabled = isCluster || isGates || CATEGORICAL_MODES.has(row.mode);
             const activeKind = disabled ? 'hotspot' : row.mode;
+            // The cluster row's gene slot carries its ONE setting instead: cut
+            // the tree into coloured clusters, or leave it tree order only
+            // (default, no band, no Cluster groups).
+            const kVal = this._hmClusterKValue();
+            const clusterKSlot = `<span class="filter-input-wrap" style="position:relative; width:130px; display:inline-block;">
+                <select id="hmClusterK" style="width:124px; font-size:11px;" title="No split draws the dendrogram and orders the columns with no coloured band; Auto or a number cuts the tree into that many coloured clusters (needs one tree over the whole cohort, so the row must be first)">
+                    <option value="0"${kVal === '0' ? ' selected' : ''}>No split (tree only)</option>
+                    <option value="auto"${kVal === 'auto' ? ' selected' : ''}>Auto clusters</option>
+                    ${[2,3,4,5,6,7,8].map(k => `<option value="${k}"${kVal === String(k) ? ' selected' : ''}>${k} clusters</option>`).join('')}
+                </select>
+            </span>`;
             const slots = KINDS.map(([kind, placeholder, title]) => {
                 const visible = activeKind === kind;
                 const id = `hmAnnRow${i}${cap(kind)}`;
@@ -53996,9 +53839,7 @@ ${clone.innerHTML}
             // every other row so the columns line up, but theirs is fixed:
             // one is put there by the Clustering checkbox, the other appears
             // on its own as soon as a gate holds a cell line.
-            const typeControl = isCluster
-                ? `<select id="hmAnnRow${i}Type" style="width:150px;" disabled title="Added by Cluster cell lines, in the Clustering row above"><option>Cell-line clusters</option></select>`
-                : isGates
+            const typeControl = isGates
                 ? `<select id="hmAnnRow${i}Type" style="width:150px;" disabled title="Here as long as a gate holds a cell line. Paint the gates by dragging on the grid with Gate A or Gate B armed"><option>Gates</option></select>`
                 : `<select id="hmAnnRow${i}Type" style="width:150px;">
                         ${TYPE_OPTIONS.map(([v, label]) => `<option value="${v}"${row.mode === v ? ' selected' : ''}>${label}</option>`).join('')}
@@ -54007,12 +53848,11 @@ ${clone.innerHTML}
                 <div class="hm-ann-row" data-idx="${i}" style="display:flex; align-items:center; gap:6px;">
                     <span class="clb-group-label" style="flex:0 0 auto; width:38px;">Row ${i + 1}</span>
                     ${typeControl}
-                    <span style="display:inline-block; width:130px; vertical-align:top;">${slots}</span>
-                    ${blockBtn}
-                    ${sortBtn}
+                    <span style="display:inline-block; width:130px; vertical-align:top;">${isCluster ? clusterKSlot : slots}</span>
+                    ${sortSel}
                     <button type="button" class="btn btn-outline btn-sm hm-ann-row-up" data-idx="${i}" style="font-size:10px; padding:0 6px;"${isFirst ? ' disabled' : ''} title="${orderTitle}">&uarr;</button>
                     <button type="button" class="btn btn-outline btn-sm hm-ann-row-down" data-idx="${i}" style="font-size:10px; padding:0 6px;"${isLast ? ' disabled' : ''} title="${orderTitle}">&darr;</button>
-                    <button type="button" class="btn btn-outline btn-sm hm-ann-row-remove" data-idx="${i}" style="font-size:10px; padding:0 6px;" title="${isCluster ? 'Remove this row and switch Cluster cell lines off' : isGates ? 'Clear both gates, which also removes this row' : 'Remove this row'}">&times;</button>
+                    <button type="button" class="btn btn-outline btn-sm hm-ann-row-remove" data-idx="${i}" style="font-size:10px; padding:0 6px;" title="${isGates ? 'Clear both gates, which also removes this row' : 'Remove this row'}">&times;</button>
                 </div>
                 <div id="hmAnnRow${i}Note" style="font-size:10px; color:#9ca3af; margin:2px 0 0 44px;${needsNote ? '' : ' display:none;'}">Row ${i + 1} draws once a gene is picked.</div>
             </div>`;
@@ -54032,41 +53872,51 @@ ${clone.innerHTML}
         rows.forEach((row, i) => {
             const typeSel = document.getElementById(`hmAnnRow${i}Type`);
             typeSel?.addEventListener('change', () => {
+                // At most one clusters row: a second would mean two trees
+                // fighting over the same columns.
+                if (typeSel.value === 'cluster'
+                    && this._hmAnnRows.some((r, j) => j !== i && r.mode === 'cluster')) {
+                    typeSel.value = this._hmAnnRows[i].mode;
+                    this.showCopyNotification?.('There is already a Cell-line clusters row.');
+                    return;
+                }
                 this._hmAnnRows[i].mode = typeSel.value;
-                if (CATEGORICAL_MODES.has(typeSel.value)) this._hmAnnRows[i].gene = null;
-                // A row switched to a gene's value has no categories left to
-                // block by, so it gives the blocks up rather than keeping a
-                // flag that quietly does nothing.
-                if (!this._hmAnnRowCanBlock(typeSel.value)) this._hmAnnRows[i].block = false;
+                if (CATEGORICAL_MODES.has(typeSel.value) || typeSel.value === 'cluster') this._hmAnnRows[i].gene = null;
+                // A sort key belongs to the mode it was chosen under; keep
+                // the direction, drop the key, and clamp what the new mode
+                // cannot do (a cluster row is on/off only).
+                this._hmAnnRows[i].sortKey = null;
+                if (typeSel.value === 'cluster') this._hmAnnRows[i].sortDir = 'desc';
                 this._hmRenderAnnRowsBlock();
                 this._hmSyncGroupControls();
                 this._hmSyncClusterControls();
                 this._hmRedraw();
             });
-            wrap.querySelector(`.hm-ann-row-sort[data-idx="${i}"]`)?.addEventListener('click', () => {
-                const cur = this._hmAnnRows[i].sortDir || null;
-                // Three-state cycle (v.88.72): off -> desc -> asc -> off. The
-                // clusters row is clamped to on/off: a similarity tree has no
-                // meaningful reverse to offer.
-                this._hmAnnRows[i].sortDir = this._hmAnnRows[i].mode === 'cluster'
-                    ? (cur ? null : 'desc')
-                    : (cur === null ? 'desc' : (cur === 'desc' ? 'asc' : null));
-                this._hmRenderAnnRowsBlock();
-                this._hmSyncClusterControls();
-                this._hmRedraw();
-            });
-            // Blocking is a radio: turning it on here turns it off wherever
-            // it was, so there is only ever one colour strip, one legend and
-            // one thing Min n and the drill can mean.
-            wrap.querySelector(`.hm-ann-row-block[data-idx="${i}"]`)?.addEventListener('click', () => {
-                const wasBlock = !!this._hmAnnRows[i].block;
-                this._hmAnnRows.forEach(r => { r.block = false; });
-                if (!wasBlock) this._hmAnnRows[i].block = true;
+            wrap.querySelector(`.hm-ann-row-sortsel[data-idx="${i}"]`)?.addEventListener('change', (e) => {
+                const v = e.target.value;
+                const r = this._hmAnnRows[i];
+                if (!v) { r.sortDir = null; r.sortKey = null; }
+                else if (v === 'tree') { r.sortDir = 'desc'; r.sortKey = null; }
+                else {
+                    const m = v.match(/^(size|cat|val|name|score)-(asc|desc)$/);
+                    if (m) {
+                        r.sortDir = m[2];
+                        r.sortKey = (m[1] === 'name' || m[1] === 'score') ? m[1] : null;
+                    }
+                }
                 this._hmRenderAnnRowsBlock();
                 this._hmSyncGroupControls();
                 this._hmSyncClusterControls();
                 this._hmRedraw();
             });
+            // The cluster row's split select (only rendered on that row).
+            if (row.mode === 'cluster') {
+                document.getElementById('hmClusterK')?.addEventListener('change', (e) => {
+                    this._hmClusterKChoice = e.target.value;
+                    this._hmSyncGroupControls();
+                    this._hmRedraw();
+                });
+            }
             wrap.querySelector(`.hm-ann-row-remove[data-idx="${i}"]`)?.addEventListener('click', () => {
                 const removed = this._hmAnnRows[i];
                 // The gates row exists only while a gate holds a cell line,
@@ -54081,13 +53931,6 @@ ${clone.innerHTML}
                     return;
                 }
                 this._hmAnnRows.splice(i, 1);
-                // Removing the clusters row IS switching clustering off, so
-                // the checkbox follows rather than being left ticked with no
-                // row behind it (_hmSyncClusterControls re-reads the rows).
-                if (removed?.mode === 'cluster') {
-                    const cb = document.getElementById('hmClusterCells');
-                    if (cb) cb.checked = false;
-                }
                 this._hmRenderAnnRowsBlock();
                 this._hmSyncClusterControls();
                 this._hmRedraw();
@@ -54181,7 +54024,7 @@ ${clone.innerHTML}
         let changed = false;
         if (anyGated) {
             if (!gateRowIdxs.length) {
-                rows.push({ mode: 'gates', gene: null, sortDir: null, block: false });
+                rows.push({ mode: 'gates', gene: null, sortDir: null, sortKey: null });
                 changed = true;
             } else if (gateRowIdxs.length > 1) {
                 // At most one: a restored file plus a live sync could
@@ -54216,7 +54059,7 @@ ${clone.innerHTML}
         // Clustering is no longer a control of its own down here: it enters
         // as the Cell-line clusters annotation ROW, resolved with the rest of
         // the hierarchy further down (v.88.76).
-        const clusterKRaw = document.getElementById('hmClusterK')?.value || '0';
+        const clusterKRaw = this._hmClusterKValue();
         // 'auto' resolves to a concrete number once the whole-cohort tree
         // exists (it needs the tree to pick from); clusterK stays 0 until
         // then, same as "Tree order only", so nothing downstream needs to
@@ -54224,7 +54067,7 @@ ${clone.innerHTML}
         const clusterKAuto = clusterKRaw === 'auto';
         let clusterK = clusterKAuto ? 0 : (parseInt(clusterKRaw, 10) || 0);
         const presetKey = document.getElementById('hmPreset')?.value || Object.keys(this._GENE_SET_LIBRARY())[0];
-        const minGroupSize = Math.max(1, parseInt(document.getElementById('hmMinGroupSize')?.value) || 1);
+        let minGroupSize = Math.max(1, parseInt(document.getElementById('hmMinGroupSize')?.value) || 1);
 
         // An mRNA expression annotation row needs the expression matrix even
         // when the grid itself is drawing gene effect, so it counts towards
@@ -54367,12 +54210,14 @@ ${clone.innerHTML}
         // silent empty band.
         const annRowsResolved = this._hmResolveAnnotationRows();
         const annRowsNote = annRowsResolved.note || '';
-        // The order is carried by the annotation rows (v.88.76), in the two
-        // explicit choices v.88.80 split it into: the ONE row marked as the
-        // blocks splits the columns (and its own arrows set the order of the
-        // blocks), then every other row with a direction sorts inside them,
-        // top-down in row order, with hmThenBy as the terminal comparator.
-        const blockRow = annRowsResolved.rows.find(r => r.block && this._hmAnnRowCanBlock(r.mode)) || null;
+        // The order is carried by the annotation rows: row order IS the
+        // hierarchy (v.88.90). The TOPMOST resolved row with Sort on splits
+        // the columns into blocks (its own sort choice sets the block
+        // order), every other sorted row sorts inside them, top-down, with
+        // hmThenBy as the terminal comparator. A topmost sorted continuous
+        // row cannot block, it just sorts every column.
+        const firstSorted = annRowsResolved.rows.find(r => r.sortDir) || null;
+        const blockRow = (firstSorted && this._hmAnnRowCanBlock(firstSorted.mode)) ? firstSorted : null;
         const blockIsCluster = !!blockRow && this._hmAnnRowKind(blockRow.mode) === 'cluster';
         const toggledRows = annRowsResolved.rows.filter(r => r.sortDir && r !== blockRow);
         const sortSpec = { rows: toggledRows, thenBy };
@@ -54398,7 +54243,26 @@ ${clone.innerHTML}
         // through its own colour band instead.
         const groupSpec = !blockRow ? null
             : blockIsCluster ? { kind: 'cluster' }
-            : { kind: 'row', mode: blockRow.mode, gene: blockRow.gene, dir: blockRow.sortDir, rowIdx: blockRow.idx, label: this._hmAnnRowLabel(blockRow.mode, blockRow.gene) };
+            : { kind: 'row', mode: blockRow.mode, gene: blockRow.gene, dir: blockRow.sortDir, sortKey: blockRow.sortKey || null, rowIdx: blockRow.idx, label: this._hmAnnRowLabel(blockRow.mode, blockRow.gene) };
+
+        // Min n belongs to the grouping it was set for. A threshold chosen
+        // for 30 lineage blocks silently swallowed the altered groups when
+        // the blocking moved to a hotspot row (user-reported 2026-08-20:
+        // Eye + Min n 9 hid both CDKN2A-mutated groups and the "wild-type
+        // first" split drew one block). When the block row's identity
+        // changes, the threshold goes back to 1; restores and drill-back
+        // null the signature first so their own minN survives.
+        {
+            const minNSig = groupSpec
+                ? (groupSpec.kind === 'cluster' ? 'cluster' : `${groupSpec.mode}|${groupSpec.gene || ''}`)
+                : 'none';
+            if (this._hmMinNBlockSig != null && minNSig !== this._hmMinNBlockSig && minGroupSize > 1) {
+                const minEl = document.getElementById('hmMinGroupSize');
+                if (minEl) minEl.value = '1';
+                minGroupSize = 1;
+            }
+            this._hmMinNBlockSig = minNSig;
+        }
 
         // A hidden legend group from a previous grouping scheme means
         // nothing under a different one (its key won't recur), so it is
@@ -54572,19 +54436,19 @@ ${clone.innerHTML}
         // the clusters row (Cluster cell lines) and the gates row.
         rows.forEach((row, idx) => {
             if (resolved.length >= 6) return;
-            // sortDir and block carry through to the resolved row unchanged:
-            // together they drive the column order (_hmRedrawCore reads the
-            // block row and the sorting subset off exactly these resolved
-            // rows, in this same order), independent of whether the row ends
-            // up drawn.
+            // sortDir and sortKey carry through to the resolved row
+            // unchanged: together they drive the column order (_hmRedrawCore
+            // reads the block row and the sorting subset off exactly these
+            // resolved rows, in this same order), independent of whether the
+            // row ends up drawn.
             const sortDir = row.sortDir || null;
-            const block = !!row.block;
+            const sortKey = row.sortKey || null;
             if (row.mode === 'cluster') {
                 // At most one clusters row: a second would mean two trees
                 // fighting over the same columns.
                 if (clusterSeen) return;
                 clusterSeen = true;
-                resolved.push({ mode: 'cluster', gene: null, sortDir, block, idx });
+                resolved.push({ mode: 'cluster', gene: null, sortDir, sortKey, idx });
                 return;
             }
             if (row.mode === 'gates') {
@@ -54594,10 +54458,10 @@ ${clone.innerHTML}
                 const gates = this._hmGates || { A: new Set(), B: new Set() };
                 if (gatesSeen || !(gates.A?.size || gates.B?.size)) return;
                 gatesSeen = true;
-                resolved.push({ mode: 'gates', gene: null, sortDir, block, idx });
+                resolved.push({ mode: 'gates', gene: null, sortDir, sortKey, idx });
                 return;
             }
-            if (row.mode === 'lineage' || row.mode === 'subtype' || row.mode === 'disease') { resolved.push({ mode: row.mode, gene: null, sortDir, block, idx }); return; }
+            if (row.mode === 'lineage' || row.mode === 'subtype' || row.mode === 'disease') { resolved.push({ mode: row.mode, gene: null, sortDir, sortKey, idx }); return; }
             let raw = (row.gene || '').trim().toUpperCase();
             if (!raw) return;
             if (row.mode === 'hotspot') {
@@ -54605,7 +54469,7 @@ ${clone.innerHTML}
                     note += `${raw} has no hotspot or damaging mutation data, that annotation row is not drawn. `;
                     return;
                 }
-                resolved.push({ mode: 'hotspot', gene: raw, sortDir, block, idx });
+                resolved.push({ mode: 'hotspot', gene: raw, sortDir, sortKey, idx });
             } else if (row.mode === 'fusion') {
                 // The fusion gene slot is the same searchable widget the
                 // fusion filter uses, whose picks can carry the legacy
@@ -54613,13 +54477,13 @@ ${clone.innerHTML}
                 // (mirrors the cn fix below, which is the one actually
                 // reported broken), so a decorated pick still resolves.
                 raw = this._stripFusionFilterDecoration(row.gene).trim().toUpperCase();
-                resolved.push({ mode: 'fusion', gene: raw, sortDir, block, idx });
+                resolved.push({ mode: 'fusion', gene: raw, sortDir, sortKey, idx });
             } else if (row.mode === 'ge') {
                 if (!this.geneIndex?.has(raw)) {
                     note += `${raw} has no CRISPR gene effect data, that annotation row is not drawn. `;
                     return;
                 }
-                resolved.push({ mode: 'ge', gene: raw, sortDir, block, idx });
+                resolved.push({ mode: 'ge', gene: raw, sortDir, sortKey, idx });
             } else if (row.mode === 'expr') {
                 // Expression loads on demand; _hmRedrawCore awaits that load
                 // before calling this whenever a row asks for it, so a miss
@@ -54628,7 +54492,7 @@ ${clone.innerHTML}
                     note += `${raw} has no mRNA expression data, that annotation row is not drawn. `;
                     return;
                 }
-                resolved.push({ mode: 'expr', gene: raw, sortDir, block, idx });
+                resolved.push({ mode: 'expr', gene: raw, sortDir, sortKey, idx });
             } else {
                 // The cn gene slot is the CN filter widget, whose picks are
                 // the DECORATED panel key ("MYC_amp"/"MYC_del", see
@@ -54644,7 +54508,7 @@ ${clone.innerHTML}
                     note += `${raw} has no curated or measured copy-number data, that annotation row is not drawn. `;
                     return;
                 }
-                resolved.push({ mode: 'cn', gene: raw, sortDir, block, idx });
+                resolved.push({ mode: 'cn', gene: raw, sortDir, sortKey, idx });
             }
         });
         return { rows: resolved, note };
@@ -54706,17 +54570,24 @@ ${clone.innerHTML}
     // never leave a reader guessing what order the columns are actually in.
     // Reads the plan _hmBuildAndPaint actually ordered by (d.sortPlan), not
     // the controls, so the sentence and the picture cannot drift apart.
-    _hmSortSummary(d) {
+    _hmSortSummary(d, withNudge = false) {
         const plan = d.sortPlan || { block: null, chain: [], cluster: null, inert: [] };
         const thenByWord = d.sortSpec?.thenBy === 'name' ? 'name' : 'score';
         // Rows can be drawn without doing anything to the order: when at
         // least one is sitting there unused, say so rather than leaving the
-        // mismatch to be noticed by chance.
+        // mismatch to be noticed by chance. The click-this nudge is for the
+        // on-screen hint line ONLY: in the exported caption, the CSV corner,
+        // the Methods text and the AI export it read as instructions to a
+        // reader who has no controls to click.
         if (!plan.block && !plan.chain.length && !plan.cluster) {
-            const nudge = d.annRows.length ? ' (turn on a row\'s blocks toggle to split the columns, or its sort arrows to sort by it)' : '';
+            const nudge = (withNudge && d.annRows.length) ? ' (set a row\'s Sort to split the columns into blocks and order them by it)' : '';
             return `sorted by ${thenByWord}` + nudge;
         }
         const dirWords = (row, isBlock) => {
+            // The chosen sort key (v.88.90) names its own order; without one
+            // the historic per-kind default order applies.
+            if (row.sortKey === 'name') return row.dir === 'asc' ? 'Z to A' : 'A to Z';
+            if (row.sortKey === 'score') return row.dir === 'asc' ? 'lowest median score first' : 'highest median score first';
             const kind = this._hmAnnRowKind(row.mode);
             if (kind === 'continuous') return row.dir === 'asc' ? 'lowest first' : 'highest first';
             if (kind === 'meta') return row.dir === 'asc' ? 'smallest block first' : 'biggest block first';
@@ -54938,7 +54809,7 @@ ${clone.innerHTML}
             return {
                 numeric: false,
                 valueFor: this._hmAnnRowValueFor(row.mode, row.gene),
-                rankMap: this._hmAnnRowRankMap(row.mode, row.gene, cohort),
+                rankMap: this._hmAnnRowRankMap(row.mode, row.gene, cohort, row.sortKey || null, clScore),
                 dir: row.sortDir === 'asc' ? -1 : 1
             };
         });
@@ -55042,7 +54913,7 @@ ${clone.innerHTML}
             // colour strip, staggered labels, legend, drill-down and Min n
             // have always used.
             const valueFor = this._hmAnnRowValueFor(outerRow.mode, outerRow.gene);
-            const rankMap = this._hmAnnRowRankMap(outerRow.mode, outerRow.gene, cohort);
+            const rankMap = this._hmAnnRowRankMap(outerRow.mode, outerRow.gene, cohort, outerRow.sortKey || null, clScore);
             const byKey = new Map();
             for (const cl of cohort) {
                 const k = valueFor(cl);
@@ -55296,9 +55167,9 @@ ${clone.innerHTML}
             block: groupSpec
                 ? (groupSpec.kind === 'cluster'
                     ? { kind: 'cluster' }
-                    : { kind: 'row', mode: groupSpec.mode, gene: groupSpec.gene, dir: groupSpec.dir || null })
+                    : { kind: 'row', mode: groupSpec.mode, gene: groupSpec.gene, dir: groupSpec.dir || null, sortKey: groupSpec.sortKey || null })
                 : null,
-            chain: chainRows.map(r => ({ mode: r.mode, gene: r.gene, dir: r.sortDir })),
+            chain: chainRows.map(r => ({ mode: r.mode, gene: r.gene, dir: r.sortDir, sortKey: r.sortKey || null })),
             cluster: clusterCells ? { blocking: !!(groupSpec && groupSpec.kind === 'cluster') } : null,
             inert: (sortSpec.rows || []).filter(r => !chainRows.includes(r) && r.mode !== 'cluster')
                 .map(r => this._hmAnnRowLabel(r.mode, r.gene))
@@ -55425,7 +55296,16 @@ ${clone.innerHTML}
     // whatever slice is being sorted, so every group's blocks agree on which
     // category counts as "biggest"), ties A-Z: the same size-first order
     // _hmBuildAnnotation2 computes for its own legend/colour assignment.
-    _hmAnnRowRankMap(mode, gene, cohort) {
+    // Category rank for one row, by the row's sort KEY (v.88.90):
+    //   null    the historic default: altered level first for alteration and
+    //           gates rows, biggest category first for the rest
+    //   'name'  categories A to Z
+    //   'score' categories by their median per-line score, highest first
+    //           (clScore comes from the caller; without it, falls back to
+    //           the default rank)
+    // The row's direction is applied by the caller as a multiplier, so
+    // 'asc' reads as the reverse of whatever this rank says.
+    _hmAnnRowRankMap(mode, gene, cohort, sortKey = null, clScore = null) {
         const ALTERED_FIRST = {
             hotspot: ['Both copies', 'One copy', 'Wild-type'],
             fusion: ['Fused', 'No fusion'],
@@ -55433,11 +55313,41 @@ ${clone.innerHTML}
             gates: this._HM_GATE_CATEGORIES()
         };
         const rankMap = new Map();
+        const valueFor = this._hmAnnRowValueFor(mode, gene);
+        if (sortKey === 'name' || (sortKey === 'score' && clScore)) {
+            const perCat = new Map();
+            for (const cl of cohort) {
+                const v = valueFor(cl);
+                if (!perCat.has(v)) perCat.set(v, []);
+                perCat.get(v).push(cl);
+            }
+            let order;
+            if (sortKey === 'name') {
+                order = [...perCat.keys()].sort((a, b) => String(a).localeCompare(String(b)));
+            } else {
+                const medianOf = (cls) => {
+                    const vals = cls.map(cl => clScore.get(cl)).filter(v => v != null && !Number.isNaN(v)).sort((a, b) => a - b);
+                    if (!vals.length) return NaN;
+                    const m = Math.floor(vals.length / 2);
+                    return vals.length % 2 ? vals[m] : (vals[m - 1] + vals[m]) / 2;
+                };
+                const med = new Map([...perCat.entries()].map(([k, cls]) => [k, medianOf(cls)]));
+                order = [...perCat.keys()].sort((a, b) => {
+                    const ma = med.get(a), mb = med.get(b);
+                    const na = Number.isNaN(ma), nb = Number.isNaN(mb);
+                    if (na && nb) return String(a).localeCompare(String(b));
+                    if (na) return 1;
+                    if (nb) return -1;
+                    return mb - ma || String(a).localeCompare(String(b));
+                });
+            }
+            order.forEach((label, i) => rankMap.set(label, i));
+            return rankMap;
+        }
         if (ALTERED_FIRST[mode]) {
             ALTERED_FIRST[mode].forEach((label, i) => rankMap.set(label, i));
             return rankMap;
         }
-        const valueFor = this._hmAnnRowValueFor(mode, gene);
         const counts = new Map();
         for (const cl of cohort) { const v = valueFor(cl); counts.set(v, (counts.get(v) || 0) + 1); }
         const order = [...counts.keys()].sort((a, b) => counts.get(b) - counts.get(a) || a.localeCompare(b));
@@ -55548,21 +55458,29 @@ ${clone.innerHTML}
         if (mode === 'ge' || mode === 'expr') {
             const dt = mode === 'ge' ? 'ge' : 'expr';
             const rawFor = this._hmAnnRowNumericValueFor(mode, gene);
-            const stats = this._hmZAllStatsFor(gene, dt);
             const raws = orderedCLs.map(rawFor);
-            const zOf = (v) => (stats && !Number.isNaN(v)) ? (v - stats.mean) / stats.sd : NaN;
-            const domain = { lo: -2.5, hi: 2.5 };
-            const colors = raws.map(v => Number.isNaN(v) ? '#f3f4f6' : this._hmColorFor(zOf(v), 'zall', dt, domain));
             const unit = this._hmAnnRowUnit(mode);
             const values = raws.map(v => Number.isNaN(v) ? 'no data' : `${v.toFixed(2)} ${unit}`);
             const present = raws.filter(v => !Number.isNaN(v));
             const lo = present.length ? Math.min(...present) : NaN;
             const hi = present.length ? Math.max(...present) : NaN;
+            // Colours span the range of the SHOWN lines, edge to edge of the
+            // palette. The old z-vs-all-lines colouring with a fixed +-2.5
+            // domain went flat whenever the cohort's own spread was small
+            // against the whole panel (an 8-line Eye cohort's TP53
+            // expression band was one washed-out pink); the legend prints
+            // the numeric range, so a stretched band stays honest.
+            const domain = { lo: -2.5, hi: 2.5 };
+            const span = (Number.isFinite(hi - lo) && hi > lo) ? hi - lo : 0;
+            const colorAt = (v) => span
+                ? this._hmColorFor(((v - lo) / span) * 5 - 2.5, 'zall', dt, domain)
+                : this._hmColorFor(0, 'zall', dt, domain);
+            const colors = raws.map(v => Number.isNaN(v) ? '#f3f4f6' : colorAt(v));
             const gradStops = present.length
-                ? [0, 0.25, 0.5, 0.75, 1].map(t => this._hmColorFor(zOf(lo + t * (hi - lo)), 'zall', dt, domain))
+                ? [0, 0.25, 0.5, 0.75, 1].map(t => span ? colorAt(lo + t * span) : colorAt(lo))
                 : ['#f3f4f6'];
             const label = present.length
-                ? `${attrLabelEarly}: ${lo.toFixed(2)} to ${hi.toFixed(2)} ${unit}`
+                ? `${attrLabelEarly}: ${lo.toFixed(2)} to ${hi.toFixed(2)} ${unit}, coloured across this range`
                 : `${attrLabelEarly}: no data in these lines`;
             return { mode, gene, attrLabel: attrLabelEarly, colors, legend: [{ label, color: gradStops[gradStops.length - 1], gradStops }], values };
         }
@@ -56763,7 +56681,7 @@ ${clone.innerHTML}
             const geneCountWord = d.silencedGeneNames.length
                 ? `${d.foundGenes.length} genes (${d.silencedGeneNames.length} silenced)`
                 : `${nGenes} genes`;
-            let base = `${geneCountWord} x ${nCL} cell lines, ${this._hmSortSummary(d)}`;
+            let base = `${geneCountWord} x ${nCL} cell lines, ${this._hmSortSummary(d, true)}`;
             // The choice (hidden or shown) is always stated, never left to be
             // inferred from a count that quietly changed.
             if (d.noDataCount > 0) {
@@ -56873,11 +56791,20 @@ ${clone.innerHTML}
         const d = this._hmData;
         if (!d || !g || !d.groups || !d.groupSpec) return;
         const lineageSel = document.getElementById('hmLineage');
+        const minNInput = document.getElementById('hmMinGroupSize');
         this._hmDrillBack = {
             annRows: (this._hmAnnRows || []).map(r => ({ ...r })),
             lineageValue: lineageSel?.value,
-            drillCells: this._hmDrillCells || null
+            drillCells: this._hmDrillCells || null,
+            minN: minNInput?.value || '1'
         };
+        // Min n belongs to the level being LEFT: a threshold that hid small
+        // lineages can hide every group at the finer level inside one
+        // lineage, and the drill then landed on an empty grid (user-reported
+        // 2026-08-20: Eye, 15 lines, Min n 9, three disease groups, nothing
+        // drawn). The drill is an explicit "show me this group", so it
+        // starts unfiltered; going back restores the threshold.
+        if (minNInput) minNInput.value = '1';
         // Whatever was hidden belonged to the blocking being left behind; a
         // stale hidden key could otherwise hide the one group a drill
         // leaves on screen, including the group just drilled into.
@@ -56922,6 +56849,12 @@ ${clone.innerHTML}
             this._hmRenderAnnRowsBlock();
         }
         if (lineageSel && back.lineageValue !== undefined) lineageSel.value = back.lineageValue;
+        const minNInput = document.getElementById('hmMinGroupSize');
+        if (minNInput && back.minN !== undefined) minNInput.value = back.minN;
+        // The redraw below returns to the pre-drill grouping; nulling the
+        // signature stops the block-change guard from wiping the restored
+        // threshold on that same redraw.
+        this._hmMinNBlockSig = null;
         this._hmDrillCells = back.drillCells || null;
         this._hmDrillBack = null;
         this._hmDrillLabel = null;
@@ -57471,7 +57404,17 @@ ${clone.innerHTML}
         const dateStr = new Date().toISOString().slice(0, 10);
         const line2 = [this._hmCohortPhrase(d.orderedCLs.length), sortWord, groupWord, ann2Word, scaleWord, colourWord, `DepMap ${DEPMAP_VERSION}, ${dateStr}.`]
             .filter(Boolean).join(' ');
-        return { line1, line2 };
+        // Settings can override either line or switch it off for exports
+        // (v.88.91). An empty override falls back to the auto text, so
+        // clearing the box is how you get the automatic wording back; the
+        // auto lines ride along so the Settings panel can show them as
+        // placeholders.
+        const ct = this._hmCustomText || {};
+        return {
+            line1: ct.titleOn === false ? '' : ((ct.title || '').trim() || line1),
+            line2: ct.captionOn === false ? '' : ((ct.caption || '').trim() || line2),
+            autoLine1: line1, autoLine2: line2
+        };
     }
 
     // Wraps the two caption lines to the figure's own width (reusing the
@@ -57605,17 +57548,31 @@ ${clone.innerHTML}
         const narrowWord = [d.subtypeLabel, d.diseaseLabel].filter(Boolean).map(w => `${w} only`).join(', ');
         const filterParts = this._hmActiveFilterParts();
         const filterWord = filterParts.length ? `, filtered to ${filterParts.join(', ')}` : '';
+        // Count what the FILE carries, not what the view once computed: a
+        // hidden group's columns are not in this export, and the corner cell
+        // saying "3 blocks" over 2 made the file contradict its own Group
+        // row (and the Methods text beside it).
+        const shownGroups = d.groups ? d.groups.filter(g => !g.hidden) : null;
+        const hiddenN = d.groups ? d.groups.length - shownGroups.length : 0;
         const groupWord = d.groups
-            ? `${d.groups.length} block${d.groups.length === 1 ? '' : 's'}`
+            ? `${shownGroups.length} block${shownGroups.length === 1 ? '' : 's'}${hiddenN ? ` (${hiddenN} group${hiddenN === 1 ? '' : 's'} hidden and not in this file)` : ''}`
             : 'no blocks';
-        const ann2Word = d.annRows.length ? `, annotation rows ${d.annRows.map(r => r.attrLabel).join(', ')}` : '';
+        const silencedWord = d.silencedGeneNames?.length
+            ? `, ${d.silencedGeneNames.length} gene${d.silencedGeneNames.length === 1 ? '' : 's'} silenced and not in this file (${d.silencedGeneNames.join(' ')})`
+            : '';
+        const minN = parseInt(document.getElementById('hmMinGroupSize')?.value) || 1;
+        const minNWord = minN > 1 ? `, groups under n=${minN} hidden` : '';
+        const noDataWord = d.noDataCount > 0
+            ? `, ${d.noDataCount} line${d.noDataCount === 1 ? '' : 's'} without data ${d.hideNoDataChecked ? 'hidden' : 'shown'}`
+            : '';
+        const ann2Word = d.annRows.length ? `, annotation rows ${d.annRows.map(r => r.attrLabel).join(' / ')} included as rows` : '';
         const sortWord = this._hmSortSummary(d);
         const dateStr = new Date().toISOString().slice(0, 10);
         // Provenance lives in the CORNER CELL, not a line of its own: a
         // plain sentence above the header once made a spreadsheet read the
         // real column names as a row of data, because a header row only
         // works as a header if row 1 IS the header row.
-        const corner = `Gene [${measureWord}, ${scaleWord}, ${colourWord}, ${cohortWord}${filterWord}, ${lineageWord}${narrowWord ? `, ${narrowWord}` : ''}, ${sortWord}, ${groupWord}${ann2Word}, DepMap ${DEPMAP_VERSION}, ${dateStr}]`;
+        const corner = `Gene [${measureWord}, ${scaleWord}, ${colourWord}, ${cohortWord}${filterWord}, ${lineageWord}${narrowWord ? `, ${narrowWord}` : ''}, ${sortWord}, ${groupWord}${minNWord}${noDataWord}${silencedWord}${ann2Word}, DepMap ${DEPMAP_VERSION}, ${dateStr}]`;
         const header = csvField(corner) + ',' + d.orderedCLs.map(cl => this.getCellLineName(cl)).join(',');
         const rows = d.orderedGenes.map(g => {
             const row = d.scaledRows[d.geneIndexInResult.get(g)];
@@ -57631,6 +57588,13 @@ ${clone.innerHTML}
             const groupRow = 'Group,' + d.orderedCLs.map(cl => csvField(groupOf.get(cl) || '')).join(',');
             csv += groupRow + '\n';
         }
+        // The annotation bands, one row per band in drawn order, per-column
+        // values aligned to the same cell lines as everything else. The
+        // corner cell used to advertise them while the file carried only the
+        // blocking row.
+        d.annRows.forEach(r => {
+            csv += csvField(r.attrLabel) + ',' + d.orderedCLs.map((cl, i) => csvField(r.values?.[i] ?? '')).join(',') + '\n';
+        });
         csv += rows.join('\n') + '\n';
         this.downloadFile(csv, csvName('heatmap'), 'text/csv');
     }
@@ -57722,10 +57686,50 @@ ${clone.innerHTML}
             ${sizeRow('Cell width max', 'hm_ts_cellWMax', s.cellWMax, 2, 40)}
             ${sizeRow('Cell height', 'hm_ts_cellH', s.cellH, 4, 40)}
             <div style="border-top:1px solid #e5e7eb;margin:6px 0;"></div>
+            <div style="font-weight:600;margin-bottom:4px;color:#1f2937;font-size:11px;">Cell-line tree detail</div>
+            <div style="display:flex; align-items:center; margin-bottom:5px; gap:4px;">
+                <span style="width:15px;"></span>
+                <select id="hm_ts_treeCells" style="flex:1; font-size:11px;" onchange="app._hmTsApply()" title="Drawing detail only, does not change the clustering: how much branch detail the cell-line tree above the grid draws">
+                    ${['full', 'medium', 'coarse', 'xcoarse', 'minimal'].map(v => `<option value="${v}"${s.treeDetailCells === v ? ' selected' : ''}>${v === 'full' ? 'Full' : v === 'medium' ? 'Medium' : v === 'coarse' ? 'Coarse' : v === 'xcoarse' ? 'Very coarse' : 'Minimal'}</option>`).join('')}
+                </select>
+            </div>
+            <div style="border-top:1px solid #e5e7eb;margin:6px 0;"></div>
+            ${(() => {
+                const cap = this._hmCaptionLines() || { autoLine1: '', autoLine2: '' };
+                const ct = this._hmCustomText || {};
+                return `
+            <div style="font-weight:600;margin-bottom:4px;color:#1f2937;font-size:11px;">Text on the exported figure</div>
+            <label style="display:flex;align-items:center;gap:4px;font-size:10px;color:#374151;margin-bottom:2px;cursor:pointer;">
+                <input type="checkbox" id="hm_ts_titleOn"${ct.titleOn === false ? '' : ' checked'} onchange="app._hmTsTextApply()"> Title
+            </label>
+            <textarea id="hm_ts_titleText" rows="2" placeholder="${this.esc(cap.autoLine1)}" style="width:100%;font-size:10px;padding:3px 5px;border:1px solid #d1d5db;border-radius:4px;resize:vertical;" oninput="app._hmTsTextApply()">${this.esc(ct.title || '')}</textarea>
+            <label style="display:flex;align-items:center;gap:4px;font-size:10px;color:#374151;margin:5px 0 2px;cursor:pointer;">
+                <input type="checkbox" id="hm_ts_captionOn"${ct.captionOn === false ? '' : ' checked'} onchange="app._hmTsTextApply()"> Caption (cohort, sorting, scale)
+            </label>
+            <textarea id="hm_ts_captionText" rows="3" placeholder="${this.esc(cap.autoLine2)}" style="width:100%;font-size:10px;padding:3px 5px;border:1px solid #d1d5db;border-radius:4px;resize:vertical;" oninput="app._hmTsTextApply()">${this.esc(ct.caption || '')}</textarea>
+            <div style="font-size:9px;color:#9ca3af;margin:2px 0 6px;">Leave a box empty to keep the automatic wording (shown grayed). Untick to leave that line out of exports. The .csv, Methods and AI exports keep the automatic text, so the record of how the figure was made stays intact.</div>
+            <div style="border-top:1px solid #e5e7eb;margin:6px 0;"></div>`;
+            })()}
             <button onclick="app._hmTsReset()" style="font-size:10px;padding:3px 10px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:#f9fafb;color:#374151;">Reset to defaults</button>
             <div style="font-size:9px;color:#9ca3af;margin-top:6px;">Applies on screen and to every heatmap export (image, copy). Saved for next time.</div>
         `;
         panel.style.display = 'block';
+    }
+
+    // The Settings panel's figure-text hook: reads the two boxes and
+    // checkboxes into _hmCustomText (view state, rides Save view). No redraw
+    // needed: the caption only exists on the composed exports, which read
+    // _hmCaptionLines live.
+    _hmTsTextApply() {
+        this._hmCustomText = {
+            title: document.getElementById('hm_ts_titleText')?.value || '',
+            titleOn: document.getElementById('hm_ts_titleOn')?.checked !== false,
+            caption: document.getElementById('hm_ts_captionText')?.value || '',
+            captionOn: document.getElementById('hm_ts_captionOn')?.checked !== false
+        };
+        const empty = !this._hmCustomText.title.trim() && !this._hmCustomText.caption.trim()
+            && this._hmCustomText.titleOn && this._hmCustomText.captionOn;
+        if (empty) this._hmCustomText = null;
     }
 
     _hmTsStep(id, dir) {
@@ -57744,29 +57748,32 @@ ${clone.innerHTML}
             const v = parseInt(document.getElementById(id)?.value, 10);
             return Number.isFinite(v) ? v : def;
         };
-        // Tree detail no longer lives in this panel (it's the two toolbar
-        // selects now), so it's carried forward from whatever is already
-        // set rather than read from a control here.
+        // Cell-line tree detail lives in this panel (v.88.90; the toolbar
+        // select is gone with the Cluster cell lines checkbox); the gene
+        // tree's detail select stays on the Clustering toolbar row.
+        const treeCells = document.getElementById('hm_ts_treeCells')?.value;
         this._hmSettings = Object.assign({}, defaults, this._hmSettings || {}, {
             geneFont: num('hm_ts_geneFont', defaults.geneFont),
             labelFont: num('hm_ts_labelFont', defaults.labelFont),
             legendFont: num('hm_ts_legendFont', defaults.legendFont),
             cellWMax: num('hm_ts_cellWMax', defaults.cellWMax),
-            cellH: num('hm_ts_cellH', defaults.cellH)
+            cellH: num('hm_ts_cellH', defaults.cellH),
+            ...(treeCells ? { treeDetailCells: treeCells } : {})
         });
         this._hmSaveSettingsToStorage();
         this._hmRedraw();
     }
 
     _hmTsReset() {
-        // Resets only what this panel still owns (text/cell sizes); tree
-        // detail belongs to the toolbar selects now and isn't touched by
-        // this button.
+        // Resets what this panel owns: text/cell sizes and any custom figure
+        // text (back to the automatic wording, both lines on). Tree detail
+        // keeps its value; it is a drawing choice, not a size.
         const defaults = this._HM_SETTINGS_DEFAULTS();
         this._hmSettings = Object.assign({}, defaults, {
             treeDetailCells: this._hmSettings?.treeDetailCells ?? defaults.treeDetailCells,
             treeDetailGenes: this._hmSettings?.treeDetailGenes ?? defaults.treeDetailGenes
         });
+        this._hmCustomText = null;
         this._hmSaveSettingsToStorage();
         this.openHeatmapSettings();
         this._hmRedraw();
@@ -57807,19 +57814,21 @@ ${clone.innerHTML}
             minN: parseInt(val('hmMinGroupSize'), 10) || 1,
             showMedian: checked('hmShowMedian'),
             clusterGenes: checked('hmClusterGenes'),
-            clusterCells: checked('hmClusterCells'),
-            clusterK: val('hmClusterK') === 'auto' ? 'auto' : (parseInt(val('hmClusterK'), 10) || 0),
+            // v.88.90: the cluster checkbox is gone; a saved file records
+            // whether a sorted cluster row exists (clusterCells, kept for
+            // older readers) and the split choice, which now lives in state.
+            clusterCells: (this._hmAnnRows || []).some(r => r.mode === 'cluster' && r.sortDir),
+            clusterK: this._hmClusterKValue() === 'auto' ? 'auto' : (parseInt(this._hmClusterKValue(), 10) || 0),
             geneClusterK: val('hmGeneClusterK') === 'auto' ? 'auto' : (parseInt(val('hmGeneClusterK'), 10) || 0),
             // v.88.70: rows carry their own sort state (replacing the retired
             // hmSort select); v.88.72 widened that from a boolean sortOn to a
             // three-state sortDir (null | 'desc' | 'asc'); v.88.76 made the
             // rows the WHOLE hierarchy, retiring groupBy/groupGene/groupOrder
             // and adding the 'cluster' row mode; v.88.80 split blocking off
-            // into its own `block` flag (at most one row) and added the
-            // 'gates' row mode, whose PRESENCE is derived from gateA/gateB
-            // below on restore while its own two flags ride along here. All
-            // migrated on read by _hmRestoreView for an older file.
-            annRows: (this._hmAnnRows || []).map(r => ({ mode: r.mode, gene: r.gene || null, sortDir: r.sortDir || null, block: !!r.block })),
+            // into a `block` flag; v.88.90 retired that flag again (the
+            // topmost sorted row IS the blocks) and added per-row sortKey.
+            // All migrated on read by _hmRestoreView for an older file.
+            annRows: (this._hmAnnRows || []).map(r => ({ mode: r.mode, gene: r.gene || null, sortDir: r.sortDir || null, sortKey: r.sortKey || null })),
             hiddenGroups: this._hmHiddenGroups ? [...this._hmHiddenGroups] : [],
             drillCells: this._hmDrillCells ? [...this._hmDrillCells] : null,
             drillLabel: this._hmDrillLabel || null,
@@ -57831,6 +57840,7 @@ ${clone.innerHTML}
             silencedGenes: this._hmSilencedGenes ? [...this._hmSilencedGenes] : [],
             gateA: this._hmGates?.A ? [...this._hmGates.A] : [],
             gateB: this._hmGates?.B ? [...this._hmGates.B] : [],
+            customText: this._hmCustomText ? { ...this._hmCustomText } : null,
             settings: Object.assign({}, this._HM_SETTINGS_DEFAULTS(), this._hmSettings || {})
         };
     }
@@ -57887,8 +57897,9 @@ ${clone.innerHTML}
         // toggle/then-by migration below (that migration can add or toggle
         // an annotation row, which has to land in this._hmAnnRows first).
         setChecked('hmClusterGenes', state.clusterGenes);
-        setChecked('hmClusterCells', state.clusterCells);
-        set('hmClusterK', state.clusterK != null ? String(state.clusterK) : '0');
+        // The cluster split choice lives in state now (v.88.90; the select
+        // is rendered on the cluster row itself when one exists).
+        this._hmClusterKChoice = state.clusterK != null ? String(state.clusterK) : '0';
         // Older files predate the gene-tree colour select; they drew plain
         // gray trees (or the brief always-auto v.88.77/78), so absent means
         // Tree order only rather than inheriting whatever is on screen.
@@ -57928,20 +57939,30 @@ ${clone.innerHTML}
         // what tells a new file from a v.88.70 one rather than its value;
         // a v.88.70 file has sortOn instead, true -> 'desc' (its only "on"
         // meant today's altered/biggest-first order), false/absent -> null.
-        // v.88.80 split blocking off from sorting: a file from v.88.76-79
-        // carries sortDir but no `block` key at all, and in that model the
-        // OUTERMOST toggled row was the blocks. Detected here (a new file
-        // always writes the key on every row, so its presence is what tells
-        // the formats apart) and applied further down, after the older
-        // migrations have finished rebuilding the row list.
-        const needsBlockMigration = !Array.isArray(state.annRows)
-            || !state.annRows.some(r => r && typeof r === 'object' && 'block' in r);
+        // v.88.90 retired the v.88.80 `block` flag: the TOPMOST sorted row is
+        // the blocks now. A v.88.80-89 file that marked a NON-first row as
+        // the blocks is migrated by moving that row to the front (its
+        // within-block chain keeps its order behind it), and a block row
+        // whose own arrows were off gets sortDir 'desc', since under the old
+        // model the flag alone made blocks in the default order while the
+        // new model needs Sort on. A v.88.76-79 file (no block key) already
+        // meant "outermost toggled row blocks", which is the new rule.
         this._hmAnnRows = Array.isArray(state.annRows) ? state.annRows.map(r => ({
             mode: r.mode,
             gene: r.gene || null,
             sortDir: ('sortDir' in r) ? (r.sortDir || null) : (r.sortOn ? 'desc' : null),
-            block: !!r.block
+            sortKey: ('sortKey' in r) ? (r.sortKey || null) : null,
+            _legacyBlock: !!r.block
         })) : [];
+        {
+            const bi = this._hmAnnRows.findIndex(r => r._legacyBlock && this._hmAnnRowCanBlock(r.mode));
+            if (bi >= 0) {
+                const [b] = this._hmAnnRows.splice(bi, 1);
+                if (!b.sortDir) b.sortDir = 'desc';
+                this._hmAnnRows.unshift(b);
+            }
+            this._hmAnnRows.forEach(r => { delete r._legacyBlock; });
+        }
         // v.88.76 retired the separate Sort row: state.groupBy/groupGene are
         // now the outermost TOGGLED annotation row, and state.clusterCells is
         // the Cell-line clusters row. Migrated here (before the older
@@ -57966,27 +57987,32 @@ ${clone.innerHTML}
         // pre-v.88.76 here, so none of this fires for one.
         if (state.groupBy !== undefined) {
             const legacyGroup = state.groupBy || 'none';
-            // 'desc' is the old size-ordered / altered-first block order,
-            // i.e. what the block row draws with its arrows off too, so it is
-            // set explicitly and reads back as the same picture.
-            const promote = (row) => { row.sortDir = 'desc'; row.block = true; };
+            // 'desc' is the old size-ordered / altered-first block order.
+            // Under the positional model (v.88.90) the block row is the
+            // FIRST sorted row, so promoting means moving it to the front.
+            const promote = (row) => {
+                row.sortDir = 'desc';
+                const at = this._hmAnnRows.indexOf(row);
+                if (at > 0) { this._hmAnnRows.splice(at, 1); this._hmAnnRows.unshift(row); }
+            };
+            let promoted = false;
             if (legacyGroup === 'lineage' || legacyGroup === 'subtype' || legacyGroup === 'disease') {
                 const existing = this._hmAnnRows.find(r => r.mode === legacyGroup);
                 if (existing) promote(existing);
-                else this._hmAnnRows.unshift({ mode: legacyGroup, gene: null, sortDir: 'desc', block: true });
+                else this._hmAnnRows.unshift({ mode: legacyGroup, gene: null, sortDir: 'desc', sortKey: null });
+                promoted = true;
             } else if (legacyGroup === 'alteration' && state.groupGene) {
                 const gene = String(state.groupGene).trim().toUpperCase();
                 const existing = this._hmAnnRows.find(r => r.mode === 'hotspot' && (r.gene || '').toUpperCase() === gene);
                 if (existing) promote(existing);
-                else this._hmAnnRows.unshift({ mode: 'hotspot', gene, sortDir: 'desc', block: true });
+                else this._hmAnnRows.unshift({ mode: 'hotspot', gene, sortDir: 'desc', sortKey: null });
+                promoted = true;
             }
             if (state.clusterCells && !this._hmAnnRows.some(r => r.mode === 'cluster')) {
-                // Right after whichever row now blocks, so it reads as
-                // "clustered inside these blocks"; at the top when nothing
-                // blocks, where the rule at the end of this function then
-                // makes it the block row.
-                const blockAt = this._hmAnnRows.findIndex(r => r.block);
-                this._hmAnnRows.splice(blockAt + 1, 0, { mode: 'cluster', gene: null, sortDir: 'desc', block: false });
+                // Right after the block row, so it reads as "clustered inside
+                // these blocks"; at the top when nothing blocks, where being
+                // first sorted makes it the block row itself.
+                this._hmAnnRows.splice(promoted ? 1 : 0, 0, { mode: 'cluster', gene: null, sortDir: 'desc', sortKey: null });
             }
         }
 
@@ -58017,7 +58043,7 @@ ${clone.innerHTML}
                 thenBy = 'score';
                 const lineageRows = this._hmAnnRows.filter(r => r.mode === 'lineage');
                 if (lineageRows.length) lineageRows.forEach(r => { r.sortDir = 'desc'; });
-                else this._hmAnnRows.push({ mode: 'lineage', gene: null, sortDir: 'desc', block: false });
+                else this._hmAnnRows.push({ mode: 'lineage', gene: null, sortDir: 'desc', sortKey: null });
             } else if (state.sort === 'annotation') {
                 thenBy = 'score';
                 this._hmAnnRows.forEach(r => { r.sortDir = 'desc'; });
@@ -58027,16 +58053,6 @@ ${clone.innerHTML}
         }
         set('hmThenBy', thenBy);
 
-        // The v.88.80 block migration, run last so it sees the row list every
-        // older migration above has finished building: under the old model
-        // the OUTERMOST toggled row was the blocks (a continuous one made no
-        // blocks at all, and neither does this), so that is the row that gets
-        // block=true here. It keeps its own sortDir, which is now the order
-        // of the blocks and means exactly what it meant before.
-        if (needsBlockMigration && !this._hmAnnRows.some(r => r.block)) {
-            const outermost = this._hmAnnRows.find(r => r.sortDir);
-            if (outermost && this._hmAnnRowCanBlock(outermost.mode)) outermost.block = true;
-        }
         // The gates row's presence is derived from the gates themselves, not
         // taken from the file: gates land in this._hmGates further down and
         // the redraw's _hmSyncGatesRow adds or drops the row to match, so a
@@ -58080,6 +58096,12 @@ ${clone.innerHTML}
         };
         this._hmArmedGate = null;
         this._hmGateDrag = null;
+        this._hmCustomText = (state.customText && typeof state.customText === 'object') ? { ...state.customText } : null;
+
+        // A restored file's minN belongs with its restored grouping; null
+        // the signature so the first redraw adopts both instead of treating
+        // the grouping change as a reason to reset the threshold.
+        this._hmMinNBlockSig = null;
 
         this._hmSettings = this._hmMergeSettings(state.settings);
         this._hmSaveSettingsToStorage();
@@ -58140,17 +58162,25 @@ ${clone.innerHTML}
         return 'CRISPR gene effect (Chronos)';
     }
 
-    // First sentence of the condensed paragraph, and the data-source line of
-    // the long section: where the numbers come from.
+    // First sentence of the condensed paragraph: where the numbers come from.
+    // Written in the register of a Materials and Methods section (v.88.87):
+    // measure first, past tense, no colon construction.
     _methodsDataSentence(kind) {
         const m = this._methodsMeta();
-        return `Data were taken from the ${m.release} public release of the Cancer Dependency Map (DepMap, Broad Institute, https://depmap.org/): ${this._methodsMeasureWords(kind)}.`;
+        const what = kind === 'expr' ? 'mRNA expression values (log2(TPM+1))'
+            : kind === 'both' ? 'CRISPR gene effect scores (Chronos) and mRNA expression values (log2(TPM+1))'
+            : 'CRISPR gene effect scores (Chronos)';
+        // No capitalization of the first word: "mRNA" must stay "mRNA" even
+        // at the start of the sentence, as it would in a paper.
+        return `${what} were obtained from the ${m.release} public release of the Cancer Dependency Map (Broad Institute, https://depmap.org/).`;
     }
 
-    // Last sentence of the condensed paragraph: what produced it.
+    // Last sentence of the condensed paragraph: what produced it. The date
+    // and the DepMap acknowledgment live in the long section's header; a
+    // Methods paragraph is not the place to give the reader instructions.
     _methodsCitation() {
         const m = this._methodsMeta();
-        return `Analyses were carried out in ${m.app}${m.version ? ' ' + m.version : ''} (${m.url}) on ${m.date}; please acknowledge DepMap (Broad Institute) if you use this data.`;
+        return `Analyses were performed in ${m.app}${m.version ? ' ' + m.version : ''} (${m.url}).`;
     }
 
     // Opening block of the long section: the same facts, laid out rather than
@@ -58380,10 +58410,13 @@ ${clone.innerHTML}
         const tissueOpen = document.getElementById('byTissueContainer')?.style.display !== 'none'
             && !!document.getElementById('byTissueContainer');
 
+        // Condensed = Materials-and-Methods register (v.88.87): what was
+        // done, not what came out. The r, slope and p live on the figure and
+        // in the long section's THE NUMBERS ON THE PLOT.
         const condensed = this._mSentences([
             this._methodsDataSentence(kind),
             `${xLabel} was plotted against ${yLabel} across the ${this._mNum(pts.length)} cell lines with a value for both, ${filterWord}.`,
-            `The association was quantified as a Pearson correlation coefficient with an ordinary least squares slope of y on x, computed over pairwise complete observations, giving r = ${this._mFix(st.correlation)}, slope = ${this._mFix(st.slope)} and p = ${this._mP(st.pValue)} (two sided t test on n minus 2 degrees of freedom, not corrected for multiple testing).`,
+            'The association was quantified by Pearson correlation over pairwise complete observations, with an ordinary least squares slope of y on x; the p-value is from a two sided t test on n minus 2 degrees of freedom, not corrected for multiple testing.',
             this._methodsCitation()
         ]);
 
@@ -58410,7 +58443,10 @@ ${clone.innerHTML}
             + (colorBy ? `Points are coloured by ${colorBy}. ` : 'Points are not coloured by any category. ')
             + (overlayHot ? `Points are split by ${overlayHot} hotspot mutation status as an overlay. ` : '')
             + (overlayFus ? `Points are split by ${overlayFus} fusion status as an overlay. ` : '')
-            + 'Highlighting, labelling and colouring are drawn on top of the same points; none of them add or remove a cell line, so none of them change n, r, p or the slope.',
+            + (this._gateA?.length || this._gateB?.length
+                ? `${this._gateA?.length ? `Gate A encloses ${this._mNum(this._gateA.length)} points` : ''}${this._gateA?.length && this._gateB?.length ? ' and gate' : this._gateB?.length ? 'Gate' : ''}${this._gateB?.length ? ` B encloses ${this._mNum(this._gateB.length)} points` : ''}, drawn by hand on the plot; a gate marks its points unless it is applied as a filter, which the WHICH CELL LINES section above would then say. `
+                : '')
+            + 'Highlighting, labelling, colouring and gating are drawn on top of the same points; none of them add or remove a cell line, so none of them change n, r, p or the slope.',
             tissueOpen
                 ? 'THE BY-TISSUE CHART\n'
                 + 'The By Tissue chart in this popout repeats the same correlation within each tissue that has at least 3 cell lines on the plot, using the same Pearson coefficient. Its p-value is a different test from the one above: a Fisher z test comparing that tissue\'s correlation with the correlation across all the other cell lines on the plot. A tissue with only a handful of lines can reach r = 1 by chance, which is why the z values are clamped just short of 1.'
@@ -58497,15 +58533,14 @@ ${clone.innerHTML}
                 : 'Each group was compared against all the other cell lines in the cohort with a two sided Welch t test (unequal variances). Group means are reported with the population standard deviation.';
         const noFdr = 'No correction for multiple testing was applied to these p-values.';
 
+        // Condensed = Materials-and-Methods register (v.88.87). Display state
+        // (the p tick box, the no-minimum case) stays in the long section.
         const condensed = this._mSentences([
             this._methodsDataSentence(dataType),
             `${gene} ${measure} was summarised across the ${this._mNum(nPoints)} cell lines with a value for that gene ${cohortBits.length ? `after restricting the panel to ${this._mListOr(cohortBits, '')}` : 'in the whole panel, with no tissue, subtype, disease, alteration or cell-line-list restriction applied'}, as ${shape}.`,
-            // The minimum group size and the p filter belong to the grouped
-            // views; the mutation-inspect plot has neither control.
-            isMutMode ? null : (minGroup > 1 ? `Groups with fewer than ${minGroup} cell lines were not shown.` : 'No minimum group size was applied.'),
+            (!isMutMode && minGroup > 1) ? `Groups with fewer than ${minGroup} cell lines were excluded.` : null,
             statsSentence,
             noFdr,
-            isMutMode ? null : (pFilterOn ? 'Only rows with p below 0.05 are displayed.' : 'Every row is displayed, whatever its p-value.'),
             this._methodsCitation()
         ]);
 
@@ -58560,7 +58595,7 @@ ${clone.innerHTML}
             this._methodsDataSentence('both'),
             `Within ${subgroupWord}, the mRNA expression of every gene in the expression matrix was correlated against ${target} CRISPR gene effect using Pearson correlation over pairwise complete observations.`,
             'A gene was tested only where at least 10 cell lines had both values, and a two sided p was taken from a t test on n minus 2 degrees of freedom; no correction for multiple testing was applied.',
-            `Genes with |r| below 0.2 were discarded and the rest were ranked by |r|, with the list capped at the strongest 500; ${this._mNum(rows.length)} gene${rows.length === 1 ? ' is' : 's are'} listed${rows.length >= 500 ? ', so more genes cleared the cutoff than are shown' : ''}.`,
+            'Genes with |r| below 0.2 were discarded and the rest were ranked by |r|, with the list capped at the strongest 500.',
             scatterGene ? `The scatter plot shows ${scatterGene} expression against ${target} gene effect for the same cell lines.` : null,
             this._methodsCitation()
         ]);
@@ -58597,18 +58632,17 @@ ${clone.innerHTML}
 
         const view = this._caView || 'tissue';
         const shown = this.getCATissueFilteredData ? this.getCATissueFilteredData() : (d.data || []);
-        const overall = shown.length >= 3
-            ? this.pearsonWithSlope(shown.map(p => p.x), shown.map(p => p.y))
-            : { correlation: NaN, slope: NaN, pValue: NaN };
         const filterText = this._getCAFilterDescription ? this._getCAFilterDescription() : '';
 
         const viewSentence = view === 'tissue'
             ? 'The correlation was then recomputed within each tissue with at least 3 cell lines, and each tissue was compared against all the other cell lines in the view by a Fisher z test on the two correlation coefficients.'
             : 'The correlation was then recomputed separately in the wild-type and the mutated cell lines for the chosen gene, and the two coefficients were compared by a Fisher z test.';
 
+        // Condensed = Materials-and-Methods register (v.88.87): the overall r
+        // and slope are results and live on screen and in the long section.
         const condensed = this._mSentences([
             this._methodsDataSentence('ge'),
-            `${d.gene1} and ${d.gene2} CRISPR gene effect were compared across ${this._mNum(shown.length)} cell lines with a value for both${filterText ? `, restricted to ${filterText}` : ', with no tissue, subtype, disease or alteration restriction applied'}, giving an overall Pearson r of ${this._mFix(overall.correlation)} and a slope of ${this._mFix(overall.slope)}.`,
+            `${d.gene1} and ${d.gene2} CRISPR gene effect were correlated (Pearson, with an ordinary least squares slope) across ${this._mNum(shown.length)} cell lines with a value for both${filterText ? `, restricted to ${filterText}` : ''}.`,
             viewSentence,
             'No correction for multiple testing was applied to the group p-values.',
             this._methodsCitation()
@@ -58675,15 +58709,13 @@ ${clone.innerHTML}
         if (this._customCellLineFilter?.size) cohortBits.push(`a pasted list of ${this._mNum(this._customCellLineFilter.size)} cell lines`);
 
         const nAll = (mr.allResults || []).length;
-        const nSig = (mr.significantResults || []).length;
         const pFilterOn = !!document.getElementById('mutPvalueFilter')?.checked;
 
         const condensed = this._mSentences([
             this._methodsDataSentence(measure),
             `Cell lines were split by ${mr.hotspotGene} ${word} status into ${this._mNum(nMut)} altered and ${this._mNum(nWT)} ${L.ref === 'WT' ? 'wild-type' : L.ref.toLowerCase()} lines${cohortBits.length ? `, after restricting the panel to ${this._mListOr(cohortBits, '')}` : ', with no tissue, subtype, disease or additional alteration restriction applied'}.`,
             `For every gene in the ${measure === 'expr' ? 'expression' : 'gene effect'} matrix, the two groups were compared by a two sided Welch t test (unequal variances), and the difference reported is mean(altered) minus mean(${L.ref === 'WT' ? 'wild-type' : L.ref.toLowerCase()}).`,
-            `A gene was tested only where the reference group had at least ${this._mNum(mr.minN)} cell lines with a value and the altered group had at least 3; ${this._mNum(nAll)} gene${nAll === 1 ? ' was' : 's were'} tested.`,
-            `Genes reaching p below ${mr.pThreshold} in at least one of the comparisons were retained, giving ${this._mNum(nSig)} gene${nSig === 1 ? '' : 's'}.`,
+            `A gene was tested only where the reference group had at least ${this._mNum(mr.minN)} cell lines with a value and the altered group had at least 3, and genes reaching p below ${mr.pThreshold} in at least one of the comparisons were retained.`,
             'No correction for multiple testing was applied.',
             this._methodsCitation()
         ]);
@@ -58727,21 +58759,25 @@ ${clone.innerHTML}
         const clusterIds = [...new Set(clusterRows.map(c => c.cluster))].filter(c => c !== '-' && c !== 0 && c !== undefined);
         const unclustered = clusterRows.filter(c => c.cluster === '-' || c.cluster === 0).length;
         const filterText = (this._getNetworkFilterText() || '').replace(/^Filters:\s*/, '').replace(/\s+/g, ' ').trim();
-        const modeWord = r.mode === 'design'
-            ? `every gene in the ${basis === 'expr' ? 'expression' : 'gene effect'} matrix was correlated against the input genes`
-            : 'only pairs among the input genes were correlated';
-
         const nodes = this.networkData?.nodes?.length ?? null;
         const edges = this.networkData?.edges?.length ?? null;
 
+        // The condensed paragraph is written to be pasted into a Materials
+        // and Methods section (v.88.87): data source, cohort, method with
+        // thresholds, software. Result counts (pairs kept, clusters formed,
+        // nodes and edges), the no-p-value caveat and the UI filter phrasing
+        // stay in the long section, where they always were.
+        const filterProse = filterText
+            ? filterText.split('·').map(t => t.trim()).filter(t => t && !/^n\s*=/.test(t)).join(', ')
+            : '';
+        const pairWord = r.mode === 'design'
+            ? `between the ${this._mNum(inputGenes)} input gene${inputGenes === 1 ? '' : 's'} and every gene in the ${basis === 'expr' ? 'expression' : 'gene effect'} matrix`
+            : `among the ${this._mNum(inputGenes)} input gene${inputGenes === 1 ? '' : 's'}`;
         const condensed = this._mSentences([
             this._methodsDataSentence(basis),
-            `Starting from ${this._mNum(inputGenes)} input gene${inputGenes === 1 ? '' : 's'}, ${modeWord} across ${this._mNum(nCL)} cell lines${filterText ? ` (${filterText})` : ' (the whole panel, with no tissue, disease or alteration restriction)'}, using Pearson correlation over pairwise complete observations with an ordinary least squares slope.`,
-            `A pair was kept when it had at least ${this._mNum(r.minN)} cell lines with values for both genes, |r| of at least ${r.cutoff}, and |slope| of at least ${r.minSlope}; ${this._mNum(nPairs)} pair${nPairs === 1 ? '' : 's'} met all three.`,
-            r.expandNetwork ? 'A second pass then correlated the discovered genes with each other under the same thresholds.' : null,
-            `Genes were grouped into clusters as the connected components of the graph whose edges are those pairs, giving ${this._mNum(clusterIds.length)} cluster${clusterIds.length === 1 ? '' : 's'}.`,
-            'No p-values and no false discovery rate were computed for these pairs.',
-            (viewKey === 'network' && nodes != null) ? `The network drawn from this run has ${this._mNum(nodes)} nodes and ${this._mNum(edges)} edges.` : null,
+            `Pairwise Pearson correlations ${pairWord} were computed over pairwise complete observations across ${this._mNum(nCL)} cell lines${filterProse ? ` (${filterProse})` : ''}.`,
+            `Gene pairs with values in at least ${this._mNum(r.minN)} shared cell lines, |r| of at least ${r.cutoff} and |slope| of at least ${r.minSlope} (ordinary least squares) were retained${r.expandNetwork ? ', and a second pass correlated the genes discovered this way with each other under the same thresholds' : ''}; no significance testing was applied.`,
+            'Genes were grouped into clusters as the connected components of the resulting correlation network.',
             this._methodsCitation()
         ]);
 
@@ -58778,7 +58814,7 @@ ${clone.innerHTML}
             + '   NO p-value is computed for these pairs, and no false discovery rate or other multiple-testing correction is applied anywhere in this analysis. The correlation cutoff is a display threshold chosen by hand, not a significance test, and it should not be described as one.\n'
             + '   The slope is a least squares fit of the second gene on the first and carries the units of the measure.',
             viewKey === 'network' && nodes != null
-                ? `THE NETWORK AS DRAWN\n   ${this._mNum(nodes)} nodes and ${this._mNum(edges)} edges.\n   Node size, font size, edge width and spread are display settings and carry no data.\n   ${document.getElementById('showUncorrelatedGenes')?.checked ? 'Input genes with no surviving correlation are shown as well, placed apart from the network; they have no edges by definition.' : 'Input genes with no surviving correlation are not drawn.'}\n   ${(this._netHighlightText || '').trim() ? `Genes ringed on the picture: ${this._netHighlightText.trim()}${this._netHighlightNote ? ` (${this._netHighlightNote})` : ''}.` : 'No genes are ringed or highlighted on the picture.'}\n   A * after a gene name on a node means a synonym or ortholog was used to find it in the data.`
+                ? `THE NETWORK AS DRAWN\n   ${this._mNum(nodes)} nodes and ${this._mNum(edges)} edges.\n   Node size, font size, edge width and spread are display settings and carry no data.\n   ${document.getElementById('showUncorrelatedGenes')?.checked ? (() => { const m = document.querySelector('input[name="uncorrLayout"]:checked')?.value; return m === 'grid' ? 'Input genes with no surviving correlation are shown as well, parked in a row below the network; they have no edges by definition.' : m === 'gridRight' ? 'Input genes with no surviving correlation are shown as well, parked in a column to the right of the network; they have no edges by definition.' : 'Input genes with no surviving correlation are shown as well, drifting unconnected around the network; they have no edges by definition.'; })() : 'Input genes with no surviving correlation are not drawn.'}\n   ${(this._netHighlightText || '').trim() ? `Genes ringed on the picture: ${this._netHighlightText.trim()}${this._netHighlightNote ? ` (${this._netHighlightNote})` : ''}.` : 'No genes are ringed or highlighted on the picture.'}\n   A * after a gene name on a node means a synonym or ortholog was used to find it in the data.`
                 : null,
             'WHAT THIS DOES NOT SAY\nA correlation between two genes across a panel of cell lines does not show that one acts on the other, and genes in the same cluster are not necessarily a complex or a pathway. Where the cohort spans several tissues, both the correlations and the clusters can be shaped by differences between tissues.'
         ]);
@@ -58867,12 +58903,17 @@ ${clone.innerHTML}
         const silenced = d.silencedGeneNames || [];
         const missing = d.missingGenes || [];
 
+        // Condensed = Materials-and-Methods register (v.88.87): cohort folded
+        // into the drawing sentence, hand-painted gates left to the long
+        // section (they change no value unless they sort or block, and then
+        // the sort summary already names them).
         const condensed = this._mSentences([
             this._methodsDataSentence(measure),
             // The data sentence directly above already names the measure, so
             // this one refers back to it instead of repeating it.
-            `These values were drawn as a heatmap of ${this._mNum(d.genes.length)} gene${d.genes.length === 1 ? '' : 's'} from ${setLabel} across ${this._mNum(d.orderedCLs.length)} cell lines.`,
-            `Cohort: ${this._hmCohortPhrase(d.orderedCLs.length)}`,
+            // _hmCohortPhrase brings its own full stop (its other callers use
+            // it as a standalone line), so none is added here.
+            `These values were drawn as a heatmap of ${this._mNum(d.genes.length)} gene${d.genes.length === 1 ? '' : 's'} from ${setLabel} across ${this._hmCohortPhrase(d.orderedCLs.length)}`,
             this._hmDrillCells ? `The view was then drilled into ${this._hmDrillLabel || 'one group'}, so only that group's cell lines are drawn.` : null,
             scaleSentence,
             // _hmSortSummary already names the tie-break where one applies
@@ -58886,7 +58927,6 @@ ${clone.innerHTML}
             d.clustersActive ? `The cell-line clustering was average linkage on correlation distance over the genes shown${d.clusterKAuto ? ', with the number of clusters chosen as the cut between 2 and 8 giving the best mean silhouette width' : ''}.` : null,
             hiddenGroups.length ? `${this._mNum(hiddenGroups.length)} group${hiddenGroups.length === 1 ? ' was' : 's were'} hidden and excluded from the figure (${hiddenGroups.map(g => g.key).join(', ')}).` : null,
             silenced.length ? `${this._mNum(silenced.length)} gene${silenced.length === 1 ? ' was' : 's were'} silenced and excluded from everything shown (${silenced.join(', ')}).` : null,
-            gateA || gateB ? `Two cell-line gates were painted on the grid by hand, holding ${this._mNum(gateA)} and ${this._mNum(gateB)} cell lines; they appear as the Gates annotation row and select columns, and unless that row is sorting or blocking they do not alter the figure or any value in it.` : null,
             this._methodsCitation()
         ]);
 
@@ -58969,7 +59009,7 @@ ${clone.innerHTML}
             bits.length
                 ? `Cell lines were selected from the panel by ${this._mListOr(bits, '')}, leaving ${this._mNum(visible.length)} cell line${visible.length === 1 ? '' : 's'}.`
                 : `No filter was applied, so all ${this._mNum(visible.length)} cell lines in the panel are listed.`,
-            ticked ? `${this._mNum(ticked)} of them were ticked by hand, and it is those that any export carries.` : 'No cell lines were ticked, so an export carries the whole listed set.',
+            ticked ? `${this._mNum(ticked)} of them were then selected by hand, and exports carry that selection.` : null,
             `The list is ordered by ${sortWord}${sortGene ? ` (${sortGene})` : ''}, ${this._clbSortAsc ? 'ascending' : 'descending'}.`,
             this._methodsCitation()
         ]);
@@ -59043,9 +59083,7 @@ ${clone.innerHTML}
                 ? `Each gene was tested with a two sided Welch t test (unequal variances) and p-values were adjusted across all tested genes by the Benjamini-Hochberg procedure to give q-values (${this._mNum(geRows)} genes for gene effect${exprRows ? `, ${this._mNum(exprRows)} for expression` : ''}).`
                 : 'Fewer than 3 cell lines were available on a side, so no test was run and neither p-values nor q-values exist; only the difference in means is reported.',
             `A gene was included where at least ${isGateMode ? 3 : Math.min(3, nSel)} cell lines on the selection side and at least 3 on the comparison side had a value.`,
-            `The tables show genes with |difference| of at least ${leftDelta} and q of at most ${leftQ} for gene effect${exprRows ? `, and |difference| of at least ${rightDelta} and q of at most ${rightQ} for expression` : ''}, capped at the strongest ${this._mNum(leftN)}${exprRows && rightN !== leftN ? ` and ${this._mNum(rightN)}` : ''} genes.`,
-            `Two further panels, closed until they are opened, compare the same two sides by tissue, primary disease and Oncotree disease, and across ${altWords.coverage}${altRows != null ? ` (${this._mNum(altRows)} alterations carried by at least one cell line on either side)` : ''}.`,
-            `Those alteration rows are ranked by ${altWords.ranking}, and tested with ${altWords.test}.`,
+            `Genes with |difference| of at least ${leftDelta} and q of at most ${leftQ} for gene effect${exprRows ? `, and |difference| of at least ${rightDelta} and q of at most ${rightQ} for expression,` : ''} were reported, capped at the strongest ${this._mNum(leftN)}${exprRows && rightN !== leftN ? ` and ${this._mNum(rightN)}` : ''} genes.`,
             this._methodsCitation()
         ]);
 
@@ -59125,8 +59163,7 @@ ${clone.innerHTML}
             geneRule,
             'Genes missing in more than 30 percent of the cell lines were dropped, and the remaining missing values were filled with that gene\'s mean across the cohort.',
             methodRule,
-            `The plot shows ${u.axisLabels ? u.axisLabels.join(' against ') : 'two of the resulting components'}, one point per cell line, coloured by ${v('clbUmapColorBy') === 'subtissue' ? 'subtype' : 'tissue'}.`,
-            (explained && method === 'PCA') ? `The components drawn explain ${explained.slice(0, 2).map(e => `${(e * 100).toFixed(1)} percent`).join(' and ')} of the variance respectively.` : null,
+            `${u.axisLabels ? u.axisLabels.join(' and ') : 'Two of the resulting components'} were plotted, one point per cell line.`,
             this._methodsCitation()
         ]);
 
@@ -59201,7 +59238,7 @@ document.addEventListener('DOMContentLoaded', () => {
 const MODAL_IDS = [
     'referenceDataModal', 'inspectModal', 'geneEffectModal', 'corrAnalysisModal',
     'exportOptionsModal', 'infographicModal', 'changelogModal', 'inspectCorrelatesModal',
-    'collectionsInfoModal', 'selectionInspectModal', 'mutCompareModal', 'enrichrModal',
+    'collectionsInfoModal', 'selectionInspectModal', 'enrichrModal',
     'clbWikiModal', 'clbInfoModal', 'cellLineBrowserModal', 'exportPreviewModal', 'heatmapModal',
     // Methods opens over whichever view raised it, same as the AI dialog below.
     'methodsModal',

@@ -149,14 +149,15 @@
             text-decoration: underline;
         }
 
-        /* vis-network's navigation arrows pan the CAMERA, so pressing "left"
-           made the network slide right. Swap each button's slot and flip its
-           icon (180° rotation) so every arrow points the way the network
-           itself moves when pressed. */
-        #networkPlot .vis-button.vis-up    { left: 55px !important; bottom: 10px !important; top: auto !important; transform: rotate(180deg); }
-        #networkPlot .vis-button.vis-down  { left: 55px !important; bottom: 50px !important; top: auto !important; transform: rotate(180deg); }
-        #networkPlot .vis-button.vis-left  { left: 95px !important; bottom: 10px !important; top: auto !important; transform: rotate(180deg); }
-        #networkPlot .vis-button.vis-right { left: 15px !important; bottom: 10px !important; top: auto !important; transform: rotate(180deg); }
+        /* vis-network's navigation buttons: the pan arrows and - / + step
+           too coarsely to be useful (drag and scroll do the same job
+           smoothly), so only the fit button stays (v.88.102). */
+        #networkPlot .vis-button.vis-up,
+        #networkPlot .vis-button.vis-down,
+        #networkPlot .vis-button.vis-left,
+        #networkPlot .vis-button.vis-right,
+        #networkPlot .vis-button.vis-zoomIn,
+        #networkPlot .vis-button.vis-zoomOut { display: none !important; }
 
         /* The tree makes the logo image asymmetric: its visible text sits
            9.55% of the image width left of the image centre. Shift the IMAGE
@@ -2296,8 +2297,8 @@
             /* No exports anywhere on phones: hide every remaining CSV / AI
                (.json.gz) data-export button (PNG/SVG already hidden elsewhere). */
             #downloadScatterCSV, #downloadTissueCSV, #scatterAnalyzeWithAI,
-            #mutAnalyzeWithAI, #downloadSynonyms, #downloadExprCorrelatesCSV,
-            #mutCompareExportCSV { display: none !important; }
+            #mutAnalyzeWithAI, #downloadSynonyms,
+            #downloadExprCorrelatesCSV { display: none !important; }
             /* What a phone is actually for here: showing someone a cell line
                and its wiki, a gene's effect, a pair on the scatter, a mutation
                analysis, or a network from a test gene set. Everything below
@@ -2966,7 +2967,7 @@
                                 <option value="2">Both copies mutated</option>
                                 <option value="0">Wild-type</option>
                             </select>
-                            <button type="button" class="btn btn-outline btn-sm clb-icon-btn" id="paramGridHotspotBtn" title="Mutation grid for the cell lines currently selected, click a gene to require it mutated or wild-type">&#9638;</button>
+                            <button type="button" class="btn btn-outline btn-sm clb-icon-btn" id="paramGridHotspotBtn" title="Mutation grid for the cell lines the analysis filters above select, click a gene to require it mutated or wild-type">&#9638;</button>
                         </div>
                         <!-- Grid picks are listed with every other filter beside Run. -->
                     </div>
@@ -3188,8 +3189,9 @@
                             </div>
                             <div id="uncorrLayoutOptions" style="display: none; margin-left: 20px; margin-bottom: 4px;">
                                 <div class="radio-group-inline">
-                                    <label title="Genes without correlations park in a tidy row below the network"><input type="radio" name="uncorrLayout" value="grid" checked> Lined up</label>
-                                    <label title="Genes without correlations drift freely around the network"><input type="radio" name="uncorrLayout" value="float"> Floating</label>
+                                    <label title="Genes without correlations drift freely around the network"><input type="radio" name="uncorrLayout" value="float" checked> Floating</label>
+                                    <label title="Genes without correlations park in a tidy row below the network"><input type="radio" name="uncorrLayout" value="grid"> Lined up below</label>
+                                    <label title="Genes without correlations park in a column to the right of the network"><input type="radio" name="uncorrLayout" value="gridRight"> Lined up right</label>
                                 </div>
                             </div>
                             <div class="checkbox-group" style="margin-bottom: 4px;">
@@ -3203,8 +3205,8 @@
                             </div>
                             <div id="colorGEOptions" style="display: none; margin-left: 20px; margin-bottom: 4px;">
                                 <div class="radio-group-inline">
-                                    <label><input type="radio" name="colorGEType" value="signed" checked> GE</label>
-                                    <label><input type="radio" name="colorGEType" value="absolute"> Absolute</label>
+                                    <label title="The colour range is stretched over the genes drawn on screen"><input type="radio" name="colorGERange" value="shown" checked> Scale to genes on screen</label>
+                                    <label title="The colour range covers every input gene with data, so a gene keeps its colour when others are hidden"><input type="radio" name="colorGERange" value="input"> Whole input set</label>
                                 </div>
                             </div>
                             <!-- Gene Statistics options (shown when stats loaded) -->
@@ -3293,7 +3295,7 @@
                                 <button class="btn btn-secondary" id="networkAnalyzeWithAI" title="Package this network as one compressed file for a language model: gene effect, expression and mutation data plus the settings, with a description of every field">Export for AI</button>
                                 <button class="btn btn-secondary mobile-hide" onclick="app.openMethods('network')" title="Write out how this network was made, as a methods paragraph and as a plain walk-through">Methods</button>
                                 <span id="networkHeatmapWrap" style="position:relative; display:inline-flex; flex:1;">
-                                    <button class="btn btn-secondary" id="networkHeatmapBtn" aria-haspopup="true" aria-expanded="false" style="flex:1;" title="Draw the network's genes as a gene set heatmap">Heatmap &#9662;</button>
+                                    <button class="btn btn-secondary" id="networkHeatmapBtn" aria-haspopup="true" aria-expanded="false" style="flex:1;" title="Draw the network's genes as a gene set heatmap">Heatmap</button>
                                     <div id="networkHeatmapMenu" style="display:none; position:absolute; top:calc(100% + 4px); left:0; z-index:1500; background:#fff; border:1px solid var(--gray-200); border-radius:6px; box-shadow:0 6px 18px rgba(0,0,0,0.14); min-width:230px; padding:4px;">
                                         <div style="font-size:10px; color:#9ca3af; padding:3px 10px 4px;">Which genes to draw?</div>
                                         <button class="options-menu-item" id="networkHeatmapEntered" data-net-heatmap="entered" data-base-title="Only the genes you typed into the input list; when filtered, the heatmap opens on the same cell lines the analysis was run on">Genes I entered (<span data-count>0</span>)</button>
@@ -4563,37 +4565,17 @@
                                 <option value="xcoarse">Very coarse</option>
                                 <option value="minimal">Minimal</option>
                             </select>
-                            <label style="display:flex; align-items:center; gap:4px; font-size:12px; color:#374151; cursor:pointer;" title="Adds a Cell-line clusters annotation row that orders the columns by similarity. Move it below another toggled row to cluster within that row's blocks instead">
-                                <input type="checkbox" id="hmClusterCells" style="margin:0;"> Cluster cell lines
-                            </label>
-                            <select id="hmClusterK" style="width:150px;" title="How many clusters to cut the tree into; Tree order only draws the dendrogram without colouring clusters">
-                                <option value="auto" selected>Auto (suggested)</option>
-                                <option value="0">Tree order only</option>
-                                <option value="2">2 clusters</option>
-                                <option value="3">3 clusters</option>
-                                <option value="4">4 clusters</option>
-                                <option value="5">5 clusters</option>
-                                <option value="6">6 clusters</option>
-                                <option value="7">7 clusters</option>
-                                <option value="8">8 clusters</option>
-                                <option value="9">9 clusters</option>
-                                <option value="10">10 clusters</option>
-                                <option value="11">11 clusters</option>
-                                <option value="12">12 clusters</option>
-                            </select>
-                            <select id="hmTreeDetailCells" style="width:110px;" title="Drawing detail only, does not change the clustering: How much branch detail the cell-line tree above the grid draws">
-                                <option value="full" selected>Full</option>
-                                <option value="medium">Medium</option>
-                                <option value="coarse">Coarse</option>
-                                <option value="xcoarse">Very coarse</option>
-                                <option value="minimal">Minimal</option>
-                            </select>
+                            <!-- Cell-line clustering lives on the "Cell-line
+                                 clusters" annotation row (add it with + Add
+                                 row): its position among the rows says what
+                                 it clusters, and its own select says whether
+                                 the tree is cut into coloured clusters. -->
                         </div>
                     </div>
                     <div class="clb-row clb-row-alt">
                         <span class="clb-row-label">Cell lines</span>
                         <div class="clb-row-items">
-                            <select id="hmCohort" style="width:230px;">
+                            <select id="hmCohort" style="width:260px;">
                                 <option value="visible" selected>The cell lines the browser is filtered to</option>
                                 <option value="selected">Only the cell lines I ticked in the browser</option>
                                 <option value="all" id="hmCohortAllOpt">Every cell line</option>
@@ -4648,11 +4630,11 @@
                             <div id="hmAnnRowsBlock" style="display:flex; flex-direction:column; gap:6px;"></div>
                             <button type="button" id="hmAnnRowAddBtn" class="btn btn-outline btn-sm" style="font-size:11px;" title="Add another annotation row">+ Add row</button>
                             <span style="font-size:10px; color:#6b7280; white-space:nowrap;">then by</span>
-                            <select id="hmThenBy" style="width:150px;" title="The final tie-break, inside the innermost blocks, or the whole order when no row's sort arrows are on">
+                            <select id="hmThenBy" style="width:210px;" title="The final tie-break, inside the innermost blocks, or the whole order when no row's Sort is on">
                                 <option value="score" selected>Score (mean of shown genes)</option>
                                 <option value="name">Name (A-Z)</option>
                             </select>
-                            <span id="hmAnnRowsSortNote" style="display:none; font-size:10px; color:#9ca3af;">&#9638; makes that row the blocks, one row at a time; its &#8597; arrows then set the order of the blocks. Any other row's arrows sort inside the blocks, top row first. Add the Cell-line clusters row (Clustering, above) to cluster within blocks.</span>
+                            <span id="hmAnnRowsSortNote" style="display:none; font-size:10px; color:#9ca3af;">Rows apply top to bottom: the first row with Sort on splits the columns into blocks, rows below it sort within each block, and rows with Sort off just paint colours. Use the arrows to reorder rows. Add a Cell-line clusters row to cluster the columns, on the whole cohort when it is first, or within each block when it sits below a sorted row.</span>
                         </div>
                     </div>
                 </div>
@@ -4980,20 +4962,6 @@
         </div>
     </div>
 
-
-    <!-- Full-screen Compare Modal -->
-    <div id="mutCompareModal" style="display:none; position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,0.5);">
-      <div style="position:absolute; inset:20px; background:white; border-radius:12px; display:flex; flex-direction:column; overflow:hidden;">
-        <div style="padding:16px 20px; border-bottom:1px solid #e5e7eb; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
-          <h3 id="mutCompareModalTitle" style="margin:0; flex:1;"></h3>
-          <label style="font-size:12px;">Min mutated: <input type="number" id="mutCompareMinN" value="5" min="1" max="50" style="width:50px; font-size:12px;"></label>
-          <button class="btn btn-outline btn-sm" id="mutCompareExportCSV">Export CSV</button>
-          <button class="btn btn-sm" id="mutCompareModalClose" style="background:#ef4444; color:white;">Close</button>
-        </div>
-        <div id="mutCompareModalInfo" style="padding:8px 20px; font-size:11px; color:#6b7280; background:#f9fafb; border-bottom:1px solid #e5e7eb;"></div>
-        <div id="mutCompareModalBody" style="flex:1; overflow:auto; padding:0;"></div>
-      </div>
-    </div>
 
     <!-- Enrichr Pathway Analysis Modal -->
     <div id="enrichrModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:10000;">
@@ -5550,6 +5518,11 @@
             <label style="display:block; cursor:pointer;">
               <input type="radio" name="aiExportFormat" id="aiFormatGz" value="gz" style="margin-right:5px; vertical-align:middle;">Compressed (.json.gz, smallest)<span id="aiFormatGzSize" style="color:#6b7280;"></span>
             </label>
+            <!-- The companion image ships beside the data file so the reading
+                 assistant can see the same picture the user was looking at. -->
+            <label style="display:block; margin-top:8px; padding-top:8px; border-top:1px solid #e5e7eb; cursor:pointer;">
+              <input type="checkbox" id="aiIncludeImage" checked style="margin-right:5px; vertical-align:middle;">Also save an image of the view (PNG, downloaded beside the file)
+            </label>
           </div>
 
           <div style="display:flex; gap:8px; align-items:center; margin-top:12px;">
@@ -5568,6 +5541,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v88_85"></script>
+    <script src="app.js?v=v88_106"></script>
 </body>
 </html>
