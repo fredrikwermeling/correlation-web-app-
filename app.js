@@ -6551,6 +6551,7 @@ class CorrelationExplorer {
         document.getElementById('filterClustersToggle')?.addEventListener('click', () => this.toggleTableFilters('clustersTable'));
         document.getElementById('filterMutationToggle')?.addEventListener('click', () => this.toggleTableFilters('mutationTable'));
         document.getElementById('mutPvalueFilter')?.addEventListener('change', () => this.displayMutationResults());
+        document.getElementById('mutLowNFilter')?.addEventListener('change', () => this.displayMutationResults());
         document.getElementById('filterExprCorrelatesToggle')?.addEventListener('click', () => this.toggleTableFilters('exprCorrelatesTable'));
 
         // Enrichr buttons
@@ -9717,9 +9718,15 @@ class CorrelationExplorer {
         // only pass on a secondary column. When checked, restrict to the primary
         // 1+2-vs-WT comparison being significant at 0.05.
         const pFilterOn = document.getElementById('mutPvalueFilter')?.checked !== false;
-        const results = pFilterOn
+        let results = pFilterOn
             ? mr.significantResults.filter(r => r.p_mut != null && r.p_mut < 0.05)
             : mr.significantResults;
+        // "hide * genes" filter: the * marks rows whose gene is measured in
+        // fewer cell lines than the cohort. The reference n comes from the
+        // FULL result list, so ticking the box cannot move the bar.
+        const lowNFilterOn = document.getElementById('mutLowNFilter')?.checked === true;
+        const fullMaxN = mr.significantResults.reduce((m, r) => Math.max(m, (r.n_wt || 0) + (r.n_mut || 0)), 0);
+        if (lowNFilterOn) results = results.filter(r => ((r.n_wt || 0) + (r.n_mut || 0)) >= fullMaxN);
         const hasFusion = mr.hasFusionData && mr.isTranslocation;
         const tbody = document.getElementById('mutationTableBody');
         tbody.innerHTML = '';
@@ -12040,6 +12047,7 @@ class CorrelationExplorer {
                 },
                 borderWidth: document.getElementById('networkNodeBorder')?.checked === false ? 0 : 2,
                 isSynonym: isSynonym,
+                isInput: isInput,
                 originalName: originalName
             });
         });
@@ -12089,6 +12097,7 @@ class CorrelationExplorer {
                         borderWidth: document.getElementById('networkNodeBorder')?.checked === false ? 0 : 2,
                         borderWidthSelected: 3,
                         isSynonym: isSynonym,
+                        isInput: true,
                         originalName: originalName || null,
                         uncorrelated: true,
                         physics: !uncorrParked
@@ -12996,6 +13005,18 @@ class CorrelationExplorer {
 
         // Update legend for edge thickness
         this.updateEdgeLegend(edgeWidthBase, cutoff);
+        this._reparkUncorrelated();
+    }
+
+    // Label metrics changed (font/node slider, GE-in-label): the parked grid
+    // was spaced for the old label width, so re-space it in place. Floaters
+    // are left alone; their positions are the solver's.
+    _reparkUncorrelated() {
+        if (!this.network) return;
+        if (!document.getElementById('showUncorrelatedGenes')?.checked) return;
+        const mode = document.querySelector('input[name="uncorrLayout"]:checked')?.value || 'grid';
+        if (mode === 'float') return;
+        this._arrangeUncorrelatedGrid();
     }
 
     openNetworkTextSettings() {
@@ -15099,6 +15120,7 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
         });
 
         this.networkData.nodes.update(updates);
+        this._reparkUncorrelated();
     }
 
     updateNetworkLabelsWithStats() {
@@ -15156,6 +15178,7 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
         });
 
         this.networkData.nodes.update(updates);
+        this._reparkUncorrelated();
     }
 
     // Data files carry the same cache-bust token as app.js: without it a
@@ -35530,12 +35553,23 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // surfaced). Shared by the menu's live counts and the click handler so
     // they can never disagree about what a choice means.
     _netHeatmapGeneSets() {
-        const entered = ((this.getGeneList && this.getGeneList()) || []).map(g => String(g).toUpperCase());
-        const all = this.networkData?.nodes
-            ? this.networkData.nodes.getIds().map(g => String(g).toUpperCase())
-            : [];
-        const enteredSet = new Set(entered);
-        const correlating = all.filter(g => !enteredSet.has(g));
+        const nodes = this.networkData?.nodes ? this.networkData.nodes.get() : [];
+        const all = nodes.map(n => String(n.id).toUpperCase());
+        // Classify by the node's own isInput flag (set at build time from the
+        // run's gene list), so the split always matches the node colours; the
+        // live textarea can be edited or empty after a restore, and a synonym
+        // node's id no longer matches what was typed. Older node sets without
+        // the flag fall back to the run's recorded gene list.
+        const flagged = nodes.some(n => n.isInput !== undefined);
+        let entered, correlating;
+        if (flagged) {
+            entered = nodes.filter(n => n.isInput).map(n => String(n.id).toUpperCase());
+            correlating = nodes.filter(n => !n.isInput).map(n => String(n.id).toUpperCase());
+        } else {
+            const enteredSet = new Set((this.results?.geneList || (this.getGeneList && this.getGeneList()) || []).map(g => String(g).toUpperCase()));
+            entered = all.filter(g => enteredSet.has(g));
+            correlating = all.filter(g => !enteredSet.has(g));
+        }
         return { entered, all, correlating };
     }
 
@@ -35821,6 +35855,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Same undo the Close button already does (setupHeatmapModal).
         const selModal = document.getElementById('selectionInspectModal');
         if (selModal) { selModal.style.display = 'none'; selModal.style.zIndex = '1380'; }
+        document.getElementById('geGroupPickerPopout')?.remove();
         this._hmOpenModal();
         const presetSel = document.getElementById('hmPreset');
         if (presetSel) presetSel.value = 'custom';
@@ -40114,6 +40149,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 // for). 1380 is this modal's own declared z-index.
                 m.style.zIndex = '1380';
             }
+            // The floating tissue picker belongs to this modal; without this
+            // it would sit alone over the page it was opened from.
+            document.getElementById('geGroupPickerPopout')?.remove();
         };
         document.getElementById('selectionInspectClose')?.addEventListener('click', closeSelInspect);
         document.getElementById('selectionInspectClose2')?.addEventListener('click', closeSelInspect);
@@ -46032,7 +46070,10 @@ ${clone.innerHTML}
                     <div style="display:flex; gap:4px; align-items:center;">
                         <input type="text" id="geInspectSearch" placeholder="e.g. BRAF, SOX10" title="Show these genes in both tables whatever the cutoffs are set to. Separate several with commas or spaces." style="flex:1; min-width:0; font-size:11px; padding:3px 5px; border:1px solid #d1d5db; border-radius:3px;">
                         <button type="button" id="geInspectSearchClear" title="Clear" style="border:1px solid #d1d5db; border-radius:3px; background:#f9fafb; cursor:pointer; padding:2px 6px; line-height:1.4; display:none;">&times;</button>
-                    </div>`)
+                    </div>
+                    <label style="display:flex; align-items:center; gap:5px; font-size:11px; color:#374151; margin-top:6px; cursor:pointer;" title="A ⚠ row rests on fewer cell lines than the groups suggest, because the gene was only measured in some of them. Tick to drop those rows from the tables and volcanos; searching still finds them.">
+                        <input type="checkbox" id="geInspectHideThin" style="margin:0;"> Hide ⚠ genes with data in fewer lines
+                    </label>`)
                 + filterCard('Left', 'CRISPR gene effect', 0.3, 0.05)
                 + filterCard('Right', 'mRNA expression', 1.0, 0.1);
         }
@@ -46097,6 +46138,7 @@ ${clone.innerHTML}
         // using the same shared top-N menu as the mutation analysis table.
         document.getElementById('geLeftHeatmap')?.addEventListener('click', (e) => this._openHeatmapFromGEInspectMenu('left', e.currentTarget));
         document.getElementById('geRightHeatmap')?.addEventListener('click', (e) => this._openHeatmapFromGEInspectMenu('right', e.currentTarget));
+        document.getElementById('geInspectHideThin')?.addEventListener('change', () => renderSides());
         const searchEl = document.getElementById('geInspectSearch');
         if (searchEl) {
             searchEl.addEventListener('input', () => {
@@ -46374,59 +46416,136 @@ ${clone.innerHTML}
                 + `</div>`);
         }
 
-        // Same shape as the tissue breakdown popup the rest of the app uses:
-        // a table with real checkboxes, a caret to open a branch, and a count
-        // column, indented one level per tier.
+        // The tissue/disease picker lives in its own floating popout
+        // (_geSyncGroupPickerPopout), not in this sidebar box: the sidebar
+        // card is too narrow for a three-level tree with counts.
+        return '';
+    }
+
+    // The three-level comparison tree as table rows: checkbox, name, level
+    // word, count. A search shows every matching row with its parents and
+    // opens the branches; without one, carets open and close levels. The
+    // level column is what separates a subtype from a disease that carries
+    // the same name (Melanoma the subtype also holds Acral and Cutaneous
+    // Melanoma as diseases).
+    _geGroupPickerRowsHtml() {
         const g = this._geInspectGroup || { lineages: new Set(), sublineages: new Set(), diseases: new Set() };
-        const nSel = (this._geInspectResults?.selected || []).length;
         const open = this._geInspectOpen || new Set();
         const tree = this._geInspectTreeData();
         const esc = (v) => this.esc(v).replace(/'/g, '&#39;');
+        const q = (this._gePickerSearch || '').trim().toLowerCase();
+        const match = (s) => !q || String(s).toLowerCase().includes(q);
+        const lvl = (word) => `<td style="padding:2px 6px; text-align:right; font-size:9px; color:#c4c4c0; text-transform:uppercase; letter-spacing:0.4px;">${word}</td>`;
         let rows = '';
         for (const [lin, L] of [...tree.entries()].sort((a, b) => b[1].n - a[1].n)) {
-            const isOpen = open.has(lin);
+            const subEntries = [...L.subs.entries()];
+            const subVisible = q ? subEntries.filter(([sub, S]) => match(sub) || [...S.diseases.keys()].some(d => d !== '\u0000none' && match(d))) : subEntries;
+            if (q && !match(lin) && !subVisible.length) continue;
+            const isOpen = q ? true : open.has(lin);
             const hasSubs = L.subs.size > 0;
             rows += `<tr class="gis-row" style="cursor:pointer;" onmouseenter="this.style.background='#f3f4f6'" onmouseleave="this.style.background=''">
-                <td style="padding:3px 3px;"><input type="checkbox" class="gis-check"${g.lineages.has(lin) ? ' checked' : ''} onclick="event.stopPropagation(); app.toggleGEInspectGroup('lineages','${esc(lin)}')"></td>
-                <td style="padding:3px 4px; color:#1f2937;" onclick="app.toggleGEInspectBranch('${esc(lin)}')">${hasSubs ? `<span style="font-size:9px; color:#9ca3af; margin-right:2px;">${isOpen ? '\u25bc' : '\u25b6'}</span>` : '<span style="margin-right:9px;"></span>'}${this.esc(lin)}</td>
-                <td style="padding:3px 3px; text-align:right; color:#6b7280; line-height:1.25;" title="${this.esc(this._geInspectCountCell(L).title)}">${this._geInspectCountCell(L).text}</td></tr>`;
+                <td style="padding:4px 4px 4px 8px;"><input type="checkbox" class="gis-check"${g.lineages.has(lin) ? ' checked' : ''} onclick="event.stopPropagation(); app.toggleGEInspectGroup('lineages','${esc(lin)}')"></td>
+                <td style="padding:4px 4px; color:#1f2937;" onclick="app.toggleGEInspectBranch('${esc(lin)}')">${hasSubs ? `<span style="font-size:9px; color:#9ca3af; margin-right:3px;">${isOpen ? '▼' : '▶'}</span>` : '<span style="margin-right:11px;"></span>'}${this.esc(lin)}</td>
+                ${lvl('tissue')}
+                <td style="padding:4px 8px 4px 3px; text-align:right; color:#6b7280; line-height:1.25; white-space:nowrap;" title="${this.esc(this._geInspectCountCell(L).title)}">${this._geInspectCountCell(L).text}</td></tr>`;
             if (!isOpen) continue;
-            for (const [sub, S] of [...L.subs.entries()].sort((a, b) => b[1].n - a[1].n)) {
+            for (const [sub, S] of subVisible.sort((a, b) => b[1].n - a[1].n)) {
+                const disEntries = [...S.diseases.entries()];
+                const realDis = disEntries.filter(([d]) => d !== '\u0000none');
+                const disVisible = q ? realDis.filter(([d]) => match(d) || match(sub) || match(lin)) : realDis;
+                if (q && !match(lin) && !match(sub) && !disVisible.length) continue;
                 const hasDis = S.diseases.size > 0;
-                const subOpen = open.has(`${lin} >> ${sub}`);
+                const subOpen = q ? true : open.has(`${lin} >> ${sub}`);
                 rows += `<tr style="background:#fafafa; cursor:pointer;" onmouseenter="this.style.background='#f0f0f0'" onmouseleave="this.style.background='#fafafa'">
-                    <td style="padding:2px 8px 2px 16px;"><input type="checkbox" class="gis-check"${g.sublineages.has(sub) ? ' checked' : ''} onclick="event.stopPropagation(); app.toggleGEInspectGroup('sublineages','${esc(sub)}')"></td>
-                    <td style="padding:2px 4px 2px 8px; font-size:11px; color:#6b7280;" onclick="app.toggleGEInspectBranch('${esc(lin)} &gt;&gt; ${esc(sub)}')">${hasDis ? `<span style="font-size:8px; color:#9ca3af; margin-right:2px;">${subOpen ? '\u25bc' : '\u25b6'}</span>` : '<span style="margin-right:8px;"></span>'}${this.esc(sub)}</td>
-                    <td style="padding:2px 3px; text-align:right; color:#9ca3af; font-size:11px; line-height:1.25;" title="${this.esc(this._geInspectCountCell(S).title)}">${this._geInspectCountCell(S).text}</td></tr>`;
+                    <td style="padding:3px 4px 3px 22px;"><input type="checkbox" class="gis-check"${g.sublineages.has(sub) ? ' checked' : ''} onclick="event.stopPropagation(); app.toggleGEInspectGroup('sublineages','${esc(sub)}')"></td>
+                    <td style="padding:3px 4px 3px 8px; font-size:11px; color:#4b5563;" onclick="app.toggleGEInspectBranch('${esc(lin)} &gt;&gt; ${esc(sub)}')">${hasDis ? `<span style="font-size:8px; color:#9ca3af; margin-right:3px;">${subOpen ? '▼' : '▶'}</span>` : '<span style="margin-right:10px;"></span>'}${this.esc(sub)}</td>
+                    ${lvl('subtype')}
+                    <td style="padding:3px 8px 3px 3px; text-align:right; color:#9ca3af; font-size:11px; line-height:1.25; white-space:nowrap;" title="${this.esc(this._geInspectCountCell(S).title)}">${this._geInspectCountCell(S).text}</td></tr>`;
                 if (!subOpen) continue;
                 // Only worth showing the remainder when there is something to
                 // reconcile it against; on its own it is just the parent again.
-                const disEntries = [...S.diseases.entries()];
-                const realDis = disEntries.filter(([d]) => d !== '\u0000none');
-                const shown = realDis.length ? disEntries : realDis;
+                const shown = q ? disVisible : (realDis.length ? disEntries : realDis);
                 for (const [dis, dn] of shown.sort((a, b) => b[1].n - a[1].n)) {
                     if (dis === '\u0000none') {
                         rows += `<tr style="background:#f5f5f4;">
-                            <td style="padding:2px 8px 2px 24px;"></td>
+                            <td style="padding:2px 4px 2px 34px;"></td>
                             <td style="padding:2px 4px 2px 14px; font-size:10px; color:#b0b0ac; font-style:italic;" title="These cell lines are in ${this.esc(sub)} but carry no finer disease label, so they appear in no row below it. Shown so the rows add up to the group above.">no finer subtype recorded</td>
-                            <td style="padding:2px 3px; text-align:right; color:#b0b0ac; font-size:10px; line-height:1.25;" title="${this.esc(this._geInspectCountCell(dn).title)}">${this._geInspectCountCell(dn).text}</td></tr>`;
+                            ${lvl('')}
+                            <td style="padding:2px 8px 2px 3px; text-align:right; color:#b0b0ac; font-size:10px; line-height:1.25; white-space:nowrap;" title="${this.esc(this._geInspectCountCell(dn).title)}">${this._geInspectCountCell(dn).text}</td></tr>`;
                         continue;
                     }
                     rows += `<tr style="background:#f5f5f4; cursor:pointer;" onmouseenter="this.style.background='#ececeb'" onmouseleave="this.style.background='#f5f5f4'">
-                        <td style="padding:2px 8px 2px 24px;"><input type="checkbox" class="gis-check"${g.diseases.has(dis) ? ' checked' : ''} onclick="event.stopPropagation(); app.toggleGEInspectGroup('diseases','${esc(dis)}')"></td>
-                        <td style="padding:2px 4px 2px 14px; font-size:10px; color:#9ca3af;">${this.esc(dis)}</td>
-                        <td style="padding:2px 3px; text-align:right; color:#9ca3af; font-size:10px; line-height:1.25;" title="${this.esc(this._geInspectCountCell(dn).title)}">${this._geInspectCountCell(dn).text}</td></tr>`;
+                        <td style="padding:2px 4px 2px 34px;"><input type="checkbox" class="gis-check"${g.diseases.has(dis) ? ' checked' : ''} onclick="event.stopPropagation(); app.toggleGEInspectGroup('diseases','${esc(dis)}')"></td>
+                        <td style="padding:2px 4px 2px 14px; font-size:10.5px; color:#6b7280;">${this.esc(dis)}</td>
+                        ${lvl('disease')}
+                        <td style="padding:2px 8px 2px 3px; text-align:right; color:#9ca3af; font-size:10px; line-height:1.25; white-space:nowrap;" title="${this.esc(this._geInspectCountCell(dn).title)}">${this._geInspectCountCell(dn).text}</td></tr>`;
                 }
             }
         }
-        return box(
-            `<div style="font-size:10px; color:#6b7280; margin-bottom:4px; padding-right:18px;">Tick any tissue, subtype or disease. Ticks add up, so several groups can be compared against at once. Click a name to open the level below it.`
-            + `${(this._geInspectResults?.selected?.length
-                ? ` <b>${nSel} of these cell lines are your selection</b>, and a cell line cannot be on both sides, so each group shows <b>how many are left to compare against, of how many it holds</b>. Rows below a group add up to it, including the "no finer subtype recorded" row for lines that carry no finer label.`
-                : '')}</div>`
-            + `<div style="max-height:200px; overflow:auto; background:#fff; border:1px solid #e5e7eb; border-radius:4px;">`
-            + `<table style="width:100%; border-collapse:collapse; font-size:11px;">${rows}</table></div>`
-            + `<div style="margin-top:5px;"><button type="button" class="btn btn-sm btn-outline" style="font-size:10px; padding:2px 8px;" onclick="app.clearGEInspectGroup()">Clear picks</button></div>`);
+        if (!rows) rows = `<tr><td style="padding:12px; font-size:11px; color:#9ca3af;">Nothing matches "${this.esc(this._gePickerSearch || '')}".</td></tr>`;
+        return rows;
+    }
+
+    // Create, refresh or remove the floating picker, following
+    // _geInspectPanel. Called on every inspect re-render, so ticks (which
+    // recompute the comparison) refresh the counts in place.
+    _geSyncGroupPickerPopout() {
+        const want = this._geInspectPanel === 'group'
+            && document.getElementById('selectionInspectModal')?.style.display === 'flex';
+        let pop = document.getElementById('geGroupPickerPopout');
+        if (!want) { pop?.remove(); return; }
+        if (!pop) {
+            pop = document.createElement('div');
+            pop.id = 'geGroupPickerPopout';
+            pop.style.cssText = 'position:fixed; z-index:10001; left:max(8px, calc(50% - 660px)); top:12vh; width:440px; max-width:92vw; background:#fff; border:1px solid #d1d5db; border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,0.18); display:flex; flex-direction:column; max-height:72vh;';
+            pop.innerHTML = `
+                <div id="geGroupPickerDrag" style="display:flex; align-items:center; gap:8px; padding:9px 12px; border-bottom:1px solid #e5e7eb; cursor:move; background:#f9fafb; border-radius:8px 8px 0 0;">
+                    <span style="font-size:12px; font-weight:700; color:#374151; flex:1;">Compare against these tissues / diseases</span>
+                    <button type="button" title="Close (your picks are kept)" onclick="app.closeGEGroupPicker()" style="background:none; border:none; font-size:18px; line-height:1; color:#9ca3af; cursor:pointer; padding:0 2px;">&times;</button>
+                </div>
+                <div style="padding:8px 12px 0;">
+                    <input type="text" id="geGroupPickerSearch" placeholder="Search tissue, subtype or disease..." style="width:100%; box-sizing:border-box; font-size:12px; padding:5px 8px; border:1px solid #d1d5db; border-radius:4px;">
+                    <div id="geGroupPickerNote" style="font-size:10px; color:#6b7280; margin-top:5px; line-height:1.45;"></div>
+                </div>
+                <div id="geGroupPickerList" style="flex:1; overflow:auto; margin:6px 12px; background:#fff; border:1px solid #e5e7eb; border-radius:4px;"></div>
+                <div style="display:flex; align-items:center; gap:8px; padding:8px 12px; border-top:1px solid #e5e7eb;">
+                    <button type="button" class="btn btn-sm btn-outline" style="font-size:11px; padding:3px 10px;" onclick="app.clearGEInspectGroup()">Clear picks</button>
+                    <span id="geGroupPickerCount" style="flex:1; font-size:11px; color:#6b7280;"></span>
+                    <button type="button" class="btn btn-sm btn-outline" style="font-size:11px; padding:3px 12px; border-color:#6ba544; color:#4c782e;" onclick="app.closeGEGroupPicker()">Done</button>
+                </div>`;
+            document.body.appendChild(pop);
+            this._makeDraggable(pop, pop.querySelector('#geGroupPickerDrag'));
+            const s = pop.querySelector('#geGroupPickerSearch');
+            s.value = this._gePickerSearch || '';
+            s.addEventListener('input', () => { this._gePickerSearch = s.value; this._geRenderGroupPickerList(); });
+        }
+        const nSel = (this._geInspectResults?.selected || []).length;
+        const note = document.getElementById('geGroupPickerNote');
+        if (note) note.innerHTML = `Tick any row; ticks add up, so several groups can be compared against at once. The level column tells the three tiers apart: a subtype can carry the same name as one of its diseases.`
+            + (nSel ? ` <b>${nSel} of these cell lines are your selection</b>; each row shows how many are left to compare against, of how many it holds.` : '');
+        this._geRenderGroupPickerList();
+    }
+
+    _geRenderGroupPickerList() {
+        const list = document.getElementById('geGroupPickerList');
+        if (!list) return;
+        const st = list.scrollTop;
+        list.innerHTML = `<table style="width:100%; border-collapse:collapse; font-size:12px;">${this._geGroupPickerRowsHtml()}</table>`;
+        list.scrollTop = st;
+        const cnt = document.getElementById('geGroupPickerCount');
+        if (cnt) {
+            const grp = this._geInspectGroup;
+            const nPicks = (grp?.lineages.size || 0) + (grp?.sublineages.size || 0) + (grp?.diseases.size || 0);
+            const nRest = (this._geInspectSides?.comparison || []).length;
+            cnt.textContent = nPicks
+                ? `comparing against ${nRest.toLocaleString()} cell line${nRest === 1 ? '' : 's'}`
+                : 'nothing ticked yet, comparing against all other lines';
+        }
+    }
+
+    closeGEGroupPicker() {
+        this._geInspectPanel = null;
+        document.getElementById('geGroupPickerPopout')?.remove();
     }
 
     // Tissue -> subtype -> disease over the whole panel, with counts, built
@@ -46850,6 +46969,7 @@ ${clone.innerHTML}
                 + this._geCoverageWarningHtml(cov)
                 + this._geInspectScopePanel();
         }
+        this._geSyncGroupPickerPopout();
 
         // The same two collapsible comparison panels Inspect A vs B carries
         //: the selection against whatever comparison group is in
@@ -48067,6 +48187,7 @@ ${clone.innerHTML}
         if (!gene) return;
         const selected = this._geInspectResults?.selected || [];
         document.getElementById('selectionInspectModal').style.display = 'none';
+        document.getElementById('geGroupPickerPopout')?.remove();
         this._geSelectionHighlight = new Set(selected);
         // Remember where this was opened from, so closing the gene-effect
         // popout comes back here.
@@ -48091,6 +48212,8 @@ ${clone.innerHTML}
         set('geInspectSearch', '');
         const clr = document.getElementById('geInspectSearchClear');
         if (clr) clr.style.display = 'none';
+        const thinCb = document.getElementById('geInspectHideThin');
+        if (thinCb) thinCb.checked = false;
         this._geInspectSort = {
             left:  { key: 'delta', dir: -1, absolute: true },
             right: { key: 'delta', dir: -1, absolute: true },
@@ -48173,6 +48296,10 @@ ${clone.innerHTML}
                             : 'Needs at least three cell lines to test';
         });
         const passQ = (r, cut) => !anyQ || cut >= 1 || (r.q != null && r.q <= cut);
+        // Hide-⚠ filter: applied with the cutoffs, so the volcano and the
+        // table drop the same rows; a gene search still finds hidden genes.
+        const hideThin = !!document.getElementById('geInspectHideThin')?.checked;
+        const passCov = (r, side) => !hideThin || !this._geInspectThin(r, side);
 
         // Looking up a named gene is a different question from browsing the
         // strongest differences, and a search that returned nothing because
@@ -48185,13 +48312,13 @@ ${clone.innerHTML}
         const leftRows = terms.length
             ? applySort(rows.filter(matches), this._geInspectSort.left).slice(0, leftN)
             : applySort(
-                rows.filter(r => Math.abs(r.delta) >= leftCut && passQ(r, leftQ)),
+                rows.filter(r => Math.abs(r.delta) >= leftCut && passQ(r, leftQ) && passCov(r, 'left')),
                 this._geInspectSort.left
             ).slice(0, leftN);
         const rightRows = terms.length
             ? applySort(exprRows.filter(matches), this._geInspectSort.right).slice(0, rightN)
             : applySort(
-                exprRows.filter(r => Math.abs(r.delta) >= rightCut && passQ(r, rightQ)),
+                exprRows.filter(r => Math.abs(r.delta) >= rightCut && passQ(r, rightQ) && passCov(r, 'right')),
                 this._geInspectSort.right
             ).slice(0, rightN);
         // What is on screen right now, so an export can follow the tables
@@ -48203,8 +48330,8 @@ ${clone.innerHTML}
         // table is for. The volcano keeps the cutoff set it was already
         // showing and marks the searched genes on top of it, so looking a gene
         // up adds it to the picture instead of emptying the picture.
-        const cutLeft = applySort(rows.filter(r => Math.abs(r.delta) >= leftCut && passQ(r, leftQ)), this._geInspectSort.left).slice(0, leftN);
-        const cutRight = applySort(exprRows.filter(r => Math.abs(r.delta) >= rightCut && passQ(r, rightQ)), this._geInspectSort.right).slice(0, rightN);
+        const cutLeft = applySort(rows.filter(r => Math.abs(r.delta) >= leftCut && passQ(r, leftQ) && passCov(r, 'left')), this._geInspectSort.left).slice(0, leftN);
+        const cutRight = applySort(exprRows.filter(r => Math.abs(r.delta) >= rightCut && passQ(r, rightQ) && passCov(r, 'right')), this._geInspectSort.right).slice(0, rightN);
         const foundLeft = terms.length ? rows.filter(matches) : [];
         const foundRight = terms.length ? exprRows.filter(matches) : [];
         // "selection - comparison" ordinarily; "A - B" for Inspect A vs B,
@@ -48315,6 +48442,19 @@ ${clone.innerHTML}
     }
 
     // Build the HTML for one sortable GE-inspect table.
+    // "Fewer lines than the groups suggest": the row rests on under 70% of
+    // either group, because the gene was only measured in some lines. Shared
+    // by the table's ⚠ mark and the hide filter, so the checkbox hides
+    // exactly the marked rows. Each side is measured against its OWN cohort:
+    // the expression matrix covers more cell lines than the CRISPR screen.
+    _geInspectThin(r, side) {
+        const cov = side === 'right'
+            ? (this._geInspectResults?.exprCoverage || this._geInspectResults?.geCoverage)
+            : this._geInspectResults?.geCoverage;
+        const nomSel = cov?.selNominal || 0, nomOth = cov?.othNominal || 0;
+        return !!((nomSel && r.nSel < nomSel * 0.7) || (nomOth && r.nOther < nomOth * 0.7));
+    }
+
     _buildGEInspectTable(rows, side, emptyMessage) {
         // No q column at all when the selection was too small to test, rather
         // than a column of blanks.
@@ -48337,17 +48477,7 @@ ${clone.innerHTML}
         // screen, so a comparison billed as 48 against 12 can come down to
         // 27 against 3 for a particular gene, and without this the row looks
         // as solid as any other.
-        // Each side is measured against its OWN cohort: the expression matrix
-        // covers more cell lines than the CRISPR screen does.
-        const cov = side === 'right'
-            ? (this._geInspectResults?.exprCoverage || this._geInspectResults?.geCoverage)
-            : this._geInspectResults?.geCoverage;
-        const nomSel = cov?.selNominal || 0, nomOth = cov?.othNominal || 0;
-        // Only "fewer lines than the group you picked" is a row-level fact. A
-        // group that is simply small is a property of the whole comparison, so
-        // it belongs in the heading; testing it here put a warning on every
-        // single row of a four-line selection, which said nothing.
-        const thin = (r) => (nomSel && r.nSel < nomSel * 0.7) || (nomOth && r.nOther < nomOth * 0.7);
+        const thin = (r) => this._geInspectThin(r, side);
         const trows = rows.map(r => `
             <tr class="si-row" data-gene="${this.esc(r.gene)}" style="cursor:pointer;">
                 <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; font-weight:600; color:#4c782e;">${r.gene}</td>
@@ -48395,6 +48525,7 @@ ${clone.innerHTML}
         }
 
         document.getElementById('selectionInspectModal').style.display = 'none';
+        document.getElementById('geGroupPickerPopout')?.remove();
         document.getElementById('cellLineBrowserModal').style.display = 'none';
         // Undo any z-index bump _hmDrillToBrowser applied (see closeCellLineBrowser).
         document.getElementById('cellLineBrowserModal').style.zIndex = '1350';
@@ -52843,6 +52974,7 @@ ${clone.innerHTML}
         document.getElementById('hmPreset')?.addEventListener('change', () => { this._hmSyncPresetUI(); this._hmRedraw(); });
         document.getElementById('hmDataType')?.addEventListener('change', () => this._hmRedraw());
         document.getElementById('hmScale')?.addEventListener('change', () => this._hmRedraw());
+        document.getElementById('hmGeneMinN')?.addEventListener('change', () => this._hmRedraw());
         document.getElementById('hmThenBy')?.addEventListener('change', () => this._hmRedraw());
         // Cell-line clustering has no toolbar checkbox any more:
         // it is the "Cell-line clusters" annotation row, added with + Add
@@ -53023,6 +53155,7 @@ ${clone.innerHTML}
         const medianCb = document.getElementById('hmShowMedian');
         if (medianCb) medianCb.checked = true;
         set('hmMinGroupSize', '1');
+        set('hmGeneMinN', '1');
         // Default hierarchy: lineage blocks ordered by median
         // score, or disease blocks when the open-time cohort is already one
         // lineage (a lineage strip with one colour says nothing). TP53
@@ -53429,6 +53562,15 @@ ${clone.innerHTML}
         const wrap = document.getElementById('hmAnnRowsBlock');
         if (!wrap) return;
         const rows = this._hmAnnRows || (this._hmAnnRows = []);
+        // The drawn heatmap always puts the blocking row on top (the group
+        // strip), so the list mirrors it: the topmost row with Sort on that
+        // can form blocks moves to position 1. Continuous rows sort without
+        // blocking, so they stay where they sit.
+        const bi = rows.findIndex(r => r.sortDir && this._hmAnnRowCanBlock(r.mode));
+        const firstSorted = rows.findIndex(r => r.sortDir);
+        if (bi > 0 && bi === firstSorted) {
+            rows.unshift(rows.splice(bi, 1)[0]);
+        }
         const TYPE_OPTIONS = [
             ['lineage', 'Lineage'], ['subtype', 'Subtype'], ['disease', 'Disease'],
             ['hotspot', 'Hotspot mutation'], ['fusion', 'Fusion'], ['cn', 'Copy number'],
@@ -53782,7 +53924,7 @@ ${clone.innerHTML}
         const hasGene = (g) => dataType === 'expr'
             ? !!this.expressionGeneIndex?.has(g.toUpperCase())
             : !!this.geneIndex?.has(g.toUpperCase());
-        const genes = enteredGenes.filter(hasGene);
+        let genes = enteredGenes.filter(hasGene);
         const missingGenes = enteredGenes.filter(g => !hasGene(g));
 
         if (!genes.length) {
@@ -53878,6 +54020,33 @@ ${clone.innerHTML}
                 if (hint) hint.textContent = 'No cell lines left in this drilled-down group. Use the "Show all" link below to start over.';
                 this._hmClearCanvases();
                 return;
+            }
+        }
+
+        // Gene min n: a gene measured in only a few of the shown lines rests
+        // on less data than the rest of the grid, so it can be hidden by
+        // count. Applied to the FINAL cohort, so the bar means "of the lines
+        // actually drawn"; hidden genes are named in the summary, never
+        // silently dropped.
+        const geneMinN = Math.max(1, parseInt(document.getElementById('hmGeneMinN')?.value, 10) || 1);
+        if (geneMinN > 1) {
+            const rowIdx = this._hmCellLineRowIndex();
+            const idxs = cohort.map(cl => rowIdx.get(cl)).filter(i => i !== undefined);
+            const kept = [], thin = [];
+            for (const g of genes) {
+                const vec = this._hmFullPanelVector(g, dataType);
+                let c = 0;
+                if (vec) for (const i of idxs) { const v = vec[i]; if (v !== undefined && !Number.isNaN(v)) c++; }
+                (c >= geneMinN ? kept : thin).push(g);
+            }
+            if (thin.length && !kept.length) {
+                if (hint) hint.textContent = `All ${genes.length} genes have data in fewer than ${geneMinN} of the shown lines. Lower Gene min n.`;
+                this._hmClearCanvases();
+                return;
+            }
+            if (thin.length) {
+                genes = kept;
+                cohortNote += `${thin.length} gene${thin.length === 1 ? '' : 's'} with data in fewer than ${geneMinN} shown lines hidden (${thin.length <= 6 ? thin.join(', ') : thin.slice(0, 5).join(', ') + ', …'}). `;
             }
         }
 
@@ -57425,6 +57594,7 @@ ${clone.innerHTML}
             hideNoData: checked('hmHideNoData'),
             thenBy: val('hmThenBy') === 'name' ? 'name' : 'score',
             minN: parseInt(val('hmMinGroupSize'), 10) || 1,
+            geneMinN: parseInt(val('hmGeneMinN'), 10) || 1,
             showMedian: checked('hmShowMedian'),
             clusterGenes: checked('hmClusterGenes'),
             // the cluster checkbox is gone; a saved file records
@@ -57518,6 +57688,7 @@ ${clone.innerHTML}
         // Tree order only rather than inheriting whatever is on screen.
         set('hmGeneClusterK', state.geneClusterK != null ? String(state.geneClusterK) : '0');
         set('hmMinGroupSize', state.minN != null ? String(state.minN) : '1');
+        set('hmGeneMinN', state.geneMinN != null ? String(state.geneMinN) : '1');
         setChecked('hmShowMedian', state.showMedian);
 
         // Lineage/subtype/disease options are rebuilt from the resolved

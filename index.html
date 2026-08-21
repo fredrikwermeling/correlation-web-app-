@@ -3431,6 +3431,9 @@
                         <label style="font-size:11px; color:#374151; cursor:pointer; white-space:nowrap;" title="View filter on the table below: show only genes whose PRIMARY comparison (mutated 1+2 vs wild-type) reaches p < 0.05. This is separate from the P-value cutoff in box 1, which decides what enters the table at all (any comparison). Off = also show genes that only reach significance on a secondary comparison (e.g. 2 vs 0).">
                             <input type="checkbox" id="mutPvalueFilter" checked> <span id="mutPvalueFilterLabel">only p &lt; 0.05 (mutated vs WT)</span> <span style="cursor:help; color:#9ca3af;">?</span>
                         </label>
+                        <label style="font-size:11px; color:#374151; cursor:pointer; white-space:nowrap;" title="View filter on the table below: hide genes marked with *, which are measured in fewer cell lines than the rest of the cohort, so their groups are smaller and their statistics rest on less data.">
+                            <input type="checkbox" id="mutLowNFilter"> hide * genes (data in fewer lines) <span style="cursor:help; color:#9ca3af;">?</span>
+                        </label>
                     </div>
                     <!-- One toolbar row: search, Enrichr and the exports together.
                          Compare by Tissue removed (it stratified WT vs mutated per
@@ -4524,6 +4527,9 @@
                                 <option value="raw">Raw values</option>
                             </select>
                             <span style="color:#9ca3af; font-size:10px; cursor:help; border:1px solid #d1d5db; border-radius:50%; padding:0 5px;" title="How the colours are computed. Z-score, vs shown lines: each GENE is centred on its own mean and scaled by its own spread across the cell lines currently drawn, so every row uses the full colour range and rows are comparable; a cell says how that line sits for that gene relative to the other shown lines. Z-score, vs all lines: same per-gene scaling but measured across every cell line in the panel, so a cell says how the line sits against all cancers even when only a subset is drawn. Raw values: the actual units (log2 TPM+1 for expression, Chronos score for gene effect), one shared scale for the whole grid, rows with naturally high levels dominate the colours. Normalisation is always per gene, never across the whole gene set.">?</span>
+                            <span style="display:inline-flex; align-items:center; gap:4px; font-size:11px; color:#374151;" title="Hide gene rows measured in fewer than this many of the shown cell lines. Some genes are only screened in a subset of lines, so their rows rest on less data than the rest of the grid. 1 shows every gene.">
+                                Gene min n: <input type="number" id="hmGeneMinN" value="1" min="1" max="2000" step="25" style="width:58px; padding:2px 4px; border:1px solid #d1d5db; border-radius:3px; text-align:center; font-size:11px;">
+                            </span>
                         </div>
                     </div>
                     <div class="clb-row clb-row-alt">
@@ -5530,6 +5536,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v88_107"></script>
+    <script src="app.js?v=v88_110"></script>
 </body>
 </html>
