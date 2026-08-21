@@ -2701,15 +2701,12 @@
     <div class="container">
         <!-- Left Sidebar -->
         <div class="sidebar">
-            <!-- Options card: workspace actions. Sits where Reference Data
-                 used to, so the sidebar reads Options first then boxes 1 and 2.
-                 Button labels wrap to two lines to fit the 415px sidebar on one
-                 row. Gene set analysis is the default mode (boxes 1/2/3 are live
-                 on load), so it renders filled to show it's the current mode.
-                 The app's two pillars (gene set analysis + Cell Line Browser)
-                 get the top-level buttons; Mutation analysis and the other
-                 tools sit behind "Other". While Mutation analysis is the active
-                 mode the "Other" button itself carries the mode (filled green,
+            <!-- Options card: workspace actions. Button labels wrap to two
+                 lines to fit the 415px sidebar on one row. The app's two
+                 pillars (gene set analysis + Cell Line Browser) get the
+                 top-level buttons; Mutation analysis and the other tools sit
+                 behind "Other", and while Mutation analysis is active the
+                 "Other" button itself carries the mode (filled green,
                  renamed), see _syncAnalysisModeButtons. -->
             <div class="card" id="optionsCard">
                 <div class="card-title">Options</div>
@@ -2785,7 +2782,7 @@
                                 </label>
                                 <div style="margin-left:14px; font-size:11px; color:#4b5563; text-wrap:balance;">Splits the cohort into altered vs wild-type lines for the gene you pick below, then ranks the genes whose gene effect differs most between the two groups.</div>
                             </div>
-                            <!-- Synonym/Ortholog Lookup removed as a standalone analysis mode (v.82.4),
+                            <!-- Synonym/Ortholog Lookup is not offered as a standalone analysis mode,
                                  kept in code so it can be restored. The synonym matching itself still
                                  runs as part of normal analysis via the "Find Synonyms" button.
                             <label>
@@ -2842,14 +2839,11 @@
                                     <input type="radio" name="mutAnalysisType" value="cn_amp"> Amplification
                                     <span class="mut-subtype-help" data-subtype="cn_amp" title="What is this?">?</span>
                                 </label>
-                                <!-- "Deep deletion" (value cn_del) removed in v.84.36. It
-                                     duplicated Functional loss, which already treats deep
-                                     deletion as one of its three mechanisms on genes that
-                                     have the numbers. Of its 14 genes, 4 had no cell lines
-                                     at all and 8 more had under 10; the only well-powered
-                                     one, CDKN2B, is a 9p21 co-deletion proxy for CDKN2A,
-                                     which Functional loss covers better. The cn_del code
-                                     paths remain so saved figures still restore. -->
+                                <!-- "Deep deletion" (value cn_del) is deliberately absent:
+                                     it duplicated Functional loss, which covers homozygous
+                                     loss on the genes that have the cell lines for it. The
+                                     cn_del code paths remain so saved figures still
+                                     restore. -->
                             </div>
                             <!-- Floating popout; JS moves it to <body> and positions it. -->
                             <div id="mutSubTypeInfo" style="display:none;"></div>
@@ -3127,10 +3121,9 @@
                     <li><button class="nav-link" data-tab="mutation" style="display: none;" id="mutationTab">Mutation analysis</button></li>
                     <li><button class="nav-link" data-tab="synonyms" style="display: none;" id="synonymsTab">Synonyms/Orthologs</button></li>
                     <li><button class="nav-link" data-tab="summary">Summary</button></li>
-                    <!-- Reset all moved to the Options row (2026-08-08, freed
-                         by Mutation analysis moving into the Other menu). It is
-                         still called "Reset all" because the Network tab below
-                         has its own Reset for the appearance controls. -->
+                    <!-- Reset all lives on the Options row; it keeps the name
+                         "Reset all" because the Network tab below has its own
+                         Reset for the appearance controls. -->
                 </ul>
 
                 <!-- Network Tab -->
@@ -4470,14 +4463,10 @@
     </div>
 
     <!-- Selection Inspect (GE / Correlations for selected cell lines) -->
-    <!-- Inspect selection. Uses the app's own modal furniture (.modal-overlay /
-         .modal / .modal-header / .modal-body / .modal-footer) rather than a
-         hand-rolled copy of it: this panel used to be the only analysis view
-         with its own header gradient, its own title size and its actions in
-         the title bar instead of a footer, which is most of why it read as a
-         different application. Layout follows the scatter inspect: a column of
-         control cards on the left, the results on the right, actions in the
-         footer. -->
+    <!-- Inspect selection. Uses the app's own modal furniture (.modal-overlay
+         / .modal / .modal-header / .modal-body / .modal-footer) so it reads
+         like the rest of the app. Layout follows the scatter inspect: control
+         cards on the left, results on the right, actions in the footer. -->
     <div id="selectionInspectModal" class="modal-overlay" style="z-index:1380;">
         <div class="modal" id="selectionInspectInner" style="max-width:min(97vw,1500px);">
             <div class="modal-header">
@@ -4674,7 +4663,7 @@
                 <button class="btn btn-outline btn-sm mobile-hide" style="font-size:11px;" onclick="app.openMethods('heatmap')" title="Write out how this heatmap was made, as a methods paragraph and as a plain walk-through">Methods</button>
                 <button id="hmExportAIBtn" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px;" title="Package this heatmap for a language model: the gene set, the matrix, the cohort and the grouping, plus a picture of what's on screen">Export for AI</button>
                 <button id="hmSaveViewBtn" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px;" title="Download this exact heatmap as a small .json file; drop it on the app later to reopen it">Save view</button>
-                <!-- Gates A/B (v.88.64): arm one, then drag horizontally across
+                <!-- Gates A/B: arm one, then drag horizontally across
                      the grid to collect cell lines into it by column range,
                      keyed by cell line id so a re-sort doesn't lose them. The
                      Copy/Inspect buttons and the count chip reserve their
@@ -4698,7 +4687,7 @@
                     <button type="button" id="hmGateBCopyBtn" class="btn btn-outline btn-sm" style="font-size:10px; padding:2px 6px; visibility:hidden;" title="Copy gate B's cell line names, one per line">Copy B</button>
                     <button type="button" id="hmGateBInspectBtn" class="btn btn-outline btn-sm" style="font-size:10px; padding:2px 6px; visibility:hidden;" title="Open the Cell Line Browser's selection-inspect on gate B's cell lines">Inspect B</button>
                 </span>
-                <!-- Inspect A vs B (v.88.73): reserves its space
+                <!-- Inspect A vs B: reserves its space
                      (visibility:hidden) like the per-gate buttons above,
                      only becoming visible once BOTH gates hold a cell line;
                      see _hmSyncGateUI. -->
@@ -5541,6 +5530,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v88_106"></script>
+    <script src="app.js?v=v88_107"></script>
 </body>
 </html>
