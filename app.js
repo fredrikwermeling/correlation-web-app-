@@ -5760,6 +5760,10 @@ class CorrelationExplorer {
 
         // Gene textarea
         document.getElementById('geneTextarea').addEventListener('input', () => this.updateGeneCount());
+        // Sync once at startup so a box restored with genes doesn't keep the
+        // empty-box styling on Test Genes. Styling only: the gene index may
+        // not be loaded yet, so validation waits for the first real edit.
+        if (this.geneIndex) this.updateGeneCount();
 
         // Clear genes
         document.getElementById('clearGenes').addEventListener('click', () => {
@@ -7230,6 +7234,15 @@ class CorrelationExplorer {
         const text = document.getElementById('geneTextarea').value;
         const genes = text.split(/\s+/).filter(g => g.trim() !== '');
         const display = document.getElementById('geneCountDisplay');
+
+        // Test Genes is the invitation to someone with an empty box. Once
+        // there are genes in it, it is just another way to wipe what was
+        // typed, so it drops back to a plain button.
+        const testBtn = document.getElementById('loadTestGenes');
+        if (testBtn) {
+            testBtn.classList.toggle('btn-success', genes.length === 0);
+            testBtn.classList.toggle('btn-secondary', genes.length > 0);
+        }
 
         if (genes.length > 0) {
             display.innerHTML = `<strong>Genes entered:</strong> <span class="gene-count">${genes.length}</span>`;
@@ -17336,6 +17349,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const type = document.getElementById(axisId)?.value || 'ge';
         if (type === 'growth' || type === 'geneset') return true;
         if (type === 'cn') return !!this.cnGeneIndex?.has(gene?.toUpperCase?.());
+        // Expression is a wider matrix than the screen. Before it has loaded
+        // there is nothing to check against, so let it through and let
+        // updateInspectGenes decide once the data is in.
+        if (type === 'expr') return !this.expressionGeneIndex || !!this.expressionGeneIndex.has(gene?.toUpperCase?.());
         return !!this.geneIndex?.has(gene);
     }
 
@@ -20669,8 +20686,17 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             ? this.geneIndex.get(xGene)
             : (this.expressionGeneIndex ? this.expressionGeneIndex.get(xGene) : undefined);
         if (xIdx === undefined) { this.geneNotFound(xGene, xType === 'ge' ? 'the gene-effect data' : 'the expression data'); return; }
-        const xSource = xType === 'ge' ? this.geneEffects : this.expressionData;
         if (xType === 'expr' && !this.expressionLoaded) { alert('Expression data is still loading.'); return; }
+        // The expression matrix is a different cohort in a different order
+        // (more cell lines than the screen, some of them absent from it), so a
+        // gene-effect cell-line index cannot address it. Every read goes
+        // through the GE -> expression map, as getExpressionVector does.
+        const nExprCL = this.expressionMetadata?.nCellLines || this.nCellLines;
+        const exprCLMap = this.expressionCellLineMap;
+        const readExpr = (geneOffset, geIdx) => {
+            const e = exprCLMap?.[geIdx];
+            return (e === undefined || e === -1) ? NaN : this.expressionData[geneOffset + e];
+        };
         // Keep raw X values. For each Y gene we compute Pearson over the
         // cells where BOTH X and Y are valid, re-centering X on that paired
         // sample, matching the scatter's pearsonWithSlope. Previously the
@@ -20680,8 +20706,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const xRaw = new Float64Array(n);
         const xValid = new Uint8Array(n);
         let xN = 0;
+        const xOff = xType === 'ge' ? xIdx * this.nCellLines : xIdx * nExprCL;
         for (let k = 0; k < n; k++) {
-            const v = xSource[xIdx * this.nCellLines + clIdxs[k]];
+            const v = xType === 'ge' ? this.geneEffects[xOff + clIdxs[k]] : readExpr(xOff, clIdxs[k]);
             if (!isNaN(v) && v !== -999) { xRaw[k] = v; xValid[k] = 1; xN++; }
         }
         if (xN < 3) { alert('X gene has too few valid values in the filtered cell lines.'); return; }
@@ -20729,8 +20756,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 if (xType === 'expr' && gene === xGene) continue;
                 const eg = this.expressionGeneIndex.get(gene);
                 if (eg === undefined) continue;
-                const off = eg * this.nCellLines;
-                for (let k = 0; k < n; k++) yBuf[k] = this.expressionData[off + clIdxs[k]];
+                const off = eg * nExprCL;
+                for (let k = 0; k < n; k++) yBuf[k] = readExpr(off, clIdxs[k]);
                 const res = pairedPearson(yBuf);
                 if (res) exprHits.push({ gene, r: res.r, n: res.n });
             }
@@ -21007,13 +21034,15 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             return;
         }
 
-        // Validate genes exist in GE data (not needed for growth/geneset axis;
-        // CN-axis genes are validated against the CN matrix after it loads below).
-        if (!noGeneAxis(xType) && xType !== 'cn' && !this.geneIndex.has(gene1)) {
+        // Only a GE axis is gated by the gene-effect index. Expression covers
+        // thousands of genes the CRISPR screen never targets, so checking an
+        // Expr axis here rejected genes Find correlates had just offered; both
+        // Expr and CN are validated against their own matrix further down.
+        if (xType === 'ge' && !this.geneIndex.has(gene1)) {
             this.geneNotFound(gene1, 'the gene-effect data');
             return;
         }
-        if (!noGeneAxis(yType) && yType !== 'cn' && !this.geneIndex.has(gene2)) {
+        if (yType === 'ge' && !this.geneIndex.has(gene2)) {
             this.geneNotFound(gene2, 'the gene-effect data');
             return;
         }
@@ -21146,7 +21175,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (!b) continue;
             // Growth rate belongs to the cell line, not a gene, and a gene-set
             // score is not one gene either, so neither can be opened this way.
-            const ok = !!gene && type !== 'growth' && type !== 'geneset' && this.geneIndex?.has(String(gene).toUpperCase());
+            const inData = type === 'expr'
+                ? !!this.expressionGeneIndex?.has(String(gene).toUpperCase())
+                : !!this.geneIndex?.has(String(gene).toUpperCase());
+            const ok = !!gene && type !== 'growth' && type !== 'geneset' && inData;
             b.style.display = ok ? '' : 'none';
             if (ok) {
                 anyShown = true;
