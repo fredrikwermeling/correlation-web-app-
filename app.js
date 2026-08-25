@@ -39788,11 +39788,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             }
             // Direction applies to every sort, Name included, so the button is
             // always present rather than appearing and disappearing.
-            // Default descending for count sorts and expression (highest-first
-            // is usually what the user wants for "cells with highest
-            // expression of gene X"). Ascending for name and gene-effect
+            // Default descending for counts, expression, and the two measured
+            // scores: "which lines are interferon-high / retroelement-high"
+            // is the question those sorts are for, so the top of the list is
+            // where the answer belongs. Ascending for name and gene-effect
             // (lowest GE = most dependent, typical interest).
-            if (mode === 'hotspot' || mode === 'damaging' || mode === 'fusion' || mode === 'expr' || mode === 'cn') {
+            if (mode === 'hotspot' || mode === 'damaging' || mode === 'fusion'
+                || mode === 'expr' || mode === 'cn' || mode === 'ifn' || mode === 'retro') {
                 this._clbSortAsc = false;
             } else {
                 this._clbSortAsc = true;
