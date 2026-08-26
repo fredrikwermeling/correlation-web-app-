@@ -27383,8 +27383,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             // title annotation, on screen and in every subsequent export,
             // whenever a cell-line search or highlight was active.
             const annotations = [...layout.annotations];
-            for (let i = 0; i < stats.length; i++) {
-                const s = stats[i];
+            // Walk the rows actually drawn, and anchor to the row's DRAWN
+            // label. The y here is a category value, so it has to be the
+            // shortened, de-duplicated name the trace carries: passing the
+            // full group name matched no category and Plotly dropped the
+            // arrow in open space between rows. Phones truncate at 9
+            // characters, so there it missed on nearly every row.
+            for (let i = 0; i < filteredStats.length; i++) {
+                const s = filteredStats[i];
+                const rowLabel = labelFor.get(s.group);
+                if (!rowLabel) continue;
                 for (const c of s.cellData) {
                     const nameUpper = (c.cellLineName || '').toUpperCase();
                     const idUpper = (c.cellLineId || '').toUpperCase();
@@ -27393,7 +27401,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     if (isHighlight || isSearch) {
                         annotations.push({
                             x: c.geneEffect,
-                            y: `${s.group} (n=${s.n})`,
+                            y: rowLabel,
                             text: c.cellLineName,
                             showarrow: true,
                             arrowhead: 2,
