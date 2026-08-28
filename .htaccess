@@ -1,0 +1,35 @@
+# Cache policy for correlate.cmm.se.
+#
+# Why this file exists: the server sent no Cache-Control at all, so browsers
+# fell back to heuristic freshness and held index.html for a very long time.
+# A stale index.html also pins app.js, because the script tag carries the
+# version in its query string (app.js?v=...) — so the whole app, code and
+# data together, kept being served from a months-old local cache while the
+# origin had the current build. A user seeing an old version had no way to
+# know, and no reload short of a hard refresh would fix it.
+#
+# The rule: the entry point and everything whose URL does not change between
+# releases must be revalidated, never served blind from cache. ETags make that
+# cheap — an unchanged file answers 304 with no body.
+#
+# Guarded so a host without mod_headers ignores this rather than erroring.
+<IfModule mod_headers.c>
+    # index.html: the one file that must never be stale, since it names the
+    # version of every other file.
+    <FilesMatch "\.html$">
+        Header set Cache-Control "no-cache, must-revalidate"
+    </FilesMatch>
+
+    # Code and data. app.js is version-stamped in its URL, but the data files
+    # are not, and code newer than its data is its own class of bug — so both
+    # sides revalidate and can never drift apart.
+    <FilesMatch "\.(js|css|json|gz|bin)$">
+        Header set Cache-Control "no-cache, must-revalidate"
+    </FilesMatch>
+
+    # Artwork changes only when the app itself does, and is small enough that
+    # a stale logo is not worth a request per load.
+    <FilesMatch "\.(png|jpg|jpeg|gif|svg|ico|woff2?)$">
+        Header set Cache-Control "max-age=86400"
+    </FilesMatch>
+</IfModule>
