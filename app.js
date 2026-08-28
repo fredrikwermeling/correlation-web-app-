@@ -4702,7 +4702,12 @@ class CorrelationExplorer {
             return (a.c.name || '').localeCompare(b.c.name || '');
         });
 
-        const headerHtml = `<div class="clb-drug-dd-header" style="padding:6px 10px; background:#f9fafb; border-bottom:1px solid #e5e7eb; font-size:10px; color:#6b7280; position:sticky; top:0;">`
+        // z-index on the header: the rows below carry `opacity` for the dim /
+        // broadly-cytotoxic states, and an opacity below 1 makes a stacking
+        // context that paints at the same level as a sticky element with
+        // z-index auto. Later siblings then win, and the list scrolled over
+        // the top of the heading instead of under it.
+        const headerHtml = `<div class="clb-drug-dd-header" style="padding:6px 10px; background:#f9fafb; border-bottom:1px solid #e5e7eb; font-size:10px; color:#6b7280; position:sticky; top:0; z-index:2;">`
             + `Compounds ranked by potency in the <b>${visibleCls.length}</b> currently-visible cell line${visibleCls.length === 1 ? '' : 's'}.`
             + ` Counts: <span style="color:#4c782e; font-weight:600;">v</span> = very-sensitive (AUC &lt; 0.3, &ldquo;kills most cells&rdquo;), `
             + `<span style="color:#a16207; font-weight:600;">p</span> = partly-sensitive (AUC 0.3&ndash;0.6, &ldquo;kills many cells&rdquo;). `
@@ -4814,7 +4819,7 @@ class CorrelationExplorer {
         }
         candidates.sort((a, b) => a.score - b.score || a.g.localeCompare(b.g));
         const top = candidates.slice(0, 80);
-        const header = `<div style="padding:6px 10px; background:#f9fafb; border-bottom:1px solid #e5e7eb; font-size:10px; color:#6b7280; position:sticky; top:0;">`
+        const header = `<div style="padding:6px 10px; background:#f9fafb; border-bottom:1px solid #e5e7eb; font-size:10px; color:#6b7280; position:sticky; top:0; z-index:2;">`
             + `${candidates.length} match${candidates.length === 1 ? '' : 'es'} for &ldquo;${q}&rdquo; · `
             + `<span style="color:#4c782e;">●</span> = on the curated cancer-pathway panel`
             + `</div>`;
@@ -4921,7 +4926,7 @@ class CorrelationExplorer {
         const matrixState = loadingMatrix
             ? `<span style="color:#a16207;">loading CN matrix…</span>`
             : `<b>${this.cnMetadata?.nGenes || 0}</b> genes available, pick any for CRISPR-targeting reference`;
-        const header = `<div style="padding:6px 10px; background:#f9fafb; border-bottom:1px solid #e5e7eb; font-size:10px; color:#6b7280; position:sticky; top:0;">`
+        const header = `<div style="padding:6px 10px; background:#f9fafb; border-bottom:1px solid #e5e7eb; font-size:10px; color:#6b7280; position:sticky; top:0; z-index:2;">`
             + `Pick a gene to sort cell lines by its copy number. ${matrixState}.`
             + `</div>`;
 
