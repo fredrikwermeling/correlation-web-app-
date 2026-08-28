@@ -30607,6 +30607,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 // What the ticks meant. The app knows when the selection came
                 // out of a filter; when it came from hand-picking it does not,
                 // and saying which is which stops a reader inventing a rule.
+                listOrderAtExport: (() => {
+                    const d = this._clbSortDescription();
+                    return d ? `${d}. This is how the Cell Line Browser list was ordered when this file was written, which is a hint about how the lines were picked but not proof: the sort can be changed after ticking.` : undefined;
+                })(),
                 selectionRule: (() => {
                     const bits = this._clbFilterBits();
                     return bits.length
@@ -30620,14 +30624,15 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             };
             context.plotDescribesWhat = `A table, one row per gene, comparing the ${sel.length} selected cell lines against ${sides?.cmpLabel || 'all other cell lines'} on gene effect (and on expression where extras.selectionDifferentialExpression is present). Not a chart: the table itself, ranked by |difference|, is what was on screen.`;
             description = `${sel.length} cell lines picked out in the Cell Line Browser, compared with ${sides?.cmpLabel || 'all other cell lines'}.`;
-            // Gate mode: the two sides are hand-drawn gates, both
+            // Gate mode: the two sides are fixed groups (drawn on a plot, or
+            // ticked in the browser list), both
             // shipped in full, so several of the sentences above are replaced
             // with ones that are true here. Fields only appear in this mode;
             // a non-gate export says nothing about gates (standing rule:
             // never document what the file does not contain).
             if (this._geInspectMode === 'gateAB' && this._geGateAB) {
                 const { aIds, bIds } = this._geGateAB;
-                const origin = this._geGateABOrigin === 'scatter' ? 'scatter' : 'heatmap';
+                const origin = ['scatter', 'clb'].includes(this._geGateABOrigin) ? this._geGateABOrigin : 'heatmap';
                 // gate_comparison, not cell_line_selection: the selection
                 // label drags in boilerplate that is false here (a comparison
                 // arm described as missing when both arms are in the file).
@@ -30657,13 +30662,31 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     gateA: compBlock(aIds),
                     gateB: compBlock(bIds)
                 };
+                const gateSort = this._clbGateSort || {};
                 const provenance = {
-                    _readMe: 'Where the two groups came from. They are hand-drawn regions, not a rule: no threshold or annotation produced them, so do not infer a criterion beyond what is stated here.',
+                    _readMe: origin === 'clb'
+                        ? 'Where the two groups came from. They were ticked in the Cell Line Browser list, so the ordering the list was in when each gate was set IS the axis that produced it: read listOrderWhenSet before inferring any other criterion.'
+                        : 'Where the two groups came from. They are hand-drawn regions, not a rule: no threshold or annotation produced them, so do not infer a criterion beyond what is stated here.',
                     drawnOn: origin === 'scatter'
                         ? `the scatter plot of ${this.currentInspect?.gene1 || '?'} vs ${this.currentInspect?.gene2 || '?'} (CRISPR gene effect on both axes)`
+                        : origin === 'clb'
+                        ? 'the Cell Line Browser list (lines ticked, then assigned to a gate)'
                         : 'the gene set heatmap (gates painted across its columns)',
                     gateSizes: { gateA: aIds.length, gateB: bIds.length }
                 };
+                // The list order in force when each gate was filled. Groups
+                // taken off the top and the bottom of a sorted list ARE that
+                // measure, and without this the reader has to guess the axis.
+                if (origin === 'clb' && (gateSort.A || gateSort.B)) {
+                    provenance.listOrderWhenSet = {
+                        _readMe: 'How the browser list was ordered at the moment each gate was filled, which is not necessarily the same for both gates and not necessarily the sort in force at export time. A gate taken from one end of a value-sorted list is defined by that value.',
+                        gateA: gateSort.A || 'not recorded',
+                        gateB: gateSort.B || 'not recorded'
+                    };
+                    if (gateSort.A && gateSort.A === gateSort.B) {
+                        provenance.effectiveCriterion = `both gates were taken from the same ordering of the list (${gateSort.A}), so the split is one-dimensional: it separates the lines by that measure. Per-line values for it are in cellLineMetadata where the app carries them.`;
+                    }
+                }
                 if (origin === 'scatter') {
                     const shapeOf = (s) => !s ? null
                         : s.path ? { kind: 'lasso', note: 'freehand region; its outline is not exported' }
@@ -30697,9 +30720,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 context.gateProvenance = provenance;
                 context.selectionRule = origin === 'scatter'
                     ? 'Both groups are gates drawn by hand on the scatter plot. No browser filter or annotation defines them; gateProvenance carries the geometry that does.'
+                    : origin === 'clb'
+                    ? 'Both groups were ticked in the Cell Line Browser list and assigned to a gate. gateProvenance.listOrderWhenSet says how the list was ordered when each was filled, which is the criterion where the gates were taken off the ends of a value sort.'
                     : 'Both groups are gates painted by hand across the heatmap columns. No browser filter or annotation defines them; they are kept by cell-line identity.';
                 context.plotDescribesWhat = `A table, one row per gene, comparing gate A (${aIds.length} cell lines) against gate B (${bIds.length} cell lines) on gene effect (and on expression where extras.selectionDifferentialExpression is present). Not a chart: the table itself, ranked by |difference|, is what was on screen.`;
-                description = `Gate A (${aIds.length} cell lines) vs gate B (${bIds.length} cell lines), hand-drawn on ${origin === 'scatter' ? 'the scatter plot' : 'the heatmap'}.`;
+                description = origin === 'clb'
+                    ? `Gate A (${aIds.length} cell lines) vs gate B (${bIds.length} cell lines), ticked in the Cell Line Browser${gateSort.A ? ` from a list ordered by ${gateSort.A}` : ''}.`
+                    : `Gate A (${aIds.length} cell lines) vs gate B (${bIds.length} cell lines), hand-drawn on ${origin === 'scatter' ? 'the scatter plot' : 'the heatmap'}.`;
             }
             const rows = this._geInspectResults?.rows || [];
             const exprRows = this._geInspectResults?.exprRows || [];
@@ -30767,6 +30794,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 type: 'cell_line_browser',
                 selection: ticked ? `${ticked} cell lines ticked` : 'everything the filters leave showing',
                 filters: bits.join('; ') || 'none',
+                sortedBy: this._clbSortDescription() || 'unsorted',
+                sortedBy_readMe: 'How the list was ordered on screen. If the selection was taken off the top or the bottom of it, this is the measure that defines the group.',
                 plotType: 'cell_line_list', stratification: 'none'
             };
             context.plotDescribesWhat = `Not a chart: a list, one row per cell line, from the Cell Line Browser, with its alterations, signatures and gene-effect data. ${ticked ? `${ticked} lines were ticked by hand.` : bits.length ? `Filtered to: ${bits.join('; ')}.` : 'No filter was active; every line in the panel is listed.'}`;
@@ -40083,6 +40112,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             // panel showing them.
             this._clbCollectionStates.clear();
             this._clbGates = { A: new Set(), B: new Set() };
+            this._clbGateSort = {};
             if (document.getElementById('clbCollectionPanel')) this._renderCollectionPanel?.();
             // Reset means back to the starting state, so ticked cell lines go
             // too. Leaving them made Inspect and Export act on a selection
@@ -41038,6 +41068,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // multi-column list (otherwise it would sit inside column 1 and push the
         // first cell line down).
         let caption = '';
+        let lblForSort = '';
         const captionStyle = 'column-span: all; break-inside: avoid; padding:4px 10px; font-size:10px; color:#6b7280; background:#f9fafb; border-bottom:1px solid #e5e7eb;';
         if (geMap && geValueLabel) {
             const fullLabel = geValueLabel === 'Expr' ? 'Expression (log2 TPM+1)' : 'Gene Effect (CERES)';
@@ -41047,7 +41078,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             </div>`;
         } else if (countMap) {
             const cnScope = this.cnLoaded ? 'full DepMap matrix' : 'curated cancer panel only, matrix still loading';
-            const lbl = mode === 'hotspot' ? 'Hotspot-mutation count'
+            const lbl = lblForSort = mode === 'hotspot' ? 'Hotspot-mutation count'
                       : mode === 'damaging' ? 'Damaging-mutation count'
                       : mode === 'fusion' ? 'Fusion count'
                       : mode === 'ploidy' ? 'Ploidy (avg chromosome copy number; normal = 2)'
@@ -41062,6 +41093,23 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             caption = `<div style="${captionStyle}">
                 Values shown: <b>${lbl}</b> per cell line.
             </div>`;
+        }
+
+        // The ordering in words, taken from the caption the list itself shows,
+        // so an export can never describe a different ordering than the screen.
+        // A group picked off an ordered list is defined by that order, and a
+        // reader asked to explain the group needs to know what it was.
+        {
+            const plain = (h) => { const d = document.createElement('div'); d.innerHTML = String(h || ''); return (d.textContent || '').replace(/\s+/g, ' ').trim(); };
+            const measure = (geMap && geValueLabel)
+                ? plain(`${geValueLabel === 'Expr' ? 'Expression (log2 TPM+1)' : 'Gene Effect'} for ${geGenesLabel}`)
+                : (countMap ? plain(typeof lblForSort !== 'undefined' ? lblForSort : '') : '');
+            this._clbSortContext = {
+                mode,
+                measure: measure || (mode === 'tissue' ? 'tissue, then subtype' : 'cell line name'),
+                direction: this._clbSortAsc ? 'lowest first' : 'highest first',
+                retroMeasure: mode === 'retro' ? retroMeasureLabels[retroMeasure] : undefined
+            };
         }
 
         // Remember the value column exactly as the list shows it, so "Export
@@ -42828,6 +42876,17 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         }
     }
 
+    // How the browser list was ordered, in one sentence. Name and tissue sorts
+    // say so plainly; a value sort names the measure, because that measure is
+    // what defines a group taken off the top or the bottom of the list.
+    _clbSortDescription() {
+        const c = this._clbSortContext;
+        if (!c) return null;
+        if (c.mode === 'name') return `cell line name, ${this._clbSortAsc ? 'A to Z' : 'Z to A'}`;
+        if (c.mode === 'tissue') return `tissue then subtype, ${this._clbSortAsc ? 'A to Z' : 'Z to A'}`;
+        return `${c.measure}, ${c.direction}`;
+    }
+
     // Same two colours the heatmap gates use, so A and B mean the same thing
     // wherever they appear.
     _clbGateColors() { return { A: '#7c3aed', B: '#0891b2' }; }
@@ -42877,6 +42936,11 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         }
         this._clbGates = this._clbGates || { A: new Set(), B: new Set() };
         this._clbGates[key] = new Set(ticked);
+        // The order the list was in when these lines were picked. Read at
+        // export time it could be a different sort entirely, which would
+        // describe the group by an ordering that never produced it.
+        this._clbGateSort = this._clbGateSort || {};
+        this._clbGateSort[key] = this._clbSortDescription();
         this._clbSelectedCellLines.clear();
         if (this._clbShowSelectedOnly) this._setClbShowSelectedOnly(false);
         const other = key === 'A' ? 'B' : 'A';
@@ -42891,6 +42955,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
     clearClbGate(key) {
         if (!this._clbGates?.[key]) return;
         this._clbGates[key] = new Set();
+        if (this._clbGateSort) delete this._clbGateSort[key];
         this.renderCellLineList();
         this.updateClbSelectionCount();
     }
@@ -58988,7 +59053,8 @@ ${clone.innerHTML}
         const altRows = this._geAltPanel?.stats ? this._geAltPanel.stats.length : null;
         const altFilter = this._geAltPanel?.filter && this._geAltPanel.filter !== 'all' ? this._geAltPanel.filter : null;
 
-        const gateDrawnOn = this._geGateABOrigin === 'scatter' ? 'the scatter plot' : 'the heatmap';
+        const gateDrawnOn = this._geGateABOrigin === 'scatter' ? 'the scatter plot'
+            : this._geGateABOrigin === 'clb' ? 'the Cell Line Browser list' : 'the heatmap';
         const scopeWord = isGateMode
             ? `the two gates drawn by hand on ${gateDrawnOn}`
             : ({ all: 'every other cell line in the panel', lineage: 'only the cell lines sharing a lineage with the selection', group: 'the tissue, subtype and disease groups ticked as the comparison', custom: 'a pasted list of comparison cell lines' })[this._geInspectScope] || 'the chosen comparison group';
