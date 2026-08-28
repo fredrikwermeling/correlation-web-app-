@@ -5248,6 +5248,21 @@
 
               <span class="clb-sep"></span>
 
+              <!-- Two named groups, filled from the ticks. Tick some lines,
+                   press Set Gate A, tick the others, press Set Gate B, then
+                   compare the two directly instead of either against the rest
+                   of the panel. The chips and the compare button reserve their
+                   space (visibility:hidden / disabled) rather than appearing
+                   and shoving their neighbours; see _syncClbGateUI. -->
+              <span class="clb-group-label" style="color:var(--green-700);">Gates</span>
+              <button id="clbSetGateA" class="btn btn-outline btn-sm" title="Put the ticked cell lines into gate A. The ticks then clear, ready for gate B.">Set Gate A</button>
+              <span id="clbGateAChip" style="font-size:10px; visibility:hidden; white-space:nowrap;"></span>
+              <button id="clbSetGateB" class="btn btn-outline btn-sm" title="Put the ticked cell lines into gate B.">Set Gate B</button>
+              <span id="clbGateBChip" style="font-size:10px; visibility:hidden; white-space:nowrap;"></span>
+              <button id="clbInspectABBtn" class="btn btn-outline btn-sm clb-tall-btn" style="color:#5d9239; border-color:#6ba544;" title="Compare gate A against gate B, gene by gene." disabled>Inspect<br><span>A vs B</span></button>
+
+              <span class="clb-sep"></span>
+
               <span class="clb-group-label" style="color:var(--green-700);">Look at</span>
               <button id="clbInspectGEBtn" class="btn btn-outline btn-sm clb-tall-btn" style="color:#5d9239; border-color:#6ba544;" title="Compare the selected cell lines against every other cell line, gene by gene. Fast (~seconds).">Inspect<br><span>selected vs rest</span></button>
               <button id="clbSendToBtn" class="btn btn-outline btn-sm clb-tall-btn" style="color:#5d9239; border-color:#6ba544;" title="Carry these cell lines over to another view: highlight them on a chart, or narrow that view to them.">Send to<br><span>another view</span></button>
@@ -5546,6 +5561,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v88_114"></script>
+    <script src="app.js?v=v88_115"></script>
 </body>
 </html>

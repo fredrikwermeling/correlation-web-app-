@@ -300,6 +300,10 @@ class CorrelationExplorer {
 
         // Cell Line Browser state
         this._clbSelectedCellLines = new Set();
+        // Gates A and B filled from the ticks, so a comparison can be "these
+        // lines against those" rather than only "these against the rest".
+        // Same two gates the heatmap and scatter use, without the drawing.
+        this._clbGates = { A: new Set(), B: new Set() };
         this._clbInspectedCellLine = null;
         this._clbVisibleCellLines = [];
         this._clbShowSelectedOnly = false;
@@ -24657,7 +24661,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 // as hard as any dropdown.
                 collections: this._clbCollectionStates?.size ? [...this._clbCollectionStates.entries()] : null,
                 customList: this._customCellLineFilterCLB?.size ? [...this._customCellLineFilterCLB] : null,
-                selected: this._clbSelectedCellLines?.size ? [...this._clbSelectedCellLines] : null
+                selected: this._clbSelectedCellLines?.size ? [...this._clbSelectedCellLines] : null,
+                gates: (this._clbGates?.A?.size || this._clbGates?.B?.size)
+                    ? { A: [...(this._clbGates.A || [])], B: [...(this._clbGates.B || [])] } : null
             } : null
         };
     }
@@ -24711,6 +24717,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             this._clbCollectionStates = new Map(c.clb.collections || []);
             this._customCellLineFilterCLB = c.clb.customList?.length ? new Set(c.clb.customList) : null;
             this._clbSelectedCellLines = new Set(c.clb.selected || []);
+            this._clbGates = { A: new Set(c.clb.gates?.A || []), B: new Set(c.clb.gates?.B || []) };
             try { this.renderCellLineList?.(); } catch (e) { /* the grid rebuild below still runs */ }
         }
         set('lineageFilter', c.lineageFilter);
@@ -40054,6 +40061,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             // Quick filters are filters too, so a reset clears them and the
             // panel showing them.
             this._clbCollectionStates.clear();
+            this._clbGates = { A: new Set(), B: new Set() };
             if (document.getElementById('clbCollectionPanel')) this._renderCollectionPanel?.();
             // Reset means back to the starting state, so ticked cell lines go
             // too. Leaving them made Inspect and Export act on a selection
@@ -40084,6 +40092,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 this.showCellLineDetail(clId);
             }
         });
+
+        document.getElementById('clbSetGateA')?.addEventListener('click', () => this.setClbGateFromSelection('A'));
+        document.getElementById('clbSetGateB')?.addEventListener('click', () => this.setClbGateFromSelection('B'));
+        document.getElementById('clbInspectABBtn')?.addEventListener('click', () => this.inspectClbGateAB());
 
         document.getElementById('clbSelectVisible').addEventListener('click', () => {
             this._clbVisibleCellLines.forEach(cl => this._clbSelectedCellLines.add(cl));
@@ -41051,6 +41063,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     : String(mode))
                 : '';
 
+        const gateA = this._clbGates?.A, gateB = this._clbGates?.B;
+        const gateCol = this._clbGateColors();
         const html = filtered.map(cl => {
             const name = this.getCellLineName(cl);
             const lin = this.getCellLineLineage(cl);
@@ -41151,9 +41165,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 ? `<span style="margin-right:3px; flex-shrink:0; cursor:help; font-size:10px; opacity:0.75;" title="${this.esc(this._virusTitle(cl))}">&#129440;</span>`
                 : '';
             const titleParts = [name, lin, sub, sx.title, vLbl ? vLbl + '-transformed' : '', prob ? prob.category : ''].filter(Boolean).join(' · ');
+            // Which gate this line is already in. Shown while the other gate
+            // is being ticked, so membership is visible rather than
+            // remembered.
+            const gKey = gateA?.has(cl) ? 'A' : gateB?.has(cl) ? 'B' : '';
+            const gateStr = gKey
+                ? `<span style="font-size:9px; font-weight:700; color:#fff; background:${gateCol[gKey]}; border-radius:6px; padding:0 4px; margin-right:3px; flex-shrink:0;" title="In gate ${gKey}">${gKey}</span>`
+                : '';
             return `<div class="${cls.join(' ')}" data-clid="${cl}" title="${titleParts}">` +
                 `<input type="checkbox"${selected ? ' checked' : ''}>` +
-                sexStr + probStr + virusStr +
+                sexStr + probStr + virusStr + gateStr +
                 `<span class="clb-entry-name">${name}</span>` +
                 `<span class="clb-entry-tissue">${lin}${sub ? ' · ' + sub : ''}</span>${sortValStr}</div>`;
         }).join('');
@@ -42786,7 +42807,81 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         }
     }
 
+    // Same two colours the heatmap gates use, so A and B mean the same thing
+    // wherever they appear.
+    _clbGateColors() { return { A: '#7c3aed', B: '#0891b2' }; }
+
+    // Chips carry the count and a clear link; both they and the compare button
+    // hold their space at all times, so filling a group never shifts the row.
+    _syncClbGateUI() {
+        const g = this._clbGates || (this._clbGates = { A: new Set(), B: new Set() });
+        const col = this._clbGateColors();
+        const tickN = this._clbSelectedCellLines?.size || 0;
+        ['A', 'B'].forEach(key => {
+            const size = g[key]?.size || 0;
+            const chip = document.getElementById(`clbGate${key}Chip`);
+            if (chip) {
+                chip.style.visibility = size ? 'visible' : 'hidden';
+                chip.innerHTML = size
+                    ? `<span style="color:${col[key]}; font-weight:600;">${key}: ${size.toLocaleString()}</span>`
+                      + ` <a href="#" onclick="event.preventDefault();app.clearClbGate('${key}')" style="color:${col[key]};" title="Clear gate ${key}">x</a>`
+                    : '';
+            }
+            const btn = document.getElementById(`clbSetGate${key}`);
+            if (btn) {
+                btn.disabled = !tickN;
+                btn.title = tickN
+                    ? `Put the ${tickN.toLocaleString()} ticked cell line${tickN === 1 ? '' : 's'} into gate ${key}${size ? ', replacing what is in it' : ''}.`
+                    : 'Tick some cell lines first.';
+            }
+        });
+        const ab = document.getElementById('clbInspectABBtn');
+        if (ab) {
+            const ready = (g.A?.size || 0) > 0 && (g.B?.size || 0) > 0;
+            ab.disabled = !ready;
+            ab.title = ready
+                ? `Compare gate A (${g.A.size.toLocaleString()}) against gate B (${g.B.size.toLocaleString()}), gene by gene.`
+                : 'Fill both gates first: tick cell lines and press Set Gate A, then tick others and press Set Gate B.';
+        }
+    }
+
+    // Filling a group also clears the ticks: the next thing to do is pick the
+    // other group, and starting that from the previous group's ticks means
+    // untangling them by hand first.
+    setClbGateFromSelection(key) {
+        const ticked = [...(this._clbSelectedCellLines || [])];
+        if (!ticked.length) {
+            this.showCopyNotification?.(`Tick some cell lines first, then press Set Gate ${key}.`);
+            return;
+        }
+        this._clbGates = this._clbGates || { A: new Set(), B: new Set() };
+        this._clbGates[key] = new Set(ticked);
+        this._clbSelectedCellLines.clear();
+        if (this._clbShowSelectedOnly) this._setClbShowSelectedOnly(false);
+        const other = key === 'A' ? 'B' : 'A';
+        const otherN = this._clbGates[other]?.size || 0;
+        this.showCopyNotification?.(
+            `Gate ${key}: ${ticked.length.toLocaleString()} cell line${ticked.length === 1 ? '' : 's'}. `
+            + (otherN ? 'Press Inspect A vs B to compare them.' : `Now tick the lines for gate ${other}.`));
+        this.renderCellLineList();
+        this.updateClbSelectionCount();
+    }
+
+    clearClbGate(key) {
+        if (!this._clbGates?.[key]) return;
+        this._clbGates[key] = new Set();
+        this.renderCellLineList();
+        this.updateClbSelectionCount();
+    }
+
+    inspectClbGateAB() {
+        const a = this._clbGates?.A, b = this._clbGates?.B;
+        if (!a?.size || !b?.size) return;
+        this.inspectGateComparison([...a], [...b], { origin: 'clb' });
+    }
+
     updateClbSelectionCount() {
+        this._syncClbGateUI();
         this._syncClbShowSelectedBtn();
         const el = document.getElementById('clbSelectionCount');
         if (!el) return;
@@ -47056,8 +47151,14 @@ ${clone.innerHTML}
         }
         this._geInspectMode = 'gateAB';
         this._geGateAB = { aIds, bIds };
-        this._geGateABOrigin = opts.origin === 'scatter' ? 'scatter' : 'heatmap';
-        const drawnOn = this._geGateABOrigin === 'scatter' ? 'the scatter plot' : 'the heatmap';
+        this._geGateABOrigin = ['scatter', 'clb'].includes(opts.origin) ? opts.origin : 'heatmap';
+        // Where the two groups came from, in that view's own words. The browser
+        // groups are ticked rather than drawn, so it does not say "drawn on".
+        const drawnOn = this._geGateABOrigin === 'scatter' ? 'the scatter plot'
+            : this._geGateABOrigin === 'clb' ? 'the cell line list' : 'the heatmap';
+        const setAgainIn = this._geGateABOrigin === 'clb'
+            ? 'Tick a different set and press Set Gate A or Set Gate B to change this comparison.'
+            : 'Redraw the gates there to change this comparison.';
 
         const cellLines = this.metadata.cellLines;
         const clIndexOf = new Map(cellLines.map((cl, i) => [cl, i]));
@@ -47170,7 +47271,9 @@ ${clone.innerHTML}
                 this._showGEInspectHelp();
             });
         }
-        this._geVolcanoHeader = { title, sub: `Gate A vs gate B, drawn on ${drawnOn}.` };
+        this._geVolcanoHeader = { title, sub: this._geGateABOrigin === 'clb'
+            ? `Gate A vs gate B, ticked in ${drawnOn}.`
+            : `Gate A vs gate B, drawn on ${drawnOn}.` };
 
         const exprNote = this.expressionLoaded
             ? `Difference in mRNA level, log2(TPM+1). A difference of 1 is a two-fold change. Gate B holds ${bIds.length.toLocaleString()} cell lines.`
@@ -47184,8 +47287,8 @@ ${clone.innerHTML}
         const scopeBox = document.getElementById('geInspectScopeBox');
         if (scopeBox) {
             scopeBox.innerHTML = `<div style="font-size:11px; color:#374151; line-height:1.5;">`
-                + `Fixed: <b>Gate A</b> (${aIds.length.toLocaleString()} cell lines) vs <b>Gate B</b> (${bIds.length.toLocaleString()} cell lines), drawn on ${drawnOn}.`
-                + ` Redraw the gates there to change this comparison.</div>`
+                + `Fixed: <b>Gate A</b> (${aIds.length.toLocaleString()} cell lines) vs <b>Gate B</b> (${bIds.length.toLocaleString()} cell lines), from ${drawnOn}.`
+                + ` ${setAgainIn}</div>`
                 + this._geCoverageWarningHtml(geCoverage);
         }
 
