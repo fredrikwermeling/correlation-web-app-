@@ -2064,6 +2064,17 @@
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
+        /* Inline busy marker for anything that blocks long enough to look like
+           a click that did nothing. Takes its colour from the text around it,
+           so it works on a button and in a status line alike. */
+        .busy-dot {
+            display: inline-block; width: 10px; height: 10px; margin-right: 5px;
+            border: 2px solid currentColor; border-right-color: transparent;
+            border-radius: 50%; vertical-align: -1px; opacity: .75;
+            animation: spin .7s linear infinite;
+        }
+        .busy-secs { font-variant-numeric: tabular-nums; opacity: .8; }
+        @media (prefers-reduced-motion: reduce) { .busy-dot { animation: none; } }
         @keyframes pulse {
             0%, 100% { width: 30%; margin-left: 0; }
             50% { width: 60%; margin-left: 20%; }
@@ -5568,7 +5579,8 @@
             <!-- Why plain is the default. Both sizes are only known once the
                  file has been built, so the rule is stated here instead. -->
             <div style="font-size:10px; color:#6b7280; margin-top:5px; line-height:1.45;">
-              Most chat assistants cannot open a compressed attachment, so plain is the default and is usually the one to send.
+              Plain is the safer upload: an assistant reads it directly, while a .gz has to be unpacked first, which needs a
+              code / data-analysis tool switched on. Pick compressed if you know yours has one, or if the file is large.
               Exports over 8 MB switch to compressed on their own. The exact sizes appear beside each choice once you have exported.
             </div>
             <!-- The companion image ships beside the data file so the reading
@@ -5594,6 +5606,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v88_120"></script>
+    <script src="app.js?v=v88_121"></script>
 </body>
 </html>

@@ -20677,6 +20677,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     async findInspectCorrelates() {
         const xGene = (document.getElementById('inspectGeneX')?.value || '').trim().toUpperCase();
         if (!xGene) { alert('Enter an X-axis gene first.'); return; }
+        // Two whole-matrix scans; on the full panel this runs for tens of
+        // seconds with nothing on screen to say so.
+        const busy = this.startBusy({ button: 'inspectFindCorrelatesBtn', label: 'Scanning' });
+        try {
+        await new Promise(r => setTimeout(r, 0));
         const xType = document.getElementById('xAxisDataType')?.value || 'ge';
         // Load expression up front so the "Top Expression correlates" panel always
         // populates. Without this it came out empty whenever expression had never
@@ -21007,6 +21012,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         document.getElementById('icExprHeadN').addEventListener('click', () => { toggleSort(sortState.expr, 'n'); renderLists(); });
 
         renderLists();
+        } finally { busy.stop(); }
     }
 
     async _runInspectCorrelatesEnrichr(kind) {
@@ -29957,20 +29963,76 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         };
     }
 
+    // Run a synchronous, slow job with the busy state visible. The work blocks
+    // the thread, so the spinner has to be painted in an earlier task or it
+    // never appears; setTimeout rather than rAF, which a background tab never
+    // fires.
+    _runBusy(opts, fn) {
+        const busy = this.startBusy(opts);
+        setTimeout(() => {
+            try { fn(); } finally { busy.stop(); }
+        }, 30);
+    }
+
+    // Shared busy state for anything slow enough that a user could think the
+    // click missed. The button says what it is doing and stops accepting
+    // clicks; a spinner and a seconds counter say it is still going. Returns a
+    // handle: setMessage to change the wording as the work moves on, stop to
+    // put everything back. Always stop it from a finally, or a failed run
+    // leaves the button dead.
+    startBusy({ button, status, label = 'Working', message } = {}) {
+        const btn = button ? document.getElementById(button) : null;
+        const statusEl = status ? document.getElementById(status) : null;
+        const t0 = Date.now();
+        const prev = btn ? { html: btn.innerHTML, disabled: btn.disabled } : null;
+        let msg = message || label;
+        let stopped = false;
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = `<span class="busy-dot"></span>${this.esc(label)}\u2026`;
+        }
+        const paint = () => {
+            if (stopped || !statusEl) return;
+            const secs = Math.round((Date.now() - t0) / 1000);
+            statusEl.innerHTML = `<span class="busy-dot"></span>${this.esc(msg)}`
+                + (secs >= 1 ? ` <span class="busy-secs">${secs}s</span>` : '');
+        };
+        paint();
+        const timer = setInterval(paint, 250);
+        return {
+            setMessage: (m) => { msg = m; paint(); },
+            elapsed: () => Math.round((Date.now() - t0) / 1000),
+            stop: (finalMessage) => {
+                if (stopped) return;
+                stopped = true;
+                clearInterval(timer);
+                if (btn && prev) { btn.innerHTML = prev.html; btn.disabled = prev.disabled; }
+                if (statusEl) statusEl.textContent = finalMessage != null ? finalMessage : '';
+            }
+        };
+    }
+
     async exportFullAIAnalysis(opts = {}) {
         // Settings from the custom dialog, when it was the one that asked.
         const custom = opts.custom && opts.custom.active ? opts.custom : null;
-        const statusEl = document.getElementById('aiExportStatus');
+        // A full export runs for tens of seconds on the big cohorts. Without a
+        // spinner and a clock the Export button looked like it had swallowed
+        // the click, and the obvious response is to press it again.
+        const busy = this.startBusy({
+            button: custom ? null : 'aiExportBtn',
+            status: custom ? 'caiStatus' : 'aiExportStatus',
+            label: 'Exporting',
+            message: 'Collecting data'
+        });
+        this._aiExportBusy = busy;
         const setStatus = (msg) => {
-            if (statusEl) statusEl.textContent = msg;
-            // The custom dialog drives this too, and its own status line is
-            // the only one on screen then: the standard dialog is closed, so
-            // progress and, worse, "No cell lines to export" went nowhere.
+            busy.setMessage(String(msg).replace(/\.\.\.$/, ''));
             if (custom) {
                 const c = document.getElementById('caiStatus');
-                if (c) c.textContent = msg;
+                if (c && !c.querySelector('.busy-dot')) c.textContent = msg;
             }
         };
+        try {
         setStatus('Collecting data...');
 
         // Normalize source aliases (Phase 3, one exporter for every source).
@@ -29983,9 +30045,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             else if (custom.cohort === 'list' && custom.cohortList?.length) allCLs = [...new Set(custom.cohortList)];
         }
         if (!allCLs.length) {
-            setStatus(custom && custom.cohort === 'view'
+            // stop() owns the status line from here, so the reason goes in as
+            // its final message rather than through setStatus, which a stopped
+            // busy handle no longer paints.
+            const why = custom && custom.cohort === 'view'
                 ? 'No cell lines: nothing is open, so "what the current view shows" is empty. Pick "Every cell line", name some, or open a view first.'
-                : 'No cell lines to export.');
+                : 'No cell lines to export.';
+            busy.stop(why);
+            if (custom) { const c = document.getElementById('caiStatus'); if (c) c.textContent = why; }
             return false;
         }
 
@@ -32892,12 +32959,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const compressed = pako.gzip(jsonStr);
         const uncompressedBytes = new Blob([jsonStr]).size;
 
-        // Format choice: ChatGPT (and others) cannot open a .json.gz
-        // attachment, so plain JSON is offered and defaults on for anything
-        // under 8 MB uncompressed; past that, compressed is the sane default
-        // and plain stays selectable. The Custom export for AI dialog has no
-        // format radios of its own, so it keeps the original always-gzip
-        // behavior.
+        // Format choice: a .json.gz has to be decompressed before it can be
+        // read, which needs whatever code / data-analysis tool the assistant
+        // offers to be switched on; plain JSON needs nothing. So plain is the
+        // safer default and is preselected under 8 MB uncompressed; past that
+        // the size argument wins and compressed is chosen, with plain still
+        // selectable. The Custom export for AI dialog has no format radios of
+        // its own, so it keeps the original always-gzip behavior.
         let useCompressed = true;
         if (!custom) {
             const EIGHT_MB = 8 * 1024 * 1024;
@@ -32950,8 +33018,15 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (exprMatrix) infoParts.push(`${Object.keys(exprMatrix).length} expr genes`);
         if (topCorrelates) infoParts.push(`${topCorrelates.length} correlates`);
         infoParts.push(useCompressed ? `${sizeMB} MB` : `${sizeMB} MB, plain .json`);
-        setStatus(`Exported: ${infoParts.join(', ')}`);
+        busy.stop(`Exported in ${busy.elapsed()}s: ${infoParts.join(', ')}`);
         return true;
+        } finally {
+            // Every exit restores the button, including the early returns for
+            // an empty cohort and any throw on the way. A dead Export button
+            // is worse than the error it came from.
+            busy.stop();
+            this._aiExportBusy = null;
+        }
     }
 
     downloadGECellLineCSV() {
@@ -40155,7 +40230,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         document.getElementById('clbSetGateA')?.addEventListener('click', () => this.setClbGateFromSelection('A'));
         document.getElementById('clbSetGateB')?.addEventListener('click', () => this.setClbGateFromSelection('B'));
-        document.getElementById('clbInspectABBtn')?.addEventListener('click', () => this.inspectClbGateAB());
+        document.getElementById('clbInspectABBtn')?.addEventListener('click', () =>
+            this._runBusy({ button: 'clbInspectABBtn', label: 'Comparing' }, () => this.inspectClbGateAB()));
         document.getElementById('clbGateEnds')?.addEventListener('click', () => this.setClbGatesFromEnds());
         document.getElementById('clbGateEndsPct')?.addEventListener('input', () => this._syncClbGateUI());
 
@@ -40251,7 +40327,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             // comparison choice over meant reopening it with "my own list"
             // already selected, which reads as the app being stuck.
             this._resetGEInspectScope();
-            this.inspectSelectionGE();
+            this._runBusy({ button: 'clbInspectGEBtn', label: 'Comparing' },
+                () => this.inspectSelectionGE());
         });
         document.getElementById('clbCopyNamesBtn')?.addEventListener('click', () => this.copyCellLineNames());
         document.getElementById('clbSendToBtn')?.addEventListener('click', (e) => this.openSendSelectionPopout(e.currentTarget));
