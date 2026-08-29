@@ -40147,6 +40147,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         document.getElementById('clbSetGateA')?.addEventListener('click', () => this.setClbGateFromSelection('A'));
         document.getElementById('clbSetGateB')?.addEventListener('click', () => this.setClbGateFromSelection('B'));
         document.getElementById('clbInspectABBtn')?.addEventListener('click', () => this.inspectClbGateAB());
+        document.getElementById('clbGateEnds')?.addEventListener('click', () => this.setClbGatesFromEnds());
+        document.getElementById('clbGateEndsPct')?.addEventListener('input', () => this._syncClbGateUI());
 
         document.getElementById('clbSelectVisible').addEventListener('click', () => {
             this._clbVisibleCellLines.forEach(cl => this._clbSelectedCellLines.add(cl));
@@ -42915,6 +42917,18 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                     : 'Tick some cell lines first.';
             }
         });
+        const ends = document.getElementById('clbGateEnds');
+        if (ends) {
+            const measured = this._clbMeasuredInSortOrder();
+            const pctEl = document.getElementById('clbGateEndsPct');
+            const raw = parseFloat(pctEl?.value);
+            const pct = Math.min(50, Math.max(1, Number.isFinite(raw) ? raw : 25));
+            ends.disabled = !measured || measured.length < 4;
+            if (pctEl) pctEl.disabled = ends.disabled;
+            ends.title = ends.disabled
+                ? 'Sort the list by a measured value first (expression, drug response, copy number, interferon or retroelement signal), then this fills both gates from its two ends.'
+                : `Put the top ${Math.max(1, Math.round(measured.length * pct / 100))} into gate A and the bottom ${Math.max(1, Math.round(measured.length * pct / 100))} into gate B, of the ${measured.length.toLocaleString()} cell lines in view that have a value for this sort.`;
+        }
         const ab = document.getElementById('clbInspectABBtn');
         if (ab) {
             const ready = (g.A?.size || 0) > 0 && (g.B?.size || 0) > 0;
@@ -42923,6 +42937,47 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 ? `Compare gate A (${g.A.size.toLocaleString()}) against gate B (${g.B.size.toLocaleString()}), gene by gene.`
                 : 'Fill both gates first: tick cell lines and press Set Gate A, then tick others and press Set Gate B.';
         }
+    }
+
+    // The visible cell lines that actually carry a value for whatever the list
+    // is sorted by, in the order they are drawn. Unscored lines sit at the end
+    // of every value sort, so without this the "bottom" gate would fill with
+    // lines that were never measured rather than with low ones.
+    _clbMeasuredInSortOrder() {
+        const map = this._clbListValues;
+        const mode = this._clbSortMode;
+        if (!map || mode === 'name' || mode === 'tissue') return null;
+        const out = [];
+        for (const cl of (this._clbVisibleCellLines || [])) {
+            const v = map.get(cl);
+            if (v !== undefined && v !== null && !Number.isNaN(v)) out.push(cl);
+        }
+        return out;
+    }
+
+    // Fill both gates from the two ends of the current value sort. The list is
+    // already in the order the user chose, so "top" is simply what is on
+    // screen first, and flipping the sort direction swaps which end is which.
+    setClbGatesFromEnds() {
+        const measured = this._clbMeasuredInSortOrder();
+        if (!measured || measured.length < 4) {
+            this.showCopyNotification?.(measured
+                ? `Only ${measured.length} cell line${measured.length === 1 ? '' : 's'} in view has a value for this sort, too few to split.`
+                : 'Sort the list by a measured value first (expression, drug response, copy number, interferon or retroelement signal).');
+            return;
+        }
+        const raw = parseFloat(document.getElementById('clbGateEndsPct')?.value);
+        const pct = Math.min(50, Math.max(1, Number.isFinite(raw) ? raw : 25));
+        const k = Math.max(1, Math.round(measured.length * pct / 100));
+        this._clbGates = { A: new Set(measured.slice(0, k)), B: new Set(measured.slice(-k)) };
+        const sortWords = this._clbSortDescription();
+        this._clbGateSort = { A: sortWords, B: sortWords };
+        this._clbSelectedCellLines.clear();
+        if (this._clbShowSelectedOnly) this._setClbShowSelectedOnly(false);
+        this.showCopyNotification?.(
+            `Gate A: the top ${k}, gate B: the bottom ${k}, of the ${measured.length.toLocaleString()} cell lines in view with a value for this sort.`);
+        this.renderCellLineList();
+        this.updateClbSelectionCount();
     }
 
     // Filling a group also clears the ticks: the next thing to do is pick the
@@ -47567,7 +47622,12 @@ ${clone.innerHTML}
             p: (a, b) => (b.tested - a.tested) || (a.pValue - b.pValue)
         };
         const sortCol = SORTS[st.sortCol] ? st.sortCol : null;
-        const baseCmp = sortCol ? SORTS[sortCol] : ((a, b) => (Math.abs(b.diff) - Math.abs(a.diff)) || (b.chi2 - a.chi2));
+        // Default order puts TESTED rows first. A row where one side has a
+        // single cell line with a call scores a 100-point gap by construction
+        // (1/1 against 0/3) and used to head the table ahead of every row
+        // resting on real numbers.
+        const baseCmp = sortCol ? SORTS[sortCol]
+            : ((a, b) => (b.tested - a.tested) || (Math.abs(b.diff) - Math.abs(a.diff)) || (b.chi2 - a.chi2));
         const flip = sortCol && st.sortFlipped ? -1 : 1;
         const ranked = [...all].sort((a, b) => flip * baseCmp(a, b));
         const CHIPS = [
@@ -47627,12 +47687,18 @@ ${clone.innerHTML}
         const BADGE = {
             hotspot: '#b58a3c', damaging: '#a8553a', fusion: '#4f6fa8', amp: '#8a5ba8', del: '#3f7f6f'
         };
+        // A percentage over one or two cell lines is not a rate. Mark it where
+        // it is read, so "100%" cannot be taken at face value: the copy-number
+        // rows in particular only cover the lines with whole-genome sequencing,
+        // which can be a single line out of a gate of four.
+        const thinN = (n, side) => n >= 3 ? ''
+            : `<span style="color:#b45309; cursor:help;" title="Only ${n} cell line${n === 1 ? '' : 's'} in ${side} has a call for this alteration, so this percentage rests on ${n === 1 ? 'a single line' : 'two lines'}. Copy-number rows cover only the lines with whole-genome sequencing.">&#9888;</span>`;
         shown.forEach(m => {
             const badge = `<span style="background:${BADGE[m.type] || '#6b7280'}; color:#fff; padding:1px 5px; border-radius:3px; font-size:9px; margin-left:5px;">${this.esc(m.word)}</span>`;
             html += `<tr>
                 <td style="padding:3px 6px; border-bottom:1px solid #f3f4f6;"><span style="font-weight:600; color:#4c782e;">${this.esc(m.gene)}</span>${badge}</td>
-                <td style="padding:3px 6px; border-bottom:1px solid #f3f4f6; text-align:center; color:#2563eb;">${m.pctA.toFixed(1)}%<span style="color:#9ca3af;"> (${m.mutA}/${m.nA})</span></td>
-                <td style="padding:3px 6px; border-bottom:1px solid #f3f4f6; text-align:center; color:#dc2626;">${m.pctB.toFixed(1)}%<span style="color:#9ca3af;"> (${m.mutB}/${m.nB})</span></td>
+                <td style="padding:3px 6px; border-bottom:1px solid #f3f4f6; text-align:center; color:#2563eb;">${m.pctA.toFixed(1)}%${thinN(m.nA, w.sel)}<span style="color:${m.nA < 3 ? '#b45309' : '#9ca3af'};"> (${m.mutA}/${m.nA})</span></td>
+                <td style="padding:3px 6px; border-bottom:1px solid #f3f4f6; text-align:center; color:#dc2626;">${m.pctB.toFixed(1)}%${thinN(m.nB, w.cmp)}<span style="color:${m.nB < 3 ? '#b45309' : '#9ca3af'};"> (${m.mutB}/${m.nB})</span></td>
                 <td style="padding:3px 6px; border-bottom:1px solid #f3f4f6; text-align:center; font-weight:600;">${m.diff > 0 ? '+' : ''}${m.diff.toFixed(1)}</td>
                 <td style="padding:3px 6px; border-bottom:1px solid #f3f4f6; text-align:center;${m.tested ? '' : ' color:#9ca3af;'}" ${m.tested ? '' : 'title="Fewer than three cell lines with a call on a side, so this row is counted but not tested"'}>${m.tested ? this.formatPValue(m.pValue) : 'not tested'}</td>
             </tr>`;
@@ -47648,7 +47714,7 @@ ${clone.innerHTML}
         } else {
             html += `<span>All ${filtered.length.toLocaleString()} row${filtered.length === 1 ? '' : 's'} shown.</span>`;
         }
-        if (anyUntested) html += `<span>Rows marked "not tested" have fewer than three cell lines with a call on a side.</span>`;
+        if (anyUntested) html += `<span>Rows marked "not tested" have fewer than three cell lines with a call on a side; they sort below the tested rows, and a &#9888; marks the side that is thin.</span>`;
         html += '</div>';
         return html;
     }
