@@ -7088,6 +7088,10 @@ class CorrelationExplorer {
             this._aiExportSource = source;
             const dialog = document.getElementById('aiAnalysisDialog');
             if (!dialog) return;
+            // A pinned gene card sits above every dialog (z-index 10001) and
+            // belongs to the view underneath, so it goes when a dialog opens,
+            // the same as when a popout opens.
+            this.hideGeneTooltip?.(true);
             // Reset textarea content from any previous open.
             const ta = document.getElementById('aiQuestion');
             if (ta) ta.value = '';
@@ -33298,7 +33302,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 ev.preventDefault();
                 this.hideGeneTooltip(true);
             };
-            setTimeout(() => document.addEventListener('click', dismiss, { once: true }), 0);
+            // NOT { once: true }: that listener is spent by the FIRST click
+            // anywhere, including a click inside the card, after which nothing
+            // outside it dismissed the card any more. On a phone that is the
+            // only exit the card offers ("Tap anywhere to close"), so one tap
+            // on the card left it stuck on screen. _cleanup removes this.
+            setTimeout(() => document.addEventListener('click', dismiss), 0);
             // `capture: true` lets us intercept Escape before any higher-level
             // listeners (modals register their Esc handlers in bubble phase).
             document.addEventListener('keydown', escDismiss, true);

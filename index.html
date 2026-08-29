@@ -5565,6 +5565,12 @@
             <label style="display:block; cursor:pointer;">
               <input type="radio" name="aiExportFormat" id="aiFormatGz" value="gz" style="margin-right:5px; vertical-align:middle;">Compressed (.json.gz, smallest)<span id="aiFormatGzSize" style="color:#6b7280;"></span>
             </label>
+            <!-- Why plain is the default. Both sizes are only known once the
+                 file has been built, so the rule is stated here instead. -->
+            <div style="font-size:10px; color:#6b7280; margin-top:5px; line-height:1.45;">
+              Most chat assistants cannot open a compressed attachment, so plain is the default and is usually the one to send.
+              Exports over 8 MB switch to compressed on their own. The exact sizes appear beside each choice once you have exported.
+            </div>
             <!-- The companion image ships beside the data file so the reading
                  assistant can see the same picture the user was looking at. -->
             <label style="display:block; margin-top:8px; padding-top:8px; border-top:1px solid #e5e7eb; cursor:pointer;">
@@ -5588,6 +5594,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v88_119"></script>
+    <script src="app.js?v=v88_120"></script>
 </body>
 </html>
