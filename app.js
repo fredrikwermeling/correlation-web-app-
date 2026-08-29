@@ -29634,6 +29634,148 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         ];
     }
 
+    // ---- CORRELATE-VIEW: an assistant telling the user what to LOOK AT ----
+    //
+    // The request block builds a file; this one opens a view. An assistant
+    // arguing from an export can only describe a plot in words, and the user
+    // then has to reconstruct it from the description. A pasted view block
+    // sets it up instead, so "look at ADAR against USP18 in lung" becomes a
+    // thing the app does rather than a thing the user has to find.
+    _aiViewSyntax() {
+        return [
+            'CORRELATE-VIEW v1',
+            'view: scatter | gene-effect | cell-lines',
+            'x: <gene>            (scatter) and y: <gene>',
+            'x-measure / y-measure: ge | expr | cn   (default ge)',
+            'gene: <gene>         (gene-effect) with measure: ge | expr',
+            'tissue: <name>       (any view, optional)',
+            'disease: <name>      (any view, optional)',
+            'colour-by: tissue | subtype | disease   (scatter, optional)',
+            'sort: drug | expression | gene-effect | copy-number | interferon | retroelement | name   (cell-lines)',
+            'sort-gene: <gene or compound>   (cell-lines, for the sorts that need one)',
+            'why: <one line saying what the user should look for>'
+        ].join('\n');
+    }
+
+    // Parse a view block. Same forgiving shape as the request parser: markdown
+    // and fences stripped, keys matched loosely, anything unusable reported
+    // rather than dropped.
+    _parseAIView(text) {
+        const out = { view: null, opts: {}, why: '', applied: [], ignored: [] };
+        const lines = String(text || '')
+            .replace(/```[a-z]*/gi, '')
+            .split(/\r?\n/)
+            .map(l => l.replace(/^\s*(?:[-*\u2022]|\d+[.)])\s*/, '').replace(/\*\*/g, '').trim())
+            .filter(Boolean);
+        const VIEWS = {
+            scatter: 'scatter', correlation: 'scatter', 'scatter-plot': 'scatter',
+            'gene-effect': 'geneEffect', geneeffect: 'geneEffect', 'gene effect': 'geneEffect',
+            'cell-lines': 'clb', 'cell line browser': 'clb', browser: 'clb', 'cell-line-browser': 'clb'
+        };
+        const SORTS = {
+            drug: 'drug', 'drug-response': 'drug', prism: 'drug',
+            expression: 'expr', expr: 'expr', mrna: 'expr',
+            'gene-effect': 'ge', ge: 'ge', dependency: 'ge',
+            'copy-number': 'cn', cn: 'cn',
+            interferon: 'ifn', ifn: 'ifn', isg: 'ifn',
+            retroelement: 'retro', retro: 'retro', 'line-1': 'retro', line1: 'retro',
+            name: 'name'
+        };
+        const MEAS = { ge: 'ge', 'gene-effect': 'ge', dependency: 'ge', expr: 'expr', expression: 'expr', mrna: 'expr', cn: 'cn', 'copy-number': 'cn' };
+        let sawKey = false;
+        for (const line of lines) {
+            if (/^CORRELATE-VIEW/i.test(line)) { sawKey = true; continue; }
+            const m = line.match(/^([A-Za-z][A-Za-z0-9 _-]*)\s*:\s*(.+)$/);
+            if (!m) continue;
+            sawKey = true;
+            const key = m[1].trim().toLowerCase().replace(/\s+/g, '-');
+            const val = m[2].trim();
+            const gene = () => val.split(/[,;]/)[0].trim().toUpperCase();
+            if (key === 'view' || key === 'plot' || key === 'open') {
+                const v = VIEWS[val.toLowerCase().trim()];
+                if (v) { out.view = v; out.applied.push(`view: ${val}`); }
+                else out.ignored.push(`no view called "${val}" (the three are: scatter, gene-effect, cell-lines)`);
+            } else if (key === 'x' || key === 'x-gene' || key === 'gene-x') { out.opts.x = gene(); out.applied.push(`x: ${out.opts.x}`); }
+            else if (key === 'y' || key === 'y-gene' || key === 'gene-y') { out.opts.y = gene(); out.applied.push(`y: ${out.opts.y}`); }
+            else if (key === 'gene' || key === 'focal-gene') { out.opts.gene = gene(); out.applied.push(`gene: ${out.opts.gene}`); }
+            else if (key === 'x-measure' || key === 'x-type') { out.opts.xType = MEAS[val.toLowerCase()] || 'ge'; out.applied.push(`x measure: ${out.opts.xType}`); }
+            else if (key === 'y-measure' || key === 'y-type') { out.opts.yType = MEAS[val.toLowerCase()] || 'ge'; out.applied.push(`y measure: ${out.opts.yType}`); }
+            else if (key === 'measure' || key === 'data-type') { out.opts.measure = MEAS[val.toLowerCase()] || 'ge'; out.applied.push(`measure: ${out.opts.measure}`); }
+            else if (key === 'tissue' || key === 'lineage') { out.opts.tissue = val; out.applied.push(`tissue: ${val}`); }
+            else if (key === 'disease' || key === 'subtype') { out.opts.disease = val; out.applied.push(`disease: ${val}`); }
+            else if (key === 'colour-by' || key === 'color-by') { out.opts.colorBy = val.toLowerCase(); out.applied.push(`colour by: ${val}`); }
+            else if (key === 'sort' || key === 'sort-by') {
+                const sv = SORTS[val.toLowerCase()];
+                if (sv) { out.opts.sort = sv; out.applied.push(`sort: ${val}`); }
+                else out.ignored.push(`no sort called "${val}"`);
+            }
+            else if (key === 'sort-gene' || key === 'sort-compound' || key === 'compound') { out.opts.sortGene = val.trim(); out.applied.push(`sort by: ${val}`); }
+            else if (key === 'why' || key === 'look-for' || key === 'note') { out.why = val; out.applied.push('note carried over'); }
+            else out.ignored.push(`"${m[1].trim()}" is not one of the view keys`);
+        }
+        if (!sawKey && String(text || '').trim()) {
+            out.ignored.length = 0;
+            out.ignored.push('nothing here is a view line. Each line must read "key: value", starting with a "view:" line');
+        }
+        if (!out.view && sawKey) out.ignored.push('no "view:" line, so there is nothing to open');
+        return out;
+    }
+
+    // Do what the block says. Every branch reuses the same entry points the
+    // buttons use, so a view opened this way is the view the app would have
+    // built by hand.
+    async openAIView(parsed) {
+        const { view, opts } = parsed;
+        const setSel = (id, v) => {
+            const el = document.getElementById(id);
+            if (!el || !v) return false;
+            const hit = [...el.options].find(o => o.value.toLowerCase() === String(v).toLowerCase()
+                || o.textContent.trim().toLowerCase().startsWith(String(v).toLowerCase()));
+            if (!hit) return false;
+            el.value = hit.value;
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            return true;
+        };
+        if (view === 'scatter') {
+            if (!opts.x || !opts.y) return { ok: false, why: 'a scatter needs both x: and y: genes' };
+            const xs = document.getElementById('xAxisDataType'); if (xs) xs.value = opts.xType || 'ge';
+            const ys = document.getElementById('yAxisDataType'); if (ys) ys.value = opts.yType || 'ge';
+            this.openInspectByGenes(opts.x, opts.y);
+            await new Promise(r => setTimeout(r, 400));
+            if (opts.tissue) setSel('scatterCancerFilter', opts.tissue);
+            if (opts.disease) { await new Promise(r => setTimeout(r, 200)); setSel('scatterSubtypeFilter', opts.disease); }
+            if (opts.colorBy) setSel('colorByCategory', opts.colorBy);
+            this.updateInspectPlot?.();
+            return { ok: true, what: `${opts.x} against ${opts.y}` };
+        }
+        if (view === 'geneEffect') {
+            if (!opts.gene) return { ok: false, why: 'a gene-effect view needs a gene:' };
+            this.openGeneScoped(opts.gene, {
+                dataType: opts.measure === 'expr' ? 'expr' : 'ge',
+                scope: opts.tissue ? 'lineage' : 'all',
+                lineage: opts.tissue || ''
+            });
+            return { ok: true, what: `${opts.gene}${opts.tissue ? ` in ${opts.tissue}` : ''}` };
+        }
+        if (view === 'clb') {
+            this.openCellLineBrowser();
+            await new Promise(r => setTimeout(r, 400));
+            if (opts.tissue) setSel('clbTissueFilter', opts.tissue);
+            if (opts.disease) { await new Promise(r => setTimeout(r, 200)); setSel('clbSubtypeFilter', opts.disease); }
+            if (opts.sort) {
+                setSel('clbSortBy', opts.sort);
+                if (opts.sortGene) {
+                    const g = document.getElementById('clbSortGene');
+                    if (g) { g.value = opts.sortGene; g.dispatchEvent(new Event('input', { bubbles: true })); }
+                }
+                await new Promise(r => setTimeout(r, 400));
+                this.renderCellLineList?.();
+            }
+            return { ok: true, what: 'the cell line list' };
+        }
+        return { ok: false, why: 'no view to open' };
+    }
+
     _aiRequestSyntax() {
         return [
             'CORRELATE-REQUEST v1',
@@ -29847,6 +29989,54 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         return { settings, applied, ignored };
     }
 
+    openAIViewDialog(prefill) {
+        const dlg = document.getElementById('aiViewDialog');
+        if (!dlg) return;
+        const ta = document.getElementById('aiViewText');
+        if (ta && prefill) ta.value = prefill;
+        const note = document.getElementById('aiViewNote');
+        if (note) note.textContent = '';
+        const why = document.getElementById('aiViewWhy');
+        if (why) { why.style.display = 'none'; why.textContent = ''; }
+        dlg.style.display = 'flex';
+        if (!dlg.dataset.wired) {
+            dlg.dataset.wired = '1';
+            document.getElementById('aiViewClose')?.addEventListener('click', () => { dlg.style.display = 'none'; });
+            dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.style.display = 'none'; });
+            document.getElementById('aiViewOpen')?.addEventListener('click', async () => {
+                const text = document.getElementById('aiViewText')?.value || '';
+                if (!text.trim()) { this._setAiViewNote('Nothing to open, the box is empty.'); return; }
+                // A request block pasted here is the other kind. Send it where
+                // it belongs rather than refusing it on a technicality.
+                if (/CORRELATE-REQUEST/i.test(text)) {
+                    dlg.style.display = 'none';
+                    this.openCustomAIExport();
+                    const box = document.getElementById('caiRequest');
+                    if (box) box.value = text;
+                    this._setCaiNote('That is an export request, not a view. Moved here for you; press Apply request.');
+                    return;
+                }
+                const parsed = this._parseAIView(text);
+                if (!parsed.view) {
+                    this._setAiViewNote(parsed.ignored.join('; ') || 'Nothing here says which view to open.');
+                    return;
+                }
+                const res = await this.openAIView(parsed);
+                if (!res.ok) { this._setAiViewNote(res.why); return; }
+                dlg.style.display = 'none';
+                // The assistant's own sentence about what to look for, kept on
+                // screen beside the view rather than left in the chat window.
+                if (parsed.why) this.showCopyNotification?.(`Opened ${res.what}. ${parsed.why}`);
+                else this.showCopyNotification?.(`Opened ${res.what}.`);
+            });
+        }
+    }
+
+    _setAiViewNote(msg) {
+        const el = document.getElementById('aiViewNote');
+        if (el) el.textContent = msg || '';
+    }
+
     openCustomAIExport() {
         const dlg = document.getElementById('customAIDialog');
         if (!dlg) return;
@@ -29865,6 +30055,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             document.getElementById('caiApplyRequest')?.addEventListener('click', async () => {
                 const text = document.getElementById('caiRequest')?.value || '';
                 if (!text.trim()) { this._setCaiNote('Nothing to apply, the box is empty.'); return; }
+                // The two block types get confused with each other, so each box
+                // hands the other kind over rather than reporting gibberish.
+                if (/CORRELATE-VIEW/i.test(text)) {
+                    document.getElementById('customAIDialog').style.display = 'none';
+                    this.openAIViewDialog(text);
+                    this._setAiViewNote('That is a view, not an export request. Moved here for you.');
+                    return;
+                }
                 // A band in the request resolves against the location table,
                 // which is otherwise only fetched when copy number is used.
                 if (/\b(?:chr)?(?:\d{1,2}|[XY])[pq]\d*/i.test(text)) {
@@ -32393,6 +32591,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 { when: 'always', text: "Step 2c - Do not enter the data through the raw per-line leaderboard. The lines with the most negative score for any gene are disproportionately lines whose whole screen reads sensitive, so a straight sort surfaces the same tumour-suppressor-loss lines whatever gene you ask about, across unrelated tissues, and it is easy to mistake that for a finding. Enter through the grouped summaries, and check meanGeneEffectPercentile on any line before naming it." },
                 { when: 'groups', text: "Step 3 - Deep analysis: Work data-first. Use the precomputed extras (focalGeneTissueSummary for per-tissue/subtype means, focalGeneMutationSummary for driver-mutation effects) before scanning the matrix gene-by-gene. Characterize unbiased genome-wide hits and annotate by pathway before testing hypothesis-driven candidate gene lists. After finding one explanatory model, actively search for alternative or complementary axes. Report all major signals, not just the first plausible one." },
                 { when: 'always', text: "Step 3b - Name the gaps: if answering the question properly would need something in `notIncluded` (drug response, genome-wide copy number, viral transformation status, cell lines outside this cohort), say so plainly and tell the user which export would supply it. Do not treat an absent layer as a negative result." },
+                { when: 'always', text: "Step 3a - SHOW, do not only tell. Any claim resting on a shape in the data deserves a figure, and you have the raw matrices to draw one: a scatter with the fit and its r, a distribution split by the groups you are contrasting, a per-lineage forest of the same statistic, a 2x2 of two thresholds. Prefer one figure that carries the argument over three that decorate it, label the axes in the reader's words rather than the file's field names, and say in the caption what the reader should conclude and what the figure cannot settle. Where the point is about something the APP can already draw, do both: give the figure and a CORRELATE-VIEW block (see howToDirectTheUser) so the user can open that same view themselves and click around it." },
                 { when: 'always', text: "Step 3c - Write for the person, not the file: the reader has not seen this file and does not know its field names. Translate every internal name into plain language before it reaches your reply, and lead with the biological answer rather than the evidence trail." },
             ],
             context,
@@ -32743,8 +32942,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     + 'missing data, it simply does not apply to the view this was exported from. '
                     + 'present/absent cover the OPTIONAL sections only; context, cellLineOrder, question, '
                     + 'notIncluded, dataStructure, matrixCoverage (how much of the release each matrix '
-                    + 'carries, read it before drawing anything from a gene you cannot find) and the '
-                    + 'instruction blocks are in every export and are not listed here.',
+                    + 'carries, read it before drawing anything from a gene you cannot find), '
+                    + 'howToDirectTheUser (how to open a plot on the user\'s screen instead of describing '
+                    + 'one) and the instruction blocks are in every export and are not listed here.',
                 view: context?.type || 'unknown',
                 present,
                 absent,
@@ -32798,6 +32998,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 const nGE = Object.keys(exportData.geneEffect || {}).length;
                 const nEx = Object.keys(exportData.expression || {}).length;
                 if (nGE || nEx) {
+                    exportData.howToDirectTheUser = {
+                        _readMe: 'You can do more than answer: you can put the user in front of the exact plot you are arguing from. Write a CORRELATE-VIEW block, in a code fence, and tell them to paste it into Options > Other > "Open a view an assistant described". The app opens that view with those settings. Use it whenever your reasoning rests on something visible, a correlation you want them to see holding inside one lineage, a gene whose dependency splits by tissue, a list ordered by a measure you are citing. It is the difference between describing a picture and showing it. This is NOT the export request block: that one (notIncluded.howToAskForMore) builds a new FILE for you to read, this one opens a VIEW for the user to look at. Either box accepts either block and hands it to the other, so a mistake here costs nothing.',
+                        syntax: this._aiViewSyntax(),
+                        examples: [
+                            'CORRELATE-VIEW v1\nview: scatter\nx: ADAR\ny: USP18\ntissue: Lung\nwhy: the correlation should still hold inside a single lineage, which is what rules out a tissue artefact',
+                            'CORRELATE-VIEW v1\nview: gene-effect\ngene: ADAR\nmeasure: ge\nwhy: see how the dependency is distributed across tissues before trusting any one group mean',
+                            'CORRELATE-VIEW v1\nview: cell-lines\nsort: retroelement\ntissue: Head and Neck\nwhy: the lines at the top are the ones the retroelement argument rests on'
+                        ],
+                        limits: 'Three views for now: scatter (two genes, either measure on either axis), gene-effect (one gene across tissues) and cell-lines (the browser, sorted by a measure). A tissue or disease name must be one the release uses; notIncluded.howToAskForMore lists them under tissueNamesThatResolve.'
+                    };
                     exportData.matrixCoverage = {
                         _readMe: 'Genes carried versus genes in the release, per matrix. A gene absent from a matrix was removed by the variance filter, NOT measured as flat or as having no effect, and its absence is never evidence about it. Ask for it by name in a Custom export if the question needs it.',
                         geneEffect: nGE ? { carried: nGE, inRelease: this.nGenes || null } : undefined,
@@ -32833,6 +33043,18 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 if (!hasGroups) {
                     steps.push('Step 3 - Deep analysis: work data-first from this view\'s own precomputed results and from the matrices, using cellLineOrder as the shared index. Characterise what the data shows before testing a candidate list, and once you have one explanation, actively look for a second one that would fit the same numbers. Report all major signals, not only the first plausible one.');
                 }
+                // Numbered steps that arrive out of numeric order read as a
+                // muddle: the `when` filter preserves source order, and the
+                // no-groups Step 3 is appended after 3b and 3c. Sort by the
+                // step label so the list a reader follows is in its own order.
+                const stepKey = (t) => {
+                    const m = String(t).match(/^Step\s+(\d+)([a-z]?)/i);
+                    return m ? [parseInt(m[1], 10), m[2] || ''] : [99, ''];
+                };
+                steps.sort((a, b) => {
+                    const [an, al] = stepKey(a), [bn, bl] = stepKey(b);
+                    return an - bn || al.localeCompare(bl);
+                });
                 exportData._analysisInstructions = steps;
             }
             // Same for the methods block: it documented how fields were
@@ -39841,6 +40063,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         document.getElementById('customAIExportBtn')?.addEventListener('click', () => {
             document.getElementById('optionsOtherMenu')?.style.setProperty('display', 'none');
             this.openCustomAIExport();
+        });
+        document.getElementById('openAIViewBtn')?.addEventListener('click', () => {
+            document.getElementById('optionsOtherMenu')?.style.setProperty('display', 'none');
+            this.openAIViewDialog();
         });
         document.getElementById('showCorrelationDirect')?.addEventListener('click', () => {
             document.getElementById('inspectModal').classList.add('active');

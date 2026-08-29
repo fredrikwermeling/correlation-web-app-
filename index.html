@@ -2750,6 +2750,7 @@
                                 <button class="options-menu-item" id="showCorrelationDirect">Correlation</button>
                                 <button class="options-menu-item" id="showHeatmapDirect" title="Show a gene set across the cell lines currently listed, as a heatmap">Gene set heatmap</button>
                                 <button class="options-menu-item" id="customAIExportBtn" title="Build a file for a language model with exactly the data you choose, including layers the standard export leaves out. An assistant reading a standard export can write the settings for you.">Custom export for AI&hellip;</button>
+                                <button class="options-menu-item" id="openAIViewBtn" title="An assistant that has read an export can describe a plot to look at. Paste what it wrote and the app opens that view with those settings, instead of you rebuilding it by hand.">Open a view an assistant described&hellip;</button>
                                 <label class="options-menu-item" for="restoreFromExportInput" title="Open a Correlate metadata file (.correlate.json, saved alongside every image export) to recreate the figure. Older SVG/PNG exports with embedded settings also work.">Open saved figure...</label>
                             </div>
                         </div>
@@ -5474,7 +5475,29 @@
     <!-- Custom Export for AI. Everything the standard export decides for you,
          decided explicitly instead, plus a box that takes the request block an
          assistant writes after reading a standard export. -->
-    <div id="customAIDialog" style="display:none; position:fixed; inset:0; z-index:2600; background:rgba(0,0,0,0.5); justify-content:center; align-items:flex-start; padding:40px 20px; overflow-y:auto;">
+        <!-- Paste a CORRELATE-VIEW block: an assistant saying what to LOOK AT,
+         as opposed to a CORRELATE-REQUEST, which says what to export. -->
+    <div id="aiViewDialog" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.35); z-index:1450; align-items:center; justify-content:center;">
+      <div style="background:#fff; border-radius:10px; width:560px; max-width:94vw; max-height:88vh; overflow:auto; padding:18px 20px; box-shadow:0 18px 50px rgba(0,0,0,0.28);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <span style="font-weight:600; color:#374151; font-size:14px;">Open a view an assistant described</span>
+          <button id="aiViewClose" style="background:none; border:none; font-size:20px; line-height:1; cursor:pointer; color:#9ca3af;">&times;</button>
+        </div>
+        <p style="margin:0 0 10px; font-size:11.5px; color:#6b7280; line-height:1.5;">
+          An assistant reading an export can point you at a specific plot rather than describing one in words.
+          Paste what it wrote and this opens that view with those settings. It reads a <code>CORRELATE-VIEW</code> block;
+          a <code>CORRELATE-REQUEST</code> block pasted here is sent to the export dialog instead, so either one works.
+        </p>
+        <textarea id="aiViewText" rows="7" placeholder="CORRELATE-VIEW v1&#10;view: scatter&#10;x: ADAR&#10;y: USP18&#10;tissue: Lung&#10;why: check the correlation holds inside one lineage" style="width:100%; border:1px solid #d1d5db; border-radius:4px; padding:6px 8px; font-size:11.5px; font-family:ui-monospace, monospace; box-sizing:border-box;"></textarea>
+        <div style="display:flex; gap:8px; align-items:center; margin-top:10px;">
+          <button class="btn btn-success btn-sm" id="aiViewOpen">Open the view</button>
+          <span id="aiViewNote" style="font-size:10.5px; color:#6b7280; flex:1;"></span>
+        </div>
+        <div id="aiViewWhy" style="display:none; margin-top:10px; padding:8px 10px; background:#f3faee; border:1px solid #b2dd95; border-radius:5px; font-size:11.5px; color:#3b5e23;"></div>
+      </div>
+    </div>
+
+<div id="customAIDialog" style="display:none; position:fixed; inset:0; z-index:2600; background:rgba(0,0,0,0.5); justify-content:center; align-items:flex-start; padding:40px 20px; overflow-y:auto;">
       <div style="background:#fff; max-width:640px; width:100%; border-radius:8px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.35);">
         <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 18px; border-bottom:1px solid #e5e7eb;">
           <span style="font-weight:600; color:#374151; font-size:14px;">Custom export for AI</span>
@@ -5606,6 +5629,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v88_124"></script>
+    <script src="app.js?v=v88_125"></script>
 </body>
 </html>
