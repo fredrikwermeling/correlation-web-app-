@@ -29637,7 +29637,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     _aiRequestSyntax() {
         return [
             'CORRELATE-REQUEST v1',
-            'cohort: view | all | tissue:<name> | disease:<name> | <comma-separated cell line names or IDs>',
+            'cohort: all | tissue:<name> | disease:<name> | <comma-separated cell line names or IDs> | view',
             'genes: auto | <comma-separated gene symbols> | a cytoband or arm such as 16q or 16q22',
             'gene-limit: <number of genes per matrix, or "all">',
             'scan-size: <how many rows per precomputed correlation scan>',
@@ -29762,8 +29762,21 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                         }
                         gs.push(t.toUpperCase());
                     }
-                    const known = gs.filter(g => this.geneIndex?.has(g) || this.expressionGeneIndex?.has(g));
-                    const unknown = gs.filter(g => !known.includes(g));
+                    const inData = (g) => this.geneIndex?.has(g) || this.expressionGeneIndex?.has(g);
+                    // Assistants write the symbol they were trained on, and
+                    // HGNC keeps renaming (DDX58 is RIGI in this release). The
+                    // synonym table is already shipped for the gene box; use it
+                    // here too rather than reporting a live gene as missing.
+                    const renamed = [];
+                    const gs2 = gs.map(g => {
+                        if (inData(g)) return g;
+                        const alt = (this.synonymLookup?.[g]?.d || '').toUpperCase();
+                        if (alt && inData(alt)) { renamed.push(`${g} \u2192 ${alt}`); return alt; }
+                        return g;
+                    });
+                    const known = gs2.filter(inData);
+                    const unknown = gs2.filter(g => !known.includes(g));
+                    if (renamed.length) applied.push(`renamed to the symbols this release uses: ${renamed.join(', ')}`);
                     if (known.length) {
                         settings.genes = 'list'; settings.geneList = [...new Set(known)];
                         if (!applied.some(x => x.startsWith('genes: '))) {
@@ -29813,6 +29826,17 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 ignored.push(`"${origKey}" is not one of the keys (cohort, genes, gene-limit, scan-size, include, drugs, question)`);
             }
         }
+        // `cohort: view` depends on what is open, which an assistant writing the
+        // block cannot see. Reporting it as applied and then refusing at Export
+        // reads as the block being rejected; check it here instead.
+        if (settings.cohort === 'view') {
+            const n = (this._getAICellLines(this._aiExportSource || 'ge') || []).length;
+            if (!n) {
+                const i = applied.indexOf('cohort: the current view');
+                if (i >= 0) applied.splice(i, 1);
+                ignored.push('cohort: view, but nothing is open for it to read, so this would export no cell lines. Open the view you want first, or change that line to "cohort: all" or a named group');
+            }
+        }
         // A block that set nothing at all is the failure worth explaining: the
         // dialog otherwise reported a list of rejected lines with no hint that
         // the whole shape was wrong.
@@ -29846,6 +29870,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 if (/\b(?:chr)?(?:\d{1,2}|[XY])[pq]\d*/i.test(text)) {
                     this._setCaiNote('Looking up the genes in that region\u2026');
                     try { await this.loadGeneLocations(); } catch (e) { /* falls back to plain symbols */ }
+                }
+                // The synonym table is loaded lazily for the gene box; a pasted
+                // list needs it too, or a renamed symbol reads as a missing one.
+                if (!this.synonymLookup) {
+                    if (!this._synonymLoadPromise) {
+                        this._synonymLoadPromise = fetch(this._dataUrl('web_data/synonyms.json')).then(r => r.json()).catch(() => ({}));
+                    }
+                    try { this.synonymLookup = await this._synonymLoadPromise; } catch (e) { this.synonymLookup = {}; }
                 }
                 const { settings, applied, ignored } = this._parseAIRequest(text, this._readCustomAIDialog());
                 this._aiCustom = settings;
@@ -32303,7 +32335,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     syntax: this._aiRequestSyntax(),
                     example: 'CORRELATE-REQUEST v1\ncohort: tissue:Skin\ngenes: BRAF, NRAS, MITF, SOX10\ngene-limit: all\ninclude: drug-response, matched-pairs\ndrugs: BRAF, MEK\nquestion: does BRAF dependency track measured BRAF-inhibitor sensitivity?',
                     keys: {
-                        cohort: 'view (whatever the app is showing at the time, so say what to open), all (every cell line in the release), a group written as tissue:<name> / disease:<name> / subtype:<name>, or a comma-separated list of cell line names or IDs. Groups and names can be mixed on one line. Names are matched ignoring punctuation and case, so MEC-1 and MEC1 both resolve; anything that does not resolve is reported back rather than dropped.',
+                        cohort: 'all (every cell line in the release), a group written as tissue:<name> / disease:<name> / subtype:<name>, or a comma-separated list of cell line names or IDs. PREFER ONE OF THOSE when you are writing this block for someone else: the fourth option, view, means whatever chart or list happens to be open at the time, so it exports NOTHING if they paste the block with nothing open, and you cannot see their screen to know. Use view only when you are also telling them which view to open first. Groups and names can be mixed on one line. Names are matched ignoring punctuation and case, so MEC-1 and MEC1 both resolve; anything that does not resolve is reported back rather than dropped.',
                         genes: 'auto (the app chooses), a comma-separated list of symbols, or a cytoband or chromosome arm such as 16q or 16q22, which expands to every gene there. Naming genes is the lever that matters for size: a file about a dozen genes can carry every cell line and every layer at once, where an automatic one cannot.',
                         'gene-limit': 'a number of genes per matrix, or "all" for no limit and no variance filter. Use "all" whenever you have named the genes, since the list is already the limit.',
                         'scan-size': 'how many rows each precomputed correlation scan carries. Raise it when you want the tail of a scan rather than its head.',
