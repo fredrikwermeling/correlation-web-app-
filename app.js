@@ -10156,6 +10156,13 @@ class CorrelationExplorer {
 
         // Attach gene tooltips
         this.attachGeneTooltips(tbody);
+
+        // Touch: the results land below a tall column of controls, so a Run
+        // press looked like nothing happened. Only a fresh run scrolls, which
+        // is what resetSortIndicator marks; re-sorting a column or changing a
+        // filter redraws this same table and must leave the page where the
+        // reader put it.
+        if (resetSortIndicator) this._revealOnTouch('mutationTableWrap');
     }
 
     toggleMut2Columns() {

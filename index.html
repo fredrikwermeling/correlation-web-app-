@@ -2527,6 +2527,17 @@
                 max-width: 100% !important;
             }
             .table-container .data-table, .data-table-wrapper .data-table { min-width: max-content !important; }
+            /* The mutation table is the widest of them: fourteen columns whose
+               headers name the gene and the copy-number level, so it ran to
+               about four screen-widths sideways. Letting the headers wrap
+               instead of sizing every column to its longest unbroken title
+               roughly halves that. The numbers underneath stay on one line. */
+            #mutationTable { min-width: 0 !important; }
+            #mutationTable thead th {
+                white-space: normal !important; max-width: 58px;
+                padding: 5px 3px !important; font-size: 10px !important; line-height: 1.15;
+            }
+            #mutationTable td { padding: 4px 3px !important; font-size: 11px !important; white-space: nowrap; }
             /* 4. The correlation popout's boxes were different heights because
                each sized itself around its own contents. One height for all of
                them, and their dropdowns bounded so a long list cannot stretch
@@ -3625,7 +3636,7 @@
                     <div id="mut2ColToggle" style="display:none;">
                         <input type="checkbox" id="showMut2Cols" checked style="display:none;" onchange="app.toggleMut2Columns()">
                     </div>
-                    <div class="table-container" style="max-height: 600px; overflow-y: auto;">
+                    <div class="table-container" id="mutationTableWrap" style="max-height: 600px; overflow-y: auto;">
                         <table class="data-table" id="mutationTable">
                             <thead>
                                 <tr>
@@ -5748,6 +5759,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v89_11"></script>
+    <script src="app.js?v=v89_12"></script>
 </body>
 </html>
