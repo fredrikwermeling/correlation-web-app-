@@ -2654,6 +2654,23 @@
             #hmGridScroll { touch-action: pan-x pan-y; -webkit-overflow-scrolling: touch; }
             #heatmapModal .modal-footer .btn { min-height: 44px !important; }
         }
+        /* Touch, phone or tablet: the heatmap opened on its settings stack, which
+           is long enough to fill the screen on its own, so the picture was
+           always below the fold. Put it first instead. The annotation rows are
+           laid out at desktop widths and ran off the right edge, so let them
+           wrap. */
+        @media (max-width: 1100px) and (pointer: coarse) {
+            #heatmapModal .modal-body { display: flex; flex-direction: column; }
+            #heatmapModal .modal-body > * { flex: 0 0 auto; }
+            #hmPlotBlock { order: -1; margin-bottom: 12px; }
+            #heatmapModal .hm-ann-row { flex-wrap: wrap !important; }
+            #heatmapModal .hm-ann-row-sortsel { width: auto !important; max-width: 100%; }
+            #heatmapModal .hm-ann-row .form-control,
+            #heatmapModal .hm-ann-row select { max-width: 100%; }
+            /* The legends are drawn at a desktop width; pan them rather than
+               shrinking the canvas, which would make the labels unreadable. */
+            #hmLegendBlock { overflow-x: auto; touch-action: pan-x pan-y; }
+        }
         /* Expression Correlates needs a mutation-analysis subgroup context, which
            the condensed popout (opened from the Cell Line Browser) doesn't have,
            so hide it there. It stays available in the full gene-effect modal. */
@@ -4732,15 +4749,19 @@
                      _hmRenderSilencedNote. No reserved space when empty, same as
                      hmScrollHint just below the grid. -->
                 <div id="hmSilencedNote" style="display:none; font-size:10px; color:#9ca3af; margin-bottom:4px;"></div>
-                <div style="display:flex; align-items:flex-start; width:100%;">
-                    <canvas id="hmLabelCanvas" style="flex:none; cursor:default;"></canvas>
-                    <div id="hmGridScroll" style="flex:1 1 auto; min-width:0; overflow-x:auto; overflow-y:hidden;"><canvas id="hmDendroTopCanvas" style="display:block; cursor:default;"></canvas><canvas id="hmGridCanvas" style="display:block; cursor:default;"></canvas></div>
+                <div id="hmPlotBlock">
+                    <div style="display:flex; align-items:flex-start; width:100%;">
+                        <canvas id="hmLabelCanvas" style="flex:none; cursor:default;"></canvas>
+                        <div id="hmGridScroll" style="flex:1 1 auto; min-width:0; overflow-x:auto; overflow-y:hidden;"><canvas id="hmDendroTopCanvas" style="display:block; cursor:default;"></canvas><canvas id="hmGridCanvas" style="display:block; cursor:default;"></canvas></div>
+                    </div>
+                    <div id="hmScrollHint" style="font-size:9px; color:#9ca3af; margin-top:3px;"></div>
+                    <div id="hmLegendBlock">
+                        <div style="margin-top:10px;"><canvas id="hmLegendCanvas"></canvas></div>
+                        <canvas id="hmGroupLegendCanvas" style="display:block;"></canvas>
+                        <div id="hmGroupLegendHint" style="display:none; font-size:10px; color:#9ca3af; margin-top:2px;">Click a group to hide or show it. Double-click to keep only that group.</div>
+                        <canvas id="hmAnn2LegendCanvas" style="display:block;"></canvas>
+                    </div>
                 </div>
-                <div id="hmScrollHint" style="font-size:9px; color:#9ca3af; margin-top:3px;"></div>
-                <div style="margin-top:10px;"><canvas id="hmLegendCanvas"></canvas></div>
-                <canvas id="hmGroupLegendCanvas" style="display:block;"></canvas>
-                <div id="hmGroupLegendHint" style="display:none; font-size:10px; color:#9ca3af; margin-top:2px;">Click a group to hide or show it. Double-click to keep only that group.</div>
-                <canvas id="hmAnn2LegendCanvas" style="display:block;"></canvas>
             </div>
             <div class="modal-footer" style="justify-content:flex-start; flex-wrap:wrap; gap:6px;">
                 <button id="hmSettingsBtn" class="btn btn-outline btn-sm" style="font-size:11px; font-weight:700;" title="Font sizes and cell dimensions for the heatmap and its exports">Settings</button>
@@ -5678,6 +5699,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v89_1"></script>
+    <script src="app.js?v=v89_2"></script>
 </body>
 </html>

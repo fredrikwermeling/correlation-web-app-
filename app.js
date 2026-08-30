@@ -33826,19 +33826,25 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // controls with the plot below the fold; bring the plot up once it has
     // drawn. Desktop layouts show the plot beside the controls and are left
     // alone, as is the phone, whose layout already puts the plot first.
-    _revealScatterPlot() {
+    // On a stacked, touch-sized layout a popout opens on its controls with the
+    // picture below the fold, so the first thing on screen is settings rather
+    // than the thing that was asked for. Waits for the element to have real
+    // height, since it is drawn after the modal opens.
+    _revealOnTouch(id, minHeight = 50) {
         const stacked = window.innerWidth <= 1100;
         const touchy = window.innerWidth <= 900 || window.matchMedia?.('(pointer: coarse)')?.matches;
         if (!stacked || !touchy) return;
         let tries = 0;
         const go = () => {
-            const el = document.getElementById('scatterPlot');
-            if (el && el.getBoundingClientRect().height > 50) {
+            const el = document.getElementById(id);
+            if (el && el.getBoundingClientRect().height > minHeight) {
                 try { el.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {}
             } else if (tries++ < 25) setTimeout(go, 200);
         };
         setTimeout(go, 300);
     }
+
+    _revealScatterPlot() { this._revealOnTouch('scatterPlot'); }
 
     hideGeneTooltip(force) {
         // Cancel anything armed but not yet shown. Without this a card armed by
@@ -53921,6 +53927,7 @@ ${clone.innerHTML}
     _hmOpenModal() {
         const modal = document.getElementById('heatmapModal');
         if (modal) modal.style.display = 'flex';
+        this._revealOnTouch('hmGridScroll');
         // Rebuilt on open, not just at startup: mutation data (behind the
         // "Top hotspot-mutated genes" preset) and the cell-line total
         // (behind "Every cell line (n)") can both still be loading when
