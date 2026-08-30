@@ -57086,12 +57086,20 @@ ${clone.innerHTML}
         // rather than inside its horizontal scroller. Laid out once here
         // (logical coordinates) so the same layout drives the on-screen
         // canvas, the exported image and the click hit-test below.
+        // Both legends below wrap at this width. The grid can be several
+        // thousand pixels wide behind its horizontal scroller, so the bound is
+        // what is actually on screen: on a phone that is the popout, not the
+        // grid, and wrapping at the grid's width pushed the legend off the
+        // right edge.
+        const legendWidth = Math.max(320, Math.min(900,
+            document.getElementById('hmLegendBlock')?.clientWidth || (labelW + gridW),
+            labelW + gridW));
+
         let groupLegendLayout = null;
         if (d.groups) {
             const probe2 = document.createElement('canvas').getContext('2d');
             probe2.font = '10px Arial';
             const swatch = 10, textGap = 4, itemGapX = 14, itemH = 16;
-            const legendWidth = Math.max(320, Math.min(900, labelW + gridW));
             let x = 0, y = 0;
             const items = [];
             d.groups.forEach(g => {
@@ -57141,7 +57149,6 @@ ${clone.innerHTML}
             const probe3 = document.createElement('canvas').getContext('2d');
             probe3.font = '10px Arial';
             const swatch = 10, textGap = 4, itemGapX = 14, itemH = 16;
-            const legendWidth = Math.max(320, Math.min(900, labelW + gridW));
             let x = 0, y = 0;
             const items = [];
             d.annRows.forEach((row, rowIdx) => {
@@ -57245,13 +57252,14 @@ ${clone.innerHTML}
             if (groupLegendLayout) {
                 sizeCanvas(groupLegendCanvas, groupLegendLayout.width, groupLegendLayout.height);
                 groupLegendCanvas.style.marginTop = '8px';
-                groupLegendCanvas.style.cursor = 'pointer';
-                groupLegendCanvas.title = 'Click to hide this group, double-click to show only it';
+                const legendClickable = !this._hmViewOnly();
+                groupLegendCanvas.style.cursor = legendClickable ? 'pointer' : 'default';
+                groupLegendCanvas.title = legendClickable ? 'Click to hide this group, double-click to show only it' : '';
                 const glc = groupLegendCanvas.getContext('2d');
                 glc.setTransform(dpr, 0, 0, dpr, 0, 0);
                 glc.clearRect(0, 0, groupLegendLayout.width, groupLegendLayout.height);
                 paintGroupLegend(glc);
-                if (legendHint) legendHint.style.display = '';
+                if (legendHint) legendHint.style.display = legendClickable ? '' : 'none';
             } else {
                 groupLegendCanvas.width = 0; groupLegendCanvas.height = 0;
                 groupLegendCanvas.style.marginTop = '0';
@@ -57359,8 +57367,12 @@ ${clone.innerHTML}
             labelCanvas.addEventListener('click', (e) => this._hmOnLabelClick(e));
             labelCanvas.addEventListener('mousemove', (e) => this._hmOnLabelHover(e));
             labelCanvas.addEventListener('mouseleave', () => { labelCanvas.style.cursor = 'default'; });
-            labelCanvas.title = 'Click a gene to silence it (removed from the drawing and the score)';
             labelCanvas._hmWired = true;
+        }
+        // Outside the wire-once block: whether silencing is offered follows
+        // the window width, which a rotation changes.
+        if (labelCanvas) {
+            labelCanvas.title = this._hmViewOnly() ? '' : 'Click a gene to silence it (removed from the drawing and the score)';
         }
 
         this._hmRenderSilencedNote(d);
@@ -57379,10 +57391,18 @@ ${clone.innerHTML}
         return layout.items.find(it => x >= it.x && x <= it.x + it.w && y >= it.y && y <= it.y + it.h) || null;
     }
 
+    // A phone's heatmap is for looking at. A fingertip covers several gene
+    // rows and several legend chips at once, so silencing a gene or hiding a
+    // lineage by touch lands wrong more often than right, and the way back is
+    // a redraw the screen has no room to explain. Tablets are big enough and
+    // keep both.
+    _hmViewOnly() { return window.innerWidth <= 640; }
+
     // Toggles a group's visibility, but only after a short delay: a
     // following dblclick cancels the pending toggle (see below), so a
     // double-click drilling into a group never leaves it hidden on the way.
     _hmOnGroupLegendClick(e) {
+        if (this._hmViewOnly()) return;
         const hit = this._hmHitTestGroupLegend(e);
         if (!hit) return;
         clearTimeout(this._hmLegendClickTimer);
@@ -57397,6 +57417,7 @@ ${clone.innerHTML}
     // Cancels whichever click's hide-toggle is still pending, then drills
     // into the group under the pointer.
     _hmOnGroupLegendDblClick(e) {
+        if (this._hmViewOnly()) return;
         clearTimeout(this._hmLegendClickTimer);
         const hit = this._hmHitTestGroupLegend(e);
         if (!hit) return;
@@ -57745,7 +57766,7 @@ ${clone.innerHTML}
     // silently when it would silence the last drawn gene.
     _hmOnLabelClick(e) {
         const d = this._hmData;
-        if (!d) return;
+        if (!d || this._hmViewOnly()) return;
         const labelCanvas = document.getElementById('hmLabelCanvas');
         const rect = labelCanvas.getBoundingClientRect();
         const y = e.clientY - rect.top;
@@ -57768,7 +57789,7 @@ ${clone.innerHTML}
         const rect = labelCanvas.getBoundingClientRect();
         const y = e.clientY - rect.top;
         const rowIdx = Math.floor(y / d.cellH);
-        labelCanvas.style.cursor = (rowIdx >= 0 && rowIdx < d.orderedGenes.length) ? 'pointer' : 'default';
+        labelCanvas.style.cursor = (!this._hmViewOnly() && rowIdx >= 0 && rowIdx < d.orderedGenes.length) ? 'pointer' : 'default';
     }
 
     _hmUnsilenceGene(gene) {
