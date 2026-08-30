@@ -2288,6 +2288,15 @@
                Plotly renders at a fixed pixel width, so allow horizontal pan
                instead of clipping when a chart is wider than the phone. */
             #geChartTableLayout, #caChartTableLayout { flex-direction: column !important; gap: 10px !important; }
+            /* "What is this compared against" belongs with the chart it
+               describes. It sits after the chart in the markup, followed by
+               the export row a phone never shows, so on a phone it landed
+               below the fold and the chart looked like it had no choice
+               behind it. Everything else here keeps document order. */
+            #geneEffectModal .modal-body { display: flex; flex-direction: column; }
+            #geneEffectModal .modal-body > * { flex: 0 0 auto; }
+            #geneEffectModal #geScopeRow { order: 1; }
+            #geneEffectModal #geChartTableLayout { order: 2; }
             #geChartContainer, #caChartContainer { flex: 1 1 100% !important; width: 100% !important; overflow-x: auto !important; }
             #geTableContainer { min-width: 0 !important; width: 100% !important; overflow-x: auto !important; }
             /* Scatter Inspect: single-column controls, full-width plot */
@@ -5699,6 +5708,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v89_6"></script>
+    <script src="app.js?v=v89_7"></script>
 </body>
 </html>

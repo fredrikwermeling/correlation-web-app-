@@ -27143,11 +27143,18 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const wt = wantWT('geCnLevel');
             data = data.filter(d => this._cellLinePassesCnFilter(d.cellLineId, geCnVal) !== wt);
         }
-        // Oncoprint multi-gene filters
-        if (this._activeOncoprintFilters && this._activeOncoprintFilters.length > 0) {
+        // Disease, the third level under tissue and subtype. It sat nested
+        // inside the grid-picks branch below, so picking a disease did nothing
+        // unless an alteration grid happened to be filtering too.
         if (document.getElementById('geOncotreeFilter')?.value) {
             data = data.filter(d => this._passesOncotree(d.cellLineId, 'geOncotreeFilter'));
         }
+        // Oncoprint multi-gene filters. Picks made in the Cell Line Browser
+        // scope that list and nothing else, the same rule _gridAppliesToAnalysis
+        // states for analyses. Applied here they quietly cut a chart billed as
+        // every lineage: a gene opened from a wiki, over a browser someone had
+        // filtered earlier, drew 112 cell lines and said nothing about why.
+        if (this._activeOncoprintFilters?.length && this._gridFilterOrigin !== 'clb') {
             data = data.filter(d => this._cellLinePassesOncoprintFilters(d.cellLineId));
         }
         // Custom cell-line list (paste IDs/names): restrict to just those lines.
