@@ -2749,9 +2749,9 @@
                                 <button class="options-menu-item" id="showGeneEffectDirect">Gene Effect</button>
                                 <button class="options-menu-item" id="showCorrelationDirect">Correlation</button>
                                 <button class="options-menu-item" id="showHeatmapDirect" title="Show a gene set across the cell lines currently listed, as a heatmap">Gene set heatmap</button>
-                                <button class="options-menu-item" id="customAIExportBtn" title="Build a file for a language model with exactly the data you choose, including layers the standard export leaves out. An assistant reading a standard export can write the settings for you.">Custom export for AI&hellip;</button>
-                                <button class="options-menu-item" id="openAIViewBtn" title="An assistant that has read an export can describe a plot to look at. Paste what it wrote and the app opens that view with those settings, instead of you rebuilding it by hand.">Open a view an assistant described&hellip;</button>
-                                <label class="options-menu-item" for="restoreFromExportInput" title="Open a Correlate metadata file (.correlate.json, saved alongside every image export) to recreate the figure. Older SVG/PNG exports with embedded settings also work.">Open saved figure...</label>
+                                <button class="options-menu-item" id="customAIExportBtn" title="Build a file for a language model with exactly the data you choose, including layers the standard export leaves out. An assistant reading a standard export can write the settings for you.">Custom export for AI</button>
+                                <button class="options-menu-item" id="openAIViewBtn" title="An assistant that has read an export can describe a plot to look at. Paste what it wrote and the app opens that view with those settings, instead of you rebuilding it by hand.">Open a view from AI</button>
+                                <label class="options-menu-item" for="restoreFromExportInput" title="Open a Correlate metadata file (.correlate.json, saved alongside every image export) to recreate the figure. Older SVG/PNG exports with embedded settings also work.">Open saved figure</label>
                             </div>
                         </div>
                         <!-- Starts in the same quiet outline as its neighbours;
@@ -5480,7 +5480,7 @@
     <div id="aiViewDialog" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.35); z-index:1450; align-items:center; justify-content:center;">
       <div style="background:#fff; border-radius:10px; width:560px; max-width:94vw; max-height:88vh; overflow:auto; padding:18px 20px; box-shadow:0 18px 50px rgba(0,0,0,0.28);">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-          <span style="font-weight:600; color:#374151; font-size:14px;">Open a view an assistant described</span>
+          <span style="font-weight:600; color:#374151; font-size:14px;">Open a view from AI</span>
           <button id="aiViewClose" style="background:none; border:none; font-size:20px; line-height:1; cursor:pointer; color:#9ca3af;">&times;</button>
         </div>
         <p style="margin:0 0 10px; font-size:11.5px; color:#6b7280; line-height:1.5;">
@@ -5629,6 +5629,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v88_125"></script>
+    <script src="app.js?v=v88_126"></script>
 </body>
 </html>
