@@ -36053,29 +36053,41 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     _netHeatmapGeneSets() {
         const nodes = this.networkData?.nodes ? this.networkData.nodes.get() : [];
         const all = nodes.map(n => String(n.id).toUpperCase());
-        // Classify by the node's own isInput flag (set at build time from the
-        // run's gene list), so the split always matches the node colours; the
-        // live textarea can be edited or empty after a restore, and a synonym
-        // node's id no longer matches what was typed. Older node sets without
-        // the flag fall back to the run's recorded gene list.
+        // The node's own isInput flag (set at build time from the run's gene
+        // list) is what splits drawn nodes, rather than matching ids against
+        // the live textarea: that can be edited or empty after a restore, and
+        // a synonym node's id no longer matches what was typed.
         const flagged = nodes.some(n => n.isInput !== undefined);
-        let entered, correlating;
-        if (flagged) {
-            entered = nodes.filter(n => n.isInput).map(n => String(n.id).toUpperCase());
-            correlating = nodes.filter(n => !n.isInput).map(n => String(n.id).toUpperCase());
-        } else {
-            const enteredSet = new Set((this.results?.geneList || (this.getGeneList && this.getGeneList()) || []).map(g => String(g).toUpperCase()));
-            entered = all.filter(g => enteredSet.has(g));
-            correlating = all.filter(g => !enteredSet.has(g));
-        }
-        return { entered, all, correlating };
+        const drawnEntered = flagged
+            ? nodes.filter(n => n.isInput).map(n => String(n.id).toUpperCase())
+            : [];
+        // "Genes I entered" means the run's whole gene list, not just the
+        // entered genes that ended up as nodes: one with no correlation above
+        // the cutoff is never drawn, so counting nodes reported 8 of 18.
+        const runList = Array.from(new Set(
+            (this.results?.geneList || this.getGeneList?.() || []).map(g => String(g).toUpperCase())
+        ));
+        const entered = runList.length ? runList : drawnEntered;
+        // The other two groups describe the network itself, so they stay
+        // node-based.
+        const enteredSet = new Set(entered);
+        const correlating = flagged
+            ? nodes.filter(n => !n.isInput).map(n => String(n.id).toUpperCase())
+            : all.filter(g => !enteredSet.has(g));
+        return { entered, all, correlating, drawnEntered };
     }
 
     // Refreshes the network Heatmap dropdown's live counts and disables
     // whichever choice is empty, or every choice when no network is drawn.
     _netSyncHeatmapMenu() {
-        const { entered, all, correlating } = this._netHeatmapGeneSets();
+        const { entered, all, correlating, drawnEntered } = this._netHeatmapGeneSets();
         const hasNetwork = all.length > 0;
+        // Entered genes that no edge survived for are still drawn in the
+        // heatmap, so say why its count is larger than the network's.
+        const undrawn = hasNetwork ? entered.length - drawnEntered.length : 0;
+        const enteredNote = undrawn > 0
+            ? `. ${undrawn} of them ${undrawn === 1 ? 'is' : 'are'} not in the network (no correlation above the cutoff); the heatmap draws them all.`
+            : '';
         const rows = [
             ['networkHeatmapEntered', entered.length],
             ['networkHeatmapAll', all.length],
@@ -36092,7 +36104,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             btn.style.cursor = disabled ? 'not-allowed' : 'pointer';
             btn.title = disabled
                 ? (!hasNetwork ? 'Draw a network first' : 'No genes in this group')
-                : (btn.dataset.baseTitle || '');
+                : (btn.dataset.baseTitle || '').replace(/\.\s*$/, '') + (id === 'networkHeatmapEntered' ? enteredNote : '');
         });
     }
 
