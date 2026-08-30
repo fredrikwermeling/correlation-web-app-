@@ -185,9 +185,6 @@
             margin-left: 10px;
             white-space: nowrap;
         }
-        @media (max-width: 640px) {
-            .logo-header img { transform: translateX(calc(min(550px, 100vw - 20px) * 0.0955)); }
-        }
 
         /* Main content area */
         .main-content {
@@ -2226,7 +2223,6 @@
             /* Logo scales down to the same width as the app content (it was
                wider than the page on phones, causing a mismatch / overflow). */
             .logo-header { padding: 5px 10px 0 10px !important; }
-            .logo-header img { max-width: 100% !important; }
             .main-content { padding: 0 10px 16px 10px !important; }
             .container { flex-direction: column !important; max-width: 100% !important; gap: 10px !important; }
             .sidebar { width: 100% !important; min-width: 0 !important; }
@@ -2381,7 +2377,17 @@
                 justify-content: center !important; gap: 4px 14px !important; max-width: 100% !important; }
             .nav-side { white-space: normal !important; display: contents !important; }
             #versionBadge { position: static !important; transform: none !important; margin-left: 0 !important; }
-            .logo-header img { max-width: 100% !important; height: auto !important; }
+            /* The shift that centres the wordmark (see the rule outside the
+               media queries) needs slack on the right to move into. Filling
+               the width leaves none, so the tree was pushed off the screen.
+               Centred, the image's right edge sits at (C+W)/2, and the shift
+               adds 0.0955W on top: W has to stay under ~84% of the width for
+               the whole logo to land inside. The shift is a percentage of the
+               image itself here, so the two stay in step at any size. */
+            .logo-header img {
+                max-width: 84% !important; height: auto !important;
+                transform: translateX(9.55%) !important;
+            }
             /* The Options row's four buttons were sized for a desktop row, so
                "Other" overflowed its own button and sat off-centre. */
             #optionsOtherBtn, .sidebar .card-content > .btn { white-space: normal !important; }
@@ -5742,6 +5748,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v89_8"></script>
+    <script src="app.js?v=v89_9"></script>
 </body>
 </html>
