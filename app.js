@@ -545,6 +545,7 @@ class CorrelationExplorer {
         set('subLineageFilter');
         set('paramOncotreeFilter');
         this._paramDiseaseMulti = null;
+        this._paramTissueGroups = null;
         set('paramHotspotGene'); set('paramHotspotLevel', '1+2');
         set('paramTranslocationGene'); set('paramTranslocationLevel', '1+2');
         set('paramCnFilter'); set('paramCnLevel', 'altered');
@@ -598,6 +599,7 @@ class CorrelationExplorer {
         return {
             paramOncotreeFilter: val('paramOncotreeFilter'),
             paramDiseaseMulti: this._paramDiseaseMulti?.length ? [...this._paramDiseaseMulti] : null,
+            paramTissueGroups: this._paramTissueGroups?.length ? this._paramTissueGroups.map(g => ({ ...g })) : null,
             paramHotspotGene: val('paramHotspotGene'),
             paramHotspotLevel: val('paramHotspotLevel'),
             paramTranslocationGene: val('paramTranslocationGene'),
@@ -624,6 +626,7 @@ class CorrelationExplorer {
         set('paramCnFilter', pf.paramCnFilter);
         set('paramCnLevel', pf.paramCnLevel);
         this._paramDiseaseMulti = pf.paramDiseaseMulti?.length ? [...pf.paramDiseaseMulti] : null;
+        this._paramTissueGroups = pf.paramTissueGroups?.length ? pf.paramTissueGroups.map(g => ({ ...g })) : null;
         if (pf.paramOncotreeFilter) {
             this._populateOncotreeSelect?.('paramOncotreeFilter',
                 document.getElementById('lineageFilter')?.value || '',
@@ -756,6 +759,7 @@ class CorrelationExplorer {
             subLineageFilter: mr.subLineageFilter || '',
             oncotreeFilter: mr.oncotreeFilter || '',
             oncotreeFilterMulti: mr.oncotreeFilterMulti || null,
+            tissueGroups: mr.tissueGroups || null,
             // The analysis-level "additional" filters, tissue exclusions, group
             // minimum and metric were part of the saved cohort too; without them
             // the re-run splits a different set of cell lines.
@@ -1595,7 +1599,7 @@ class CorrelationExplorer {
             if (this.excludedTissues?.size) { const lin = this.cellLineMetadata?.lineage?.[cl]; if (lin && this.excludedTissues.has(lin)) continue; }
             if (lineageFilter && this.cellLineMetadata?.lineage?.[cl] !== lineageFilter) continue;
             if (subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cl] !== subLineageFilter) continue;
-            if (!this._paramOncotreePasses(cl)) continue;
+            if (!this._paramOncotreePasses(cl) || !this._paramTissueGroupsPasses(cl)) continue;
             if (kind !== 'hotspot' && hsMuts) { const l = hsMuts[cl] || 0; if (hotspotLevel === '0' && l !== 0) continue; if (hotspotLevel === '1' && l !== 1) continue; if (hotspotLevel === '2' && l < 2) continue; if (hotspotLevel === '1+2' && l < 1) continue; }
             if (kind !== 'fusion' && fusionActive) {
                 const callable = this._fusionCallable(cl);
@@ -1640,7 +1644,7 @@ class CorrelationExplorer {
             if (subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cellLine] !== subLineageFilter) {
                 return;
             }
-            if (!this._paramOncotreePasses(cellLine)) return;
+            if (!this._paramOncotreePasses(cellLine) || !this._paramTissueGroupsPasses(cellLine)) return;
 
             const level = mutations[cellLine] || 0;
             if (level === 0) n0++;
@@ -1705,7 +1709,7 @@ class CorrelationExplorer {
         cellLines.forEach(cellLine => {
             if (lineageFilter && this.cellLineMetadata?.lineage?.[cellLine] !== lineageFilter) return;
             if (subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cellLine] !== subLineageFilter) return;
-            if (!this._paramOncotreePasses(cellLine)) return;
+            if (!this._paramOncotreePasses(cellLine) || !this._paramTissueGroupsPasses(cellLine)) return;
             if (this._geFusionPasses(cellLine, raw)) { nFused++; return; }
             // Never established either way, so not a negative.
             if (!this._fusionCallable(cellLine)) { nNoCall++; return; }
@@ -2044,7 +2048,7 @@ class CorrelationExplorer {
             ? cellLines.filter(cl => {
                 if (lineageFilter && this.cellLineMetadata?.lineage?.[cl] !== lineageFilter) return false;
                 if (subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cl] !== subLineageFilter) return false;
-                if (!this._paramOncotreePasses(cl)) return false;
+                if (!this._paramOncotreePasses(cl) || !this._paramTissueGroupsPasses(cl)) return false;
                 if (hasExcluded) {
                     const lin = this.cellLineMetadata?.lineage?.[cl];
                     if (lin && this.excludedTissues.has(lin)) return false;
@@ -2094,7 +2098,7 @@ class CorrelationExplorer {
             ? cellLines.filter(cl => {
                 if (lineageFilter && this.cellLineMetadata?.lineage?.[cl] !== lineageFilter) return false;
                 if (subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cl] !== subLineageFilter) return false;
-                if (!this._paramOncotreePasses(cl)) return false;
+                if (!this._paramOncotreePasses(cl) || !this._paramTissueGroupsPasses(cl)) return false;
                 if (hasExcluded) {
                     const lin = this.cellLineMetadata?.lineage?.[cl];
                     if (lin && this.excludedTissues.has(lin)) return false;
@@ -2156,7 +2160,7 @@ class CorrelationExplorer {
             ? cellLines.filter(cl => {
                 if (lineageFilter && this.cellLineMetadata?.lineage?.[cl] !== lineageFilter) return false;
                 if (subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cl] !== subLineageFilter) return false;
-                if (!this._paramOncotreePasses(cl)) return false;
+                if (!this._paramOncotreePasses(cl) || !this._paramTissueGroupsPasses(cl)) return false;
                 if (hasExcluded) {
                     const lin = this.cellLineMetadata?.lineage?.[cl];
                     if (lin && this.excludedTissues.has(lin)) return false;
@@ -3103,6 +3107,8 @@ class CorrelationExplorer {
             this.hideTissueBreakdownPopup();
         });
 
+        this._tbRestoreSelection(popup);
+
         // Escape key
         this._tbEscHandler = (e) => { if (e.key === 'Escape') this.hideTissueBreakdownPopup(); };
         document.addEventListener('keydown', this._tbEscHandler);
@@ -3176,7 +3182,7 @@ class CorrelationExplorer {
             filteredCLs = this.metadata.cellLines.filter(cl => {
                 if (lineageFilter && this.cellLineMetadata?.lineage?.[cl] !== lineageFilter) return false;
                 if (subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cl] !== subLineageFilter) return false;
-                if (!this._paramOncotreePasses(cl)) return false;
+                if (!this._paramOncotreePasses(cl) || !this._paramTissueGroupsPasses(cl)) return false;
                 if (this.excludedTissues && this.excludedTissues.size > 0) {
                     const lin = this.cellLineMetadata?.lineage?.[cl];
                     if (lin && this.excludedTissues.has(lin)) return false;
@@ -3752,7 +3758,7 @@ class CorrelationExplorer {
         let total = 0;
         for (const cl of cellLines) {
             if (this._gridAppliesToAnalysis() && !this._cellLinePassesOncoprintFilters(cl)) continue;
-            if (!this._paramOncotreePasses(cl)) continue;
+            if (!this._paramOncotreePasses(cl) || !this._paramTissueGroupsPasses(cl)) continue;
             if (this.excludedTissues && this.excludedTissues.size > 0) {
                 const lin = this.cellLineMetadata.lineage[cl];
                 if (lin && this.excludedTissues.has(lin)) continue;
@@ -4161,6 +4167,38 @@ class CorrelationExplorer {
         const lineageGroup = document.getElementById('lineageFilterGroup');
         const selectedSet = new Set(selectedTissues);
 
+        // The ticks as branches, deepest level per branch. A selection that
+        // spans more than one lineage AND slices at least one of them finer
+        // has no single lineage to put in the selector, so it travels as this
+        // list instead of the trio below.
+        const groups = [
+            ...selectedTissues.map(t => ({ lineage: t })),
+            ...selectedSubtypes.map(x => ({ lineage: x.parent, subtype: x.subtype })),
+            ...selectedDiseases.map(x => ({ lineage: x.lin, subtype: x.sub, disease: x.disease }))
+        ];
+        this._paramTissueGroups = null;
+        if (this._tissueGroupsNeeded(groups)) {
+            this._paramTissueGroups = groups;
+            // The trio has to be empty, or it would narrow the branches on top
+            // of themselves: a lineage left in the selector would cut every
+            // branch outside it.
+            lineageSelect.value = '';
+            lineageSelect.disabled = true;
+            lineageSelect.style.opacity = '0.5';
+            const subSel = document.getElementById('subLineageFilter');
+            if (subSel) subSel.value = '';
+            const oncSel = document.getElementById('paramOncotreeFilter');
+            if (oncSel && oncSel.value) { oncSel.value = ''; oncSel.dispatchEvent(new Event('change', { bubbles: true })); }
+            this._paramDiseaseMulti = null;
+            this.excludedTissues = new Set();
+            document.querySelectorAll('#tissueExcludeList input[type="checkbox"]').forEach(cb => { cb.checked = false; });
+            this._setTissueOverrideLabel(lineageGroup, `Tissue filter: ${this._tissueGroupsLabel(groups)} (click to clear)`);
+            this._renderFilterChips?.('params');
+            this._markMutationRunStale?.();
+            lineageSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            return;
+        }
+
         if (selectedTissues.length === 0) {
             // Clear all tissue filters
             lineageSelect.value = '';
@@ -4206,20 +4244,7 @@ class CorrelationExplorer {
                 cb.checked = excludeSet.has(cb.value);
             });
             // Show override label
-            let overrideLabel = lineageGroup?.querySelector('.tb-override-label');
-            if (!overrideLabel && lineageGroup) {
-                overrideLabel = document.createElement('div');
-                overrideLabel.className = 'tb-override-label';
-                overrideLabel.style.cssText = 'font-size: 11px; color: #5d9239; margin-top: 2px; cursor: pointer;';
-                overrideLabel.title = 'Click to clear tissue selection';
-                overrideLabel.addEventListener('click', () => {
-                    this.applyTissueBreakdownSelection([]);
-                });
-                lineageGroup.appendChild(overrideLabel);
-            }
-            if (overrideLabel) {
-                overrideLabel.textContent = `Tissue filter: ${selectedTissues.join(', ')} (click to clear)`;
-            }
+            this._setTissueOverrideLabel(lineageGroup, `Tissue filter: ${selectedTissues.join(', ')} (click to clear)`);
         }
 
         // Handle sub-tissue selection: if subtypes selected, set lineage + sublineage
@@ -4237,20 +4262,7 @@ class CorrelationExplorer {
             }
             // Show override label
             const subtypeNames = selectedSubtypes.map(s => s.subtype);
-            let overrideLabel = lineageGroup?.querySelector('.tb-override-label');
-            if (!overrideLabel && lineageGroup) {
-                overrideLabel = document.createElement('div');
-                overrideLabel.className = 'tb-override-label';
-                overrideLabel.style.cssText = 'font-size: 11px; color: #5d9239; margin-top: 2px; cursor: pointer;';
-                overrideLabel.title = 'Click to clear tissue selection';
-                overrideLabel.addEventListener('click', () => {
-                    this.applyTissueBreakdownSelection([]);
-                });
-                lineageGroup.appendChild(overrideLabel);
-            }
-            if (overrideLabel) {
-                overrideLabel.textContent = `Subtype: ${subtypeNames.join(', ')} (click to clear)`;
-            }
+            this._setTissueOverrideLabel(lineageGroup, `Subtype: ${subtypeNames.join(', ')} (click to clear)`);
         }
 
         // Third level: disease picks set all three filters at once. One
@@ -4279,20 +4291,7 @@ class CorrelationExplorer {
             this._pendingDiseaseSelection = d;
         }
         if (selectedDiseases.length > 0) {
-            let overrideLabel = lineageGroup?.querySelector('.tb-override-label');
-            if (!overrideLabel && lineageGroup) {
-                overrideLabel = document.createElement('div');
-                overrideLabel.className = 'tb-override-label';
-                overrideLabel.style.cssText = 'font-size: 11px; color: #5d9239; margin-top: 2px; cursor: pointer;';
-                overrideLabel.title = 'Click to clear tissue selection';
-                overrideLabel.addEventListener('click', () => {
-                    this.applyTissueBreakdownSelection([]);
-                });
-                lineageGroup.appendChild(overrideLabel);
-            }
-            if (overrideLabel) {
-                overrideLabel.textContent = `Disease: ${selectedDiseases.map(d => d.disease).join(', ')} (click to clear)`;
-            }
+            this._setTissueOverrideLabel(lineageGroup, `Disease: ${selectedDiseases.map(d => d.disease).join(', ')} (click to clear)`);
         }
 
         // Trigger UI updates
@@ -4319,6 +4318,12 @@ class CorrelationExplorer {
                 oncSel.dispatchEvent(new Event('change', { bubbles: true }));
             }
         }
+
+        // The lineage was set by assignment, which fires nothing, so the
+        // subtype and disease lists never rescoped: after picking Bowel the
+        // disease menu still offered melanomas and glioblastomas. Announce it
+        // once here, after every level is in place.
+        lineageSelect.dispatchEvent(new Event('change', { bubbles: true }));
 
         this.updateHotspotCountsForCurrentFilters();
         this._markMutationRunStale();
@@ -4521,6 +4526,7 @@ class CorrelationExplorer {
         });
 
         document.getElementById('tbCloseBtn').addEventListener('click', () => this.hideTissueBreakdownPopup());
+        this._tbRestoreSelection(popup);
         this._tbEscHandler = (e) => { if (e.key === 'Escape') this.hideTissueBreakdownPopup(); };
         document.addEventListener('keydown', this._tbEscHandler);
         setTimeout(() => {
@@ -5190,6 +5196,116 @@ class CorrelationExplorer {
         if (multi && multi.length) return multi.includes(dis);
         const v = this.mutationResults?.oncotreeFilter || '';
         return !v || dis === v;
+    }
+
+    // The current tissue filter as branches, whichever form it is in. The
+    // trio can only describe one lineage, so it collapses to at most one
+    // branch per disease; several whole tissues come back through the
+    // exclusion list, which is how that case is stored.
+    _tbGroupsFromTrio() {
+        const val = (id) => document.getElementById(id)?.value || '';
+        const lin = val('lineageFilter');
+        if (!lin) {
+            const excluded = this.excludedTissues;
+            if (!excluded || !excluded.size) return [];
+            const all = new Set(Object.values(this.cellLineMetadata?.lineage || {}));
+            return [...all].filter(t => !excluded.has(t)).map(lineage => ({ lineage }));
+        }
+        const subtype = val('subLineageFilter');
+        const onc = val('paramOncotreeFilter');
+        const diseases = this._paramDiseaseMulti?.length
+            ? this._paramDiseaseMulti
+            : (onc && onc !== '__mr_multi__' ? [onc] : []);
+        if (diseases.length && subtype) return diseases.map(disease => ({ lineage: lin, subtype, disease }));
+        return subtype ? [{ lineage: lin, subtype }] : [{ lineage: lin }];
+    }
+
+    // Reopening a Tissue split showed an empty table below the lineage level:
+    // only the lineage row was ever pre-ticked, so a subtype or disease pick
+    // (and now a branch list) came back as nothing. Ticks whatever is
+    // filtering and opens the rows it sits in so it can be seen.
+    _tbRestoreSelection(popup) {
+        const groups = this._paramTissueGroups?.length ? this._paramTissueGroups : this._tbGroupsFromTrio();
+        popup.querySelectorAll('.tb-check, .tb-sub-check, .tb-dis-check').forEach(cb => { cb.checked = false; });
+        const q = (v) => String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        const open = (rowSel, arrowSel) => {
+            popup.querySelectorAll(rowSel).forEach(r => { r.style.display = ''; });
+            const a = popup.querySelector(arrowSel);
+            if (a) a.textContent = '\u25bc';
+        };
+        groups.forEach(g => {
+            const lin = q(g.lineage);
+            if (g.subtype) open(`.tb-sub-row[data-parent="${lin}"]`, `.tb-row[data-tissue="${lin}"] .tb-expand`);
+            if (g.disease) {
+                const sb = q(g.subtype);
+                open(`.tb-dis-row[data-parent-lin="${lin}"][data-parent-sub="${sb}"]`,
+                     `.tb-sub-row[data-parent="${lin}"][data-subtype="${sb}"] .tb-sub-expand`);
+            }
+            const cb = g.disease
+                ? popup.querySelector(`.tb-dis-check[data-parent-lin="${lin}"][data-parent-sub="${q(g.subtype)}"][value="${q(g.disease)}"]`)
+                : g.subtype
+                    ? popup.querySelector(`.tb-sub-check[data-parent="${lin}"][value="${q(g.subtype)}"]`)
+                    : popup.querySelector(`.tb-check[value="${lin}"]`);
+            if (cb) cb.checked = true;
+        });
+        this.updateTBSelectionCount();
+    }
+
+    // The line under the lineage selector saying a Tissue split is overriding
+    // it. Built the same way from three places, so it lives here.
+    _setTissueOverrideLabel(lineageGroup, text) {
+        if (!lineageGroup) return;
+        let label = lineageGroup.querySelector('.tb-override-label');
+        if (!label) {
+            label = document.createElement('div');
+            label.className = 'tb-override-label';
+            label.style.cssText = 'font-size: 11px; color: #5d9239; margin-top: 2px; cursor: pointer;';
+            label.title = 'Click to clear tissue selection';
+            label.addEventListener('click', () => this.applyTissueBreakdownSelection([]));
+            lineageGroup.appendChild(label);
+        }
+        label.textContent = text;
+    }
+
+    // A Tissue split can tick levels the lineage / subtype / disease trio
+    // cannot hold at once: Melanoma, a subtype of Skin, alongside the whole of
+    // Bowel. There is no single lineage to put in the selector, so those
+    // selections travel as an explicit list of branches instead, the same way
+    // several diseases travel as _paramDiseaseMulti. A cell line passes if it
+    // sits under any one of them.
+    _tissueGroupsPass(cl, groups) {
+        if (!groups || !groups.length) return true;
+        const md = this.cellLineMetadata;
+        const lin = md?.lineage?.[cl] || '';
+        const sub = md?.primaryDisease?.[cl] || '';
+        const dis = md?.oncotreeSubtype?.[cl] || '';
+        return groups.some(g => g.lineage === lin
+            && (!g.subtype || g.subtype === sub)
+            && (!g.disease || g.disease === dis));
+    }
+
+    _paramTissueGroupsPasses(cl) {
+        return this._tissueGroupsPass(cl, this._paramTissueGroups);
+    }
+
+    // Same, against the branches STORED with the mutation analysis, so its
+    // inspect and compare views reproduce the run's cohort.
+    _mrTissueGroupsPasses(cl) {
+        return this._tissueGroupsPass(cl, this.mutationResults?.tissueGroups);
+    }
+
+    // How a branch list reads: the deepest level ticked names each branch.
+    _tissueGroupsLabel(groups) {
+        return (groups || []).map(g => g.disease || g.subtype || g.lineage).join(' + ');
+    }
+
+    // Whether a selection needs the branch list at all. One lineage, however
+    // finely sliced, still fits the trio, and so do several whole tissues; it
+    // is the mix of the two that does not.
+    _tissueGroupsNeeded(groups) {
+        if (!groups || groups.length < 2) return false;
+        return new Set(groups.map(g => g.lineage)).size > 1
+            && groups.some(g => g.subtype || g.disease);
     }
 
     // The curated fusion entry for a cell line, if there is one.
@@ -8486,7 +8602,7 @@ class CorrelationExplorer {
                     return;
                 }
             }
-            if (!this._paramOncotreePasses(cellLine)) return;
+            if (!this._paramOncotreePasses(cellLine) || !this._paramTissueGroupsPasses(cellLine)) return;
 
             // Check hotspot mutation filter
             if (mutationData && hotspotLevel !== 'all') {
@@ -8941,6 +9057,7 @@ class CorrelationExplorer {
                     subLineageFilter,
                     oncotreeFilter: document.getElementById('paramOncotreeFilter')?.value || '',
                     oncotreeFilterMulti: this._paramDiseaseMulti ? [...this._paramDiseaseMulti] : null,
+                    tissueGroups: this._paramTissueGroups ? this._paramTissueGroups.map(g => ({ ...g })) : null,
                     additionalHotspot,
                     additionalHotspotLevel,
                     additionalTransGene,
@@ -9249,7 +9366,7 @@ class CorrelationExplorer {
             if (subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cellLine] !== subLineageFilter) {
                 return;
             }
-            if (!this._paramOncotreePasses(cellLine)) return;
+            if (!this._paramOncotreePasses(cellLine) || !this._paramTissueGroupsPasses(cellLine)) return;
 
             // Check additional hotspot filter
             if (additionalMutData && additionalHotspotLevel !== 'all') {
@@ -9446,7 +9563,7 @@ class CorrelationExplorer {
             }
             if (lineageFilter && this.cellLineMetadata?.lineage?.[cellLine] !== lineageFilter) return;
             if (subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cellLine] !== subLineageFilter) return;
-            if (!this._paramOncotreePasses(cellLine)) return;
+            if (!this._paramOncotreePasses(cellLine) || !this._paramTissueGroupsPasses(cellLine)) return;
 
             if (additionalMutData && additionalHotspotLevel !== 'all') {
                 const addMutLevel = additionalMutData.mutations[cellLine] || 0;
@@ -9954,6 +10071,7 @@ class CorrelationExplorer {
             settingsText += ` | Lineage: ${lineageText}`;
         }
         if (mr.oncotreeFilterMulti?.length) settingsText += ` | Diseases: ${mr.oncotreeFilterMulti.join(', ')}`;
+        if (mr.tissueGroups?.length) settingsText += ` | Tissue split: ${this._tissueGroupsLabel(mr.tissueGroups)}`;
         else if (mr.oncotreeFilter) settingsText += ` | Disease: ${mr.oncotreeFilter}`;
         // Collect all mutation filters into one label
         const mutFilterParts = [];
@@ -10448,7 +10566,7 @@ class CorrelationExplorer {
             if (!inspectTissueFilter && !inspectSubtype && mr.subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cellLine] !== mr.subLineageFilter) {
                 return;
             }
-            if (!inspectTissueFilter && !inspectSubtype && !this._mrOncotreePasses(cellLine)) return;
+            if (!inspectTissueFilter && !inspectSubtype && (!this._mrOncotreePasses(cellLine) || !this._mrTissueGroupsPasses(cellLine))) return;
 
             // Check inspect-level subtype filter
             if (inspectSubtype && this.cellLineMetadata?.primaryDisease) {
@@ -10995,7 +11113,7 @@ class CorrelationExplorer {
                     if (lin && mr.excludedTissues.has(lin)) continue;
                 }
                 if (mr.subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cl] !== mr.subLineageFilter) continue;
-                if (!this._mrOncotreePasses(cl)) continue;
+                if (!this._mrOncotreePasses(cl) || !this._mrTissueGroupsPasses(cl)) continue;
                 eligibleCL.add(cl);
             }
             // Current stratifier type, so the right option stays selected.
@@ -11181,7 +11299,7 @@ class CorrelationExplorer {
                 if (lin && mr.excludedTissues.has(lin)) continue;
             }
             if (mr.subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cl] !== mr.subLineageFilter) continue;
-            if (!this._mrOncotreePasses(cl)) continue;
+            if (!this._mrOncotreePasses(cl) || !this._mrTissueGroupsPasses(cl)) continue;
             this.currentGeneEffect.data.push({
                 cellLineId: cl,
                 cellLineName: this.getCellLineName(cl),
@@ -14078,6 +14196,9 @@ Results:
             ? this._paramDiseaseMulti.join(' + ')
             : document.getElementById('paramOncotreeFilter')?.value;
         if (paramDisease && paramDisease !== '__mr_multi__') parts.push(paramDisease);
+        // A mixed-level Tissue split stands in for the three above, so it is
+        // named in their place rather than alongside them.
+        if (this._paramTissueGroups?.length) parts.push(this._tissueGroupsLabel(this._paramTissueGroups));
         if (this.excludedTissues && this.excludedTissues.size > 0) {
             parts.push(`${this.excludedTissues.size} tissue${this.excludedTissues.size > 1 ? 's' : ''} excluded`);
         }
@@ -18207,6 +18328,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (path.length) {
             add(path[path.length - 1], () => this._clearLocationFilters(), path.join(' \u203a '));
         }
+        // A Tissue split spanning branches has no single path to walk, so it
+        // is one chip naming every branch, cleared the same way.
+        if (this._paramTissueGroups?.length) {
+            const label = this._tissueGroupsLabel(this._paramTissueGroups);
+            add(label, () => this._clearLocationFilters(), `Tissue split: ${label}`);
+        }
         const hs = val('paramHotspotGene');
         if (hs) add(`${hs} ${val('paramHotspotLevel') === '0' ? 'WT' : 'mutated'}`,
             () => { const e = document.getElementById('paramHotspotGene'); e.value = ''; fire('paramHotspotGene'); }, 'Mutation');
@@ -18280,6 +18407,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // behind claiming a filter that was no longer applied.
     _clearLocationFilters() {
         this._paramDiseaseMulti = null;
+        this._paramTissueGroups = null;
         try { this.applyTissueBreakdownSelection([]); } catch (e) {}
         ['lineageFilter', 'subLineageFilter', 'paramOncotreeFilter'].forEach(id => {
             const e = document.getElementById(id);
@@ -23939,6 +24067,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Tissue exclusions and the UI that mirrors them (checkbox list,
         // disabled lineage dropdown, override label under it).
         this.excludedTissues = new Set();
+        this._paramTissueGroups = null;
         document.querySelectorAll('#tissueExcludeList input[type="checkbox"]').forEach(cb => { cb.checked = false; });
         const linSel = document.getElementById('lineageFilter');
         if (linSel) { linSel.disabled = false; linSel.style.opacity = ''; }
@@ -24315,6 +24444,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Restore the disease level too, single pick or the Tissue split's
         // multi-set, so the re-run reproduces the saved cohort.
         this._paramDiseaseMulti = meta.oncotreeFilterMulti?.length ? [...meta.oncotreeFilterMulti] : null;
+        this._paramTissueGroups = meta.tissueGroups?.length ? meta.tissueGroups.map(g => ({ ...g })) : null;
         if (meta.oncotreeFilter) {
             this._populateOncotreeSelect?.('paramOncotreeFilter', meta.lineageFilter || '', meta.subLineageFilter || '');
             const oncEl = document.getElementById('paramOncotreeFilter');
@@ -24676,6 +24806,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             paramCnLevel: val('paramCnLevel'),
             paramOncotreeFilter: val('paramOncotreeFilter'),
             paramDiseaseMulti: this._paramDiseaseMulti?.length ? [...this._paramDiseaseMulti] : null,
+            paramTissueGroups: this._paramTissueGroups?.length ? this._paramTissueGroups.map(g => ({ ...g })) : null,
             mutationHotspotSelect: val('mutationHotspotSelect'),
             excludedTissues: this.excludedTissues ? [...this.excludedTissues] : [],
             extraGenes: this._oncoprintExtraGenes ? [...this._oncoprintExtraGenes] : [],
@@ -24783,6 +24914,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         set('paramCnFilter', c.paramCnFilter);
         set('paramCnLevel', c.paramCnLevel);
         this._paramDiseaseMulti = c.paramDiseaseMulti?.length ? [...c.paramDiseaseMulti] : null;
+        this._paramTissueGroups = c.paramTissueGroups?.length ? c.paramTissueGroups.map(g => ({ ...g })) : null;
         if (c.paramOncotreeFilter) {
             this._populateOncotreeSelect?.('paramOncotreeFilter', c.lineageFilter || '', c.subLineageFilter || '');
             const oncEl = document.getElementById('paramOncotreeFilter');
@@ -29508,7 +29640,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             this.metadata.cellLines.forEach(cl => {
                 if (mr.lineageFilter && this.cellLineMetadata?.lineage?.[cl] !== mr.lineageFilter) return;
                 if (mr.subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cl] !== mr.subLineageFilter) return;
-                if (!this._mrOncotreePasses(cl)) return;
+                if (!this._mrOncotreePasses(cl) || !this._mrTissueGroupsPasses(cl)) return;
                 if (mr.excludedTissues?.size > 0 && mr.excludedTissues.has(this.cellLineMetadata?.lineage?.[cl])) return;
                 if (addMutData) {
                     const lvl = addMutData[cl] || 0;
@@ -30642,6 +30774,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 plotType: 'mutation_table', stratification: mr?.hotspotGene,
                 lineageFilter: mr?.lineageFilter || '', subLineageFilter: mr?.subLineageFilter || '',
                 oncotreeFilter: mr?.oncotreeFilter || '', oncotreeFilterMulti: mr?.oncotreeFilterMulti || null,
+                tissueGroups: mr?.tissueGroups || null,
                 excludedTissues: excludedList,
                 additionalHotspot: mr?.additionalHotspot && mr?.additionalHotspotLevel !== 'all'
                     ? `${mr.additionalHotspot} ${mr.additionalHotspotLevel}` : '',
@@ -34347,7 +34480,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 }
             }
             if (!activeTissueFilter && mr.subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cellLine] !== mr.subLineageFilter) return;
-            if (!activeTissueFilter && !this._mrOncotreePasses(cellLine)) return;
+            if (!activeTissueFilter && (!this._mrOncotreePasses(cellLine) || !this._mrTissueGroupsPasses(cellLine))) return;
             if (inspectSubtype && this.cellLineMetadata?.primaryDisease?.[cellLine] !== inspectSubtype) return;
             if (!this._passesOncotree(cellLine, 'geOncotreeFilter')) return;
             if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
@@ -34457,7 +34590,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 }
             }
             if (!tissueFilter && mr.subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cellLine] !== mr.subLineageFilter) return;
-            if (!tissueFilter && !this._mrOncotreePasses(cellLine)) return;
+            if (!tissueFilter && (!this._mrOncotreePasses(cellLine) || !this._mrTissueGroupsPasses(cellLine))) return;
             if (inspectSubtype && this.cellLineMetadata?.primaryDisease?.[cellLine] !== inspectSubtype) return;
             if (!this._passesOncotree(cellLine, 'geOncotreeFilter')) return;
             if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
@@ -34563,7 +34696,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 }
             }
             if (!tissueFilter && mr.subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cellLine] !== mr.subLineageFilter) return;
-            if (!tissueFilter && !this._mrOncotreePasses(cellLine)) return;
+            if (!tissueFilter && (!this._mrOncotreePasses(cellLine) || !this._mrTissueGroupsPasses(cellLine))) return;
             if (inspectSubtype && this.cellLineMetadata?.primaryDisease?.[cellLine] !== inspectSubtype) return;
             if (!this._passesOncotree(cellLine, 'geOncotreeFilter')) return;
             if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
@@ -34672,7 +34805,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 }
             }
             if (!tissueFilter && mr.subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cellLine] !== mr.subLineageFilter) return;
-            if (!tissueFilter && !this._mrOncotreePasses(cellLine)) return;
+            if (!tissueFilter && (!this._mrOncotreePasses(cellLine) || !this._mrTissueGroupsPasses(cellLine))) return;
             if (inspectSubtype && this.cellLineMetadata?.primaryDisease?.[cellLine] !== inspectSubtype) return;
             if (!this._passesOncotree(cellLine, 'geOncotreeFilter')) return;
             if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
@@ -35393,7 +35526,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 }
             }
             if (!inspectTissueFilter && mr?.subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cellLine] !== mr.subLineageFilter) return;
-            if (!inspectTissueFilter && !this._mrOncotreePasses(cellLine)) return;
+            if (!inspectTissueFilter && (!this._mrOncotreePasses(cellLine) || !this._mrTissueGroupsPasses(cellLine))) return;
             // The popout's own subtype and disease picks scope the plot above
             // this panel, so the correlates run on the same cell lines.
             if (geSub && this.cellLineMetadata?.primaryDisease?.[cellLine] !== geSub) return;
@@ -35673,7 +35806,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                         if (mr.excludedTissues && mr.excludedTissues.size > 0 && mr.excludedTissues.has(lineage)) continue;
                     }
                     if (!inspectTissueFilter && mr?.subLineageFilter && this.cellLineMetadata?.primaryDisease?.[cellLine] !== mr.subLineageFilter) continue;
-                    if (!inspectTissueFilter && !this._mrOncotreePasses(cellLine)) continue;
+                    if (!inspectTissueFilter && (!this._mrOncotreePasses(cellLine) || !this._mrTissueGroupsPasses(cellLine))) continue;
                 }
 
                 // Still apply additional hotspot filter
@@ -42130,7 +42263,15 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Each popout's disease counts run over that popout's own cohort;
         // the first-page params keep the whole panel (their cohort IS the
         // whole panel, and rewiring them is a decided non-goal).
-        const cohortOf = (ctx) => ctx === 'params' ? null : this._annotationCountCohort(ctx);
+        // The popouts scope their disease counts to their own cohort. The
+        // first page normally works over the whole panel and is deliberately
+        // left that way, but a branch-list Tissue split has no single lineage
+        // to scope by, so it supplies its cohort here instead.
+        const cohortOf = (ctx) => {
+            if (ctx !== 'params') return this._annotationCountCohort(ctx);
+            if (!this._paramTissueGroups?.length) return null;
+            return (this.metadata?.cellLines || []).filter(cl => this._paramTissueGroupsPasses(cl));
+        };
         for (const [ctx, tId, sId, oId] of ctxs) {
             const sel = document.getElementById(oId);
             if (!sel) continue;
@@ -42141,7 +42282,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (!sel._wired) {
                 sel._wired = true;
                 sel.addEventListener('change', () => {
-                    if (ctx === 'params') { this._paramDiseaseMulti = null; this._markMutationRunStale(); }
+                    if (ctx === 'params') { this._paramDiseaseMulti = null; this._paramTissueGroups = null; this._markMutationRunStale(); }
                     // The tissue and subtype lists are scoped by the disease
                     // as well, so a disease pick rescopes both (the reverse of
                     // the wiring below): the three selectors scale to each
@@ -59505,6 +59646,7 @@ ${clone.innerHTML}
         if (mr.lineageFilter) cohortBits.push(`tissue ${mr.lineageFilter}`);
         if (mr.subLineageFilter) cohortBits.push(`subtype ${mr.subLineageFilter}`);
         if (mr.oncotreeFilterMulti?.length) cohortBits.push(`diseases ${mr.oncotreeFilterMulti.join(' + ')}`);
+        if (mr.tissueGroups?.length) cohortBits.push(`the tissue split ${this._tissueGroupsLabel(mr.tissueGroups)}`);
         else if (mr.oncotreeFilter) cohortBits.push(`disease ${mr.oncotreeFilter}`);
         if (mr.excludedTissues?.size) cohortBits.push(`${mr.excludedTissues.size} tissue${mr.excludedTissues.size === 1 ? '' : 's'} excluded (${[...mr.excludedTissues].join(', ')})`);
         if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') cohortBits.push(`${mr.additionalHotspot} hotspot level ${mr.additionalHotspotLevel}`);
