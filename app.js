@@ -39584,19 +39584,55 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         box.style.display = 'flex';
         // Whatever ends up highlighted is usually a set worth taking elsewhere,
         // so it can be copied without reading the chips off the screen.
+        const pillStyle = 'border:1px solid #d1d5db; background:#f9fafb; color:#4b5563;'
+            + ' border-radius:10px; padding:1px 8px; font-size:10px; cursor:pointer; margin-left:2px;';
         box.innerHTML = list.map(n => this._chipHtml(n, 'highlight', n, '#f59e0b')).join('')
             + `<button type="button" id="copyHighlightedBtn" title="Copy these ${list.length} cell line names, one per line"`
-            + ` style="border:1px solid #d1d5db; background:#f9fafb; color:#4b5563; border-radius:10px; padding:1px 8px; font-size:10px; cursor:pointer; margin-left:2px;">`
-            + `Copy ${list.length} name${list.length === 1 ? '' : 's'}</button>`;
+            + ` style="${pillStyle}">Copy ${list.length} name${list.length === 1 ? '' : 's'}</button>`
+            + `<button type="button" id="highlightToBrowserBtn" title="Open the Cell Line Browser with these ${list.length} cell lines ticked, ready for its filters, sorts and exports"`
+            + ` style="${pillStyle}">Open in browser</button>`;
         box.onclick = (e) => {
             if (e.target.closest('#copyHighlightedBtn')) {
                 this.copyNamesToClipboard(list, 'highlighted');
+                return;
+            }
+            if (e.target.closest('#highlightToBrowserBtn')) {
+                this.openHighlightedInBrowser(list);
                 return;
             }
             const btn = e.target.closest('[data-chip-action="highlight"]');
             if (!btn) return;
             this.removeHighlight(btn.dataset.chipValue);
         };
+    }
+
+    // Carry the highlighted cell lines, however they were picked (lassoed,
+    // clicked or typed), into the Cell Line Browser as its tick selection, so
+    // the set can be filtered, sorted, inspected and exported there. The
+    // scatter stays open underneath, so the browser has to be stacked above
+    // it; closeCellLineBrowser clears the bump.
+    openHighlightedInBrowser(names) {
+        const list = [...new Set(names || [])];
+        if (!list.length) return;
+        const nameToId = this._buildCellLineNameToIdMap();
+        const ids = [], missed = [];
+        for (const n of list) {
+            const id = /^ACH-\d+$/i.test(n) ? n.toUpperCase() : nameToId.get(String(n).toUpperCase());
+            if (id) ids.push(id); else missed.push(n);
+        }
+        if (!ids.length) {
+            this.showCopyNotification?.('None of the highlighted names matched a cell line in the panel.');
+            return;
+        }
+        this._clbSelectedCellLines = new Set(ids);
+        this.openCellLineBrowser();
+        const inspectModal = document.getElementById('inspectModal');
+        const z = inspectModal ? (parseInt(getComputedStyle(inspectModal).zIndex, 10) || 0) : 0;
+        const clbModal = document.getElementById('cellLineBrowserModal');
+        if (clbModal && z) clbModal.style.zIndex = String(z + 10);
+        this.showCopyNotification?.(
+            `${ids.length} cell line${ids.length === 1 ? '' : 's'} ticked in the Cell Line Browser`
+            + (missed.length ? `. Not matched: ${missed.slice(0, 5).join(', ')}${missed.length > 5 ? ` and ${missed.length - 5} more` : ''}` : '.'));
     }
 
     // Encircle points on the scatter and add them to the highlight set. Kept
@@ -41011,9 +41047,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
     closeCellLineBrowser() {
         document.getElementById('cellLineBrowserModal').style.display = 'none';
-        // Undo any z-index bump _hmDrillToBrowser applied to stack this
-        // modal above an open heatmap, so a later, ordinary open doesn't
-        // inherit it. 1350 is this modal's own declared z-index.
+        // Undo any z-index bump applied to stack this modal above the view it
+        // was opened from (a heatmap, or the scatter's highlight set), so a
+        // later, ordinary open doesn't inherit it. 1350 is its own z-index.
         document.getElementById('cellLineBrowserModal').style.zIndex = '1350';
         // Clear oncoprint filters so they don't leak into other parts of the app
         this._oncoprintFilters = {};
