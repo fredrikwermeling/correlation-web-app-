@@ -2271,6 +2271,18 @@
             .sidebar button[onclick*="adjustAxis"] { min-height: 32px !important; padding: 2px 10px !important; }
             /* Checkboxes and radios are the smallest targets of all. */
             input[type="checkbox"], input[type="radio"] { width: 20px !important; height: 20px !important; }
+            /* Sliders and their step buttons missed the pass that enlarged
+               every other control here: a 6px track and an 18px button are a
+               mouse's targets, not a finger's. The thumb has to be sized on
+               its own pseudo-element or the track grows and the grab point
+               does not. */
+            input[type="range"] { height: 30px !important; }
+            input[type="range"]::-webkit-slider-thumb { width: 24px !important; height: 24px !important; }
+            input[type="range"]::-moz-range-thumb { width: 24px !important; height: 24px !important; }
+            .slider-step {
+                min-width: 34px !important; min-height: 34px !important;
+                font-size: 16px !important; padding: 0 !important;
+            }
             label { line-height: 1.5 !important; }
             /* Stack the chart-beside-table layouts; chart spans full width.
                Plotly renders at a fixed pixel width, so allow horizontal pan
@@ -2425,7 +2437,10 @@
                desktop-mouse size. The gates themselves work by ticking, so
                they stay on phones, and their controls have to be tappable. */
             .clb-gate-chip { font-size: 12px !important; }
-            .clb-gate-pct { width: 52px !important; font-size: 16px !important; }
+            /* Beats the browser's own full-width rule for text inputs, which
+               is ID-level and would otherwise give a two-digit number its own
+               row. */
+            #cellLineBrowserModal input.clb-gate-pct { width: 56px !important; font-size: 16px !important; }
             /* 32px square, the size the other phone touch targets use. */
             .clb-gate-chip a {
                 display: inline-flex; align-items: center; justify-content: center;
@@ -5663,6 +5678,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v89_0"></script>
+    <script src="app.js?v=v89_1"></script>
 </body>
 </html>
