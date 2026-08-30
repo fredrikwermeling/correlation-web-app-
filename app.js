@@ -13264,15 +13264,14 @@ class CorrelationExplorer {
         const hlNote = document.getElementById('net_ts_hlNote')?.value;
         const hlNoteSize = parseInt(document.getElementById('net_ts_hlNoteSize')?.value, 10);
         const hlNoteColor = document.getElementById('net_ts_hlNoteColor')?.value;
-        let hlChanged = false;
-        if (hlStyle && hlStyle !== this._netHighlightStyle) { this._netHighlightStyle = hlStyle; hlChanged = true; }
-        if (hlColor && hlColor !== this._netHighlightColor) { this._netHighlightColor = hlColor; hlChanged = true; }
+        // Shared with the Enrichr panel's copy of these two controls.
+        const hlChanged = this.setNetworkHighlightLook({ style: hlStyle, color: hlColor });
         if (isFinite(hlNoteSize)) this._netHighlightNoteSize = hlNoteSize;
         if (hlNoteColor) this._netHighlightNoteColor = hlNoteColor;
         if (hlNote !== undefined) this._netHighlightNote = hlNote;
-        // Redraw the marks only when the mark itself changed; editing the note
-        // should not disturb the network.
-        if (hlChanged && this._netHighlightText) this.applyNetworkHighlight(this._netHighlightText);
+        // setNetworkHighlightLook has already redrawn the marks if they changed;
+        // editing the note must not disturb the network.
+        void hlChanged;
         this._renderNetHighlightNote();
 
         const banner = document.getElementById('networkHeader');
@@ -17983,6 +17982,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
     closeInspectModal() {
         document.getElementById('inspectModal').classList.remove('active');
+        // The gene card raised from this popout draws above it and outlives it
+        // otherwise; it belongs to the view, so it goes with the view.
+        this.hideGeneTooltip?.(true);
         // Settings belong to the pair being looked at, not to the app. Leaving
         // them behind meant the next edge clicked in the network opened with
         // whatever axis types and filters the previous one had, so a plot
@@ -21030,6 +21032,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         title.textContent = `Enrichr / ${genes.length} ${kind === 'ge' ? 'GE' : 'Expression'} correlates of ${st.xGene}`;
         content.innerHTML = '<div style="text-align:center; padding:60px; color:#aaa;"><div style="font-size:24px; margin-bottom:12px;">⏳</div>Submitting to Enrichr...</div>';
         modal.style.display = 'block';
+        this._wireEnrichrResize();
+        this._applyEnrichrWidth();
         try {
             await this.submitToEnrichr(genes);
         } catch (err) {
@@ -23138,6 +23142,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         title.textContent = `Enrichr / ${genes.length} mutated genes enriched in Gate ${gate} (GE gate)`;
         content.innerHTML = '<div style="text-align:center; padding:60px; color:#aaa;"><div style="font-size:24px; margin-bottom:12px;">⏳</div>Submitting to Enrichr...</div>';
         modal.style.display = 'block';
+        this._wireEnrichrResize();
+        this._applyEnrichrWidth();
 
         this.submitToEnrichr(genes).catch(err => {
             content.innerHTML = `<div style="text-align:center; padding:60px; color:#ef4444;">Failed to connect to Enrichr.<br><small style="color:#888;">${err.message}</small></div>`;
@@ -23165,6 +23171,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         title.textContent = `Enrichr / Top 100 depleted genes (Gate A vs B, GE gate)`;
         content.innerHTML = '<div style="text-align:center; padding:60px; color:#aaa;"><div style="font-size:24px; margin-bottom:12px;">⏳</div>Submitting to Enrichr...</div>';
         modal.style.display = 'block';
+        this._wireEnrichrResize();
+        this._applyEnrichrWidth();
 
         this.submitToEnrichr(genes).catch(err => {
             content.innerHTML = `<div style="text-align:center; padding:60px; color:#ef4444;">Failed to connect to Enrichr.<br><small style="color:#888;">${err.message}</small></div>`;
@@ -23192,6 +23200,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         title.textContent = `Enrichr / Top 100 down-regulated genes (Gate A vs B, GE gate expression)`;
         content.innerHTML = '<div style="text-align:center; padding:60px; color:#aaa;"><div style="font-size:24px; margin-bottom:12px;">⏳</div>Submitting to Enrichr...</div>';
         modal.style.display = 'block';
+        this._wireEnrichrResize();
+        this._applyEnrichrWidth();
 
         this.submitToEnrichr(genes).catch(err => {
             content.innerHTML = `<div style="text-align:center; padding:60px; color:#ef4444;">Failed to connect to Enrichr.<br><small style="color:#888;">${err.message}</small></div>`;
@@ -35957,12 +35967,81 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // Float the results beside the network instead of over everything. The
     // network stays live underneath, so a term can be clicked and its genes
     // watched lighting up, rather than clicked, dismissed, and then looked at.
+    // The mark style and colour used for highlighted genes. Two panels offer
+    // these controls (network Settings and Enrichr), and they are the same
+    // setting, so both route through here: state, redraw, then write the new
+    // values back into whichever of the two panels is on screen.
+    setNetworkHighlightLook(patch = {}) {
+        let changed = false;
+        if (patch.style && patch.style !== this._netHighlightStyle) { this._netHighlightStyle = patch.style; changed = true; }
+        if (patch.color && patch.color !== this._netHighlightColor) { this._netHighlightColor = patch.color; changed = true; }
+        if (changed && this._netHighlightText) this.applyNetworkHighlight(this._netHighlightText);
+        this.syncHighlightLookControls();
+        return changed;
+    }
+
+    // Both panels, whichever exist right now.
+    syncHighlightLookControls() {
+        const style = this._netHighlightStyle || 'dashed';
+        const color = this._netHighlightColor || '#000000';
+        [['net_ts_hlStyle', 'enrichrHlStyle'], ['net_ts_hlColor', 'enrichrHlColor']].forEach(([a, b], i) => {
+            const v = i === 0 ? style : color;
+            [a, b].forEach(id => { const el = document.getElementById(id); if (el && el.value !== v) el.value = v; });
+        });
+    }
+
+    // Width by dragging the panel's left edge. Stored for the session so the
+    // next Enrichr opens at the width the user settled on.
+    _wireEnrichrResize() {
+        const grip = document.getElementById('enrichrResize');
+        const card = document.getElementById('enrichrCard');
+        if (!grip || !card || grip.dataset.wired) return;
+        grip.dataset.wired = '1';
+        grip.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            grip.classList.add('dragging');
+            const startRight = card.getBoundingClientRect().right;
+            const onMove = (e2) => {
+                const w = Math.round(Math.min(window.innerWidth - 24, Math.max(360, startRight - e2.clientX)));
+                card.style.setProperty('width', w + 'px', 'important');
+                card.style.setProperty('max-width', 'none', 'important');
+                this._enrichrWidth = w;
+            };
+            const onUp = () => {
+                grip.classList.remove('dragging');
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+            };
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+        });
+    }
+
+    // Reapply a width the user set earlier. Skipped on a phone, where the
+    // panel is full-screen and a remembered desktop width would be wrong.
+    _applyEnrichrWidth() {
+        const card = document.getElementById('enrichrCard');
+        if (!card || !this._enrichrWidth || window.innerWidth <= 640) return;
+        card.style.setProperty('width', this._enrichrWidth + 'px', 'important');
+        card.style.setProperty('max-width', 'none', 'important');
+    }
+
     _setEnrichrFloating(on) {
         const modal = document.getElementById('enrichrModal');
         const btn = document.getElementById('enrichrDockBtn');
         if (!modal) return;
         modal.classList.toggle('enrichr-floating', !!on);
-        if (btn) btn.textContent = on ? 'Fill the window' : 'Float beside network';
+        this._wireEnrichrResize();
+        this._applyEnrichrWidth();
+        // "Fill the window" read as a layout instruction rather than as the
+        // other half of a pair. Each label now names the state it goes to.
+        if (btn) {
+            btn.textContent = on ? 'Full window' : 'Beside the network';
+            btn.title = on
+                ? 'Show this over the whole window instead of beside the network'
+                : 'Float this beside the network, so clicking a term marks its genes while you watch';
+        }
     }
 
     // Enrichr from the network. Three sets, because they answer different
@@ -36016,6 +36095,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (title) title.textContent = `Enrichr / ${genes.length} ${label}`;
         if (content) content.innerHTML = '<div style="text-align:center; padding:60px; color:#aaa;"><div style="font-size:24px; margin-bottom:12px;">&#9203;</div>Submitting to Enrichr...</div>';
         if (modal) modal.style.display = 'block';
+        this._wireEnrichrResize();
+        this._applyEnrichrWidth();
         try {
             await this.submitToEnrichr(genes);
         } catch (err) {
@@ -36388,6 +36469,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         title.textContent = `Enrichr / ${genes.length} genes`;
         content.innerHTML = '<div style="text-align:center; padding:60px; color:#aaa;"><div style="font-size:24px; margin-bottom:12px;">⏳</div>Submitting to Enrichr...</div>';
         modal.style.display = 'block';
+        this._wireEnrichrResize();
+        this._applyEnrichrWidth();
 
         try {
             await this.submitToEnrichr(genes);
@@ -36512,6 +36595,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 ? row.genes.slice().sort((a, b) => String(a).localeCompare(String(b)))
                 : [];
             const geneList = _genes.length ? _genes.join(', ') : String(row.genes);
+            // Each gene as its own item, so the column flow breaks between
+            // genes instead of wherever the text happens to reach the edge.
+            const geneHtml = _genes.length
+                ? _genes.map(g => `<span class="eg">${this.esc(g)}</span>`).join('')
+                : this.esc(String(row.genes));
             const geneCount = _genes.length;
             // The cell is wider than it was, so more rows fit whole; and cut at
             // a comma rather than mid-symbol, which produced "TP5...".
@@ -36535,9 +36623,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             html += `<td style="padding:5px 8px;">${row.zScore.toFixed(2)}</td>`;
             html += `<td style="padding:5px 8px;">${row.combinedScore.toFixed(1)}</td>`;
             if (isLong) {
-                html += `<td class="enrichr-gene-cell" data-row-idx="${i}" style="padding:5px 8px; min-width:210px; max-width:420px; font-size:11px; cursor:pointer;" title="Click to expand"><span class="enrichr-genes-short">${truncatedGenes} <span style="color:#7cabcf;">[${geneCount}]</span></span><span class="enrichr-genes-full enrichr-gene-cols" style="display:none;">${geneList} <span style="color:#7cabcf;">[collapse]</span></span></td>`;
+                html += `<td class="enrichr-gene-cell" data-row-idx="${i}" style="padding:5px 8px; min-width:210px; max-width:420px; font-size:11px; cursor:pointer;" title="Click to expand"><span class="enrichr-genes-short">${truncatedGenes} <span style="color:#7cabcf;">[${geneCount}]</span></span><span class="enrichr-genes-full enrichr-gene-cols" style="display:none;">${geneHtml}<span class="eg" style="color:#7cabcf;">[collapse]</span></span></td>`;
             } else {
-                html += `<td class="enrichr-gene-cols" style="padding:5px 8px; min-width:210px; max-width:420px; font-size:11px;">${geneList}</td>`;
+                html += `<td class="enrichr-gene-cols" style="padding:5px 8px; min-width:210px; max-width:420px; font-size:11px;">${geneHtml}</td>`;
             }
             html += `<td style="padding:5px 8px; text-align:center;">${geneCount}</td>`;
             html += '</tr>';
@@ -36551,9 +36639,22 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // it the network lights up with no statement of what the highlight is,
         // which is the part worth reading off a result.
         if (this._enrichrFromNetwork) {
+            const _st = this._netHighlightStyle || 'dashed';
+            const _co = this._netHighlightColor || '#000000';
+            const _opt = (v, label) => `<option value="${v}"${_st === v ? ' selected' : ''}>${label}</option>`;
             html = '<div id="enrichrHlNote" style="margin:0 0 8px; padding:6px 10px; border-left:3px solid #111827;'
                  + ' background:#f9fafb; border-radius:4px; font-size:11px; color:#4b5563;">'
-                 + 'Click a row to mark its genes in the network behind this window.</div>' + html;
+                 + 'Click a row to mark its genes in the network behind this window.</div>'
+                 // The same two controls the network's Settings panel carries.
+                 // Both write the one setting, so changing it here moves the
+                 // one there and the other way about.
+                 + '<div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:0 0 8px; font-size:11px; color:#6b7280;">'
+                 + '<span>Marks look like</span>'
+                 + `<select id="enrichrHlStyle" title="How highlighted genes are marked in the network. The same setting as Mark in the network's Settings panel." style="font-size:11px; padding:2px 5px; border:1px solid #d1d5db; border-radius:4px;" onchange="app.setNetworkHighlightLook({style:this.value})">`
+                 + _opt('dashed', 'Dashed ring') + _opt('ring', 'Solid ring') + _opt('fill', 'Filled') + _opt('dim', 'Fade the rest')
+                 + '</select>'
+                 + `<input type="color" id="enrichrHlColor" value="${_co}" title="Mark colour, shared with the network's Settings panel" style="width:30px; height:22px; padding:0; border:1px solid #d1d5db; border-radius:4px; background:none; cursor:pointer;" oninput="app.setNetworkHighlightLook({color:this.value})">`
+                 + '</div>' + html;
         }
         contentEl.innerHTML = html;
 
@@ -40595,6 +40696,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     title.textContent = `Enrichr / ${genes.length} genes`;
                     content.innerHTML = '<div style="text-align:center; padding:60px; color:#aaa;"><div style="font-size:24px; margin-bottom:12px;">⏳</div>Submitting to Enrichr...</div>';
                     modal.style.display = 'block';
+                    this._wireEnrichrResize();
+                    this._applyEnrichrWidth();
                     this.submitToEnrichr(genes).catch(err => {
                         content.innerHTML = `<div style="text-align:center; padding:60px; color:#ef4444;">Failed to connect to Enrichr.<br><small style="color:#888;">${err.message}</small></div>`;
                     });
@@ -48175,6 +48278,8 @@ ${clone.innerHTML}
             title.textContent = `Enrichr / ${genes.length} genes, ${what}`;
             content.innerHTML = '<div style="text-align:center; padding:60px; color:#aaa;"><div style="font-size:24px; margin-bottom:12px;">⏳</div>Submitting to Enrichr...</div>';
             modal.style.display = 'block';
+            this._wireEnrichrResize();
+            this._applyEnrichrWidth();
             this.submitToEnrichr(genes).catch(err => {
                 content.innerHTML = `<div style="text-align:center; padding:60px; color:#ef4444;">Failed to connect to Enrichr.<br><small style="color:#888;">${err.message}</small></div>`;
             });
@@ -60035,7 +60140,17 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     };
-    const observer = new MutationObserver(() => { applyLock(); resetDragLeftovers(); });
+    // A pinned gene card sits at z-index 10001, above every dialog, and is not
+    // inside the dialog it was raised from. Closing that dialog therefore left
+    // it floating over whatever was underneath, with no obvious owner. Watch
+    // the open-count and clear the card whenever it falls.
+    let _openCount = modals.filter(isOpen).length;
+    const dropCardOnClose = () => {
+        const n = modals.filter(isOpen).length;
+        if (n < _openCount) window.app?.hideGeneTooltip?.(true);
+        _openCount = n;
+    };
+    const observer = new MutationObserver(() => { applyLock(); resetDragLeftovers(); dropCardOnClose(); });
     modals.forEach(el => observer.observe(el, { attributes: true, attributeFilter: ['style', 'class'] }));
     applyLock();
 
