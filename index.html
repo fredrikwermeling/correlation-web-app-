@@ -684,7 +684,8 @@
             background: var(--gray-200);
         }
 
-        .btn-secondary.btn-active {
+        .btn-secondary.btn-active,
+        .btn-outline.btn-active {
             background: var(--green-100);
             border-color: var(--green-500);
             color: var(--green-700);
@@ -3788,6 +3789,10 @@
                                 <!-- Names clicked onto the plot, each removable,
                                      the same row the gene-effect popout uses. -->
                                 <div id="scatterLabeledCellLines" style="display:flex; gap:4px; flex-wrap:wrap; align-items:center; width:100%; margin-top:4px;"></div>
+                                <!-- Tissue is the colouring people actually want, and it
+                                     was three clicks down a select. Subtype and disease
+                                     are narrower questions and stay in the select. -->
+                                <button type="button" id="colorByTissueBtn" class="btn btn-sm btn-outline" aria-pressed="false" style="font-size:10px; padding:2px 4px; margin-top:3px; width:100%;" title="Colour every point by tissue of origin, and show each tissue in the legend">Color by tissue</button>
                                 <select id="colorByCategory" class="form-control" style="font-size:10px; padding:1px 3px; margin-top:2px;">
                                     <option value="">Color by...</option>
                                     <option value="tissue">By tissue</option>
@@ -5658,6 +5663,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v88_131"></script>
+    <script src="app.js?v=v88_132"></script>
 </body>
 </html>

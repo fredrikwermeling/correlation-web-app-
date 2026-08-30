@@ -6402,6 +6402,12 @@ class CorrelationExplorer {
         // Changing what the legend states only relabels the traces, but the
         // labels are built during the redraw, so the plot is redrawn.
         document.getElementById('colorByLegendStat')?.addEventListener('change', () => this.updateInspectPlot());
+        document.getElementById('colorByTissueBtn')?.addEventListener('click', () => {
+            const sel = document.getElementById('colorByCategory');
+            if (!sel) return;
+            sel.value = sel.value === 'tissue' ? '' : 'tissue';
+            sel.dispatchEvent(new Event('change', { bubbles: true }));
+        });
         document.getElementById('colorByCategory').addEventListener('change', () => {
             // Picks belong to the mode they were made in: tissue names and
             // subtype names are different lists.
@@ -29642,13 +29648,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         ];
     }
 
-    // ---- CORRELATE-VIEW: an assistant telling the user what to LOOK AT ----
-    //
-    // The request block builds a file; this one opens a view. An assistant
-    // arguing from an export can only describe a plot in words, and the user
-    // then has to reconstruct it from the description. A pasted view block
-    // sets it up instead, so "look at ADAR against USP18 in lung" becomes a
-    // thing the app does rather than a thing the user has to find.
+    // CORRELATE-VIEW: the sibling of the request block. A request builds a
+    // file to read; this opens a view to look at, so an assistant arguing from
+    // an export can show the plot rather than describe it.
     _aiViewSyntax() {
         return [
             'CORRELATE-VIEW v1',
@@ -30214,12 +30216,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }, 30);
     }
 
-    // Shared busy state for anything slow enough that a user could think the
-    // click missed. The button says what it is doing and stops accepting
-    // clicks; a spinner and a seconds counter say it is still going. Returns a
-    // handle: setMessage to change the wording as the work moves on, stop to
-    // put everything back. Always stop it from a finally, or a failed run
-    // leaves the button dead.
+    // Busy state for anything slow enough that a user could think the click
+    // missed. Returns a handle: setMessage as the work moves on, stop to put
+    // everything back. Always stop from a finally, or a failed run leaves the
+    // button dead.
     startBusy({ button, status, label = 'Working', message } = {}) {
         const btn = button ? document.getElementById(button) : null;
         const statusEl = status ? document.getElementById(status) : null;
@@ -31578,11 +31578,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 if (Object.keys(ent).length) entry.signatures = ent;
             }
 
-            // Retroelement signal and interferon score: the two cell-line-level
-            // measures the app computes that are neither DepMap annotations nor
-            // gene-level. They belong here because a group can be BUILT on one
-            // of them (the browser sorts by both), and a reader asked to explain
-            // such a split could not see the axis that produced it.
+            // Retroelement signal and interferon score. A group can be BUILT on
+            // either (the browser sorts by both), so a reader asked to explain
+            // such a split needs the axis that produced it.
             const re = this.retroScore?.(cl);
             if (re) {
                 entry.retroelements = {
@@ -33260,13 +33258,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const compressed = pako.gzip(jsonStr);
         const uncompressedBytes = new Blob([jsonStr]).size;
 
-        // Format choice: a .json.gz has to be decompressed before it can be
-        // read, which needs whatever code / data-analysis tool the assistant
-        // offers to be switched on; plain JSON needs nothing. So plain is the
-        // safer default and is preselected under 8 MB uncompressed; past that
-        // the size argument wins and compressed is chosen, with plain still
-        // selectable. The Custom export for AI dialog has no format radios of
-        // its own, so it keeps the original always-gzip behavior.
+        // A .json.gz needs an unpacking tool switched on; plain JSON needs
+        // nothing, so plain is preselected under 8 MB uncompressed and size
+        // wins past that. The Custom export dialog has no format radios, so it
+        // stays always-gzip.
         let useCompressed = true;
         if (!custom) {
             const EIGHT_MB = 8 * 1024 * 1024;
@@ -39524,8 +39519,15 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // many groups are currently picked.
     _syncColorByGroupBtn() {
         const btn = document.getElementById('colorByGroupBtn');
-        if (!btn) return;
         const mode = document.getElementById('colorByCategory')?.value;
+        const tBtn = document.getElementById('colorByTissueBtn');
+        if (tBtn) {
+            const on = mode === 'tissue';
+            tBtn.setAttribute('aria-pressed', String(on));
+            tBtn.classList.toggle('btn-active', on);
+            tBtn.textContent = on ? 'Colored by tissue' : 'Color by tissue';
+        }
+        if (!btn) return;
         const on = mode === 'tissue' || mode === 'subtype' || mode === 'disease';
         btn.style.display = on ? '' : 'none';
         const statSel = document.getElementById('colorByLegendStat');
