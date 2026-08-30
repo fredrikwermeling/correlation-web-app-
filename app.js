@@ -29654,6 +29654,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     _aiViewSyntax() {
         return [
             'CORRELATE-VIEW v1',
+            '# paste into Options > Other > "Open a view from AI"',
             'view: scatter | gene-effect | cell-lines',
             'x: <gene>            (scatter) and y: <gene>',
             'x-measure / y-measure: ge | expr | cn   (default ge)',
@@ -29789,6 +29790,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     _aiRequestSyntax() {
         return [
             'CORRELATE-REQUEST v1',
+            '# paste into Options > Other > "Custom export for AI"',
             'cohort: all | tissue:<name> | disease:<name> | <comma-separated cell line names or IDs> | view',
             'genes: auto | <comma-separated gene symbols> | a cytoband or arm such as 16q or 16q22',
             'gene-limit: <number of genes per matrix, or "all">',
@@ -32554,12 +32556,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     const tissues = [...new Set(Object.values(this.cellLineMetadata?.lineage || {}).filter(Boolean))].sort();
                     return {
                     _readMe: 'Everything listed above except neverInThisApp CAN be exported, it simply was not this time. The app has a Custom export for AI dialog (Options > Other > Custom export for AI) which carries any of it, and that dialog takes a pasted request block. So if answering the question properly needs something this file lacks, do not stop at saying so: write the block below into your reply, in a code fence, and tell the user to paste it into that box, which sets every control at once. Everything you need to write a valid one is in this section: the keys, what each layer adds, the tissue names that resolve, and what this file already carries so you do not ask for it twice. ONE RULE BEFORE YOU WRITE ONE: every line you write is a value you are choosing on the user\'s behalf, and you cannot see their screen. `cohort: view` is the line that goes wrong, because it means whatever is open at that moment and exports nothing when nothing is; see keys.cohort and exampleWholePanel.',
-                    whereToFindIt: 'In the app: Options > Other > Custom export for AI. Paste into the box headed "Or paste what an assistant asked for", press Apply request, then Export. The dialog reports what it understood and what it could not use.',
+                    whereToFindIt: 'In the app: Options > Other > "Custom export for AI". Paste into the box headed "Or paste what an assistant asked for", press Apply request, then Export. The dialog reports what it understood and what it could not use. SAY THAT PATH IN YOUR REPLY whenever you hand over a block: one line beside the code fence, for example: paste this into Options > Other > "Custom export for AI". A block the user cannot find a home for is wasted.',
                     syntax: this._aiRequestSyntax(),
-                    example: 'CORRELATE-REQUEST v1\ncohort: tissue:Skin\ngenes: BRAF, NRAS, MITF, SOX10\ngene-limit: all\ninclude: drug-response, matched-pairs\ndrugs: BRAF, MEK\nquestion: does BRAF dependency track measured BRAF-inhibitor sensitivity?',
+                    example: 'CORRELATE-REQUEST v1\n# paste into Options > Other > "Custom export for AI"\ncohort: tissue:Skin\ngenes: BRAF, NRAS, MITF, SOX10\ngene-limit: all\ninclude: drug-response, matched-pairs\ndrugs: BRAF, MEK\nquestion: does BRAF dependency track measured BRAF-inhibitor sensitivity?',
                     exampleWholePanel: {
                         _readMe: 'The shape to reach for when you are writing this for someone whose screen you cannot see: a named gene panel across the whole release. It needs nothing to be open, so it cannot fail the way `cohort: view` does.',
-                        block: 'CORRELATE-REQUEST v1\ncohort: all\ngenes: ADAR, RIGI, IFIH1, MAVS, TREX1, SETDB1, TRIM28\ngene-limit: all\nscan-size: 100\ninclude: copy-number, virus, identity\nquestion: <the question>'
+                        block: 'CORRELATE-REQUEST v1\n# paste into Options > Other > "Custom export for AI"\ncohort: all\ngenes: ADAR, RIGI, IFIH1, MAVS, TREX1, SETDB1, TRIM28\ngene-limit: all\nscan-size: 100\ninclude: copy-number, virus, identity\nquestion: <the question>'
                     },
                     keys: {
                         cohort: 'all (every cell line in the release), a group written as tissue:<name> / disease:<name> / subtype:<name>, or a comma-separated list of cell line names or IDs. PREFER ONE OF THOSE when you are writing this block for someone else: the fourth option, view, means whatever chart or list happens to be open at the time, so it exports NOTHING if they paste the block with nothing open, and you cannot see their screen to know. Use view only when you are also telling them which view to open first. Groups and names can be mixed on one line. Names are matched ignoring punctuation and case, so MEC-1 and MEC1 both resolve; anything that does not resolve is reported back rather than dropped.',
@@ -33009,12 +33011,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 const nEx = Object.keys(exportData.expression || {}).length;
                 if (nGE || nEx) {
                     exportData.howToDirectTheUser = {
+                        whereToFindIt: 'In the app: Options > Other > "Open a view from AI". Paste the block into the box and press "Open the view". SAY THIS IN YOUR REPLY every time you hand over a block: the user cannot be assumed to know where it goes, and a block with nowhere to put it is worse than no block. One line beside the code fence is enough, for example: paste this into Options > Other > "Open a view from AI".',
                         _readMe: 'You can do more than answer: you can put the user in front of the exact plot you are arguing from. Write a CORRELATE-VIEW block, in a code fence, and tell them to paste it into Options > Other > "Open a view from AI". The app opens that view with those settings. Use it whenever your reasoning rests on something visible, a correlation you want them to see holding inside one lineage, a gene whose dependency splits by tissue, a list ordered by a measure you are citing. It is the difference between describing a picture and showing it. This is NOT the export request block: that one (notIncluded.howToAskForMore) builds a new FILE for you to read, this one opens a VIEW for the user to look at. Either box accepts either block and hands it to the other, so a mistake here costs nothing.',
                         syntax: this._aiViewSyntax(),
                         examples: [
-                            'CORRELATE-VIEW v1\nview: scatter\nx: ADAR\ny: USP18\ntissue: Lung\nwhy: the correlation should still hold inside a single lineage, which is what rules out a tissue artefact',
-                            'CORRELATE-VIEW v1\nview: gene-effect\ngene: ADAR\nmeasure: ge\nwhy: see how the dependency is distributed across tissues before trusting any one group mean',
-                            'CORRELATE-VIEW v1\nview: cell-lines\nsort: retroelement\ntissue: Head and Neck\nwhy: the lines at the top are the ones the retroelement argument rests on'
+                            'CORRELATE-VIEW v1\n# paste into Options > Other > "Open a view from AI"\nview: scatter\nx: ADAR\ny: USP18\ntissue: Lung\nwhy: the correlation should still hold inside a single lineage, which is what rules out a tissue artefact',
+                            'CORRELATE-VIEW v1\n# paste into Options > Other > "Open a view from AI"\nview: gene-effect\ngene: ADAR\nmeasure: ge\nwhy: see how the dependency is distributed across tissues before trusting any one group mean',
+                            'CORRELATE-VIEW v1\n# paste into Options > Other > "Open a view from AI"\nview: cell-lines\nsort: retroelement\ntissue: Head and Neck\nwhy: the lines at the top are the ones the retroelement argument rests on'
                         ],
                         limits: 'Three views for now: scatter (two genes, either measure on either axis), gene-effect (one gene across tissues) and cell-lines (the browser, sorted by a measure). A tissue or disease name must be one the release uses; notIncluded.howToAskForMore lists them under tissueNamesThatResolve.'
                     };
