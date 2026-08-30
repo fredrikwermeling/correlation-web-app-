@@ -6700,9 +6700,6 @@ class CorrelationExplorer {
             });
             document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeNetHm(); });
         }
-        document.getElementById('enrichrDockBtn')?.addEventListener('click', () => {
-            this._setEnrichrFloating(!document.getElementById('enrichrModal')?.classList.contains('enrichr-floating'));
-        });
         document.getElementById('enrichrCloseBtn')?.addEventListener('click', () => {
             document.getElementById('enrichrModal').style.display = 'none';
         });
@@ -21036,8 +21033,6 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         title.textContent = `Enrichr / ${genes.length} ${kind === 'ge' ? 'GE' : 'Expression'} correlates of ${st.xGene}`;
         content.innerHTML = '<div style="text-align:center; padding:60px; color:#aaa;"><div style="font-size:24px; margin-bottom:12px;">⏳</div>Submitting to Enrichr...</div>';
         modal.style.display = 'block';
-        this._wireEnrichrResize();
-        this._applyEnrichrWidth();
         try {
             await this.submitToEnrichr(genes);
         } catch (err) {
@@ -23146,8 +23141,6 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         title.textContent = `Enrichr / ${genes.length} mutated genes enriched in Gate ${gate} (GE gate)`;
         content.innerHTML = '<div style="text-align:center; padding:60px; color:#aaa;"><div style="font-size:24px; margin-bottom:12px;">⏳</div>Submitting to Enrichr...</div>';
         modal.style.display = 'block';
-        this._wireEnrichrResize();
-        this._applyEnrichrWidth();
 
         this.submitToEnrichr(genes).catch(err => {
             content.innerHTML = `<div style="text-align:center; padding:60px; color:#ef4444;">Failed to connect to Enrichr.<br><small style="color:#888;">${err.message}</small></div>`;
@@ -23175,8 +23168,6 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         title.textContent = `Enrichr / Top 100 depleted genes (Gate A vs B, GE gate)`;
         content.innerHTML = '<div style="text-align:center; padding:60px; color:#aaa;"><div style="font-size:24px; margin-bottom:12px;">⏳</div>Submitting to Enrichr...</div>';
         modal.style.display = 'block';
-        this._wireEnrichrResize();
-        this._applyEnrichrWidth();
 
         this.submitToEnrichr(genes).catch(err => {
             content.innerHTML = `<div style="text-align:center; padding:60px; color:#ef4444;">Failed to connect to Enrichr.<br><small style="color:#888;">${err.message}</small></div>`;
@@ -23204,8 +23195,6 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         title.textContent = `Enrichr / Top 100 down-regulated genes (Gate A vs B, GE gate expression)`;
         content.innerHTML = '<div style="text-align:center; padding:60px; color:#aaa;"><div style="font-size:24px; margin-bottom:12px;">⏳</div>Submitting to Enrichr...</div>';
         modal.style.display = 'block';
-        this._wireEnrichrResize();
-        this._applyEnrichrWidth();
 
         this.submitToEnrichr(genes).catch(err => {
             content.innerHTML = `<div style="text-align:center; padding:60px; color:#ef4444;">Failed to connect to Enrichr.<br><small style="color:#888;">${err.message}</small></div>`;
@@ -35986,58 +35975,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         });
     }
 
-    // Width by dragging the panel's left edge. Stored for the session so the
-    // next Enrichr opens at the width the user settled on.
-    _wireEnrichrResize() {
-        const grip = document.getElementById('enrichrResize');
-        const card = document.getElementById('enrichrCard');
-        if (!grip || !card || grip.dataset.wired) return;
-        grip.dataset.wired = '1';
-        grip.addEventListener('mousedown', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            grip.classList.add('dragging');
-            const startRight = card.getBoundingClientRect().right;
-            const onMove = (e2) => {
-                const w = Math.round(Math.min(window.innerWidth - 24, Math.max(360, startRight - e2.clientX)));
-                card.style.setProperty('width', w + 'px', 'important');
-                card.style.setProperty('max-width', 'none', 'important');
-                this._enrichrWidth = w;
-            };
-            const onUp = () => {
-                grip.classList.remove('dragging');
-                document.removeEventListener('mousemove', onMove);
-                document.removeEventListener('mouseup', onUp);
-            };
-            document.addEventListener('mousemove', onMove);
-            document.addEventListener('mouseup', onUp);
-        });
-    }
-
-    // Reapply a width the user set earlier. Skipped on a phone, where the
-    // panel is full-screen and a remembered desktop width would be wrong.
-    _applyEnrichrWidth() {
-        const card = document.getElementById('enrichrCard');
-        if (!card || !this._enrichrWidth || window.innerWidth <= 640) return;
-        card.style.setProperty('width', this._enrichrWidth + 'px', 'important');
-        card.style.setProperty('max-width', 'none', 'important');
-    }
-
     _setEnrichrFloating(on) {
         const modal = document.getElementById('enrichrModal');
-        const btn = document.getElementById('enrichrDockBtn');
         if (!modal) return;
         modal.classList.toggle('enrichr-floating', !!on);
-        this._wireEnrichrResize();
-        this._applyEnrichrWidth();
-        // "Fill the window" read as a layout instruction rather than as the
-        // other half of a pair. Each label now names the state it goes to.
-        if (btn) {
-            btn.textContent = on ? 'Full window' : 'Beside the network';
-            btn.title = on
-                ? 'Show this over the whole window instead of beside the network'
-                : 'Float this beside the network, so clicking a term marks its genes while you watch';
-        }
     }
 
     // Enrichr from the network. Three sets, because they answer different
@@ -36091,8 +36032,6 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (title) title.textContent = `Enrichr / ${genes.length} ${label}`;
         if (content) content.innerHTML = '<div style="text-align:center; padding:60px; color:#aaa;"><div style="font-size:24px; margin-bottom:12px;">&#9203;</div>Submitting to Enrichr...</div>';
         if (modal) modal.style.display = 'block';
-        this._wireEnrichrResize();
-        this._applyEnrichrWidth();
         try {
             await this.submitToEnrichr(genes);
         } catch (err) {
@@ -36465,8 +36404,6 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         title.textContent = `Enrichr / ${genes.length} genes`;
         content.innerHTML = '<div style="text-align:center; padding:60px; color:#aaa;"><div style="font-size:24px; margin-bottom:12px;">⏳</div>Submitting to Enrichr...</div>';
         modal.style.display = 'block';
-        this._wireEnrichrResize();
-        this._applyEnrichrWidth();
 
         try {
             await this.submitToEnrichr(genes);
@@ -40033,6 +39970,54 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         });
     }
 
+    // Resize grips on a dialog's edges. Left and right set the width, bottom
+    // sets the height; dragging the left edge moves the card's left so the
+    // right edge stays where it is. Sizes are written at important priority
+    // for the same reason dragging is: a card positioned by a CSS rule using
+    // !important ignores a plain inline style.
+    _makeResizable(card, edges = ['left', 'right', 'bottom']) {
+        if (!card || card.dataset.resizable) return;
+        card.dataset.resizable = '1';
+        if (getComputedStyle(card).position === 'static') card.style.position = 'relative';
+        const MIN_W = 320, MIN_H = 180;
+        for (const edge of edges) {
+            const grip = document.createElement('div');
+            grip.className = `resize-grip resize-${edge}`;
+            grip.title = edge === 'bottom' ? 'Drag to change the height' : 'Drag to change the width';
+            grip.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                grip.classList.add('dragging');
+                const r = card.getBoundingClientRect();
+                const put = (k, v) => card.style.setProperty(k, v, 'important');
+                const onMove = (m) => {
+                    if (edge === 'right') {
+                        put('width', Math.max(MIN_W, Math.min(window.innerWidth - r.left - 8, m.clientX - r.left)) + 'px');
+                        put('max-width', 'none');
+                    } else if (edge === 'left') {
+                        const w = Math.max(MIN_W, Math.min(r.right - 8, r.right - m.clientX));
+                        put('width', w + 'px');
+                        put('max-width', 'none');
+                        // Only pin the left once the card is free of the flow,
+                        // otherwise a centred card jumps to the corner.
+                        if (getComputedStyle(card).position === 'fixed') put('left', (r.right - w) + 'px');
+                    } else {
+                        put('height', Math.max(MIN_H, Math.min(window.innerHeight - r.top - 8, m.clientY - r.top)) + 'px');
+                        put('max-height', 'none');
+                    }
+                };
+                const onUp = () => {
+                    grip.classList.remove('dragging');
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
+                };
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+            });
+            card.appendChild(grip);
+        }
+    }
+
     // Keep an anchored dropdown inside the window. It hangs from the left of
     // its input, so an input near the right edge pushes a wide list off
     // screen (the drug picker is 320px+ and its explanation was cut off).
@@ -40735,8 +40720,6 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     title.textContent = `Enrichr / ${genes.length} genes`;
                     content.innerHTML = '<div style="text-align:center; padding:60px; color:#aaa;"><div style="font-size:24px; margin-bottom:12px;">⏳</div>Submitting to Enrichr...</div>';
                     modal.style.display = 'block';
-                    this._wireEnrichrResize();
-                    this._applyEnrichrWidth();
                     this.submitToEnrichr(genes).catch(err => {
                         content.innerHTML = `<div style="text-align:center; padding:60px; color:#ef4444;">Failed to connect to Enrichr.<br><small style="color:#888;">${err.message}</small></div>`;
                     });
@@ -48317,8 +48300,6 @@ ${clone.innerHTML}
             title.textContent = `Enrichr / ${genes.length} genes, ${what}`;
             content.innerHTML = '<div style="text-align:center; padding:60px; color:#aaa;"><div style="font-size:24px; margin-bottom:12px;">⏳</div>Submitting to Enrichr...</div>';
             modal.style.display = 'block';
-            this._wireEnrichrResize();
-            this._applyEnrichrWidth();
             this.submitToEnrichr(genes).catch(err => {
                 content.innerHTML = `<div style="text-align:center; padding:60px; color:#ef4444;">Failed to connect to Enrichr.<br><small style="color:#888;">${err.message}</small></div>`;
             });
@@ -60210,6 +60191,8 @@ document.addEventListener('DOMContentLoaded', () => {
         // it draggable would swallow clicks meant for what is inside.
         if (handle && !handle.classList.contains('modal-header') && handle.childElementCount > 4) handle = null;
         if (card && handle && card !== handle) app._makeDraggable(card, handle);
+        // Same cards get edge grips, so a dialog can be sized as well as moved.
+        if (card) app._makeResizable(card);
     });
 });
 

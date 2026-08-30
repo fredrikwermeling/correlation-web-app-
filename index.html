@@ -2153,7 +2153,8 @@
         #enrichrModal.enrichr-floating #enrichrCard {
             pointer-events: auto;
             position: fixed !important;
-            right: 16px !important;
+            left: 16px !important;
+            right: auto !important;
             top: 84px !important;
             bottom: 16px !important;
             margin: 0 !important;
@@ -2175,19 +2176,22 @@
             white-space: normal; word-break: normal; align-content: flex-start;
         }
         .enrichr-gene-cols .eg { white-space: nowrap; }
-        /* The width grip on the panel's left edge. Wider than it looks so it is
-           easy to catch, but only visible once the pointer is near it. */
-        #enrichrResize {
-            position: absolute; left: -3px; top: 0; bottom: 0; width: 10px;
-            cursor: ew-resize; z-index: 3;
+        /* Edge grips for resizing a dialog. Wide enough to catch easily, shown
+           only when the pointer is near them. */
+        .resize-grip { position: absolute; z-index: 4; }
+        .resize-grip::after {
+            content: ''; position: absolute; border-radius: 3px;
+            background: var(--gray-200); opacity: 0; transition: opacity .12s;
         }
-        #enrichrResize::after {
-            content: ''; position: absolute; left: 3px; top: 50%; transform: translateY(-50%);
-            width: 4px; height: 44px; border-radius: 3px; background: var(--gray-200);
-            opacity: 0; transition: opacity .12s;
-        }
-        #enrichrResize:hover::after, #enrichrResize.dragging::after { opacity: 1; background: var(--green-400); }
-        @media (max-width: 640px) { #enrichrResize { display: none; } }
+        .resize-grip:hover::after, .resize-grip.dragging::after { opacity: 1; background: var(--green-400); }
+        .resize-left, .resize-right { top: 0; bottom: 0; width: 10px; cursor: ew-resize; }
+        .resize-left { left: -3px; }
+        .resize-right { right: -3px; }
+        .resize-left::after, .resize-right::after { top: 50%; transform: translateY(-50%); width: 4px; height: 44px; left: 3px; }
+        .resize-bottom { left: 0; right: 0; bottom: -3px; height: 10px; cursor: ns-resize; }
+        .resize-bottom::after { left: 50%; transform: translateX(-50%); height: 4px; width: 44px; top: 3px; }
+        @media (max-width: 640px) { .resize-grip { display: none; } }
+
         @media (max-width: 640px) {
             /* No room to put anything beside anything on a phone. */
             #enrichrModal.enrichr-floating { background: rgba(0,0,0,0.5) !important; pointer-events: auto; }
@@ -2195,7 +2199,6 @@
                 position: static !important; width: 90% !important; margin: 30px auto !important;
                 max-height: 90vh !important; right: auto !important; top: auto !important; bottom: auto !important;
             }
-            #enrichrDockBtn { display: none !important; }
         }
 
         /* The three gene lists under View controls: Selected, Removed and
@@ -5025,17 +5028,14 @@
     <!-- Enrichr Pathway Analysis Modal -->
     <div id="enrichrModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:10000;">
       <div id="enrichrCard" style="background:#fff; margin:30px auto; width:90%; max-width:1100px; max-height:90vh; border-radius:8px; display:flex; flex-direction:column; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25); position:relative;">
-        <!-- Grab the left edge to set how wide this is. The right edge is the
-             one pinned to the window when floating, so the left is the one
-             that can move. -->
-        <div id="enrichrResize" title="Drag to make this panel wider or narrower"></div>
+
         <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 20px; border-bottom:1px solid #e5e7eb; background:linear-gradient(90deg,#f7fbf8,#fff); border-radius:8px 8px 0 0;">
           <div>
             <h3 id="enrichrTitle" style="margin:0; color:#4c782e; font-size:15px;">Enrichr Pathway Analysis</h3>
             <div style="font-size:10px; color:#6b7280; margin-top:2px;">Powered by <a href="https://maayanlab.cloud/Enrichr/" target="_blank" rel="noopener" style="color:#5d9239; text-decoration:none;">Enrichr</a></div>
           </div>
           <div style="display:flex; gap:8px; align-items:center;">
-            <button id="enrichrDockBtn" class="btn btn-outline btn-sm" title="Float this beside the network, so clicking a term marks its genes while you watch">Beside the network</button>
+
             <button id="enrichrDownloadBtn" class="btn btn-outline btn-sm">Download CSV</button>
             <button id="enrichrCloseBtn" style="background:none; border:none; color:#6b7280; font-size:24px; cursor:pointer; padding:0 4px; line-height:1;">&times;</button>
           </div>
@@ -5663,6 +5663,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v88_133"></script>
+    <script src="app.js?v=v88_134"></script>
 </body>
 </html>
