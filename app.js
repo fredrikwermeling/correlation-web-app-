@@ -3023,13 +3023,14 @@ class CorrelationExplorer {
 
                 const cb = row.querySelector('.tb-check');
                 cb.checked = !cb.checked;
+                this._tbEnforceLevel(popup, cb);
                 this.updateTBSelectionCount();
             });
         });
 
         // Checkbox change (tissue)
         popup.querySelectorAll('.tb-check').forEach(cb => {
-            cb.addEventListener('change', () => this.updateTBSelectionCount());
+            cb.addEventListener('change', () => { this._tbEnforceLevel(popup, cb); this.updateTBSelectionCount(); });
         });
 
         // Sub-tissue row click: the name cell drills into diseases when there
@@ -3047,11 +3048,12 @@ class CorrelationExplorer {
                 }
                 const cb = row.querySelector('.tb-sub-check');
                 cb.checked = !cb.checked;
+                this._tbEnforceLevel(popup, cb);
                 this.updateTBSelectionCount();
             });
         });
         popup.querySelectorAll('.tb-sub-check').forEach(cb => {
-            cb.addEventListener('change', () => this.updateTBSelectionCount());
+            cb.addEventListener('change', () => { this._tbEnforceLevel(popup, cb); this.updateTBSelectionCount(); });
         });
 
         // Disease row click
@@ -3060,11 +3062,12 @@ class CorrelationExplorer {
                 if (e.target.type === 'checkbox') return;
                 const cb = row.querySelector('.tb-dis-check');
                 cb.checked = !cb.checked;
+                this._tbEnforceLevel(popup, cb);
                 this.updateTBSelectionCount();
             });
         });
         popup.querySelectorAll('.tb-dis-check').forEach(cb => {
-            cb.addEventListener('change', () => this.updateTBSelectionCount());
+            cb.addEventListener('change', () => { this._tbEnforceLevel(popup, cb); this.updateTBSelectionCount(); });
         });
 
         // Select all
@@ -4130,6 +4133,29 @@ class CorrelationExplorer {
         if (label) label.textContent = parts.length === 0 ? '0 selected' : parts.join(', ');
     }
 
+    // One level per branch, shared by both Tissue split popups. Downstream the
+    // finer level replaces the coarser one (a subtype pick sets the lineage
+    // AND the subtype, so the result is the subtype), which made ticking Skin
+    // and Melanoma together show a choice that was not being made: the Skin
+    // tick did nothing. Ticking one level now clears the others in its own
+    // branch. Other branches are left alone, so several tissues, or several
+    // subtypes of one tissue, still combine as before.
+    _tbEnforceLevel(popup, cb) {
+        if (!cb.checked) return;
+        const q = (v) => String(v).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        const clear = (sel) => popup.querySelectorAll(sel).forEach(o => { if (o !== cb) o.checked = false; });
+        if (cb.classList.contains('tb-check')) {
+            clear(`.tb-sub-check[data-parent="${q(cb.value)}"]`);
+            clear(`.tb-dis-check[data-parent-lin="${q(cb.value)}"]`);
+        } else if (cb.classList.contains('tb-sub-check')) {
+            clear(`.tb-check[value="${q(cb.dataset.parent)}"]`);
+            clear(`.tb-dis-check[data-parent-lin="${q(cb.dataset.parent)}"][data-parent-sub="${q(cb.value)}"]`);
+        } else if (cb.classList.contains('tb-dis-check')) {
+            clear(`.tb-check[value="${q(cb.dataset.parentLin)}"]`);
+            clear(`.tb-sub-check[data-parent="${q(cb.dataset.parentLin)}"][value="${q(cb.dataset.parentSub)}"]`);
+        }
+    }
+
     applyTissueBreakdownSelection(selectedTissues, selectedSubtypes = [], selectedDiseases = []) {
         const lineageSelect = document.getElementById('lineageFilter');
         const lineageGroup = document.getElementById('lineageFilterGroup');
@@ -4439,6 +4465,7 @@ class CorrelationExplorer {
                 }
                 const cb = row.querySelector('.tb-check');
                 cb.checked = !cb.checked;
+                this._tbEnforceLevel(popup, cb);
                 this.updateTBSelectionCount();
             });
         });
@@ -4455,6 +4482,7 @@ class CorrelationExplorer {
                 }
                 const cb = row.querySelector('.tb-sub-check');
                 cb.checked = !cb.checked;
+                this._tbEnforceLevel(popup, cb);
                 this.updateTBSelectionCount();
             });
         });
@@ -4463,11 +4491,12 @@ class CorrelationExplorer {
                 if (e.target.type === 'checkbox') return;
                 const cb = row.querySelector('.tb-dis-check');
                 cb.checked = !cb.checked;
+                this._tbEnforceLevel(popup, cb);
                 this.updateTBSelectionCount();
             });
         });
         popup.querySelectorAll('.tb-check, .tb-sub-check, .tb-dis-check').forEach(cb => {
-            cb.addEventListener('change', () => this.updateTBSelectionCount());
+            cb.addEventListener('change', () => { this._tbEnforceLevel(popup, cb); this.updateTBSelectionCount(); });
         });
         document.getElementById('tbSelectAll').addEventListener('change', (e) => {
             popup.querySelectorAll('.tb-check').forEach(cb => { cb.checked = e.target.checked; });
