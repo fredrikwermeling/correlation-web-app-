@@ -36556,9 +36556,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             html += `<td style="padding:5px 8px;">${row.zScore.toFixed(2)}</td>`;
             html += `<td style="padding:5px 8px;">${row.combinedScore.toFixed(1)}</td>`;
             if (isLong) {
-                html += `<td class="enrichr-gene-cell" data-row-idx="${i}" style="padding:5px 8px; min-width:210px; max-width:420px; font-size:11px; cursor:pointer;" title="Click to expand"><span class="enrichr-genes-short">${truncatedGenes} <span style="color:#7cabcf;">[${geneCount}]</span></span><span class="enrichr-genes-full enrichr-gene-cols" style="display:none;">${geneHtml}<span class="eg" style="color:#7cabcf;">[collapse]</span></span></td>`;
+                html += `<td class="enrichr-gene-cell" data-row-idx="${i}" style="padding:5px 8px; width:20%; min-width:130px; max-width:250px; font-size:11px; cursor:pointer;" title="Click to expand"><span class="enrichr-genes-short">${truncatedGenes} <span style="color:#7cabcf;">[${geneCount}]</span></span><span class="enrichr-genes-full enrichr-gene-cols" style="display:none;">${geneHtml}<span class="eg" style="color:#7cabcf;">[collapse]</span></span></td>`;
             } else {
-                html += `<td class="enrichr-gene-cols" style="padding:5px 8px; min-width:210px; max-width:420px; font-size:11px;">${geneHtml}</td>`;
+                html += `<td class="enrichr-gene-cols" style="padding:5px 8px; width:20%; min-width:130px; max-width:250px; font-size:11px;">${geneHtml}</td>`;
             }
             html += `<td style="padding:5px 8px; text-align:center;">${geneCount}</td>`;
             html += '</tr>';
