@@ -13,10 +13,18 @@
 //    untouched so gate-draw and lasso-select still work, and programmatic range
 //    setting still works; fixedrange only blocks interactive zoom.
 (function() {
+    const onPhone = () => typeof window !== 'undefined' && window.innerWidth <= 640;
     const lockLayout = (layout) => {
         layout = layout || {};
         if (!layout.font) layout.font = {};
         if (!layout.font.family) layout.font.family = 'Arial, Helvetica, sans-serif';
+        // Stop Plotly claiming the touch for its own pan/select, so a finger
+        // that lands on a chart scrolls the page like a finger anywhere else.
+        // touch-action alone does not do it: Plotly calls preventDefault on
+        // the touchmove, and the browser then never scrolls. Zoom and pan are
+        // already locked here, so a drag has nothing to do; a tap still
+        // reaches a point.
+        if (onPhone()) layout.dragmode = false;
         if (!layout.xaxis) layout.xaxis = {};
         if (!layout.yaxis) layout.yaxis = {};
         for (const k of Object.keys(layout)) {
@@ -36,15 +44,8 @@
         const out = Object.assign({}, config, { scrollZoom: false, modeBarButtonsToRemove: remove, displaylogo: false });
         // On phones, disable dragging of titles / axis labels / legends / shapes,
         // they were far too easy to nudge by accident on a touch screen.
-        if (typeof window !== 'undefined' && window.innerWidth <= 640) {
-            out.edits = {};
-            // And stop Plotly claiming the drag at all. touch-action alone was
-            // not enough on the correlation scatter: Plotly still handles the
-            // gesture for its own pan/select, so a finger on the plot moved the
-            // plot instead of the page. With zoom already locked there is
-            // nothing a drag should do here, and a tap still reaches a point.
-            out.dragmode = false;
-        }
+        // (dragmode belongs to the layout, not here; see lockLayout.)
+        if (onPhone()) out.edits = {};
         return out;
     };
     ['newPlot', 'react'].forEach((fn) => {
@@ -2425,7 +2426,10 @@ class CorrelationExplorer {
         const popup = document.createElement('div');
         popup.id = 'upsetPopup';
         popup.style.cssText = `position:fixed; z-index:10001; background:white; border:1px solid #d1d5db; border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,0.15); display:flex; flex-direction:column; max-width:90vw; max-height:85vh;`;
-        popup.style.left = '50px';
+        // The inset has to shrink with the screen: at a fixed 50px the popup's
+        // own 90vw width put its right edge past a phone's viewport and the
+        // last combination column was cut off.
+        popup.style.left = Math.min(50, Math.max(6, Math.round(window.innerWidth * 0.05))) + 'px';
         popup.style.top = '50px';
 
         // What the cohort under this plot was narrowed by. Raised from the
@@ -40185,6 +40189,24 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         return { sym: '?', color: '#9ca3af', italic: false, title: 'Sex unknown' };
     }
 
+    // Drawn rather than typed. The app's font has no glyph for the Mars and
+    // Venus signs, so every platform substitutes its own, and iOS picks one
+    // whose baseline puts the sign visibly below the name beside it. A path
+    // sits where it is put. '?' is in the font, so it is left as text.
+    _sexGlyphSvg(sym, italic) {
+        const d = sym === '♀'
+            ? '<circle cx="6" cy="4.5" r="3.1"/><path d="M6 7.6v3.7M4.2 9.8h3.6"/>'
+            : sym === '♂'
+                ? '<circle cx="4.9" cy="7.2" r="3.1"/><path d="M7.2 4.9 10.4 1.7M7.6 1.7h2.8v2.8"/>'
+                : null;
+        if (!d) return null;
+        // Italic marks a sex read off expression rather than annotation, the
+        // same distinction the text glyph carried.
+        const skew = italic ? ' transform="skewX(-12)" transform-origin="6 6"' : '';
+        return `<svg width="12" height="12" viewBox="0 0 12 12" style="display:block;" aria-hidden="true">`
+            + `<g fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"${skew}>${d}</g></svg>`;
+    }
+
     // Test if cell line matches a sex-filter value from the dropdown.
     _cellLineMatchesSexFilter(cl, filter) {
         if (!filter) return true;
@@ -41761,8 +41783,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 }
             }
             const sx = this._getSexSymbol(cl);
-            const sxStyle = `color:${sx.color}; font-weight:700; margin-right:4px;${sx.italic ? ' font-style:italic;' : ''}`;
-            const sexStr = `<span style="${sxStyle}" title="${sx.title}">${sx.sym}</span>`;
+            const sxSvg = this._sexGlyphSvg(sx.sym, sx.italic);
+            const sexStr = sxSvg
+                ? `<span style="display:inline-flex; align-items:center; color:${sx.color}; margin-right:4px; flex:none;" title="${sx.title}">${sxSvg}</span>`
+                : `<span style="color:${sx.color}; font-weight:700; margin-right:4px; flex:none;" title="${sx.title}">${sx.sym}</span>`;
             // Flagged lines are marked in the list, not hidden, so the warning
             // is visible before the line is picked rather than after.
             const probFlag = this._problemFlag(cl);
@@ -45620,7 +45644,12 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 const hitsByPathway = {};
                 for (const [pw, info] of Object.entries(pathways)) {
                     const inPw = essentialPathwayHits.filter(h => info.genes.includes(h.gene));
-                    if (inPw.length > 0) hitsByPathway[pw] = inPw.map(h => `${h.gene} (z ${fmtZ(h.z)})`);
+                    // Same link treatment the druggable list above gets: these
+                    // are the same genes, and a gene named in the wiki opens
+                    // its gene-effect popout everywhere else.
+                    if (inPw.length > 0) hitsByPathway[pw] = inPw.map(h =>
+                        `<span class="gene-hover clb-gene-link" data-gene="${h.gene}" style="cursor:help;">${h.gene}</span>`
+                        + ` <span style="color:#9ca3af; font-size:10px;">(z ${fmtZ(h.z)})</span>`);
                 }
                 if (Object.keys(hitsByPathway).length > 0) {
                     const items = Object.entries(hitsByPathway).map(([pw, gs]) => `<li><b>${pw}</b>: ${gs.join(', ')}</li>`).join('');
@@ -46378,7 +46407,11 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             ];
             const trace = {
                 type: 'bar',
-                x: ['No WGD', 'WGD-positive'],
+                // Short enough to sit flat under a narrow panel: the full
+                // words made Plotly rotate them, and rotated they ran into the
+                // "WGD status" title below. Same notation the panel's own
+                // description uses.
+                x: ['WGD\u2212', 'WGD+'],
                 y: [arrs.WGD_no, arrs.WGD_yes],
                 marker: { color: colors },
                 text: [arrs.WGD_no, arrs.WGD_yes].map(String),
@@ -46387,6 +46420,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 hovertemplate: '<b>%{x}</b>: %{y} lines<extra></extra>'
             };
             const layout = baseLayout('WGD status');
+            layout.xaxis.tickangle = 0;
             // Headroom for the outside text labels
             const yMax = Math.max(arrs.WGD_no, arrs.WGD_yes);
             layout.yaxis.range = [0, yMax * 1.18];
