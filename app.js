@@ -39547,9 +39547,125 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             + `</span>`;
     }
 
+    // Phone only. A tap labels a point, but a phone has no hover, so nothing
+    // the app knows about that cell line was reachable from the scatter. The
+    // labelled lines are listed under the plot instead: the name opens a menu
+    // into its card, wiki or the browser, the x takes the label off. On a
+    // desktop hover already does all of this, so the row stays hidden there.
+    _renderScatterPhoneChips(names) {
+        const box = document.getElementById('scatterChipRow');
+        if (!box) return;
+        if (!box._chipsWired) {
+            box._chipsWired = true;
+            box.addEventListener('click', (e) => {
+                const drop = e.target.closest('.scatter-chip-x');
+                if (drop) { this.removeHighlight(drop.dataset.cl); return; }
+                const open = e.target.closest('.scatter-chip-name');
+                if (open) this._openScatterChipMenu(open, open.dataset.cl);
+            });
+        }
+        const list = [...new Set(names || [])];
+        // The empty state says what to do, which is the other half of the
+        // problem: it was not obvious that tapping a point did anything.
+        if (!list.length) {
+            box.innerHTML = '<span class="scatter-chip-hint">Tap a point to label a cell line, then tap its name here for details.</span>';
+            return;
+        }
+        box.innerHTML = list.map(n => {
+            const e = this.esc(n);
+            return `<span class="scatter-chip">`
+                + `<button type="button" class="scatter-chip-name" data-cl="${e}">${e}</button>`
+                + `<button type="button" class="scatter-chip-x" data-cl="${e}" aria-label="Remove the ${e} label" title="Remove the ${e} label">&times;</button>`
+                + `</span>`;
+        }).join('');
+    }
+
+    // One floating menu, repositioned for whichever chip opened it, the same
+    // anchored shape and tap hardening the heatmap's Top-N menu uses.
+    _openScatterChipMenu(anchorEl, name) {
+        let menu = document.getElementById('scatterChipMenu');
+        if (!menu) {
+            menu = document.createElement('div');
+            menu.id = 'scatterChipMenu';
+            menu.style.cssText = 'display:none; position:fixed; z-index:10002; background:#fff;'
+                + ' border:1px solid var(--gray-200); border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,0.16);'
+                + ' min-width:200px; max-width:calc(100vw - 16px); padding:4px;';
+            document.body.appendChild(menu);
+        }
+        let outside;
+        const closeMenu = () => {
+            menu.style.display = 'none';
+            document.removeEventListener('click', outside);
+        };
+        // Tapping the same chip again shuts the menu.
+        if (menu.style.display === 'block' && menu._anchor === anchorEl) { closeMenu(); return; }
+        menu._anchor = anchorEl;
+
+        const id = this._buildCellLineNameToIdMap().get(String(name).toUpperCase());
+        const off = id ? '' : ' disabled style="opacity:0.45; cursor:not-allowed;"';
+        menu.innerHTML = `<div style="font-size:10px; color:#9ca3af; padding:3px 10px 4px;">${this.esc(name)}</div>`
+            + `<button class="options-menu-item" data-chip-act="card"${off}>Summary card</button>`
+            + `<button class="options-menu-item" data-chip-act="wiki"${off}>Wiki</button>`
+            + `<button class="options-menu-item" data-chip-act="browser">Cell Line Browser</button>`;
+
+        menu.style.display = 'block';
+        const r = anchorEl.getBoundingClientRect();
+        const m = menu.getBoundingClientRect();
+        // Below the chip unless that runs off the bottom, and never past
+        // either side edge.
+        const top = (r.bottom + 4 + m.height > window.innerHeight - 8)
+            ? Math.max(8, r.top - m.height - 4) : r.bottom + 4;
+        menu.style.left = Math.round(Math.max(8, Math.min(r.left, window.innerWidth - m.width - 8))) + 'px';
+        menu.style.top = Math.round(top) + 'px';
+
+        menu.querySelectorAll('[data-chip-act]').forEach(btn => btn.addEventListener('click', () => {
+            if (btn.disabled) return;
+            const act = btn.dataset.chipAct;
+            closeMenu();
+            if (act === 'wiki') { this.openCellLineWiki(id); return; }
+            if (act === 'browser') {
+                // Reuse the highlight path: it is the one that lifts the
+                // browser above the popout it was opened from.
+                this.openHighlightedInBrowser([name]);
+                if (id) this.showCellLineDetail?.(id);
+                return;
+            }
+            this._showScatterChipCard(anchorEl, id);
+        }));
+
+        // Same grace window the other anchored menus use, so the tap that
+        // opened this one cannot also read as the tap that closes it.
+        const openedAt = Date.now();
+        outside = (e) => {
+            if (Date.now() - openedAt < 400) return;
+            if (menu.contains(e.target) || anchorEl.contains(e.target)) return;
+            closeMenu();
+        };
+        document.addEventListener('click', outside);
+    }
+
+    // The summary card is built for hover, so on a phone it needs a way out:
+    // it ignores pointer events itself, so the next tap anywhere closes it.
+    _showScatterChipCard(anchorEl, cellLineId) {
+        if (!cellLineId) return;
+        // A deliberate tap is not the stray hover the scroll-quiet window is
+        // there to suppress.
+        window.__hoverWake?.();
+        const r = anchorEl.getBoundingClientRect();
+        this.showCellLineTooltip({ clientX: r.left, clientY: r.bottom }, cellLineId, 'Tap anywhere to close');
+        const openedAt = Date.now();
+        const dismiss = (e) => {
+            if (Date.now() - openedAt < 400) return;
+            this.hideCellLineTooltip();
+            document.removeEventListener('click', dismiss);
+        };
+        document.addEventListener('click', dismiss);
+    }
+
     // `names` is what the plot actually highlighted, so typed terms and clicked
     // points show up the same way.
     renderHighlightChips(names) {
+        this._renderScatterPhoneChips(names);
         const box = document.getElementById('highlightChips');
         if (!box) return;
         const list = [...new Set(names || [])];
@@ -59920,6 +60036,9 @@ const HELP_SELECTOR = 'button[title], label[title], a[title], [data-help]';
 // system to stay out of the way for a beat after each scroll tick.
 let scrollQuietUntil = 0;
 window.__hoverQuiet = () => Date.now() < scrollQuietUntil;
+// A deliberate tap is not a stray hover: a card asked for by name opens even
+// if the reader scrolled to the control a moment earlier.
+window.__hoverWake = () => { scrollQuietUntil = 0; };
 
 document.addEventListener('DOMContentLoaded', () => {
     let timer = null;
