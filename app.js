@@ -11821,6 +11821,13 @@ class CorrelationExplorer {
             // Read the key BEFORE the caret is appended, so the caret glyph
             // never becomes part of the key.
             const key = keyOf(head);
+            // Stripping the box down to a bare line is only right when the box
+            // holds nothing but this section. The sidebar card's body carries
+            // two headings and the controls above them, so collapsing one
+            // there took the padding off the whole card and left every label
+            // flush against its left border.
+            const box = head.parentElement;
+            const ownsBox = !!box && [...box.children].every(c => c === head || c === body);
             const caret = document.createElement('span');
             caret.textContent = '▾';
             caret.style.cssText = 'font-size:12px; color:#9ca3af; margin-left:8px; transition:transform .12s;';
@@ -11834,7 +11841,7 @@ class CorrelationExplorer {
                 // collapsible. Open should be indistinguishable from no
                 // collapsing at all.
                 body.style.display = open ? 'contents' : 'none';
-                head.parentElement?.classList.toggle('phone-collapsed', !open);
+                if (ownsBox) box.classList.toggle('phone-collapsed', !open);
                 caret.style.transform = open ? '' : 'rotate(-90deg)';
                 head.setAttribute('aria-expanded', open ? 'true' : 'false');
             };
