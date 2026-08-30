@@ -36508,10 +36508,18 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         html += '</tr></thead><tbody>';
 
         parsed.forEach((row, i) => {
-            const geneList = Array.isArray(row.genes) ? row.genes.join(', ') : String(row.genes);
-            const geneCount = Array.isArray(row.genes) ? row.genes.length : 0;
-            const isLong = geneList.length > 60;
-            const truncatedGenes = isLong ? geneList.substring(0, 60) + '...' : geneList;
+            const _genes = Array.isArray(row.genes)
+                ? row.genes.slice().sort((a, b) => String(a).localeCompare(String(b)))
+                : [];
+            const geneList = _genes.length ? _genes.join(', ') : String(row.genes);
+            const geneCount = _genes.length;
+            // The cell is wider than it was, so more rows fit whole; and cut at
+            // a comma rather than mid-symbol, which produced "TP5...".
+            const CUT = 130;
+            const isLong = geneList.length > CUT;
+            const truncatedGenes = isLong
+                ? geneList.slice(0, geneList.lastIndexOf(', ', CUT) + 1 || CUT) + '\u2026'
+                : geneList;
 
             const _clickable = this._enrichrFromNetwork;
             const _gsAttr = _clickable
@@ -36527,9 +36535,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             html += `<td style="padding:5px 8px;">${row.zScore.toFixed(2)}</td>`;
             html += `<td style="padding:5px 8px;">${row.combinedScore.toFixed(1)}</td>`;
             if (isLong) {
-                html += `<td class="enrichr-gene-cell" data-row-idx="${i}" style="padding:5px 8px; max-width:200px; font-size:11px; cursor:pointer;" title="Click to expand"><span class="enrichr-genes-short">${truncatedGenes} <span style="color:#7cabcf;">[${geneCount}]</span></span><span class="enrichr-genes-full" style="display:none; white-space:normal; word-break:break-word;">${geneList} <span style="color:#7cabcf;">[collapse]</span></span></td>`;
+                html += `<td class="enrichr-gene-cell" data-row-idx="${i}" style="padding:5px 8px; min-width:210px; max-width:420px; font-size:11px; cursor:pointer;" title="Click to expand"><span class="enrichr-genes-short">${truncatedGenes} <span style="color:#7cabcf;">[${geneCount}]</span></span><span class="enrichr-genes-full enrichr-gene-cols" style="display:none;">${geneList} <span style="color:#7cabcf;">[collapse]</span></span></td>`;
             } else {
-                html += `<td style="padding:5px 8px; max-width:200px; overflow:hidden; text-overflow:ellipsis; font-size:11px;">${geneList}</td>`;
+                html += `<td class="enrichr-gene-cols" style="padding:5px 8px; min-width:210px; max-width:420px; font-size:11px;">${geneList}</td>`;
             }
             html += `<td style="padding:5px 8px; text-align:center;">${geneCount}</td>`;
             html += '</tr>';
@@ -39844,17 +39852,22 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (e.target.closest('a, button, input, select, textarea')) return;
             e.preventDefault();
             const rect = el.getBoundingClientRect();
-            el.style.position = 'fixed';
-            el.style.margin = '0';
-            el.style.right = 'auto';
-            el.style.bottom = 'auto';
-            el.style.left = rect.left + 'px';
-            el.style.top = rect.top + 'px';
+            // setProperty with `important`: a card positioned by a CSS rule
+            // that uses !important (the floating Enrichr pins top and bottom
+            // that way) ignores a plain inline style, so it could be dragged
+            // sideways but never up or down.
+            const put = (k, v) => el.style.setProperty(k, v, 'important');
+            put('position', 'fixed');
+            put('margin', '0');
+            put('right', 'auto');
+            put('bottom', 'auto');
+            put('left', rect.left + 'px');
+            put('top', rect.top + 'px');
             // Pin the current size too. Elements sized by their layout parent
             // (a .modal is width:100% of a centered flex overlay) would otherwise
             // resnap to the viewport the moment they go position:fixed.
-            el.style.width = rect.width + 'px';
-            el.style.maxWidth = 'none';
+            put('width', rect.width + 'px');
+            put('max-width', 'none');
             // The rect above already includes any overscroll slide, so fold
             // the slide into left/top and drop the transform.
             if (el.dataset?.slideY) { delete el.dataset.slideY; el.style.transform = ''; }
@@ -39868,8 +39881,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 // least 60px stays on screen to grab it by.
                 const minTop = -(h - 60);
                 const maxTop = window.innerHeight - 60;
-                el.style.left = Math.min(maxLeft, Math.max(0, e2.clientX - dx)) + 'px';
-                el.style.top = Math.min(maxTop, Math.max(minTop, e2.clientY - dy)) + 'px';
+                put('left', Math.min(maxLeft, Math.max(0, e2.clientX - dx)) + 'px');
+                put('top', Math.min(maxTop, Math.max(minTop, e2.clientY - dy)) + 'px');
             };
             const onUp = () => {
                 document.removeEventListener('mousemove', onMove);

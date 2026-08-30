@@ -2156,12 +2156,21 @@
             top: 84px !important;
             bottom: 16px !important;
             margin: 0 !important;
-            width: min(560px, 42vw) !important;
+            width: min(820px, 60vw) !important;
             max-width: none !important;
             max-height: none !important;
             box-shadow: 0 12px 40px rgba(0,0,0,0.22);
             border: 1px solid var(--gray-200);
         }
+        /* A gene list is a set, so it reads down columns rather than as one
+           long line per row. break-inside keeps a symbol whole across the
+           column boundary. */
+        .enrichr-gene-cols {
+            columns: 3 105px; column-gap: 14px; white-space: normal; word-break: normal;
+        }
+        .enrichr-gene-cols > span { break-inside: avoid; }
+        @media (max-width: 900px) { .enrichr-gene-cols { columns: 2 100px; } }
+        @media (max-width: 640px) { .enrichr-gene-cols { columns: 1; } }
         @media (max-width: 640px) {
             /* No room to put anything beside anything on a phone. */
             #enrichrModal.enrichr-floating { background: rgba(0,0,0,0.5) !important; pointer-events: auto; }
@@ -5629,6 +5638,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v88_126"></script>
+    <script src="app.js?v=v88_127"></script>
 </body>
 </html>
