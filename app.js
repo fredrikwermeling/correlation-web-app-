@@ -2420,9 +2420,12 @@ class CorrelationExplorer {
         // Build the plot using Plotly
         const nGenes = upsetGenes.length;
         const nBars = sorted.length;
-        const barW = 30;
+        // Narrower on a phone: the plot scrolls sideways, so bar width is
+        // paid for in scrolling, and at 30 the fourth combination was already
+        // off screen.
+        const barW = window.innerWidth <= 640 ? 16 : 30;
         const matrixH = nGenes * 20;
-        const plotW = Math.max(400, nBars * barW + 100);
+        const plotW = Math.max(window.innerWidth <= 640 ? 300 : 400, nBars * barW + 100);
         const plotH = 250 + matrixH;
 
         // Remove existing upset
@@ -3357,8 +3360,11 @@ class CorrelationExplorer {
             for (const g of topGenes) w = Math.max(w, Math.ceil(probe.measureText(g.gene).width) + 12);
             return Math.min(w, 200);
         })();
-        const boxW = 10;
-        const boxGap = 1;
+        // Wider on a phone: the pair is the grid's main control there, and
+        // at 10px a fingertip covered both. The click test closes over these
+        // same numbers, so the target grows with the paint.
+        const boxW = _oncoPhone ? 22 : 10;
+        const boxGap = _oncoPhone ? 5 : 1;
         const boxAreaW = boxW * 2 + boxGap + 4; // include + exclude boxes
         const countW = 38;
         const leftW = boxAreaW + labelW + countW; // frozen pane: boxes, gene, count

@@ -2254,6 +2254,14 @@
                 min-height: 40px !important;
                 padding: 8px 10px !important;
             }
+            /* The searchable disease picker is a button standing in for a
+               select, so the select and input upsizing above misses it and it
+               kept its desktop size beside full-width siblings. */
+            #cellLineBrowserModal .select-proxy { width: 100% !important; flex: 1 1 100% !important; }
+            #cellLineBrowserModal .select-proxy-btn {
+                width: 100% !important; font-size: 15px !important;
+                min-height: 40px !important; padding: 8px 10px !important;
+            }
             .modal-body .btn, .sidebar .btn, #cellLineBrowserModal .btn {
                 font-size: 14px !important;
                 min-height: 40px !important;
@@ -2718,6 +2726,16 @@
                stays a reachable 44px even though .modal-footer isn't covered
                by the generic .modal-body/.sidebar button upsizing above. */
             #hmGridScroll { touch-action: pan-x pan-y; -webkit-overflow-scrolling: touch; }
+            /* The UpSet plot is wider than the screen and scrolls inside its
+               popup, but the global chart rule above it allows only pan-y, so
+               a sideways swipe over the plot went nowhere. Pan both ways
+               here; zoom and drag are already off. */
+            #upsetPopup .js-plotly-plot, #upsetPopup .js-plotly-plot .main-svg,
+            #upsetPopup .js-plotly-plot .drag, #upsetPopup .js-plotly-plot .draglayer,
+            #upsetPopup .js-plotly-plot .nsewdrag { touch-action: pan-x pan-y !important; }
+            #upsetPopup [style*="overflow:auto"], #upsetPopup [style*="overflow: auto"] {
+                -webkit-overflow-scrolling: touch;
+            }
             #heatmapModal .modal-footer .btn { min-height: 44px !important; }
         }
         /* Touch, phone or tablet: the heatmap opened on its settings stack, which
@@ -5775,6 +5793,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v89_18"></script>
+    <script src="app.js?v=v89_19"></script>
 </body>
 </html>
