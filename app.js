@@ -106,7 +106,8 @@
 })();
 
 // Single source of truth for DepMap release.
-// Also appears literally in index.html footer/changelog, update together.
+// Also appears literally in index.html footer/changelog and the "Correlate
+// on" label in #basisParams, update together.
 const DEPMAP_VERSION = '26Q1';
 
 // Build a CSV filename with DepMap release + today's date suffix.
