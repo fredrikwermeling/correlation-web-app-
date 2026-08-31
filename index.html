@@ -2386,7 +2386,10 @@
                image itself here, so the two stay in step at any size. */
             .logo-header img {
                 max-width: 84% !important; height: auto !important;
-                transform: translateX(9.55%) !important;
+                /* Half the wordmark-centring shift: the full 9.55% centres
+                   the text but reads as the whole logo hanging right on a
+                   narrow screen. Half splits the difference. */
+                transform: translateX(4.5%) !important;
             }
             /* The Options row's four buttons were sized for a desktop row, so
                "Other" overflowed its own button and sat off-centre. */
@@ -2538,6 +2541,15 @@
                 padding: 5px 3px !important; font-size: 10px !important; line-height: 1.15;
             }
             #mutationTable td { padding: 4px 3px !important; font-size: 11px !important; white-space: nowrap; }
+            /* The toolbar reduces to search, Enrichr and Heatmap here (the
+               exports and column filters are desktop tools), so lay those
+               three out deliberately: the search on its own row, the two
+               buttons splitting the next row between them. */
+            #mutationSearch { width: 100% !important; }
+            /* An explicit half-width basis rather than grow-from-zero, which
+               split the pair unevenly in this wrapping row. */
+            #mutEnrichrWrap, #mutHeatmapBtn { flex: 0 0 calc(50% - 3px); min-width: 0; }
+            #mutEnrichrWrap .btn { width: 100%; }
             /* 4. The correlation popout's boxes were different heights because
                each sized itself around its own contents. One height for all of
                them, and their dropdowns bounded so a long list cannot stretch
@@ -3595,7 +3607,7 @@
                         <!-- position:relative anchors the menu; the filter-input-wrap
                              class must NOT be used here: its calc() width forced this
                              onto its own row, away from Compare by Tissue. -->
-                        <div style="position:relative; display:inline-block;">
+                        <div id="mutEnrichrWrap" style="position:relative; display:inline-block;">
                             <button class="btn btn-secondary btn-sm" id="mutEnrichrBtn" aria-haspopup="true" aria-expanded="false" title="Pathway enrichment analysis via Enrichr">Enrichr &#9662;</button>
                             <div id="mutEnrichrMenu" style="display:none; position:absolute; top:calc(100% + 4px); left:0; z-index:1500; background:#fff; border:1px solid var(--gray-200); border-radius:6px; box-shadow:0 6px 18px rgba(0,0,0,0.14); min-width:190px; padding:4px;">
                                 <div style="font-size:10px; color:#9ca3af; padding:3px 10px 4px;">Which genes to send?</div>
@@ -3611,7 +3623,7 @@
                                 </div>
                             </div>
                         </div>
-                        <button class="btn btn-secondary btn-sm" id="mutHeatmapBtn" title="Open the top genes from this table in the heatmap, on this analysis' own cell lines">Open in heatmap &#9662;</button>
+                        <button class="btn btn-secondary btn-sm" id="mutHeatmapBtn" title="Open the top genes from this table in the heatmap, on this analysis' own cell lines">Heatmap &#9662;</button>
                         <select id="mutEnrichrFilter" style="display:none;">
                             <option value="all">All sig.</option>
                             <option value="top10">Top 10</option>
@@ -3621,16 +3633,16 @@
                             <option value="diff_pos">Δ GE &gt; 0</option>
                             <option value="filtered">Visible</option>
                         </select>
-                        <span style="border-left: 1px solid #d1d5db; height: 16px; margin: 0 2px;"></span>
-                        <span style="font-size: 10px; color: #9ca3af;">Export:</span>
+                        <span class="mobile-hide" style="border-left: 1px solid #d1d5db; height: 16px; margin: 0 2px;"></span>
+                        <span class="mobile-hide" style="font-size: 10px; color: #9ca3af;">Export:</span>
                         <button class="btn btn-outline btn-sm" id="downloadMutationResults" title="Download table as CSV spreadsheet">.csv</button>
                         <button class="btn btn-outline btn-sm" id="mutAnalyzeWithAI" style="font-size:10px;" title="Package this view as one compressed file for a language model: gene effect, expression and mutation data plus the settings, with a description of every field">Export for AI</button>
                         <button class="btn btn-outline btn-sm mobile-hide" id="exportMutTablePNG" title="Export the visible table, choose PNG / SVG / TIFF / PDF / PowerPoint in the popup">Export image...</button>
                                 <button class="btn btn-outline btn-sm mobile-hide" onclick="app.copyPlotToClipboard('mutationTable', 'Table')" title="Copy this as an image to the clipboard, ready to paste into an email or slide">Copy</button>
                         <button class="btn btn-outline btn-sm mobile-hide" onclick="app.openMethods('mutation')" title="Write out how this analysis was made, as a methods paragraph and as a plain walk-through">Methods</button>
-                        <span style="border-left: 1px solid #d1d5db; height: 16px; margin: 0 2px;"></span>
+                        <span class="mobile-hide" style="border-left: 1px solid #d1d5db; height: 16px; margin: 0 2px;"></span>
                         <button class="btn btn-outline btn-sm" id="copyMutationGenes" title="Copy gene names to clipboard">Copy Genes</button>
-                        <button class="btn btn-outline btn-sm" id="filterMutationToggle" title="Toggle column value filters">Filters</button>
+                        <button class="btn btn-outline btn-sm mobile-hide" id="filterMutationToggle" title="Toggle column value filters">Filters</button>
                     </div>
                     <!-- Mut 2 columns always shown (toggle hidden) -->
                     <div id="mut2ColToggle" style="display:none;">
@@ -5759,6 +5771,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v89_13"></script>
+    <script src="app.js?v=v89_14"></script>
 </body>
 </html>

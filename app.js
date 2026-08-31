@@ -9906,6 +9906,21 @@ class CorrelationExplorer {
         const lowNFilterOn = document.getElementById('mutLowNFilter')?.checked === true;
         const fullMaxN = mr.significantResults.reduce((m, r) => Math.max(m, (r.n_wt || 0) + (r.n_mut || 0)), 0);
         if (lowNFilterOn) results = results.filter(r => ((r.n_wt || 0) + (r.n_mut || 0)) >= fullMaxN);
+        // A searched-for gene is shown whether or not it passes the p filter
+        // or the low-coverage filter: a name typed in full is a question about
+        // THAT gene, and "no row" read as "not tested" when the true answer
+        // was "tested, not significant". Two letters or more, so a single
+        // keystroke cannot pour thousands of below-threshold rows into the
+        // table. The row still shows its own p for judging what came back.
+        const searchQ = (document.getElementById('mutationSearch')?.value || '').trim().toLowerCase();
+        let searchNote = '';
+        if (searchQ.length >= 2) {
+            results = (mr.allResults || mr.significantResults)
+                .filter(r => String(r.gene || '').toLowerCase().includes(searchQ));
+            if (pFilterOn || lowNFilterOn) searchNote = 'Search shows every tested match, including genes the ticked filters would hide.';
+        } else if (searchQ) {
+            results = results.filter(r => String(r.gene || '').toLowerCase().includes(searchQ));
+        }
         const hasFusion = mr.hasFusionData && mr.isTranslocation;
         const tbody = document.getElementById('mutationTableBody');
         tbody.innerHTML = '';
@@ -10036,6 +10051,12 @@ class CorrelationExplorer {
                     ? 'Nothing to hide here: every gene in this table has data in the whole cohort, so no row is marked with *.'
                     : 'View filter on the table below: hide genes marked with *, which are measured in fewer cell lines than the rest of the cohort, so their groups are smaller and their statistics rest on less data.';
             }
+        }
+
+        if (searchNote) {
+            const note = document.createElement('tr');
+            note.innerHTML = `<td colspan="99" style="font-size:10px; color:#6b7280; padding:4px 8px; border-top:1px solid #e5e7eb;">${searchNote}</td>`;
+            tbody.appendChild(note);
         }
 
         // Footnote for the * on low-coverage genes, only when one is shown.
@@ -10190,16 +10211,11 @@ class CorrelationExplorer {
         });
     }
 
-    filterMutationTable(query) {
-        const tbody = document.getElementById('mutationTableBody');
-        const rows = tbody.querySelectorAll('tr');
-        const lowerQuery = query.toLowerCase();
-
-        rows.forEach(row => {
-            // Gene name is in cells[1] (cells[0] is the Inspect link)
-            const gene = row.cells[1]?.textContent.toLowerCase() || '';
-            row.style.display = gene.includes(lowerQuery) ? '' : 'none';
-        });
+    filterMutationTable() {
+        // Rebuilt from the data rather than hiding drawn rows: the drawn rows
+        // are only the ones that passed the p and coverage filters, so a gene
+        // outside them could never be found by hiding.
+        this.displayMutationResults();
     }
 
     sortMutationTable(th, event) {
