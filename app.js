@@ -9977,7 +9977,9 @@ class CorrelationExplorer {
         // Rows where the gene is measured in fewer cell lines than the cohort
         // get a * on their N columns, so a smaller group is attributed to the
         // data rather than to a filter.
-        const maxRowN = results.reduce((m, r) => Math.max(m, (r.n_wt || 0) + (r.n_mut || 0)), 0);
+        // The star and the hide-* filter share fullMaxN. Measured against the
+        // displayed rows instead, a p-filter that leaves only low-coverage
+        // rows drew no star on any of them while the box would hide them all.
         const lowNTitle = 'This gene has data in fewer cell lines than the rest of the cohort, so its groups are smaller.';
         let anyLowN = false;
         results.forEach(r => {
@@ -9985,7 +9987,7 @@ class CorrelationExplorer {
             const polymorphicMark = this._isPolymorphicLocus(r.gene)
                 ? ` <span style="color:#b45309; cursor:help;" title="${polymorphicCaveat.replace(/"/g, '&quot;')}">⚠</span>`
                 : '';
-            const lowN = ((r.n_wt || 0) + (r.n_mut || 0)) < maxRowN;
+            const lowN = ((r.n_wt || 0) + (r.n_mut || 0)) < fullMaxN;
             if (lowN) anyLowN = true;
             const star = lowN ? `<span style="color:#b45309; cursor:help;" title="${lowNTitle}">*</span>` : '';
             let html = `
@@ -10019,6 +10021,22 @@ class CorrelationExplorer {
             row.innerHTML = html;
             tbody.appendChild(row);
         });
+
+        // With nothing starred the box is inert, which reads as broken.
+        // Disabled with a reason rather than hidden, so the controls row
+        // keeps its shape.
+        const lowNBox = document.getElementById('mutLowNFilter');
+        if (lowNBox) {
+            const anyLowNInFull = mr.significantResults.some(r => ((r.n_wt || 0) + (r.n_mut || 0)) < fullMaxN);
+            lowNBox.disabled = !anyLowNInFull && !lowNBox.checked;
+            const lowNLabel = lowNBox.closest('label');
+            if (lowNLabel) {
+                lowNLabel.style.opacity = lowNBox.disabled ? '0.5' : '';
+                lowNLabel.title = lowNBox.disabled
+                    ? 'Nothing to hide here: every gene in this table has data in the whole cohort, so no row is marked with *.'
+                    : 'View filter on the table below: hide genes marked with *, which are measured in fewer cell lines than the rest of the cohort, so their groups are smaller and their statistics rest on less data.';
+            }
+        }
 
         // Footnote for the * on low-coverage genes, only when one is shown.
         if (anyLowN) {
