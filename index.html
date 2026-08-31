@@ -2954,16 +2954,8 @@
 
                     <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 12px 0;">
 
-                    <!-- ===== V2 ONLY: expression basis for the gene-set analysis =====
-                         The whole #basisParams block. app.js falls back to gene
-                         effect when the radios are absent, so removing this is
-                         enough for the simpler build. -->
-                    <div class="form-group" id="basisParams">
-                        <label class="form-label" style="font-weight:400; color:#6b7280;">Correlate on: <span style="font-size:10px; color:#9ca3af;">(DepMap 26Q1)</span></label>
-                        <div class="radio-group-inline" id="basisModeOptions" style="font-size:11px;">
-                            <label title="Correlate the CRISPR knockout fitness profiles (Chronos gene effect): which genes the same cell lines depend on. The classic Correlate question."><input type="radio" name="analysisBasis" value="ge" checked> Gene effect <span style="color:#9ca3af;">(CRISPR)</span></label>
-                            <label title="Correlate mRNA levels (log2 TPM+1) instead: which genes are switched on together across the same cell lines. Same cohort as gene effect, so the two networks are directly comparable."><input type="radio" name="analysisBasis" value="expr"> mRNA <span style="color:#9ca3af;">(bulk RNA-seq)</span></label>
-                        </div>
+                    <div class="form-group">
+                        <label class="form-label" style="font-weight:400; color:#6b7280;">Correlates on: gene effect <span style="font-size:10px; color:#9ca3af;">(CRISPR knockout, DepMap 26Q1)</span></label>
                     </div>
 
                     <div class="form-group" id="correlationParams">
@@ -5783,6 +5775,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v89_16"></script>
+    <script src="app.js?v=v89_17"></script>
 </body>
 </html>
