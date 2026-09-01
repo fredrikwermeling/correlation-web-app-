@@ -57761,7 +57761,12 @@ ${clone.innerHTML}
         if (labelCanvas && !labelCanvas._hmWired) {
             labelCanvas.addEventListener('click', (e) => this._hmOnLabelClick(e));
             labelCanvas.addEventListener('mousemove', (e) => this._hmOnLabelHover(e));
-            labelCanvas.addEventListener('mouseleave', () => { labelCanvas.style.cursor = 'default'; });
+            labelCanvas.addEventListener('mouseleave', () => {
+                labelCanvas.style.cursor = 'default';
+                clearTimeout(this._hmLabelHoverTimer);
+                this._hmHoverGene = null;
+                this.hideGeneTooltip?.();
+            });
             labelCanvas._hmWired = true;
         }
         // Outside the wire-once block: whether silencing is offered follows
@@ -58184,7 +58189,29 @@ ${clone.innerHTML}
         const rect = labelCanvas.getBoundingClientRect();
         const y = e.clientY - rect.top;
         const rowIdx = Math.floor(y / d.cellH);
-        labelCanvas.style.cursor = (!this._hmViewOnly() && rowIdx >= 0 && rowIdx < d.orderedGenes.length) ? 'pointer' : 'default';
+        const viewOnly = this._hmViewOnly();
+        const gene = (rowIdx >= 0 && rowIdx < d.orderedGenes.length) ? d.orderedGenes[rowIdx] : null;
+        labelCanvas.style.cursor = (!viewOnly && gene) ? 'pointer' : 'default';
+        // The same gene card every gene link in the app shows on hover; the
+        // labels here are canvas paint, so the row under the pointer has to
+        // be resolved by geometry rather than by an element.
+        if (gene === this._hmHoverGene) return;
+        this._hmHoverGene = gene;
+        clearTimeout(this._hmLabelHoverTimer);
+        this.hideGeneTooltip?.();
+        // The canvas title would pop its native tooltip over the card, so it
+        // moves inside the card while a gene row is under the pointer.
+        labelCanvas.title = '';
+        if (!gene) {
+            if (!viewOnly) labelCanvas.title = 'Click a gene to silence it (removed from the drawing and the score)';
+            return;
+        }
+        const cx = e.clientX, cy = e.clientY;
+        this._hmLabelHoverTimer = setTimeout(() => {
+            if (this._hmHoverGene !== gene) return;
+            this.showGeneTooltip({ clientX: cx, clientY: cy }, gene,
+                viewOnly ? null : 'Clicking this row label silences the gene: removed from the drawing and the score.');
+        }, this._HOVER_DELAY);
     }
 
     _hmUnsilenceGene(gene) {
