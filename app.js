@@ -30266,6 +30266,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
 
     openCustomAIExport() {
+        this._caiQuestionFromBlock = false;
         const dlg = document.getElementById('customAIDialog');
         if (!dlg) return;
         this._aiCustom = this._aiCustom || this._aiCustomDefaults();
@@ -30307,6 +30308,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 }
                 const { settings, applied, ignored } = this._parseAIRequest(text, this._readCustomAIDialog());
                 this._aiCustom = settings;
+                // The question in a pasted block was composed by an assistant,
+                // not typed by the user; the export says so (questionProvenance)
+                // so the assistant reading the file keeps the thread.
+                this._caiQuestionFromBlock = !!settings.question;
                 this._syncCustomAIDialog();
                 const bits = [];
                 if (applied.length) bits.push(`Set ${applied.length}: ${applied.join('; ')}.`);
@@ -32783,7 +32788,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                         'scan-size': 'how many rows each precomputed correlation scan carries. Raise it when you want the tail of a scan rather than its head.',
                         include: `any of: ${layers.map(l => l.canonical).join(', ')}. Ask only for what the question needs.`,
                         drugs: 'compound names, targets or mechanisms to keep, matched as substrings against all four. Without it, drug-response carries the whole panel across every indication, which is rarely what a targeted question needs.',
-                        question: 'Write a HYPOTHESIS here, not a topic, and name what would refute it. This file usually comes straight back to you in the same conversation, so a bare restatement of the question tells you nothing you did not already know; what the field is worth is committing you to a test before you have seen the numbers. "Does X explain Y" invites you to find the pattern that fits. "X explains Y, which predicts A and would be refuted by B" makes the answer checkable, including by you. It is also what a later reader, or a different assistant opening the file cold, has to go on.'
+                        question: 'Two parts, one field. FIRST the user\'s original question, briefly, so the thread survives the round trip: the file you request comes back marked as assistant-requested, but the original focus still has to be readable in it. THEN the hypothesis this export tests: not a topic, a claim, with what would refute it. "Does X explain Y" invites you to find the pattern that fits; "X explains Y, which predicts A and would be refuted by B" makes the answer checkable, including by you. Example: "User asks why ADAR dependency varies; I proposed interferon tone drives it, which predicts r < -0.3 in lymphoid lines and would be refuted by the correlation vanishing there." It is also what a later reader, or a different assistant opening the file cold, has to go on.'
                     },
                     whatEachLayerAdds: Object.fromEntries(layers.map(l => [l.canonical, l.adds])),
                     alreadyInThisFile: (present.length ? present.join(', ') : 'none of the five optional layers')
@@ -32834,7 +32839,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 + 'OPEN YOUR REPLY WITH A SHORT PARAGRAPH, no heading, that does three things in plain language, so they can check you are looking at what they think you are:\n'
                 + '  (a) what they were looking at when they exported (use `context.description` and the genes / filters, said as a sentence);\n'
                 + '  (b) how much data came with it (how many cell lines, and that it carries gene effect and expression for them);\n'
-                + '  (c) their question, quoted back. `question` is always present and is null when they sent none; if it is null, say instead that no question came with the file.\n\n'
+                + '  (c) their question, quoted back. `question` is always present and is null when they sent none; if it is null, say instead that no question came with the file. EXCEPTION: if `questionProvenance` is present, the question was written by an assistant (probably you) in a CORRELATE-REQUEST, not by the user; then say instead that this is the export you asked for and name what you asked it to settle.\n\n'
                 + 'THEN: if they asked a question, answer THAT question first, in a short paragraph a colleague would understand, '
                 + 'before any numbers or workings. If they asked nothing, give ONE headline finding and ONE caveat, two sentences in total. '
                 + 'Leave comparisons with other groups, related genes and mechanism until after they say what they want. Then STOP and ask. '
@@ -32904,6 +32909,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // vanishes makes that check ambiguous: absent could equally mean the
         // field was never part of the format.
         exportData.question = question || null;
+        // A custom export whose question arrived in a CORRELATE-REQUEST block
+        // was designed by an assistant, usually the same one now reading the
+        // result. Without this note the file reads as a fresh user question
+        // and the investigation that asked for it falls out of focus.
+        if (question && this._caiQuestionFromBlock) {
+            exportData.questionProvenance = 'This question came from a CORRELATE-REQUEST block, so it was composed by an AI assistant, most likely YOU, earlier in this same conversation, as a follow-up in an investigation already under way. It is not a new question from the user. Treat this file as the material you asked for: connect what it shows back to the user\'s original question, which stays the focus, and say how this step moves that answer forward. Do not restart the analysis around this question alone.';
+            if (exportData.dataStructure) exportData.dataStructure.questionProvenance = 'Present when the question was composed by an assistant via a CORRELATE-REQUEST block rather than typed by the user. Read it before treating `question` as the user\'s ask.';
+        }
         // Resolve the question's disease terms to cell lines while the app
         // still has the annotation, so a subgroup question starts from a group
         // that exists rather than from whatever bucket is nearest.
@@ -33155,7 +33168,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 'cellLineGroups', 'extras', 'questionScope', 'scanScope', 'geneEffect',
                 'expression', 'cellLineMetadata', 'assayNotes', 'focalGeneAlterations',
                 'customExport', 'drugResponse', 'copyNumber', 'viralTransformation',
-                'identityWarnings', 'matchedPairs'];
+                'identityWarnings', 'matchedPairs', 'questionProvenance'];
             const present = OPTIONAL.filter(k => {
                 const v = exportData[k];
                 return v != null && (typeof v !== 'object' || Object.keys(v).length > 0);
