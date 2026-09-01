@@ -3760,17 +3760,17 @@
                             <span class="control-label" style="margin-bottom: 2px;">Genes (X/Y)</span>
                             <div style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap;">
                                 <input type="text" id="inspectGeneX" class="form-control" style="flex: 1 1 70px; min-width: 60px; font-size: 12px; padding: 3px 8px;" placeholder="X gene">
-                                <select id="xAxisDataType" style="font-size: 10px; padding: 1px 4px; border: 1px solid #ddd; border-radius: 4px; background: #fff;">
+                                <select id="xAxisDataType" title="What this axis measures: GE = CRISPR gene effect (Chronos), mRNA = bulk RNA-seq expression (log2 TPM+1), CN = copy number" style="font-size: 10px; padding: 1px 4px; border: 1px solid #ddd; border-radius: 4px; background: #fff;">
                                     <option value="ge">GE</option>
-                                    <option value="expr">Expr</option>
+                                    <option value="expr">mRNA</option>
                                     <option value="cn">CN</option>
                                     
                                 </select>
                                 <button class="btn btn-outline btn-sm" id="inspectSwapAxes" style="font-size: 11px; padding: 2px 6px; min-width: 26px;" title="Swap X and Y axes (gene names + data types)">&#8644;</button>
                                 <input type="text" id="inspectGeneY" class="form-control" style="flex: 1 1 70px; min-width: 60px; font-size: 12px; padding: 3px 8px;" placeholder="Y gene">
-                                <select id="yAxisDataType" style="font-size: 10px; padding: 1px 4px; border: 1px solid #ddd; border-radius: 4px; background: #fff;">
+                                <select id="yAxisDataType" title="What this axis measures: GE = CRISPR gene effect (Chronos), mRNA = bulk RNA-seq expression (log2 TPM+1), CN = copy number" style="font-size: 10px; padding: 1px 4px; border: 1px solid #ddd; border-radius: 4px; background: #fff;">
                                     <option value="ge">GE</option>
-                                    <option value="expr">Expr</option>
+                                    <option value="expr">mRNA</option>
                                     <option value="cn">CN</option>
                                                                     
                                 </select>
@@ -4062,12 +4062,12 @@
                 <div id="geSearchBar" style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #e5e7eb;">
                     <!-- Row 1: Gene Effect + Mutation + Analyze -->
                     <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 8px; flex-wrap: wrap;">
-                        <div style="display: flex; align-items: center; gap: 6px;">
+                        <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
                             <label id="geneEffectLabel" style="font-size: 13px; font-weight: 600; color: #374151; white-space: nowrap;">Gene Effect:</label>
                             <input type="text" id="geneEffectSearch" class="form-control" placeholder="Gene symbol" style="width: 130px; font-size: 13px; padding: 6px 10px;">
                             <select id="geDataType" title="Switch between gene-effect (CRISPR knockout) and expression (log2-TPM+1) as the y-axis data" style="font-size: 12px; padding: 4px 6px; border: 1px solid #d1d5db; border-radius: 4px; background: #fff;">
-                                <option value="ge">GE</option>
-                                <option value="expr">Expression</option>
+                                <option value="ge">Gene effect (CRISPR)</option>
+                                <option value="expr">mRNA (bulk RNA-seq)</option>
                             </select>
                         </div>
                         <span id="geHotspotGeneGroup" style="display: none;">
@@ -5793,6 +5793,6 @@
       </div>
     </div>
 
-    <script src="app.js?v=v89_21"></script>
+    <script src="app.js?v=v89_22"></script>
 </body>
 </html>
