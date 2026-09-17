@@ -408,6 +408,78 @@ class CorrelationExplorer {
             let value = named[1];
             try { value = decodeURIComponent(value); } catch (e) { }
             this._openCellLineFromLink(value);
+            return;
+        }
+        // One gene, seen across the panel: #gene=TP53 opens the Cell Line
+        // Browser with every line ranked by that gene's effect. Green Listed
+        // links here from the genes it marks as essential in nearly every cell
+        // line, where the question is what "nearly every" actually looks like.
+        const oneGene = /^gene=(.+)$/.exec(h);
+        if (oneGene) {
+            let value = oneGene[1];
+            try { value = decodeURIComponent(value); } catch (e) { }
+            this._openGeneEffectFromLink(value);
+            return;
+        }
+        // A set of genes: #genes=TP53,BRCA1 runs the analysis on them.
+        const geneRoute = /^genes=(.+)$/.exec(h);
+        if (geneRoute) {
+            let value = geneRoute[1];
+            try { value = decodeURIComponent(value); } catch (e) { }
+            this._openGenesFromLink(value);
+        }
+    }
+
+    // The cell-line list, ranked by one gene's effect. Always has something to
+    // show, which a correlation search for a pan-essential gene does not: a
+    // gene that behaves the same way everywhere correlates with nothing.
+    _openGeneEffectFromLink(text) {
+        const gene = String(text || "").trim().toUpperCase();
+        if (!gene) return;
+        try {
+            this.openCellLineBrowser();
+            const sortBy = document.getElementById('clbSortBy');
+            const sortGene = document.getElementById('clbSortGene');
+            if (!sortBy || !sortGene) return;
+            sortBy.value = 'ge';
+            sortBy.dispatchEvent(new Event('change', { bubbles: true }));
+            sortGene.value = gene;
+            sortGene.dispatchEvent(new Event('input', { bubbles: true }));
+            setTimeout(() => {
+                try {
+                    // Typing into that box opens its suggestion list, which is
+                    // for someone choosing a gene; this one is already chosen.
+                    const dd = document.getElementById('clbSortDrugDropdown');
+                    if (dd) dd.style.display = 'none';
+                    this.renderCellLineList?.();
+                } catch (e) { }
+            }, 300);
+        } catch (e) {
+            console.warn('Could not open the gene from the link:', e);
+        }
+    }
+
+    // Put the genes in the box and run, so the link lands on the answer rather
+    // than on a filled-in form.
+    _openGenesFromLink(text) {
+        const genes = String(text || "").split(/[\s,;]+/)
+            .map(g => g.trim().toUpperCase()).filter(Boolean);
+        if (!genes.length) return;
+        const box = document.getElementById('geneTextarea');
+        if (!box) return;
+        try {
+            box.value = genes.join('\n');
+            this.updateGeneCount?.();
+            // One gene has nothing to correlate within a set of one, so a
+            // single-gene link searches for what correlates with it instead.
+            // Several genes arrive as a set, which is what the default mode
+            // is for.
+            const mode = genes.length === 1 ? 'design' : 'analysis';
+            const radio = document.querySelector(`input[name="analysisMode"][value="${mode}"]`);
+            if (radio && !radio.checked) { radio.checked = true; radio.dispatchEvent(new Event('change', { bubbles: true })); }
+            this.runAnalysis();
+        } catch (e) {
+            console.warn('Could not run the analysis from the link:', e);
         }
     }
 
