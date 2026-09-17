@@ -396,6 +396,56 @@ class CorrelationExplorer {
         if (CELL_BROWSER_ROUTES.includes(h)) {
             try { this.openCellLineBrowser(); }
             catch (e) { console.warn('Could not open cell-line browser from #cell route:', e); }
+            return;
+        }
+        // One named line: #cell=A-375, #cell=A375 or #cell=ACH-000219. Green
+        // Listed links here from its copy-number output, where the user has
+        // just chosen a cell line and the rest of what is known about it lives
+        // in this app. Landing them in a list of 1,900 to find it again would
+        // be most of the work the link was for.
+        const named = /^(?:cell|cells|cellbrowser|cellsbrowser|cell-line-browser|celllinebrowser|browser|wiki)=(.+)$/.exec(h);
+        if (named) {
+            let value = named[1];
+            try { value = decodeURIComponent(value); } catch (e) { }
+            this._openCellLineFromLink(value);
+        }
+    }
+
+    // A name, a punctuation-stripped name (A375) or a DepMap id, resolved to
+    // the id this app keys everything on. Names are compared with punctuation
+    // and case removed, so A-375, A375 and a375 all arrive at the same line.
+    _cellLineIdFromText(text) {
+        const norm = v => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const want = norm(text);
+        if (!want) return null;
+        const ids = this.metadata?.cellLines || [];
+        if (/^ach\d+$/.test(want)) {
+            const id = ids.find(x => norm(x) === want);
+            return id || null;
+        }
+        const byName = ids.find(id => norm(this.getCellLineName(id)) === want);
+        if (byName) return byName;
+        const strippedMap = this.cellLineMetadata?.strippedCellLineName || {};
+        return ids.find(id => norm(strippedMap[id]) === want) || null;
+    }
+
+    async _openCellLineFromLink(text) {
+        try {
+            this.openCellLineBrowser();
+            const id = this._cellLineIdFromText(text);
+            const search = document.getElementById('clbSearch');
+            if (!id) {
+                // Not a line we have. The text goes in the search box rather
+                // than being dropped, so the user can see what was asked for
+                // and adjust it.
+                if (search) { search.value = String(text); this.renderCellLineList(); }
+                return;
+            }
+            if (search) { search.value = this.getCellLineName(id); this.renderCellLineList(); }
+            this.showCellLineDetail(id);
+            // This build has no wiki; the detail panel is the deep read.
+        } catch (e) {
+            console.warn('Could not open the cell line from the link:', e);
         }
     }
 
