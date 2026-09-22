@@ -55963,7 +55963,7 @@ ${clone.innerHTML}
         // away as the Cell-line clusters row, whose split select defaults to
         // tree order only.
         set('hmScale', this._hmDefaultScaleFor('ge'));
-        set('hmThenBy', 'score');
+        set('hmThenBy', 'mag');
         this._hmClusterKChoice = '0';
         set('hmGeneClusterK', '0');
         const medianCb = document.getElementById('hmShowMedian');
@@ -55983,7 +55983,7 @@ ${clone.innerHTML}
             if (defLineages.size > 1) break;
         }
         this._hmAnnRows = [
-            { mode: defLineages.size <= 1 ? 'disease' : 'lineage', gene: null, sortDir: 'desc', sortKey: 'score' },
+            { mode: defLineages.size <= 1 ? 'disease' : 'lineage', gene: null, sortDir: 'desc', sortKey: 'mag' },
             { mode: 'hotspot', gene: 'TP53', sortDir: null, sortKey: null }
         ];
         [['hmHotspotFilter', 'hmHotspotLevel', '1+2'], ['hmFusionFilter', 'hmFusionLevel', '1+2'], ['hmCnFilter', 'hmCnLevel', 'altered']]
@@ -56103,7 +56103,8 @@ ${clone.innerHTML}
             // Direction encodes canonical (desc) vs reversed (asc) against
             // the rank map, which for 'name' is built A first: so A to Z is
             // the canonical direction.
-            opts = [['', 'Sort: off'], ['size-desc', 'Largest group first'], ['size-asc', 'Smallest group first'],
+            opts = [['', 'Sort: off'], ['mag-desc', 'Most striking first'], ['mag-asc', 'Least striking first'],
+                    ['size-desc', 'Largest group first'], ['size-asc', 'Smallest group first'],
                     ['name-desc', 'A to Z'], ['name-asc', 'Z to A'],
                     ...((document.getElementById('hmDataType')?.value || 'ge') === 'expr'
                         ? [['score-desc', 'Median expression, high first'], ['score-asc', 'Median expression, low first']]
@@ -56692,7 +56693,7 @@ ${clone.innerHTML}
         const dataType = document.getElementById('hmDataType')?.value || 'ge';
         const scaleMode = document.getElementById('hmScale')?.value || 'z';
         const cohortMode = document.getElementById('hmCohort')?.value || 'visible';
-        const thenBy = document.getElementById('hmThenBy')?.value === 'name' ? 'name' : 'score';
+        const thenBy = (v => v === 'name' ? 'name' : v === 'mag' ? 'mag' : 'score')(document.getElementById('hmThenBy')?.value);
         // Clustering is no longer a control of its own down here: it enters
         // as the Cell-line clusters annotation ROW, resolved with the rest of
         // the hierarchy further down.
@@ -57236,7 +57237,7 @@ ${clone.innerHTML}
     // the controls, so the sentence and the picture cannot drift apart.
     _hmSortSummary(d, withNudge = false) {
         const plan = d.sortPlan || { block: null, chain: [], cluster: null, inert: [] };
-        const thenByWord = d.sortSpec?.thenBy === 'name' ? 'name' : 'score';
+        const thenByWord = d.sortSpec?.thenBy === 'name' ? 'name' : d.sortSpec?.thenBy === 'mag' ? 'strength of colour' : 'score';
         // Rows can be drawn without doing anything to the order: when at
         // least one is sitting there unused, say so rather than leaving the
         // mismatch to be noticed by chance. The click-this nudge is for the
@@ -57251,6 +57252,7 @@ ${clone.innerHTML}
             // The chosen sort key names its own order; without one
             // the historic per-kind default order applies.
             if (row.sortKey === 'name') return row.dir === 'asc' ? 'Z to A' : 'A to Z';
+            if (row.sortKey === 'mag') return row.dir === 'asc' ? 'least striking first' : 'most striking first (strongest colours, either direction)';
             if (row.sortKey === 'score') {
                 if (d.dataType === 'expr') return row.dir === 'asc' ? 'lowest median expression first' : 'highest median expression first';
                 return row.dir === 'asc' ? 'weakest dependency first (highest median gene effect)' : 'strongest dependency first (lowest median gene effect)';
@@ -57387,6 +57389,23 @@ ${clone.innerHTML}
             for (const row of scaledRows) { const v = row[ci]; if (!Number.isNaN(v)) { s += v; k++; } }
             clScore.set(cl, k ? s / k : NaN);
         });
+        // Strength of colour, sign ignored: the mean absolute value over the
+        // shown genes. Puts the most striking columns first, whether their
+        // squares are deep orange or deep purple.
+        const clMag = new Map();
+        cohort.forEach((cl, ci) => {
+            let s = 0, k = 0;
+            for (const row of scaledRows) { const v = row[ci]; if (!Number.isNaN(v)) { s += Math.abs(v); k++; } }
+            clMag.set(cl, k ? s / k : NaN);
+        });
+        const magCompare = (a, b) => {
+            const va = clMag.get(a), vb = clMag.get(b);
+            const na = Number.isNaN(va), nb = Number.isNaN(vb);
+            if (na && nb) return this.getCellLineName(a).localeCompare(this.getCellLineName(b));
+            if (na) return 1;
+            if (nb) return -1;
+            return vb - va;
+        };
         // Shared score comparator: score sort uses it directly, and the
         // "annotation rows" sort falls back to it as its final tie-break, so
         // the two can never disagree about what "score within blocks" means.
@@ -57461,7 +57480,7 @@ ${clone.innerHTML}
         // Name comparator for hmThenBy's 'name' option, the same one the old
         // standalone Name sort used.
         const nameCompare = (a, b) => this.getCellLineName(a).localeCompare(this.getCellLineName(b));
-        const thenCompare = sortSpec.thenBy === 'name' ? nameCompare : scoreCompare;
+        const thenCompare = sortSpec.thenBy === 'name' ? nameCompare : sortSpec.thenBy === 'mag' ? magCompare : scoreCompare;
 
         // One ranker per row in the sort chain, built once here rather than
         // inside the comparator, so an O(n log n) sort doesn't redo an
@@ -57479,7 +57498,7 @@ ${clone.innerHTML}
             return {
                 numeric: false,
                 valueFor: this._hmAnnRowValueFor(row.mode, row.gene),
-                rankMap: this._hmAnnRowRankMap(row.mode, row.gene, cohort, row.sortKey || null, clScore),
+                rankMap: this._hmAnnRowRankMap(row.mode, row.gene, cohort, row.sortKey || null, clScore, clMag),
                 dir: row.sortDir === 'asc' ? -1 : 1
             };
         });
@@ -57583,7 +57602,7 @@ ${clone.innerHTML}
             // colour strip, staggered labels, legend, drill-down and Min n
             // have always used.
             const valueFor = this._hmAnnRowValueFor(outerRow.mode, outerRow.gene);
-            const rankMap = this._hmAnnRowRankMap(outerRow.mode, outerRow.gene, cohort, outerRow.sortKey || null, clScore);
+            const rankMap = this._hmAnnRowRankMap(outerRow.mode, outerRow.gene, cohort, outerRow.sortKey || null, clScore, clMag);
             const byKey = new Map();
             for (const cl of cohort) {
                 const k = valueFor(cl);
@@ -57969,7 +57988,7 @@ ${clone.innerHTML}
     //           (clScore from the caller; without it, the default rank)
     // The caller applies the row's direction as a multiplier, so 'asc' is
     // the exact reverse of this rank.
-    _hmAnnRowRankMap(mode, gene, cohort, sortKey = null, clScore = null) {
+    _hmAnnRowRankMap(mode, gene, cohort, sortKey = null, clScore = null, clMag = null) {
         const ALTERED_FIRST = {
             hotspot: ['Both copies', 'One copy', 'Wild-type'],
             fusion: ['Fused', 'No fusion'],
@@ -57978,7 +57997,7 @@ ${clone.innerHTML}
         };
         const rankMap = new Map();
         const valueFor = this._hmAnnRowValueFor(mode, gene);
-        if (sortKey === 'name' || (sortKey === 'score' && clScore)) {
+        if (sortKey === 'name' || (sortKey === 'score' && clScore) || (sortKey === 'mag' && clMag)) {
             const perCat = new Map();
             for (const cl of cohort) {
                 const v = valueFor(cl);
@@ -57989,8 +58008,9 @@ ${clone.innerHTML}
             if (sortKey === 'name') {
                 order = [...perCat.keys()].sort((a, b) => String(a).localeCompare(String(b)));
             } else {
+                const src = sortKey === 'mag' ? clMag : clScore;
                 const medianOf = (cls) => {
-                    const vals = cls.map(cl => clScore.get(cl)).filter(v => v != null && !Number.isNaN(v)).sort((a, b) => a - b);
+                    const vals = cls.map(cl => src.get(cl)).filter(v => v != null && !Number.isNaN(v)).sort((a, b) => a - b);
                     if (!vals.length) return NaN;
                     const m = Math.floor(vals.length / 2);
                     return vals.length % 2 ? vals[m] : (vals[m - 1] + vals[m]) / 2;
@@ -58005,7 +58025,7 @@ ${clone.innerHTML}
                     // Canonical order is "strongest phenotype first": on gene
                     // effect the most negative median (deepest dependency),
                     // on expression the highest.
-                    const geFirst = (document.getElementById('hmDataType')?.value || 'ge') !== 'expr';
+                    const geFirst = sortKey !== 'mag' && (document.getElementById('hmDataType')?.value || 'ge') !== 'expr';
                     return (geFirst ? ma - mb : mb - ma) || String(a).localeCompare(String(b));
                 });
             }
@@ -60656,7 +60676,7 @@ ${clone.innerHTML}
             cn: val('hmCnFilter'),
             cnLevel: val('hmCnLevel') || 'altered',
             hideNoData: checked('hmHideNoData'),
-            thenBy: val('hmThenBy') === 'name' ? 'name' : 'score',
+            thenBy: (v => v === 'name' ? 'name' : v === 'mag' ? 'mag' : 'score')(val('hmThenBy')),
             minN: parseInt(val('hmMinGroupSize'), 10) || 1,
             geneMinN: parseInt(val('hmGeneMinN'), 10) || 1,
             showMedian: checked('hmShowMedian'),
@@ -60856,7 +60876,7 @@ ${clone.innerHTML}
         //   sort:'annotation'   -> thenBy 'score', every restored row 'desc'
         // A current file (state.thenBy present) needs none of this: its rows
         // already carry their own real sortDir, mapped above.
-        let thenBy = state.thenBy === 'name' ? 'name' : 'score';
+        let thenBy = (v => v === 'name' ? 'name' : v === 'mag' ? 'mag' : 'score')(state.thenBy);
         if (state.thenBy == null && typeof state.sort === 'string') {
             if (state.sort === 'name') {
                 thenBy = 'name';
@@ -61702,7 +61722,7 @@ ${clone.innerHTML}
             }
             return `   ${i + 1}. ${label} (${kindWord(row.mode)}): ${role}${dirWord(row, isBlock)}.`;
         });
-        const thenByWord = d.sortSpec?.thenBy === 'name' ? 'cell line name' : 'score';
+        const thenByWord = d.sortSpec?.thenBy === 'name' ? 'cell line name' : d.sortSpec?.thenBy === 'mag' ? 'strength of colour (mean absolute value over the shown genes, most striking first)' : 'score';
 
         const groups = d.groups || null;
         const visibleGroups = (groups || []).filter(g => !g.hidden);

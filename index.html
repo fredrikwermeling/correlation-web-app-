@@ -4849,7 +4849,8 @@
                             <button type="button" id="hmAnnRowAddBtn" class="btn btn-outline btn-sm" style="font-size:11px;" title="Add another annotation row">+ Add row</button>
                             <span style="font-size:10px; color:#6b7280; white-space:nowrap;">then by</span>
                             <select id="hmThenBy" style="width:210px;" title="The final tie-break, inside the innermost blocks, or the whole order when no row's Sort is on">
-                                <option value="score" selected>Score (mean of shown genes)</option>
+                                <option value="mag" selected>Strength of colour (most striking first)</option>
+                                <option value="score">Score (mean of shown genes)</option>
                                 <option value="name">Name (A-Z)</option>
                             </select>
                             <span id="hmAnnRowsSortNote" style="display:none; font-size:10px; color:#9ca3af;">Rows apply top to bottom: the first row with Sort on splits the columns into blocks, rows below it sort within each block, and rows with Sort off just paint colours. Use the arrows to reorder rows. Add a Cell-line clusters row to cluster the columns, on the whole cohort when it is first, or within each block when it sits below a sorted row.</span>
@@ -5839,7 +5840,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v89_76"></script>
+    <script src="app.js?v=v89_77"></script>
     <script src="tour.js?v=v89_49"></script>
 </body>
 </html>
