@@ -56103,7 +56103,7 @@ ${clone.innerHTML}
             // Direction encodes canonical (desc) vs reversed (asc) against
             // the rank map, which for 'name' is built A first: so A to Z is
             // the canonical direction.
-            opts = [['', 'Sort: off'], ['mag-desc', 'Most striking first'], ['mag-asc', 'Least striking first'],
+            opts = [['', 'Sort: off'], ['mag-desc', 'Highest absolute values first'], ['mag-asc', 'Lowest absolute values first'],
                     ['size-desc', 'Largest group first'], ['size-asc', 'Smallest group first'],
                     ['name-desc', 'A to Z'], ['name-asc', 'Z to A'],
                     ...((document.getElementById('hmDataType')?.value || 'ge') === 'expr'
@@ -57237,7 +57237,7 @@ ${clone.innerHTML}
     // the controls, so the sentence and the picture cannot drift apart.
     _hmSortSummary(d, withNudge = false) {
         const plan = d.sortPlan || { block: null, chain: [], cluster: null, inert: [] };
-        const thenByWord = d.sortSpec?.thenBy === 'name' ? 'name' : d.sortSpec?.thenBy === 'mag' ? 'strength of colour' : 'score';
+        const thenByWord = d.sortSpec?.thenBy === 'name' ? 'name' : d.sortSpec?.thenBy === 'mag' ? 'absolute value' : 'score';
         // Rows can be drawn without doing anything to the order: when at
         // least one is sitting there unused, say so rather than leaving the
         // mismatch to be noticed by chance. The click-this nudge is for the
@@ -57252,7 +57252,7 @@ ${clone.innerHTML}
             // The chosen sort key names its own order; without one
             // the historic per-kind default order applies.
             if (row.sortKey === 'name') return row.dir === 'asc' ? 'Z to A' : 'A to Z';
-            if (row.sortKey === 'mag') return row.dir === 'asc' ? 'least striking first' : 'most striking first (strongest colours, either direction)';
+            if (row.sortKey === 'mag') return row.dir === 'asc' ? 'lowest absolute values first' : 'highest absolute values first (mean |value| over the shown genes)';
             if (row.sortKey === 'score') {
                 if (d.dataType === 'expr') return row.dir === 'asc' ? 'lowest median expression first' : 'highest median expression first';
                 return row.dir === 'asc' ? 'weakest dependency first (highest median gene effect)' : 'strongest dependency first (lowest median gene effect)';
@@ -57389,9 +57389,9 @@ ${clone.innerHTML}
             for (const row of scaledRows) { const v = row[ci]; if (!Number.isNaN(v)) { s += v; k++; } }
             clScore.set(cl, k ? s / k : NaN);
         });
-        // Strength of colour, sign ignored: the mean absolute value over the
-        // shown genes. Puts the most striking columns first, whether their
-        // squares are deep orange or deep purple.
+        // Sign ignored: the mean absolute value over the shown genes, so a
+        // column of strong values sorts first whether they are negative or
+        // positive.
         const clMag = new Map();
         cohort.forEach((cl, ci) => {
             let s = 0, k = 0;
@@ -61722,7 +61722,7 @@ ${clone.innerHTML}
             }
             return `   ${i + 1}. ${label} (${kindWord(row.mode)}): ${role}${dirWord(row, isBlock)}.`;
         });
-        const thenByWord = d.sortSpec?.thenBy === 'name' ? 'cell line name' : d.sortSpec?.thenBy === 'mag' ? 'strength of colour (mean absolute value over the shown genes, most striking first)' : 'score';
+        const thenByWord = d.sortSpec?.thenBy === 'name' ? 'cell line name' : d.sortSpec?.thenBy === 'mag' ? 'absolute value (mean absolute value over the shown genes, highest first)' : 'score';
 
         const groups = d.groups || null;
         const visibleGroups = (groups || []).filter(g => !g.hidden);
