@@ -4743,12 +4743,13 @@
                                 <option value="ge" selected>CRISPR gene effect</option>
                                 <option value="expr">mRNA expression</option>
                             </select>
-                            <select id="hmScale" style="width:200px;" title="Z-score compares each gene to its own spread; choose whether that spread is measured across only the cell lines shown or across the whole panel. Raw values keep their original units">
+                            <select id="hmScale" style="width:200px;" title="How the colours are computed. As measured: the actual gene effect on one fixed scale (orange saturates at -2, purple at +1), the default for gene effect. Relative to panel median: each cell minus its gene's median across the whole panel, in gene effect units, teal and brown. Z-score: each gene divided by its own spread, which can turn a tiny difference into a large number for a flat gene">
+                                <option value="raw" selected>As measured, fixed scale</option>
+                                <option value="med">Relative to panel median</option>
+                                <option value="zall">Z-score, vs all lines</option>
                                 <option value="z">Z-score, vs shown lines</option>
-                                <option value="zall" selected>Z-score, vs all lines</option>
-                                <option value="raw">Raw values</option>
                             </select>
-                            <span style="color:#9ca3af; font-size:10px; cursor:help; border:1px solid #d1d5db; border-radius:50%; padding:0 5px;" title="How the colours are computed. Z-score, vs shown lines: each GENE is centred on its own mean and scaled by its own spread across the cell lines currently drawn, so every row uses the full colour range and rows are comparable; a cell says how that line sits for that gene relative to the other shown lines. Z-score, vs all lines: same per-gene scaling but measured across every cell line in the panel, so a cell says how the line sits against all cancers even when only a subset is drawn. Raw values: the actual units (log2 TPM+1 for expression, Chronos score for gene effect), one shared scale for the whole grid, rows with naturally high levels dominate the colours. Normalisation is always per gene, never across the whole gene set.">?</span>
+                            <span style="color:#9ca3af; font-size:10px; cursor:help; border:1px solid #d1d5db; border-radius:50%; padding:0 5px;" title="How the colours are computed. As measured: the actual value (Chronos gene effect, or log2 TPM+1), on one fixed scale for gene effect (white at 0, orange saturating at -2 for dependency, purple at +1 for a knockout that favours growth, a tick at -1 for the common-essential level), so a square can be read on its own and compared across plots. Relative to panel median: each cell minus that gene's median across all cell lines, still in gene effect units, so one unit is the same distance in every row; teal means more essential than the typical line, brown less. Z-score, vs all lines / vs shown lines: each gene centred and divided by its own spread across the panel or the shown lines; rows are comparable in spread but a gene that barely varies can turn a tiny difference into a double-digit number, and orange or purple then say nothing about the measured effect. Hover a square to see the measured value first, then the relative ones.">?</span>
                             <span style="display:inline-flex; align-items:center; gap:4px; font-size:11px; color:#374151;" title="Hide gene rows measured in fewer than this many of the shown cell lines. Some genes are only screened in a subset of lines, so their rows rest on less data than the rest of the grid. 1 shows every gene.">
                                 Gene min n: <input type="number" id="hmGeneMinN" value="1" min="1" max="2000" step="25" style="width:58px; padding:2px 4px; border:1px solid #d1d5db; border-radius:3px; text-align:center; font-size:11px;">
                             </span>
@@ -5838,7 +5839,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v89_72"></script>
+    <script src="app.js?v=v89_73"></script>
     <script src="tour.js?v=v89_49"></script>
 </body>
 </html>

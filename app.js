@@ -32274,9 +32274,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     ? (this._GENE_SET_LIBRARY()[presetKey]?.label || presetKey)
                     : 'Custom gene list';
                 const measure = d.dataType === 'ge' ? 'CRISPR gene effect (Chronos)' : 'mRNA expression (log2 TPM+1)';
-                const scaling = d.scaleMode === 'z' ? 'z-scored per gene, mean and SD computed across only the cell lines shown in this file'
-                    : d.scaleMode === 'zall' ? `z-scored per gene, mean and SD computed across all ${d.zAllN.toLocaleString()} cell lines with data in the full ${measure} matrix, not just the cell lines in this file: a value of +2 means that gene is high versus the WHOLE panel, which is not the same claim as being high versus just the lines shown here`
-                    : 'raw values';
+                const scaling = `${this._hmScaleWords(d).caption}: ${this._hmScaleWords(d).sentence}`;
                 const cohortMode = document.getElementById('hmCohort')?.value || 'visible';
                 const cohortWord = {
                     visible: 'the cell lines the browser is filtered to',
@@ -32347,10 +32345,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     ];
                 }
                 description = `Gene set heatmap: ${setLabel} (${d.genes.length} genes) across ${d.orderedCLs.length} cell lines (${cohortWord}${d.lineageLabel ? `, ${d.lineageLabel} only` : ''}), ${sortSummary}, ${measure}, ${scaling}${groupedAtAll ? `, grouped by ${groupWord}` : ''}.`;
-                const colourWord = d.dataType === 'expr'
-                    ? ((d.scaleMode === 'z' || d.scaleMode === 'zall') ? 'blue is low, red is high' : 'white is low, dark green is high')
-                    : 'orange is negative (dependency), purple is high (dispensable)';
-                context.plotDescribesWhat = `A heatmap: each row is one of the ${d.genes.length} genes in the "${setLabel}" set, each column is one cell line (${d.orderedCLs.length} shown, ${sortSummary}). Colour is ${measure}, ${scaling}: ${colourWord}.`
+                const colourWord = this._hmScaleWords(d).colour;
+                context.plotDescribesWhat = `A heatmap [colour mode: ${this._hmScaleWords(d).caption}]: each row is one of the ${d.genes.length} genes in the "${setLabel}" set, each column is one cell line (${d.orderedCLs.length} shown, ${sortSummary}). Colour is ${measure}, ${scaling}: ${colourWord}.`
                     + (d.groups ? ` A coloured band beneath the grid marks the ${visibleGroups.length} group${visibleGroups.length === 1 ? '' : 's'} the columns are split into by ${groupWord}${hiddenGroupKeys.length ? `; ${hiddenGroupKeys.length} more group${hiddenGroupKeys.length === 1 ? '' : 's'} (${hiddenGroupKeys.join(', ')}) were hidden by the user and are not in this file` : ''}.` : '')
                     + (d.annRows.length ? ` ${d.annRows.length} more coloured band${d.annRows.length === 1 ? '' : 's'} beneath that mark each column's ${d.annRows.map(r => r.attrLabel).join(', ')} respectively.` : '')
                     + (d.geneTree ? ` A small tree to the left of the gene labels shows how the rows were clustered${d.geneClusterColorOf ? ', its branches coloured by subtree so groups of co-behaving genes stand out' : ''}.` : '')
@@ -32360,10 +32356,28 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 // display order, values as shown (z-scored vs shown lines,
                 // z-scored vs the whole panel, or raw), so a reader can
                 // recompute anything the picture shows.
+                const matrixOf = (rows) => d.orderedGenes.map(g => {
+                    const row = rows[d.geneIndexInResult.get(g)];
+                    return d.orderedCLs.map(cl => {
+                        const v = row[d.cohortIndex.get(cl)];
+                        return Number.isNaN(v) ? null : parseFloat(v.toFixed(3));
+                    });
+                });
                 context.matrix = {
                     genes: d.orderedGenes.slice(),
                     cellLines: d.orderedCLs.map(cl => this.getCellLineName(cl)),
                     cellLineIds: d.orderedCLs.slice(),
+                    valuesAre: this._hmScaleWords(d).caption,
+                    // The measured values ride along whatever the colour mode,
+                    // so a downstream reading cannot inherit a relative number
+                    // as if it were the effect itself.
+                    rawValuesAre: d.dataType === 'ge' ? 'CRISPR gene effect (Chronos), as measured' : 'log2 TPM+1, as measured',
+                    rawValues: d.scaleMode === 'raw' ? 'same as values' : matrixOf(d.rawRows),
+                    panelStatsPerGene: d.dataType === 'ge' ? Object.fromEntries(d.orderedGenes.map(g => {
+                        const st = this._hmZAllStatsFor(g, d.dataType);
+                        return [g, st ? { median: parseFloat(st.median.toFixed(3)), mean: parseFloat(st.mean.toFixed(3)), sd: parseFloat(st.sd.toFixed(3)), n: st.n, lowSpread: st.sd < this._HM_LOW_SD() } : null];
+                    })) : undefined,
+                    panelStats_readMe: d.dataType === 'ge' ? `Per gene, across every cell line in the panel: median, mean, SD and n. A gene flagged lowSpread has a panel SD below ${this._HM_LOW_SD()}, so any relative value for it (z-score or minus-median) exaggerates a tiny difference; read its rawValues instead.` : undefined,
                     values: d.orderedGenes.map(g => {
                         const row = d.scaledRows[d.geneIndexInResult.get(g)];
                         return d.orderedCLs.map(cl => {
@@ -37314,6 +37328,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // network's own colour-by code branches on.
         const dtSel = document.getElementById('hmDataType');
         if (dtSel) dtSel.value = this.results?.basis === 'expr' ? 'expr' : 'ge';
+        { const sc = document.getElementById('hmScale'); if (sc && dtSel) sc.value = this._hmDefaultScaleFor(dtSel.value); }
         // Carry the analysis' own cell-line cohort into the heatmap, the
         // same override mechanism a restored "Save view" file uses (set
         // AFTER _hmOpenModal's reset above, or it's dropped). A full,
@@ -37444,6 +37459,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (genesBox) genesBox.value = genes.join('\n');
         const dtSel = document.getElementById('hmDataType');
         if (dtSel) dtSel.value = mr.metric === 'expr' ? 'expr' : 'ge';
+        { const sc = document.getElementById('hmScale'); if (sc && dtSel) sc.value = this._hmDefaultScaleFor(dtSel.value); }
         // Carry the exact WT + mutated cohort the analysis ran on (its own
         // lineage/disease/hotspot filters; nothing to do with the Cell Line
         // Browser's filters, so the heatmap's own 'visible' default cannot
@@ -37504,6 +37520,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (genesBox) genesBox.value = genes.join('\n');
         const dtSel = document.getElementById('hmDataType');
         if (dtSel) dtSel.value = 'ge';
+        { const sc = document.getElementById('hmScale'); if (sc && dtSel) sc.value = this._hmDefaultScaleFor(dtSel.value); }
         // No cohort override needed: _hmOpenModal's reset leaves hmCohort on
         // its 'visible' default, which reads this._clbVisibleCellLines, the
         // exact array this list was built against, so the browser's active
@@ -37559,6 +37576,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (genesBox) genesBox.value = genes.join('\n');
         const dtSel = document.getElementById('hmDataType');
         if (dtSel) dtSel.value = side === 'right' ? 'expr' : 'ge';
+        { const sc = document.getElementById('hmScale'); if (sc && dtSel) sc.value = this._hmDefaultScaleFor(dtSel.value); }
         // Cohort: the browser's visible cohort reproduces the inspected
         // population (the selection AND the group it was compared with both
         // live there) only when the comparison was "everything the CLB's
@@ -39196,6 +39214,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             nfkb: { label: 'NF-kB targets', category: 'Pathway output',
                 genes: ['NFKBIA','TNFAIP3','RELB','NFKB2','BIRC3','CXCL8','IL6','CCL2','CCL20','ICAM1','VCAM1','TRAF1','CD83','PTGS2','BCL3','NFKB1','TNF','LTB','CXCL1','CXCL2','NFKBIE','PLAU'],
                 note: 'NF-kB output, including its own negative feedback (NFKBIA, TNFAIP3). High here usually means the pathway is active rather than merely present.' },
+            tp53_members: { label: 'TP53 pathway members', category: 'Pathway members',
+                genes: ['TP53','MDM2','MDM4','PPM1D','USP7','CDKN1A','TP53BP1','USP28','CHEK2','ATM','ZNF326','XPO7','UBE2K','RPL22','FAM193A','PPM1G','WDR89','DDX31','FERMT2','TERF1','USP38'],
+                note: 'The p53 axis as CRISPR co-dependencies: its activators (ATM, CHEK2, TP53BP1, USP28), its brakes (MDM2, MDM4, PPM1D, USP7) and the genes whose knockout effect tracks TP53 across the panel. On gene effect a TP53 wild-type line depends on the brakes and tolerates loss of the activators; a mutant line shows neither. For the transcriptional targets see TP53 targets.' },
             ras_mapk_members: { label: 'RAS / MAPK pathway members', category: 'Pathway members',
                 genes: ['KRAS','NRAS','HRAS','BRAF','RAF1','ARAF','MAP2K1','MAP2K2','MAPK1','MAPK3','NF1','PTPN11','SOS1','GRB2','SHOC2','RASA1','KSR1','SPRED1','SPRED2','DUSP4','DUSP6','SPRY1','SPRY2','SPRY4'],
                 note: 'The cascade itself, from the RAS proteins through RAF, MEK and ERK, with its regulators (NF1, SPRED1/2, SHOC2, PTPN11) and its negative feedback (DUSP4, DUSP6, SPRY1/2/4). On gene effect this shows which lines depend on which node: a KRAS-mutant line on KRAS, a BRAF-mutant line on BRAF. For the transcriptional footprint of the pathway see MAPK output.' },
@@ -55753,7 +55774,13 @@ ${clone.innerHTML}
         });
         window.addEventListener('mouseup', () => this._hmOnGridMouseUp());
         document.getElementById('hmPreset')?.addEventListener('change', () => { this._hmSyncPresetUI(); this._hmRedraw(); });
-        document.getElementById('hmDataType')?.addEventListener('change', () => this._hmRedraw());
+        document.getElementById('hmDataType')?.addEventListener('change', () => {
+            // Each measure has its own sensible default: gene effect is read
+            // as measured, expression as a z-score against the panel.
+            const sc = document.getElementById('hmScale');
+            if (sc) sc.value = this._hmDefaultScaleFor(document.getElementById('hmDataType')?.value || 'ge');
+            this._hmRedraw();
+        });
         document.getElementById('hmScale')?.addEventListener('change', () => this._hmRedraw());
         document.getElementById('hmGeneMinN')?.addEventListener('change', () => this._hmRedraw());
         document.getElementById('hmThenBy')?.addEventListener('change', () => this._hmRedraw());
@@ -55930,7 +55957,7 @@ ${clone.innerHTML}
         // is a deliberate act (set a row's Sort); clustering is one Add row
         // away as the Cell-line clusters row, whose split select defaults to
         // tree order only.
-        set('hmScale', 'zall');
+        set('hmScale', this._hmDefaultScaleFor('ge'));
         set('hmThenBy', 'score');
         this._hmClusterKChoice = '0';
         set('hmGeneClusterK', '0');
@@ -57330,13 +57357,14 @@ ${clone.innerHTML}
 
         const scaledRows = scaleMode === 'z' ? rawRows.map(r => this._hmZRow(r))
             : scaleMode === 'zall' ? rawRows.map((r, i) => this._hmZRowAll(r, genes[i], dataType))
+            : scaleMode === 'med' ? rawRows.map((r, i) => this._hmMedRowAll(r, genes[i], dataType))
             : rawRows;
         // For the hint line / caption / AI export to name the reference
         // population ("vs all N lines with data"): the largest per-gene n
         // among the shown genes, since a gene's own full-panel count can run
         // a little below the panel size when a handful of lines lack it.
         let zAllN = 0;
-        if (scaleMode === 'zall') {
+        if (scaleMode === 'zall' || scaleMode === 'med') {
             for (const g of genes) { const s = this._hmZAllStatsFor(g, dataType); if (s && s.n > zAllN) zAllN = s.n; }
         }
         const geneIndexInResult = new Map(genes.map((g, i) => [g, i]));
@@ -57745,9 +57773,16 @@ ${clone.innerHTML}
         // is scaled to the data's own range; raw gene effect is symmetric
         // around 0 so a depleted line and an enriched one read as mirror
         // colours.
+        // Gene effect as measured gets a FIXED, asymmetric scale: white at 0,
+        // orange saturating at -2, purple at +1, the same for every row and
+        // every cohort. Relative-to-median is fixed at 1.5 units either way.
         let domain;
         if (scaleMode === 'z' || scaleMode === 'zall') {
             domain = { lo: -2.5, hi: 2.5 };
+        } else if (scaleMode === 'med') {
+            domain = { lo: -1.5, hi: 1.5 };
+        } else if (dataType === 'ge') {
+            domain = { lo: -2, hi: 1 };
         } else if (dataType === 'expr') {
             let lo = Infinity, hi = -Infinity;
             for (const row of rawRows) for (const v of row) if (!Number.isNaN(v)) { if (v < lo) lo = v; if (v > hi) hi = v; }
@@ -58201,11 +58236,70 @@ ${clone.innerHTML}
                 let ss = 0;
                 for (const v of vec) if (!Number.isNaN(v)) ss += (v - mean) ** 2;
                 const sd = Math.sqrt(ss / (k - 1));
-                if (sd > 0) stats = { mean, sd, n: k };
+                const sorted = Array.from(vec).filter(v => !Number.isNaN(v)).sort((a, b) => a - b);
+                const median = sorted.length % 2 ? sorted[(sorted.length - 1) / 2]
+                    : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2;
+                if (sd > 0) stats = { mean, sd, median, n: k };
             }
         }
         cache.set(gene, stats);
         return stats;
+    }
+
+    // Panel-relative in the measure's own units: the line's value minus the
+    // gene's median across the whole panel. Unlike a z-score it is not
+    // divided by the gene's spread, so one unit is the same distance in
+    // every row and a flat gene cannot produce a double-digit extreme.
+    _hmMedRowAll(raw, gene, dataType) {
+        const stats = this._hmZAllStatsFor(gene, dataType);
+        if (!stats) return raw.map(() => NaN);
+        return Float64Array.from(raw, v => Number.isNaN(v) ? NaN : v - stats.median);
+    }
+
+    // A gene whose spread across the panel is this small gives meaningless
+    // relative numbers (a fraction of a gene-effect unit turns into a
+    // double-digit z), so tooltips and exports flag it.
+    _HM_LOW_SD() { return 0.25; }
+
+    _hmDefaultScaleFor(dataType) { return dataType === 'expr' ? 'zall' : 'raw'; }
+
+    // The words for the colour scale, in one place: the legend caption, the
+    // hint line, the exported image, the CSV corner, the Methods text and
+    // Export for AI all read these, so the mode can never be described two
+    // ways. The purple end is never called "high": on gene effect a positive
+    // number means the knockout helped growth, and on a relative scale it
+    // means less essential here than in the typical line.
+    _hmScaleWords(d) {
+        const m = d.scaleMode, ge = d.dataType !== 'expr';
+        const nAll = d.zAllN ? d.zAllN.toLocaleString() : 'all';
+        const w = {};
+        if (m === 'raw') {
+            w.caption = ge ? 'Gene effect as measured (Chronos)' : 'log2 TPM+1, as measured';
+            w.short = ge ? 'gene effect as measured (Chronos), fixed scale' : 'raw values';
+            w.sentence = ge
+                ? 'Values are the measured Chronos gene effect, on one fixed scale for every row and every cohort (orange saturates at -2, purple at +1), so a square can be read on its own and compared across plots.'
+                : 'Values were left on their original log2 TPM+1 scale and were not z-scored.';
+            w.colour = ge ? 'orange = dependency (negative gene effect), white = no effect, purple = knockout favours growth (positive gene effect)' : 'white is low, dark green is high';
+            w.legend = ge ? 'orange = dependency · purple = knockout favours growth' : 'white = low · dark green = high';
+        } else if (m === 'med') {
+            w.caption = 'Relative to the panel median (gene effect units)';
+            w.short = `each cell minus the gene's median across all ${nAll} lines, in gene effect units`;
+            w.sentence = `Each value is the measured gene effect minus that gene's median across all ${nAll} cell lines with data, so it says how this line differs from the typical line in gene effect units, not in units of the gene's spread. The colour scale saturates at 1.5 units either way.`;
+            w.colour = 'teal = more essential in this line than in the typical line, brown = less essential here than in the typical line';
+            w.legend = 'teal = more essential than typical · brown = less essential than typical';
+        } else {
+            const vs = m === 'z' ? 'vs shown lines' : `vs all ${nAll} lines`;
+            w.caption = `Z-score per gene, ${vs}`;
+            w.short = `z-scored per gene ${vs}`;
+            w.sentence = m === 'z'
+                ? 'Values were z-scored per gene, with the mean and standard deviation taken across only the cell lines shown.'
+                : `Values were z-scored per gene, with the mean and standard deviation taken across all ${nAll} cell lines that have a value in the full matrix rather than only the ones shown, so a value of +2 means high against the whole panel.`;
+            w.colour = ge
+                ? 'orange = more essential than typical for this gene (below the panel mean), purple = less essential than typical (above the panel mean); this is relative to the gene\'s own spread, not the measured effect'
+                : 'blue is low, red is high';
+            w.legend = ge ? 'orange = below panel mean · purple = above panel mean' : 'blue = low · red = high';
+        }
+        return w;
     }
 
     // Scales one gene's row (already narrowed to the shown cohort) against
@@ -58593,8 +58687,23 @@ ${clone.innerHTML}
         // expression's blue/red, so the two data types never disagree on what
         // a colour means. The normalized position is negated here rather
         // than duplicating the diverging ramp with a mirrored copy.
-        const pos = (scaleMode === 'z' || scaleMode === 'zall') ? v / 2.5 : v / (domain.hi || 1);
+        if (scaleMode === 'med') {
+            return this._hmDivergingColorRel(Math.max(-1, Math.min(1, v / (domain.hi || 1.5))));
+        }
+        // As measured: each side of zero saturates at its own bound (-2 / +1).
+        const pos = (scaleMode === 'z' || scaleMode === 'zall') ? v / 2.5
+            : (v < 0 ? v / Math.abs(domain.lo || 2) : v / (domain.hi || 1));
         return this._hmDivergingColorGE(Math.max(-1, Math.min(1, -pos)));
+    }
+
+    // t in [-1,1]: -1 teal (#01665e), 0 white, 1 brown (#8c510a). ColorBrewer
+    // BrBG, colourblind-safe. Only the relative-to-median mode uses it, so a
+    // panel-relative picture can never be mistaken for measured gene effect.
+    _hmDivergingColorRel(t) {
+        const lerp = (a, b, f) => Math.round(a + (b - a) * f);
+        if (t < 0) { const f = 1 + t; return `rgb(${lerp(1, 255, f)},${lerp(102, 255, f)},${lerp(94, 255, f)})`; }
+        const f = 1 - t;
+        return `rgb(${lerp(140, 255, f)},${lerp(81, 255, f)},${lerp(10, 255, f)})`;
     }
 
     // t in [-1,1]: -1 blue (#2166ac), 0 white, 1 red (#b2182b). ColorBrewer RdBu.
@@ -58770,7 +58879,7 @@ ${clone.innerHTML}
         // legend, tooltip, sorting and blocking as any other, so there is
         // nothing extra to reserve here.
         const gridH = geneAreaH + groupExtra + ann2Extra;
-        const legendW = 260, legendH = 60;
+        const legendW = 300, legendH = 72;
 
         // `plain` skips the light-grey background fill: fine on screen (it
         // reads as the panel's own background there), but on an exported
@@ -59049,9 +59158,19 @@ ${clone.innerHTML}
             ctx.fillText(d.domain.lo.toFixed(1), barX, barY + barH + 4);
             ctx.textAlign = 'right';
             ctx.fillText(d.domain.hi.toFixed(1), barX + barW, barY + barH + 4);
-            if (d.scaleMode === 'z' || d.scaleMode === 'zall' || d.dataType === 'ge') {
+            const xOf = (v) => barX + barW * (v - d.domain.lo) / (d.domain.hi - d.domain.lo);
+            if (d.scaleMode === 'z' || d.scaleMode === 'zall' || d.scaleMode === 'med' || d.dataType === 'ge') {
                 ctx.textAlign = 'center';
-                ctx.fillText('0', barX + barW * (0 - d.domain.lo) / (d.domain.hi - d.domain.lo), barY + barH + 4);
+                ctx.fillText('0', xOf(0), barY + barH + 4);
+            }
+            // As-measured gene effect: a second anchor at -1, the common
+            // essential reference, drawn as a tick so the eye has a fixed
+            // point for "as essential as a core gene".
+            if (d.scaleMode === 'raw' && d.dataType === 'ge' && d.domain.lo < -1) {
+                ctx.strokeStyle = '#374151'; ctx.beginPath();
+                ctx.moveTo(xOf(-1) + 0.5, barY + barH); ctx.lineTo(xOf(-1) + 0.5, barY + barH + 3); ctx.stroke();
+                ctx.textAlign = 'center';
+                ctx.fillText('-1', xOf(-1), barY + barH + 4);
             }
             // Caption states exactly what the colours mean: the
             // scale mode, and for raw values, the actual unit, so it never
@@ -59059,10 +59178,16 @@ ${clone.innerHTML}
             ctx.textAlign = 'left';
             ctx.font = '10px Arial';
             ctx.fillStyle = '#9ca3af';
-            const scaleCaption = d.scaleMode === 'z' ? 'z-score per gene, vs shown lines'
-                : d.scaleMode === 'zall' ? 'z-score per gene, vs all lines'
-                : (d.dataType === 'expr' ? 'log2 TPM+1' : 'gene effect (Chronos)');
-            ctx.fillText(scaleCaption, barX, barY + barH + 4 + hmS.legendFont + 3);
+            // The mode is named on the plot itself, with the colours tied to
+            // biology rather than to "high" and "low", so a picture that
+            // leaves the app still says what its colours mean.
+            const words = this._hmScaleWords(d);
+            ctx.font = 'bold 10px Arial';
+            ctx.fillStyle = '#4b5563';
+            ctx.fillText(words.caption, barX, barY + barH + 4 + hmS.legendFont + 3);
+            ctx.font = '9px Arial';
+            ctx.fillStyle = '#6b7280';
+            ctx.fillText(words.legend, barX, barY + barH + 4 + hmS.legendFont + 3 + 12);
         };
 
         // Group legend: name, swatch and n per group (plus every hidden
@@ -59311,13 +59436,10 @@ ${clone.innerHTML}
         // Hint line: what's drawn, plus anything that didn't resolve.
         const hint = document.getElementById('hmHint');
         if (hint) {
-            const scaleWord = d.scaleMode === 'z' ? 'z-scored per gene vs shown lines'
-                : d.scaleMode === 'zall' ? `z-scored per gene vs all ${d.zAllN.toLocaleString()} lines with data`
-                : 'raw values';
+            const sw = this._hmScaleWords(d);
+            const scaleWord = sw.short;
             const dataWord = d.dataType === 'expr' ? 'mRNA expression' : 'CRISPR gene effect';
-            const colourWord = d.dataType === 'expr'
-                ? ((d.scaleMode === 'z' || d.scaleMode === 'zall') ? 'Blue is low, red is high.' : 'White is low, dark green is high.')
-                : 'Orange is negative (dependency), purple is high (dispensable).';
+            const colourWord = sw.colour.charAt(0).toUpperCase() + sw.colour.slice(1) + '.';
             const groupWord = this._hmGroupSourceLabel(d);
             // Silenced genes are dropped from
             // nGenes/orderedGenes already, so the plain count alone would
@@ -59653,9 +59775,20 @@ ${clone.innerHTML}
         const ci = d.cohortIndex.get(cl);
         const rawV = d.rawRows[gi][ci];
         const shownV = d.scaledRows[gi][ci];
-        const valueText = Number.isNaN(rawV) ? 'no data'
-            : (d.scaleMode === 'z' || d.scaleMode === 'zall') ? `${rawV.toFixed(2)} (z=${Number.isNaN(shownV) ? 'n/a' : shownV.toFixed(2)})`
-            : rawV.toFixed(2);
+        let valueText;
+        if (Number.isNaN(rawV)) valueText = 'no data';
+        else if (d.dataType === 'ge') {
+            const st = this._hmZAllStatsFor(gene, 'ge');
+            const low = st && st.sd < this._HM_LOW_SD();
+            const rel = st ? `${rawV - st.median >= 0 ? '+' : ''}${(rawV - st.median).toFixed(2)} vs panel median` : '';
+            const z = d.scaleMode === 'z' ? ` · z ${Number.isNaN(shownV) ? 'n/a' : shownV.toFixed(2)} vs shown` : (st ? ` · z ${((rawV - st.mean) / st.sd).toFixed(1)}` : '');
+            valueText = `gene effect ${rawV.toFixed(2)}${rel ? ` · ${rel}` : ''}${z}`
+                + (low ? ` · panel SD ${st.sd.toFixed(2)}: relative values unreliable` : '');
+        } else {
+            valueText = (d.scaleMode === 'z' || d.scaleMode === 'zall') ? `${rawV.toFixed(2)} (z=${Number.isNaN(shownV) ? 'n/a' : shownV.toFixed(2)})`
+                : d.scaleMode === 'med' ? `${rawV.toFixed(2)} (${shownV >= 0 ? '+' : ''}${shownV.toFixed(2)} vs panel median)`
+                : rawV.toFixed(2);
+        }
         const lineage = this.getCellLineLineage(cl) || 'unknown lineage';
         this._hmShowTooltip(e.clientX, e.clientY, `${gene} · ${this.getCellLineName(cl)} · ${lineage} · ${valueText}`);
     }
@@ -60076,12 +60209,9 @@ ${clone.innerHTML}
             : (this._GENE_SET_LIBRARY()[presetKey]?.label || presetKey || 'Gene set');
         const measureWord = d.dataType === 'expr' ? 'mRNA expression' : 'CRISPR gene effect';
         const line1 = `${setLabel}, ${measureWord}`;
-        const scaleWord = d.scaleMode === 'z' ? 'Z-scored per gene, vs shown lines.'
-            : d.scaleMode === 'zall' ? `Z-scored per gene, vs all ${d.zAllN.toLocaleString()} lines with data.`
-            : 'Raw values.';
-        const colourWord = d.dataType === 'expr'
-            ? ((d.scaleMode === 'z' || d.scaleMode === 'zall') ? 'Blue is low, red is high.' : 'White is low, dark green is high.')
-            : 'Orange is negative (dependency), purple is high (dispensable).';
+        const swc = this._hmScaleWords(d);
+        const scaleWord = swc.caption + '.';
+        const colourWord = swc.colour.charAt(0).toUpperCase() + swc.colour.slice(1) + '.';
         // The sort line right beside this already names WHAT the blocks are,
         // so this only adds how many, same split the on-screen hint uses.
         const groupWord = d.groups
@@ -60224,12 +60354,8 @@ ${clone.innerHTML}
         if (!d) return;
         const csvField = (s) => `"${String(s).replace(/"/g, '""')}"`;
         const measureWord = d.dataType === 'expr' ? 'mRNA expression' : 'CRISPR gene effect';
-        const scaleWord = d.scaleMode === 'z' ? 'z-scored per gene vs shown lines'
-            : d.scaleMode === 'zall' ? `z-scored per gene vs all ${d.zAllN.toLocaleString()} lines with data`
-            : 'raw values';
-        const colourWord = d.dataType === 'expr'
-            ? ((d.scaleMode === 'z' || d.scaleMode === 'zall') ? 'blue is low, red is high' : 'white is low, dark green is high')
-            : 'orange is negative (dependency), purple is high (dispensable)';
+        const scaleWord = this._hmScaleWords(d).short;
+        const colourWord = this._hmScaleWords(d).colour;
         const cohortMode = document.getElementById('hmCohort')?.value || 'visible';
         const cohortWord = { visible: 'cell lines the browser is filtered to', selected: 'ticked cell lines', all: 'all cell lines' }[cohortMode] || cohortMode;
         const lineageWord = d.lineageLabel ? `${d.lineageLabel} only` : 'all lineages';
@@ -60284,6 +60410,16 @@ ${clone.innerHTML}
             csv += csvField(r.attrLabel) + ',' + d.orderedCLs.map((cl, i) => csvField(r.values?.[i] ?? '')).join(',') + '\n';
         });
         csv += rows.join('\n') + '\n';
+        // The measured values travel with any relative colouring, as a
+        // second block, so the file never carries only a relative number.
+        if (d.scaleMode !== 'raw') {
+            const rawWord = d.dataType === 'ge' ? 'gene effect as measured (Chronos)' : 'log2 TPM+1 as measured';
+            csv += csvField(`Gene [${rawWord}, same columns]`) + ',' + d.orderedCLs.map(cl => this.getCellLineName(cl)).join(',') + '\n';
+            csv += d.orderedGenes.map(g => {
+                const row = d.rawRows[d.geneIndexInResult.get(g)];
+                return g + ',' + d.orderedCLs.map(cl => { const v = row[d.cohortIndex.get(cl)]; return Number.isNaN(v) ? '' : v.toFixed(3); }).join(',');
+            }).join('\n') + '\n';
+        }
         this.downloadFile(csv, csvName('heatmap'), 'text/csv');
     }
 
@@ -61496,11 +61632,7 @@ ${clone.innerHTML}
         const measure = d.dataType === 'expr' ? 'expr' : 'ge';
         const measureWords = this._methodsMeasureWords(measure);
 
-        const scaleSentence = d.scaleMode === 'z'
-            ? 'Values were z-scored per gene, with the mean and standard deviation taken across only the cell lines shown.'
-            : d.scaleMode === 'zall'
-                ? `Values were z-scored per gene, with the mean and standard deviation taken across all ${this._mNum(d.zAllN)} cell lines that have a value in the full matrix rather than only the ones shown, so a value of +2 means high against the whole panel.`
-                : 'Values were left on their original scale and were not z-scored.';
+        const scaleSentence = this._hmScaleWords(d).sentence;
         const colourWord = d.dataType === 'expr'
             ? ((d.scaleMode === 'z' || d.scaleMode === 'zall') ? 'blue is low and red is high' : 'white is low and dark green is high')
             : 'orange is negative, meaning the cell line depends on the gene, and purple is high, meaning it does not';
@@ -61596,7 +61728,8 @@ ${clone.innerHTML}
             `THE COLOUR SCALE\n${scaleSentence}`
             + (d.scaleMode === 'z' ? '\nBecause the scale is built from the cell lines on screen, changing which cell lines are shown changes every colour: a gene that looks high here is high RELATIVE TO THESE LINES only.' : '')
             + (d.scaleMode === 'zall' ? '\nBecause the scale is built from the whole panel, the colours stay comparable if the cohort changes.' : '')
-            + (d.scaleMode !== 'z' && d.scaleMode !== 'zall' ? '\nRaw values mean a gene that is simply high or low everywhere fills its row with one colour, which is honest but can drown out the differences between cell lines.' : ''),
+            + (d.scaleMode === 'med' ? '\nBecause every row is centred on its own panel median but NOT divided by its spread, one unit means the same distance in every row; a gene that barely varies across the panel gives small numbers here rather than inflated ones.' : '')
+            + (d.scaleMode === 'raw' ? '\nValues as measured mean a gene that is simply high or low everywhere fills its row with one colour, which is honest but can drown out the differences between cell lines.' : ''),
             'WHICH CELL LINES\n'
             + `   ${this._hmCohortPhrase(d.orderedCLs.length)}\n`
             + (this._hmDrillCells ? `   The view was then drilled into ${this._hmDrillLabel || 'one group'}, so only that group is on screen; the Back button returns to the full cohort.\n` : '')
