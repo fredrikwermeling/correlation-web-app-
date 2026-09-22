@@ -4749,7 +4749,7 @@
                                 <option value="zall">Z-score, vs all lines</option>
                                 <option value="z">Z-score, vs shown lines</option>
                             </select>
-                            <span style="color:#9ca3af; font-size:10px; cursor:help; border:1px solid #d1d5db; border-radius:50%; padding:0 5px;" title="How the colours are computed. As measured: the actual value (Chronos gene effect, or log2 TPM+1), on one fixed scale for gene effect (white at 0, orange saturating at -2 for dependency, purple at +1 for a knockout that favours growth, a tick at -1 for the common-essential level), so a square can be read on its own and compared across plots. Relative to panel median: each cell minus that gene's median across all cell lines, still in gene effect units, so one unit is the same distance in every row; teal means more essential than the typical line, brown less. Z-score, vs all lines / vs shown lines: each gene centred and divided by its own spread across the panel or the shown lines; rows are comparable in spread but a gene that barely varies can turn a tiny difference into a double-digit number, and orange or purple then say nothing about the measured effect. Hover a square to see the measured value first, then the relative ones.">?</span>
+                            <span style="color:#9ca3af; font-size:10px; cursor:help; border:1px solid #d1d5db; border-radius:50%; padding:0 5px;" title="How the colours are computed. As measured: the actual value (Chronos gene effect, or log2 TPM+1), on one fixed scale for gene effect (white at 0, orange saturating at -2 for dependency, purple at +1 for a knockout that favours growth, a tick at -1 for the common-essential level), so a square can be read on its own and compared across plots. Relative to panel median: each cell minus that gene's median across all cell lines, still in gene effect units, so one unit is the same distance in every row; blue-green means more essential than the typical line, brown less. Z-score, vs all lines / vs shown lines: each gene centred and divided by its own spread across the panel or the shown lines; rows are comparable in spread but a gene that barely varies can turn a tiny difference into a double-digit number, and orange or purple then say nothing about the measured effect. Hover a square to see the measured value first, then the relative ones.">?</span>
                             <span style="display:inline-flex; align-items:center; gap:4px; font-size:11px; color:#374151;" title="Hide gene rows measured in fewer than this many of the shown cell lines. Some genes are only screened in a subset of lines, so their rows rest on less data than the rest of the grid. 1 shows every gene.">
                                 Gene min n: <input type="number" id="hmGeneMinN" value="1" min="1" max="2000" step="25" style="width:58px; padding:2px 4px; border:1px solid #d1d5db; border-radius:3px; text-align:center; font-size:11px;">
                             </span>
@@ -5839,7 +5839,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v89_74"></script>
+    <script src="app.js?v=v89_75"></script>
     <script src="tour.js?v=v89_49"></script>
 </body>
 </html>

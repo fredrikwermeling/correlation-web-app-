@@ -58290,8 +58290,8 @@ ${clone.innerHTML}
             w.caption = 'Relative to the panel median (gene effect units)';
             w.short = `each cell minus the gene's median across all ${nAll} lines, in gene effect units`;
             w.sentence = `Each value is the measured gene effect minus that gene's median across all ${nAll} cell lines with data, so it says how this line differs from the typical line in gene effect units, not in units of the gene's spread. The colour scale saturates at 1.5 units either way.`;
-            w.colour = 'teal = more essential in this line than in the typical line, brown = less essential here than in the typical line';
-            w.legend = 'teal = more essential than typical · brown = less essential than typical';
+            w.colour = 'blue-green = more essential in this line than in the typical line, brown = less essential here than in the typical line';
+            w.legend = 'blue-green = more essential than typical · brown = less essential than typical';
         } else {
             const vs = m === 'z' ? 'vs shown lines' : `vs all ${nAll} lines`;
             w.caption = `Z-score per gene, ${vs}`;
