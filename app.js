@@ -55918,7 +55918,7 @@ ${clone.innerHTML}
         if (presetSel && presetSel.options.length) presetSel.selectedIndex = 0;
         const genesBox = document.getElementById('hmGenes');
         if (genesBox) genesBox.value = '';
-        set('hmDataType', 'expr');
+        set('hmDataType', 'ge');
         set('hmCohort', 'visible');
         set('hmLineage', '');
         set('hmSubtype', '');
@@ -56652,7 +56652,7 @@ ${clone.innerHTML}
         const hint = document.getElementById('hmHint');
         if (!this.metadata) { if (hint) hint.textContent = 'Data is still loading.'; return; }
 
-        const dataType = document.getElementById('hmDataType')?.value || 'expr';
+        const dataType = document.getElementById('hmDataType')?.value || 'ge';
         const scaleMode = document.getElementById('hmScale')?.value || 'z';
         const cohortMode = document.getElementById('hmCohort')?.value || 'visible';
         const thenBy = document.getElementById('hmThenBy')?.value === 'name' ? 'name' : 'score';
@@ -60481,7 +60481,7 @@ ${clone.innerHTML}
             date: new Date().toISOString(),
             preset: presetKey,
             customGenes: presetKey === 'custom' ? val('hmGenes') : '',
-            dataType: val('hmDataType') || 'expr',
+            dataType: val('hmDataType') || 'ge',
             scale: val('hmScale') || 'z',
             cohortMode,
             cohortCellLines: cohortMode !== 'all' ? (d?.cohort ? d.cohort.slice() : []) : undefined,
