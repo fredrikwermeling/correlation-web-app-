@@ -2434,7 +2434,7 @@ class CorrelationExplorer {
             const checked = preset.has(g.gene) ? ' checked' : '';
             html += `<label style="display:flex; align-items:center; gap:6px; font-size:11px; padding:2px 0; cursor:pointer;">`;
             html += `<input type="checkbox" class="upset-gene-check" data-gene="${g.gene}"${checked} style="margin:0;">`;
-            html += `<span style="flex:1; color:#374151;">${g.gene}</span>`;
+            html += `<span style="flex:1; color:#374151;">${this.gi(g.gene)}</span>`;
             html += `<span style="color:#9ca3af;">${g.n}</span>`;
             html += `</label>`;
         });
@@ -3079,7 +3079,7 @@ class CorrelationExplorer {
 
         // Header
         let html = `<div style="padding: 10px 14px 8px; border-bottom: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-weight: 600; font-size: 13px; color: #1f2937;">${gene}, Tissue Breakdown</span>
+            <span style="font-weight: 600; font-size: 13px; color: #1f2937;">${this.gi(gene)}, Tissue Breakdown</span>
             <button id="tbCloseBtn" style="background: none; border: none; cursor: pointer; font-size: 18px; color: #6b7280; line-height: 1; padding: 0 2px;">&times;</button>
         </div>`;
 
@@ -3788,7 +3788,7 @@ class CorrelationExplorer {
                 }
                 const tags = activeFilters.map(([gene, state]) => {
                     const on = !self._gridStateIsWT(state);
-                    return `<span style="display:inline-flex;align-items:center;gap:2px;padding:1px 6px;border-radius:10px;font-size:10px;background:${on ? '#dcfce7' : '#fef2f2'};color:${on ? '#5d9239' : '#dc2626'};border:1px solid ${on ? '#86efac' : '#fecaca'};">${gene} ${self._gridStateWord(state)}<button onclick="app._oncoprintClearGene('${gene}')" style="background:none;border:none;cursor:pointer;font-size:10px;color:#999;padding:0 0 0 2px;">×</button></span>`;
+                    return `<span style="display:inline-flex;align-items:center;gap:2px;padding:1px 6px;border-radius:10px;font-size:10px;background:${on ? '#dcfce7' : '#fef2f2'};color:${on ? '#5d9239' : '#dc2626'};border:1px solid ${on ? '#86efac' : '#fecaca'};">${self.gi(gene)} ${self._gridStateWord(state)}<button onclick="app._oncoprintClearGene('${gene}')" style="background:none;border:none;cursor:pointer;font-size:10px;color:#999;padding:0 0 0 2px;">×</button></span>`;
                 }).join('');
                 statusEl.innerHTML = `${tags} <span style="color:#6b7280;">${matchCount}/${filteredCLs.length} CLs</span> <button onclick="app._oncoprintApplyFilters()" style="padding:5px 16px;font-size:12px;font-weight:700;background:#4c782e;color:white;border:none;border-radius:5px;cursor:pointer;box-shadow:0 2px 6px rgba(76, 120, 46,0.35);" title="Apply these include / exclude choices and close the grid">Apply &rarr;</button> <button onclick="app._oncoprintClearAll()" style="padding:2px 8px;font-size:10px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;">Clear</button>`;
             }
@@ -5200,7 +5200,7 @@ class CorrelationExplorer {
                       + `style="padding:6px 10px; cursor:pointer; border-bottom:1px solid #f3f4f6;" `
                       + `onmouseover="this.style.background='#f0fdf4'" onmouseout="this.style.background=''">`
                       + `<div style="display:flex; justify-content:space-between; gap:8px; align-items:baseline;">`
-                      +   `<div style="font-weight:600; color:${color};">${e.gene} <span style="font-size:10px; background:${bg}; padding:1px 5px; border-radius:8px;">${kindLbl}</span></div>`
+                      +   `<div style="font-weight:600; color:${color};">${this.gi(e.gene)} <span style="font-size:10px; background:${bg}; padding:1px 5px; border-radius:8px;">${kindLbl}</span></div>`
                       +   `<div style="font-size:10px; color:#6b7280; white-space:nowrap;"><b>${n}</b> lines</div>`
                       + `</div>`
                       + (e.context ? `<div style="font-size:10px; color:#6b7280; margin-top:2px;">${e.context.trim()}</div>` : '')
@@ -23768,7 +23768,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     ? '<span style="background:#b58a3c;color:white;padding:1px 5px;border-radius:3px;font-size:9px;">hotspot</span>'
                     : '<span style="background:#a8553a;color:white;padding:1px 5px;border-radius:3px;font-size:9px;">damaging</span>';
                 html += `<tr>
-                    <td style="padding:4px;border-bottom:1px solid #eee;color:#0066cc;cursor:pointer;text-decoration:underline;" onclick="event.stopPropagation();app.showGEGateGenePlot('${m.gene}','mutation')">${m.gene}</td>
+                    <td style="padding:4px;border-bottom:1px solid #eee;color:#0066cc;cursor:pointer;text-decoration:underline;" onclick="event.stopPropagation();app.showGEGateGenePlot('${m.gene}','mutation')">${this.gi(m.gene)}</td>
                     <td style="padding:4px;text-align:center;border-bottom:1px solid #eee;">${typeBadge}</td>
                     <td style="padding:4px;text-align:center;border-bottom:1px solid #eee;color:#2563eb;">${m.mutA}</td>
                     <td style="padding:4px;text-align:center;border-bottom:1px solid #eee;color:#2563eb;">${m.pctA.toFixed(1)}</td>
@@ -23819,7 +23819,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 const color = d.diff > 0.2 ? '#5d9239' : d.diff < -0.2 ? '#dc2626' : '';
                 const pStr = this.formatPValue(d.pValue);
                 html += `<tr style="cursor:pointer;" onclick="app.showGEGateGenePlot('${d.gene}','ge')">
-                    <td style="padding:4px;border-bottom:1px solid #eee;color:#0066cc;text-decoration:underline;">${d.gene}</td>
+                    <td style="padding:4px;border-bottom:1px solid #eee;color:#0066cc;text-decoration:underline;">${this.gi(d.gene)}</td>
                     <td style="padding:4px;text-align:center;border-bottom:1px solid #eee;color:#2563eb;">${d.meanA.toFixed(3)}</td>
                     <td style="padding:4px;text-align:center;border-bottom:1px solid #eee;color:#dc2626;">${d.meanB.toFixed(3)}</td>
                     <td style="padding:4px;text-align:center;border-bottom:1px solid #eee;font-weight:500;${color ? `color:${color}` : ''}">${d.diff > 0 ? '+' : ''}${d.diff.toFixed(3)}</td>
@@ -23878,7 +23878,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 const color = d.diff > 0.5 ? '#5d9239' : d.diff < -0.5 ? '#dc2626' : '';
                 const pStr = this.formatPValue(d.pValue);
                 html += `<tr style="cursor:pointer;" onclick="app.showGEGateGenePlot('${d.gene}','expression')">
-                    <td style="padding:4px;border-bottom:1px solid #eee;color:#0066cc;text-decoration:underline;">${d.gene}</td>
+                    <td style="padding:4px;border-bottom:1px solid #eee;color:#0066cc;text-decoration:underline;">${this.gi(d.gene)}</td>
                     <td style="padding:4px;text-align:center;border-bottom:1px solid #eee;color:#2563eb;">${d.meanA.toFixed(3)}</td>
                     <td style="padding:4px;text-align:center;border-bottom:1px solid #eee;color:#dc2626;">${d.meanB.toFixed(3)}</td>
                     <td style="padding:4px;text-align:center;border-bottom:1px solid #eee;font-weight:500;${color ? `color:${color}` : ''}">${d.diff > 0 ? '+' : ''}${d.diff.toFixed(3)}</td>
@@ -27649,7 +27649,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const tags = this._activeOncoprintFilters.map(f => {
                 const bg = !this._gridStateIsWT(f.state) ? '#dcfce7' : '#fef2f2';
                 const color = !this._gridStateIsWT(f.state) ? '#5d9239' : '#dc2626';
-                return `<span style="background:${bg};color:${color};padding:1px 6px;border-radius:10px;font-size:10px;">${f.gene} ${this._gridStateWord(f.state)}</span>`;
+                return `<span style="background:${bg};color:${color};padding:1px 6px;border-radius:10px;font-size:10px;">${this.gi(f.gene)} ${this._gridStateWord(f.state)}</span>`;
             }).join(' ');
             el.innerHTML = tags + ` <span style="font-size:10px;color:#6b7280;">(${filteredN}/${totalN} cell lines)</span>`;
             el.style.display = 'inline-flex';
@@ -34800,7 +34800,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
             let html = closeBtn;
             html += `<div style="margin-bottom: 4px; padding-right:${el.dataset.pinned === '1' ? '18px' : '0'};"><b style="color: #5d9239; font-size: 13px;">${this.gi(info ? info.symbol : gene)}</b>`;
-            if (info && info.name) html += ` <span style="color: #374151;">${this.esc(info.name)}</span>`;
+            if (info && info.name) html += ` <span style="color: #374151;">${this._italicizeGenesInHtml(this.esc(info.name))}</span>`;
             html += `</div>`;
             // Keep the gene-effect line (from the quick hover) at the top.
             if (prefixHtml) html += prefixHtml;
@@ -34819,7 +34819,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 const summary = this.esc(isPinned || ordered.length <= 260
                     ? ordered
                     : ordered.substring(0, 260) + '…');
-                html += `<div style="color: #4b5563;">${summary}</div>`;
+                // Gene descriptions name other genes in passing, so the prose
+                // goes through the symbol italiciser after escaping.
+                html += `<div style="color: #4b5563;">${this._italicizeGenesInHtml(summary)}</div>`;
             } else if (info) {
                 html += `<div style="color:#9ca3af; font-style:italic;">No summary available.</div>`;
             } else {
@@ -35073,7 +35075,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 seenOncoGenes.add(gene);
                 driverCands.push({
                     rank: 2, typical: isTypical([gene]),
-                    html: `<b>${gene} ${this.esc(variant)}</b>${atypicalNote([gene])}`
+                    html: `<b>${this.gi(gene)} ${this.esc(variant)}</b>${atypicalNote([gene])}`
                 });
             }
         }
@@ -35207,7 +35209,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const rrid = this.cellLineMetadata?.rrid?.[cellLineId] || '';
         const idFooter = opts.showId === false ? ''
             : `<div style="color:#9ca3af; font-size:10px; margin-top:5px;">${cellLineId}${rrid ? ` \u00b7 RRID: ${rrid}` : ''}</div>`;
-        return `<div style="line-height:1.5; color:#374151;">${this._cellLineSummaryText(cellLineId)}</div>${idFooter}`;
+        // Gene symbols sit inside these sentences, so they are italicised in
+        // one pass over the finished HTML. Callers that want plain text strip
+        // tags already.
+        return this._italicizeGenesInHtml(`<div style="line-height:1.5; color:#374151;">${this._cellLineSummaryText(cellLineId)}</div>`) + idFooter;
     }
 
     // Lightweight, non-interactive hover card for a cell-line dot (pointer-events
@@ -40233,7 +40238,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                      +  `</div>`;
             }
         }
-        body.innerHTML = html;
+        // Gene symbols inside the collection labels and explainers turn italic
+        // in one pass; the title="" tooltips are attributes, so they stay plain.
+        body.innerHTML = this._italicizeGenesInHtml(html);
         modal.style.display = 'flex';
     }
 
@@ -40393,7 +40400,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             html += `</div>`;
         }
 
-        panel.innerHTML = html;
+        // One pass over the finished panel italicises the gene symbols in the
+        // filter labels and category notes; the title="" descriptions are
+        // attributes, so they stay plain.
+        panel.innerHTML = this._italicizeGenesInHtml(html);
 
         // Wire row toggles
         panel.querySelectorAll('button[data-coll-id]').forEach(btn => {
@@ -41687,9 +41697,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         })[status] || 'Not measured';
     }
 
-    _sexChromosomeNumbers(rec) {
+    // html: the card row and the wiki show XIST italic; the plain string still
+    // goes into the title="" tooltip and any text output.
+    _sexChromosomeNumbers(rec, html = false) {
         if (!rec) return 'not measured';
-        const parts = [`Y-linked ${rec.y.toFixed(2)}`, `XIST ${rec.xist.toFixed(2)} log-TPM`];
+        const xist = html ? this.gi('XIST') : 'XIST';
+        const parts = [`Y-linked ${rec.y.toFixed(2)}`, `${xist} ${rec.xist.toFixed(2)} log-TPM`];
         if (rec.xcn != null) parts.push(`chrX CN ${rec.xcn.toFixed(2)}`);
         return parts.join(' \u00b7 ');
     }
@@ -43199,7 +43212,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const fullLabel = geValueLabel === 'Expr' ? 'Expression (log2 TPM+1)' : 'Gene Effect (CERES)';
             const direction = geValueLabel === 'GE' ? ', lower = more essential' : ', higher = more expressed';
             caption = `<div style="${captionStyle}">
-                Values shown: <b>${fullLabel}</b> for <b>${geGenesLabel}</b>${direction}.
+                Values shown: <b>${fullLabel}</b> for <b>${this._italicizeGenesInHtml(this.esc(geGenesLabel))}</b>${direction}.
             </div>`;
         } else if (countMap) {
             const cnScope = this.cnLoaded ? 'full DepMap matrix' : 'curated cancer panel only, matrix still loading';
@@ -44591,7 +44604,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         {
             const rec = this._getSexChromosomes(cellLineId);
             if (rec) {
-                top += `<div class="clb-stat-row"><span class="clb-stat-label">Sex chromosomes</span><span class="clb-stat-value" style="color:#6b7280;" title="Mean log-TPM of six Y-linked genes (RPS4Y1, DDX3Y, EIF1AY, KDM5D, UTY, USP9Y), XIST log-TPM, and the median relative copy number over chrX genes outside the pseudoautosomal regions (one X in a diploid line reads about 0.5). Expression calls, not DNA sequencing.">${this._sexChromosomeNumbers(rec)}</span></div>`;
+                top += `<div class="clb-stat-row"><span class="clb-stat-label">Sex chromosomes</span><span class="clb-stat-value" style="color:#6b7280;" title="Mean log-TPM of six Y-linked genes (RPS4Y1, DDX3Y, EIF1AY, KDM5D, UTY, USP9Y), XIST log-TPM, and the median relative copy number over chrX genes outside the pseudoautosomal regions (one X in a diploid line reads about 0.5). Expression calls, not DNA sequencing.">${this._sexChromosomeNumbers(rec, true)}</span></div>`;
             }
         }
         // Genome-wide signatures (PureCN ploidy + WGD, Ben-David aneuploidy,
@@ -45589,6 +45602,83 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         return m ? `${this.gi(m[1])} ${m[2] === 'amp' ? ampWord : delWord}` : this.gi(t);
     }
 
+    // Words that are spelled like a gene symbol but read as English or as an
+    // app term in running prose, so the prose italiciser leaves them upright.
+    _GENE_ITALIC_STOPLIST() {
+        if (this.__giStop) return this.__giStop;
+        this.__giStop = new Set(['MET', 'CAT', 'SET', 'MAX', 'REST', 'LARGE', 'IMPACT', 'CAMP', 'COPE',
+            'NODAL', 'SHE', 'HR', 'ER', 'PR', 'AR', 'DNA', 'RNA', 'CNS', 'CN', 'GE', 'WT', 'LOF', 'MSI',
+            'MSS', 'CIN', 'WGD', 'LOH', 'FDR', 'LFC', 'TPM', 'CPM', 'PCA', 'UMAP', 'AUC', 'CSV', 'PNG',
+            'SVG', 'PDF', 'AI', 'TSG', 'ISG', 'HLA', 'KIR', 'MIC', 'RAS', 'MAPK', 'PI3K', 'MTOR', 'IFN',
+            'TNF', 'IL', 'NK', 'T', 'B', 'ATCC', 'RRID', 'NCBI', 'DEPMAP', 'CCLE', 'GRCH38', 'HG19',
+            'II', 'III', 'IV', 'V', 'X', 'Y', 'XY', 'XX', 'USA', 'UK', 'EMT',
+            'OR', 'AND', 'NOT', 'ALL', 'CD', 'ID', 'PS', 'TS', 'MB', 'KB', 'GB', 'FACS', 'FBS', 'PCR',
+            'CRISPR', 'SGRNA', 'SIRNA', 'MRNA', 'QC', 'SD', 'SE', 'CI', 'IQR', 'NA', 'N']);
+        return this.__giStop;
+    }
+
+    // Every symbol the app can talk about: gene effect, expression and CN all
+    // ship their own gene list, and prose can name a gene from any of them.
+    _geneUniverseSet() {
+        const n = (this.geneNames?.length || 0) + (this.expressionMetadata?.genes?.length || 0)
+            + (this.cnMetadata?.genes?.length || 0);
+        if (this.__giUniverse && this.__giUniverseN === n) return this.__giUniverse;
+        const set = new Set();
+        for (const list of [this.geneNames, this.expressionMetadata?.genes, this.cnMetadata?.genes]) {
+            if (!Array.isArray(list)) continue;
+            for (const g of list) if (g) set.add(String(g).toUpperCase());
+        }
+        // Non-coding RNAs the app talks about but that no matrix carries, so
+        // the three gene lists alone would leave them upright in prose.
+        for (const g of ['XIST', 'MALAT1', 'NEAT1', 'H19', 'HOTAIR', 'TERC']) set.add(g);
+        this.__giUniverse = set; this.__giUniverseN = n;
+        return set;
+    }
+
+    // Italicises gene symbols in a text run. Caller must have escaped it
+    // already: this only inserts <i> tags, it never escapes.
+    _italicizeGeneTokens(text) {
+        if (!text || !/[A-Z]/.test(text)) return text || '';
+        const uni = this._geneUniverseSet();
+        if (!uni.size) return text;
+        const stop = this._GENE_ITALIC_STOPLIST();
+        return text.replace(/(?<![A-Za-z0-9_-])(?<!p\.)[A-Z0-9][A-Z0-9-]{1,}(?![A-Za-z0-9_])/g, (tok) => {
+            if (!/[A-Z]/.test(tok)) return tok;
+            if (stop.has(tok)) return tok;
+            return uni.has(tok) ? `<i>${tok}</i>` : tok;
+        });
+    }
+
+    // Running prose (wiki sections, cell-line summaries, gene cards, filter
+    // blurbs) names genes inside sentences, so they cannot be wrapped at the
+    // point they are written. This walks finished HTML and italicises gene
+    // tokens in text nodes only: never inside a tag or an attribute, and
+    // never inside an element that is already styled or unstylable.
+    _italicizeGenesInHtml(html) {
+        const s = String(html == null ? '' : html);
+        if (!s) return '';
+        const SKIP = new Set(['i', 'em', 'code', 'a', 'option', 'select', 'textarea', 'script', 'style', 'pre', 'svg']);
+        const skipStack = [];
+        const re = /<[^>]*>/g;
+        let out = '', last = 0, m;
+        while ((m = re.exec(s))) {
+            const text = s.slice(last, m.index);
+            out += skipStack.length ? text : this._italicizeGeneTokens(text);
+            out += m[0];
+            last = m.index + m[0].length;
+            const tm = m[0].match(/^<\s*(\/?)([a-zA-Z][a-zA-Z0-9]*)/);
+            if (tm && !/\/>$/.test(m[0])) {
+                const name = tm[2].toLowerCase();
+                if (SKIP.has(name)) {
+                    if (tm[1]) { const k = skipStack.lastIndexOf(name); if (k >= 0) skipStack.splice(k); }
+                    else skipStack.push(name);
+                }
+            }
+        }
+        out += skipStack.length ? s.slice(last) : this._italicizeGeneTokens(s.slice(last));
+        return out;
+    }
+
     _polymorphicCaveatText() {
         return 'Polymorphic locus, calls in this gene often reflect allelic divergence from the GRCh38 reference, not somatic events. Real cancer-relevant HLA / KIR loss is better inferred from expression loss and LOH than the raw hotspot matrix.';
     }
@@ -46269,7 +46359,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             <p style="margin:0 0 8px; font-size:11px; color:#6b7280;">Two independent views: the sex <b>annotation</b> supplied with the cell line (usually traced back to the donor's clinical record), and what the cell line's own <b>gene expression pattern</b> suggests. Disagreements can indicate chromosomal loss, epigenetic silencing, or cell-line misidentification.</p>
             ${row('From annotation', sexInfo.annotation)}
             ${row('From gene expression', sexExpDisplay)}
-            ${row('Measured values', this._sexChromosomeNumbers(sexRec))}
+            ${row('Measured values', this._sexChromosomeNumbers(sexRec, true))}
             <div style="margin-top:6px; padding:8px 10px; background:#f9fafb; border-left:3px solid #10b981; font-size:11px;">${sexNarrative}</div>`;
 
         // --- Mutation profile + pathway scan ---
@@ -46747,7 +46837,9 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const pwChip = (e) => `<span class="gene-hover wiki-chip${e.isTs ? ' wiki-chip-ts' : ' wiki-chip-onc'}" data-gene="${e.gene}" data-why="Flagged in this pathway: ${this.esc(e.bits.join(', '))}">${this.gi(e.label || e.gene)}</span>`;
         const pwCard = (c) => {
             const chips = c.ev.map(pwChip).join('');
-            const detail = c.ev.map(e => `${e.label || e.gene} ${e.bits.join(' + ')}`).join('; ');
+            // Built as HTML from its parts, not from a joined string: only the
+            // gene token in each item is italic.
+            const detail = c.ev.map(e => `${this.gi(e.label || e.gene)} ${this.esc(e.bits.join(' + '))}`).join('; ');
             const richLines = c.rich
                 ? `<ul class="wiki-pw-rich">${c.rich.lines.map(l => `<li>${l}</li>`).join('')}</ul>`
                   + `<div class="wiki-pw-synth">${c.rich.synthesis}</div>`
@@ -46755,7 +46847,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             return `<div class="wiki-pw" style="border-left-color:${c.tone};">`
                 + `<div class="wiki-pw-head"><span class="wiki-pw-name">${c.name}</span>`
                 + `<span class="wiki-pw-verdict" style="color:${c.tone};">${c.verdict}</span></div>`
-                + `<div class="wiki-pw-why" title="${this.esc(c.note)}">${detail ? this.esc(detail) : 'No mutation, copy-number event or fusion found in this pathway. The CRISPR result below still shows how the pathway behaves.'}</div>`
+                + `<div class="wiki-pw-why" title="${this.esc(c.note)}">${detail ? detail : 'No mutation, copy-number event or fusion found in this pathway. The CRISPR result below still shows how the pathway behaves.'}</div>`
                 + `<div class="wiki-pw-chips">${chips}</div>`
                 + richLines
                 + `</div>`;
@@ -47772,7 +47864,9 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 <div style="font-size:13px; line-height:1.65; color:#374151;">${this._cellLineSummaryText(cellLineId)}</div>
             </div>`;
 
-        body.innerHTML = summaryHtml + [
+        // Running prose all through here names genes inside sentences, so the
+        // symbols are italicised in one pass over the finished HTML.
+        body.innerHTML = this._italicizeGenesInHtml(summaryHtml + [
             // ── Identity ──────────────────────────────────────────────────
             this._wikiHistoryHtml(cellLineId, { rrid, name })
                 ? section('History and provenance <span style="font-size:11px; color:#6b7280;">, where this cell line came from and what it is a version of</span>',
@@ -47826,7 +47920,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             section('External resources',
                 extHtml,
                 'Links to external databases. Nothing is fetched from them by this page.'),
-        ].join('');
+        ].join(''));
 
         const wikiModal = document.getElementById('clbWikiModal');
         wikiModal.style.display = 'flex';
@@ -52726,7 +52820,7 @@ ${clone.innerHTML}
                 const badge = m.type === 'hotspot'
                     ? '<span style="background:#b58a3c;color:white;padding:1px 5px;border-radius:3px;font-size:9px;">hotspot</span>'
                     : '<span style="background:#a8553a;color:white;padding:1px 5px;border-radius:3px;font-size:9px;">damaging</span>';
-                html += `<tr><td style="padding:4px;border-bottom:1px solid #eee;color:#0066cc;cursor:pointer;text-decoration:underline;" onclick="event.stopPropagation();app.showUmapGateGenePlot('${m.gene}','mutation')">${m.gene}</td>
+                html += `<tr><td style="padding:4px;border-bottom:1px solid #eee;color:#0066cc;cursor:pointer;text-decoration:underline;" onclick="event.stopPropagation();app.showUmapGateGenePlot('${m.gene}','mutation')">${this.gi(m.gene)}</td>
                     <td style="padding:4px;text-align:center;border-bottom:1px solid #eee;">${badge}</td>
                     <td style="padding:4px;text-align:center;border-bottom:1px solid #eee;color:#2563eb;">${m.mutA}</td>
                     <td style="padding:4px;text-align:center;border-bottom:1px solid #eee;color:#2563eb;">${m.pctA.toFixed(1)}</td>
@@ -52770,7 +52864,7 @@ ${clone.innerHTML}
             filtered.slice(0, 100).forEach(d => {
                 const color = d.diff > 0.2 ? '#5d9239' : d.diff < -0.2 ? '#dc2626' : '';
                 const pStr = this.formatPValue(d.pValue);
-                html += `<tr style="cursor:pointer;" onclick="app.showUmapGateGenePlot('${d.gene}','ge')"><td style="padding:4px;border-bottom:1px solid #eee;color:#0066cc;text-decoration:underline;">${d.gene}</td>
+                html += `<tr style="cursor:pointer;" onclick="app.showUmapGateGenePlot('${d.gene}','ge')"><td style="padding:4px;border-bottom:1px solid #eee;color:#0066cc;text-decoration:underline;">${this.gi(d.gene)}</td>
                     <td style="padding:4px;text-align:center;border-bottom:1px solid #eee;color:#2563eb;">${d.meanA.toFixed(3)}</td>
                     <td style="padding:4px;text-align:center;border-bottom:1px solid #eee;color:#dc2626;">${d.meanB.toFixed(3)}</td>
                     <td style="padding:4px;text-align:center;border-bottom:1px solid #eee;font-weight:500;${color ? `color:${color}` : ''}">${d.diff > 0 ? '+' : ''}${d.diff.toFixed(3)}</td>
@@ -52812,7 +52906,7 @@ ${clone.innerHTML}
             filtered.slice(0, 100).forEach(d => {
                 const color = d.diff > 0.5 ? '#5d9239' : d.diff < -0.5 ? '#dc2626' : '';
                 const pStr = this.formatPValue(d.pValue);
-                html += `<tr style="cursor:pointer;" onclick="app.showUmapGateGenePlot('${d.gene}','expression')"><td style="padding:4px;border-bottom:1px solid #eee;color:#0066cc;text-decoration:underline;">${d.gene}</td>
+                html += `<tr style="cursor:pointer;" onclick="app.showUmapGateGenePlot('${d.gene}','expression')"><td style="padding:4px;border-bottom:1px solid #eee;color:#0066cc;text-decoration:underline;">${this.gi(d.gene)}</td>
                     <td style="padding:4px;text-align:center;border-bottom:1px solid #eee;color:#2563eb;">${d.meanA.toFixed(2)}</td>
                     <td style="padding:4px;text-align:center;border-bottom:1px solid #eee;color:#dc2626;">${d.meanB.toFixed(2)}</td>
                     <td style="padding:4px;text-align:center;border-bottom:1px solid #eee;font-weight:500;${color ? `color:${color}` : ''}">${d.diff > 0 ? '+' : ''}${d.diff.toFixed(2)}</td>
@@ -54080,7 +54174,7 @@ ${clone.innerHTML}
         labels.forEach(l => {
             const clampX = Math.max(2, Math.min(svgW - 2, l.x));
             const clampY = Math.max(12, Math.min(svgH - 2, l.y));
-            svg += `<text x="${clampX}" y="${clampY}" text-anchor="${l.anchor}" style="font-size:10px;fill:#374151;" stroke="white" stroke-width="3" paint-order="stroke">${l.gene}</text>`;
+            svg += `<text x="${clampX}" y="${clampY}" text-anchor="${l.anchor}" style="font-size:10px;font-style:italic;fill:#374151;" stroke="white" stroke-width="3" paint-order="stroke">${this.esc(l.gene)}</text>`;
         });
 
         const axX = this._clbUmapData.axisLabels?.[0]?.split('(')[0].trim() || `PC${compX + 1}`;
@@ -54555,7 +54649,7 @@ ${clone.innerHTML}
                 html += '<tr style="border-bottom:1px solid #e5e7eb;"><th style="text-align:left;padding:1px 6px;">Gene</th><th style="text-align:right;padding:1px 6px;">Loading</th></tr>';
                 top10.forEach(l => {
                     const color = l.loading > 0 ? '#b91c1c' : '#1d4ed8';
-                    html += `<tr style="cursor:pointer;" onclick="app.applyUmapGeneColor_fromTop('${l.gene}')"><td style="padding:1px 6px;text-decoration:underline;color:#4f46e5;">${l.gene}</td><td style="text-align:right;padding:1px 6px;color:${color};">${l.loading.toFixed(4)}</td></tr>`;
+                    html += `<tr style="cursor:pointer;" onclick="app.applyUmapGeneColor_fromTop('${l.gene}')"><td style="padding:1px 6px;text-decoration:underline;color:#4f46e5;">${this.gi(l.gene)}</td><td style="text-align:right;padding:1px 6px;color:${color};">${l.loading.toFixed(4)}</td></tr>`;
                 });
                 html += '</table></div>';
             });
@@ -54607,7 +54701,7 @@ ${clone.innerHTML}
             top10.forEach(c => {
                 const colorX = c.rX > 0 ? '#b91c1c' : '#1d4ed8';
                 const colorY = c.rY > 0 ? '#b91c1c' : '#1d4ed8';
-                html += `<tr style="cursor:pointer;" onclick="app.applyUmapGeneColor_fromTop('${c.gene}')"><td style="padding:1px 6px;text-decoration:underline;color:#4f46e5;">${c.gene}</td><td style="text-align:right;padding:1px 6px;color:${colorX};">${c.rX.toFixed(3)}</td><td style="text-align:right;padding:1px 6px;color:${colorY};">${c.rY.toFixed(3)}</td><td style="text-align:right;padding:1px 6px;">${c.rCombined.toFixed(3)}</td></tr>`;
+                html += `<tr style="cursor:pointer;" onclick="app.applyUmapGeneColor_fromTop('${c.gene}')"><td style="padding:1px 6px;text-decoration:underline;color:#4f46e5;">${this.gi(c.gene)}</td><td style="text-align:right;padding:1px 6px;color:${colorX};">${c.rX.toFixed(3)}</td><td style="text-align:right;padding:1px 6px;color:${colorY};">${c.rY.toFixed(3)}</td><td style="text-align:right;padding:1px 6px;">${c.rCombined.toFixed(3)}</td></tr>`;
             });
             html += '</table>';
         }
@@ -56488,7 +56582,7 @@ ${clone.innerHTML}
         const noteEl = document.getElementById('hmSetNote');
         if (noteEl) {
             const set = presetKey && presetKey !== 'custom' ? this._GENE_SET_LIBRARY()[presetKey] : null;
-            noteEl.textContent = set?.note || '';
+            noteEl.innerHTML = this._italicizeGenesInHtml(this.esc(set?.note || ''));
         }
     }
 
@@ -57888,6 +57982,19 @@ ${clone.innerHTML}
             : mode === 'cluster' ? 'Cell-line clusters' : mode === 'gates' ? 'Gates' : `${gene} CN`;
     }
 
+    // The same label split into its gene symbol and the words after it, so a
+    // canvas painter can set the symbol in italic and the rest upright. Rows
+    // that name no gene come back with an empty gene part.
+    _hmAnnRowLabelParts(mode, gene) {
+        const label = this._hmAnnRowLabel(mode, gene);
+        if (mode === 'lineage' || mode === 'subtype' || mode === 'disease' || mode === 'cluster' || mode === 'gates') {
+            return { gene: '', rest: label };
+        }
+        const sym = mode === 'hotspot' ? this._stripMutDecoration(gene) : String(gene == null ? '' : gene);
+        if (sym && label.startsWith(sym)) return { gene: sym, rest: label.slice(sym.length) };
+        return { gene: '', rest: label };
+    }
+
     // Qualitative palette for the group annotation strip: distinct at a
     // glance, muted enough that the red/blue data colours in the grid still
     // read as the dominant signal, and cycled if there are more groups than
@@ -58718,7 +58825,26 @@ ${clone.innerHTML}
                 while (trimmed.length > 1 && ctx.measureText(trimmed + '…').width > maxW) trimmed = trimmed.slice(0, -1);
                 return trimmed + '…';
             };
-            ctx.font = `${hmS.labelFont}px Arial`;
+            const uprightFont = `${hmS.labelFont}px Arial`;
+            const italicFont = `italic ${hmS.labelFont}px Arial`;
+            // Gene symbol italic, the words after it upright. Two runs, so the
+            // width probe has to measure each in its own font or the label
+            // overruns the gutter; if the pair does not fit, the ellipsis
+            // trim falls back to one upright run.
+            const paintStripTitle = (parts, y) => {
+                ctx.font = uprightFont;
+                if (!parts.gene) { ctx.fillText(fitStripTitle(parts.rest), labelW - 6, y); return; }
+                const restW = ctx.measureText(parts.rest).width;
+                ctx.font = italicFont;
+                const geneW = ctx.measureText(parts.gene).width;
+                ctx.font = uprightFont;
+                if (geneW + restW > labelW - 10) { ctx.fillText(fitStripTitle(parts.gene + parts.rest), labelW - 6, y); return; }
+                ctx.fillText(parts.rest, labelW - 6, y);
+                ctx.font = italicFont;
+                ctx.fillText(parts.gene, labelW - 6 - restW, y);
+                ctx.font = uprightFont;
+            };
+            ctx.font = uprightFont;
             ctx.textAlign = 'right';
             ctx.textBaseline = 'middle';
             ctx.fillStyle = '#6b7280';
@@ -58728,7 +58854,7 @@ ${clone.innerHTML}
                 ctx.fillText(fitStripTitle(capped), labelW - 6, geneAreaH + GROUP_STRIP_H / 2);
             }
             d.annRows.forEach((row, i) => {
-                ctx.fillText(fitStripTitle(row.attrLabel), labelW - 6, geneAreaH + groupExtra + i * ANN2_STRIP_H + ANN2_STRIP_H / 2);
+                paintStripTitle(this._hmAnnRowLabelParts(row.mode, row.gene), geneAreaH + groupExtra + i * ANN2_STRIP_H + ANN2_STRIP_H / 2);
             });
         };
         const paintGrid = (ctx, opts = {}) => {
@@ -59007,16 +59133,24 @@ ${clone.innerHTML}
             const swatch = 10, textGap = 4, itemGapX = 14, itemH = 16;
             let x = 0, y = 0;
             const items = [];
+            const probe3i = document.createElement('canvas').getContext('2d');
+            probe3i.font = 'italic 10px Arial';
             d.annRows.forEach((row, rowIdx) => {
                 if (rowIdx > 0) { x = 0; y += itemH; }
+                // Every entry of a row opens with the row's own label, so the
+                // gene symbol in it is the same leading run on each line: the
+                // width probe has to measure that run in the italic face.
+                const parts = this._hmAnnRowLabelParts(row.mode, row.gene);
                 row.legend.forEach(entry => {
-                    const tw = probe3.measureText(entry.label).width;
+                    const gene = (parts.gene && entry.label.startsWith(parts.gene)) ? parts.gene : '';
+                    const rest = gene ? entry.label.slice(gene.length) : entry.label;
+                    const tw = (gene ? probe3i.measureText(gene).width : 0) + probe3.measureText(rest).width;
                     // A continuous row has no categories to list: its one
                     // entry is a wider gradient chip carrying the drawn range.
                     const sw = entry.gradStops ? 30 : swatch;
                     const itemW = sw + textGap + tw;
                     if (x > 0 && x + itemW > legendWidth) { x = 0; y += itemH; }
-                    items.push({ x, y, w: itemW, h: itemH, color: entry.color, text: entry.label, swatch: sw, gradStops: entry.gradStops || null });
+                    items.push({ x, y, w: itemW, h: itemH, color: entry.color, text: entry.label, gene, rest, swatch: sw, gradStops: entry.gradStops || null });
                     x += itemW + itemGapX;
                 });
             });
@@ -59043,7 +59177,17 @@ ${clone.innerHTML}
                 ctx.lineWidth = 1;
                 ctx.strokeRect(it.x + 0.5, it.y + 3.5, it.swatch, chipH);
                 ctx.fillStyle = '#374151';
-                ctx.fillText(it.text, it.x + it.swatch + 4, it.y + 3 + chipH / 2);
+                const ty = it.y + 3 + chipH / 2;
+                let tx = it.x + it.swatch + 4;
+                if (it.gene) {
+                    ctx.font = 'italic 10px Arial';
+                    ctx.fillText(it.gene, tx, ty);
+                    tx += ctx.measureText(it.gene).width;
+                    ctx.font = '10px Arial';
+                    ctx.fillText(it.rest, tx, ty);
+                } else {
+                    ctx.fillText(it.text, tx, ty);
+                }
             });
         };
 
@@ -59153,8 +59297,10 @@ ${clone.innerHTML}
             const head = document.getElementById('hmHeading');
             const cap = this._hmCaptionLines();
             if (head && cap) {
-                document.getElementById('hmHeadingTitle').textContent = cap.line1 || cap.autoLine1;
-                document.getElementById('hmHeadingCohort').textContent = this._hmCohortPhrase(nCL);
+                // On screen the heading and cohort line are HTML so gene
+                // symbols can be italic; exports keep cap.line1 plain.
+                document.getElementById('hmHeadingTitle').innerHTML = this._italicizeGenesInHtml(this.esc(cap.line1 || cap.autoLine1));
+                document.getElementById('hmHeadingCohort').innerHTML = this._italicizeGenesInHtml(this.esc(this._hmCohortPhrase(nCL)));
                 head.style.display = 'block';
             }
         }
@@ -59198,7 +59344,7 @@ ${clone.innerHTML}
             if (d.missingGenes.length) {
                 text += ` ${d.missingGenes.length} gene${d.missingGenes.length === 1 ? '' : 's'} not found: ${d.missingGenes.slice(0, 12).join(', ')}${d.missingGenes.length > 12 ? '…' : ''}.`;
             }
-            hint.textContent = text;
+            hint.innerHTML = this._italicizeGenesInHtml(this.esc(text));
         }
 
         const scrollHint = document.getElementById('hmScrollHint');
