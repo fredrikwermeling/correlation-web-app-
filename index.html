@@ -2188,6 +2188,21 @@
         .resize-bottom { left: 0; right: 0; bottom: -3px; height: 10px; cursor: ns-resize; }
         .resize-bottom::after { left: 50%; transform: translateX(-50%); height: 4px; width: 44px; top: 3px; }
         @media (max-width: 640px) { .resize-grip { display: none; } }
+        /* The correlation cutoff's step buttons and track, sized for a finger. */
+        @media (max-width: 640px) {
+            #correlationParams button { min-width: 38px; min-height: 38px; font-size: 18px !important; }
+            #correlationParams input[type="range"] { height: 30px; }
+            #correlationParams .form-label { font-size: 14px; }
+            #correlationParams .slider-value { font-size: 14px; }
+        }
+        /* Wiki on a phone: the drug rows indent their text and histogram by a
+           desktop 170px, which left a third of the screen for both and cut the
+           histogram; the two-up histogram grids stack for the same reason. */
+        @media (max-width: 640px) {
+            #clbWikiBody .wiki-drug-indent { padding-left: 0 !important; margin-left: 0 !important; }
+            #clbWikiBody .wiki-drug-name { min-width: 0 !important; }
+            #clbWikiBody .wiki-hist-grid { grid-template-columns: 1fr !important; }
+        }
 
         @media (max-width: 640px) {
             /* No room to put anything beside anything on a phone. */
@@ -2372,7 +2387,6 @@
                serves a different job and only competes for the screen.
                - Export for AI: the file cannot be handed to an assistant from
                  a phone in any useful way.
-               - New tab: a second tab of a dense app is not a phone gesture.
                - Enrichr: hands off to an external site that is unusable here.
                - Select / Remove mode: precise node picking with a fingertip.
                - Compare all ...: wide tables that cannot be read at this width.
@@ -2702,13 +2716,14 @@
             #selectionInspectCSV, #selectionInspectCSVCells,
             #selectionInspectCopyData, #selectionInspectSettings,
             #selectionInspectImg, #selectionInspectCopyImg { display: none !important; }
-            /* The five threshold controls. A phone runs the defaults, which is
-               what almost every desktop session leaves them at anyway:
-               correlation cutoff 0.50, min slope 0.10, min cell lines 25,
-               gene needs data in 100, p < 0.001. The inputs stay in the page
-               so the analysis still reads those values; they are simply not
-               shown or adjustable, which takes about half the sidebar back. */
-            #correlationParams, #slopeParams, #minCellLinesPvalRow,
+            /* Four of the five threshold controls. A phone runs their defaults,
+               which is what almost every desktop session leaves them at anyway:
+               min slope 0.10, min cell lines 25, gene needs data in 100,
+               p < 0.001. The inputs stay in the page so the analysis still
+               reads those values; they are simply not shown or adjustable.
+               The correlation cutoff stays: it is the one a phone session
+               does reach for, to loosen or tighten a network. */
+            #slopeParams, #minCellLinesPvalRow,
             #pValueThresholdGroup,
             #networkAnalyzeWithAI, #clbExportAIBtn, #clbWikiAnalyzeWithAI,
             #selectionInspectAI, #aiExportBtn,
@@ -2716,10 +2731,6 @@
             #compareAllMutationsBtn, #compareAllTranslocationsBtn,
             #compareAllCnBtn, #compareAllCancerTypesBtn,
             .enrichrBtn, .js-help-export-ai { display: none !important; }
-            /* "New tab" opens a duplicate of a dense desktop view. */
-            #inspectModalInner .modal-header .btn-outline[onclick*="NewTab"],
-            #geneEffectModalInner .modal-header .btn-outline[onclick*="NewTab"],
-            #corrAnalysisModalInner .modal-header .btn-outline[onclick*="NewTab"] { display: none !important; }
             /* Network -> Heatmap, view-only on a phone: the grid scroller
                pans with a finger (default overflow-x:auto, nothing here sets
                touch-action:none to block it) and the footer's Close button
@@ -2799,7 +2810,7 @@
 
     <!-- Logo Header -->
     <div class="logo-header">
-        <img src="web_data/correlate_logo.png" alt="Correlate - a Gene Effect Analysis Tool">
+        <img src="web_data/correlate_logo.png?v=3" alt="Correlate - a CRISPR-based analysis tool">
     </div>
 
 
@@ -3298,6 +3309,7 @@
                     <li><button class="nav-link active" data-tab="network">Network</button></li>
                     <li><button class="nav-link" data-tab="correlations" title="Every gene pair from your set whose correlation cleared the cutoff, with r, slope and n">Gene pairs</button></li>
                     <li><button class="nav-link" data-tab="clusters">Clusters</button></li>
+                    <li><button class="nav-link" data-tab="matrix" title="Every gene in the set against every other, as a colored grid of correlations, including the pairs below the cutoff">Matrix</button></li>
                     <li><button class="nav-link" data-tab="mutation" style="display: none;" id="mutationTab">Mutation analysis</button></li>
                     <li><button class="nav-link" data-tab="synonyms" style="display: none;" id="synonymsTab">Synonyms/Orthologs</button></li>
                     <li><button class="nav-link" data-tab="summary">Summary</button></li>
@@ -3558,6 +3570,22 @@
                             </tbody>
                         </table>
                     </div>
+                </div>
+
+                <!-- Matrix Tab: the whole set against itself -->
+                <div class="tab-content" id="tab-matrix">
+                    <div class="tip-box">
+                        <strong>Tip:</strong> Every pair in the set, including the ones below the cutoff, on the same cell lines the network was built from. Click a cell to open that pair's scatter. Rows follow the network's clusters.
+                    </div>
+                    <div class="table-controls">
+                        <label style="display:inline-flex; align-items:center; gap:4px; font-size:11px; color:#374151; cursor:pointer; white-space:nowrap;"><input type="checkbox" id="matrixShowValues" checked> Show values</label>
+                        <label style="display:inline-flex; align-items:center; gap:4px; font-size:11px; color:#374151; cursor:pointer; white-space:nowrap;" title="Order the genes by the network's clusters; unticked, they follow the order you entered them in"><input type="checkbox" id="matrixClusterOrder" checked> Cluster order</label>
+                        <label style="display:inline-flex; align-items:center; gap:4px; font-size:11px; color:#374151; cursor:pointer; white-space:nowrap;" title="Blank every pair whose correlation did not clear the cutoff, so only the pairs in the network are colored"><input type="checkbox" id="matrixAboveCutoff"> Above cutoff only</label>
+                        <button class="btn btn-outline btn-sm mobile-hide" id="matrixExportPng" title="Save the grid as a PNG image">Export image</button>
+                        <button class="btn btn-outline btn-sm" id="matrixDownloadCsv" title="Download the grid of correlations as a CSV file">Download CSV</button>
+                    </div>
+                    <div id="matrixNote" style="font-size:11px; color:#6b7280; margin-bottom:6px;"></div>
+                    <div id="matrixScroll" style="width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch;"><div id="matrixPlot" style="min-height:120px;"><div style="text-align:center; color:var(--gray-500); padding:40px;">Run analysis to see the matrix</div></div></div>
                 </div>
 
                 <!-- Clusters Tab -->
@@ -4670,6 +4698,7 @@
                     <h3 id="selectionInspectTitle">Inspect selection</h3>
                     <div id="selectionInspectSubtitle" style="font-size:11px; color:var(--gray-500); margin-top:1px;"></div>
                 </div>
+                <button onclick="app.openSelectionInspectInNewTab()" class="btn btn-outline btn-sm" style="font-size:11px; padding:3px 8px; margin-right:8px; flex:0 0 auto; color:var(--green-700); border-color:var(--green-400);" title="Open this comparison (same cell lines, comparison group and cutoffs) in a new browser tab so you can keep working here">New tab &#8599;</button>
                 <button id="selectionInspectClose" class="modal-close" title="Close">&times;</button>
             </div>
             <div class="modal-body" style="font-size:12px; color:#374151;">
@@ -4844,6 +4873,13 @@
                      hmScrollHint just below the grid. -->
                 <div id="hmSilencedNote" style="display:none; font-size:10px; color:#9ca3af; margin-bottom:4px;"></div>
                 <div id="hmPlotBlock">
+                    <!-- The same title and cohort sentence the export carries, on
+                         screen: the grid says nothing about which cell lines it
+                         covers, and on a phone the controls are below the fold. -->
+                    <div id="hmHeading" style="display:none; margin-bottom:8px; line-height:1.35;">
+                        <div id="hmHeadingTitle" style="font-size:13px; font-weight:700; color:#374151;"></div>
+                        <div id="hmHeadingCohort" style="font-size:11px; color:#6b7280;"></div>
+                    </div>
                     <div style="display:flex; align-items:flex-start; width:100%;">
                         <canvas id="hmLabelCanvas" style="flex:none; cursor:default;"></canvas>
                         <div id="hmGridScroll" style="flex:1 1 auto; min-width:0; overflow-x:auto; overflow-y:hidden;"><canvas id="hmDendroTopCanvas" style="display:block; cursor:default;"></canvas><canvas id="hmGridCanvas" style="display:block; cursor:default;"></canvas></div>
@@ -5166,7 +5202,8 @@
           </div>
           <div style="display:flex; gap:8px; align-items:center;">
 
-            <button id="enrichrDownloadBtn" class="btn btn-outline btn-sm">Download CSV</button>
+            <button id="enrichrExportAIBtn" class="btn btn-outline btn-sm" title="Download the enrichment as a text file for a language model: the genes sent, the significant sets in every library with their genes and scores, and the gene of interest if one is set">Export for AI</button>
+            <button id="enrichrDownloadBtn" class="btn btn-outline btn-sm" title="The active library's full result table as CSV">Download CSV</button>
             <button id="enrichrCloseBtn" style="background:none; border:none; color:#6b7280; font-size:24px; cursor:pointer; padding:0 4px; line-height:1;">&times;</button>
           </div>
         </div>
@@ -5332,6 +5369,12 @@
                   <option value="exp_female">Female</option>
                   <option value="exp_unknown">Unknown</option>
                 </optgroup>
+                <optgroup label="Sex chromosomes (measured)">
+                  <option value="chr_y_loss">Functional loss of Y</option>
+                  <option value="chr_xist_off">XIST silenced (any)</option>
+                  <option value="chr_xi_lost">Inactive X lost (one X)</option>
+                  <option value="chr_xist_silenced">XIST silenced, two X</option>
+                </optgroup>
               </select>
               <span class="clb-sep"></span>
               <select id="clbSortBy" style="width:172px;" title="Sort the cell line list">
@@ -5341,6 +5384,8 @@
                 <option value="drug">Sort: Drug response (PRISM AUC)</option>
                 <option value="ifn">Sort: Interferon score (ISG)</option>
                 <option value="retro">Sort: Retroelement signal (CPM)</option>
+                <option value="ychr">Sort: Y-linked expression</option>
+                <option value="xist">Sort: XIST expression</option>
               </select>
               <button id="clbSortDir" title="Switch the sort direction" class="btn btn-outline btn-sm" style="width:32px;">&#x25B2;</button>
               <div id="clbSortGeneWrap" class="clb-anchor" style="visibility:hidden;">
@@ -5793,6 +5838,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v89_22"></script>
+    <script src="app.js?v=v89_65"></script>
+    <script src="tour.js?v=v89_49"></script>
 </body>
 </html>

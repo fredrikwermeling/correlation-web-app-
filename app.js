@@ -515,7 +515,9 @@ class CorrelationExplorer {
             }
             if (search) { search.value = this.getCellLineName(id); this.renderCellLineList(); }
             this.showCellLineDetail(id);
-            // This build has no wiki; the detail panel is the deep read.
+            // The wiki is the deep read on a line, and it opens over the
+            // browser, so closing it leaves the line inspected underneath.
+            if (typeof this.openCellLineWiki === 'function') await this.openCellLineWiki(id);
         } catch (e) {
             console.warn('Could not open the cell line from the link:', e);
         }
@@ -578,7 +580,7 @@ class CorrelationExplorer {
         // gene box and the file-backed ones.
         const allowed = new Set([
             ...this._GE_NEWTAB_CONTROLS(), ...this._SCATTER_NEWTAB_CONTROLS(),
-            ...this._CA_NEWTAB_CONTROLS(), ...Object.keys(this._DEPENDENT_CONTROLS()),
+            ...this._CA_NEWTAB_CONTROLS(), ...this._SI_NEWTAB_CONTROLS(), ...Object.keys(this._DEPENDENT_CONTROLS()),
         ]);
         const oncScope = this._ONCOTREE_CONTROL_SCOPE();
         const setOne = (id, v) => {
@@ -619,6 +621,7 @@ class CorrelationExplorer {
     // reproduces the same view (not just the gene/pair).
     _GE_NEWTAB_CONTROLS() { return ['geDataType', 'geHotspotGeneSelect', 'geTissueFilter', 'geSubtypeFilter', 'geOncotreeFilter', 'geHotspotFilter', 'geHotspotLevel', 'geFusionFilter', 'geFusionLevel', 'geCnFilter', 'geCnLevel', 'geMinGroupSize', 'geCellLineSearch']; }
     _SCATTER_NEWTAB_CONTROLS() { return ['inspectGeneX', 'inspectGeneY', 'xAxisDataType', 'yAxisDataType', 'showCorrelationLine', 'showZeroLines', 'scatterDotColor', 'scatterXmin', 'scatterXmax', 'scatterYmin', 'scatterYmax', 'scatterCancerFilter', 'scatterSubtypeFilter', 'scatterOncotreeFilter', 'mutationFilterGene', 'mutationFilterLevel', 'translocationFilterGene', 'translocationFilterLevel', 'scatterCnFilter', 'scatterCnLevel', 'scatterFontSize', 'hotspotGene', 'hotspotMode', 'translocationGene', 'translocationMode', 'colorByCategory', 'colorByPicked', 'colorByLegendStat', 'scatterCellSearch', 'customCellLineFilter', 'scatterWhiteBg']; }
+    _SI_NEWTAB_CONTROLS() { return ['geLeftDeltaCutoff', 'geLeftQCutoff', 'geLeftN', 'geRightDeltaCutoff', 'geRightQCutoff', 'geRightN', 'geInspectSearch', 'geInspectHideThin']; }
     _CA_NEWTAB_CONTROLS() { return ['caTissueFilter', 'caSubtypeFilter', 'caOncotreeFilter', 'caHotspotFilter', 'caHotspotLevel', 'caFusionFilter', 'caFusionLevel', 'caCnFilter', 'caCnLevel', 'caCellLineSearch']; }
 
     // Snapshot the underlying analysis/network so a new tab can rebuild the
@@ -837,6 +840,28 @@ class CorrelationExplorer {
             };
         } else if (kind === 'correlation_analysis') {
             popout = { kind, gene1: this._caGene1, gene2: this._caGene2, view: this._caView || 'tissue', controls: this._captureControls(this._CA_NEWTAB_CONTROLS()), textSettings };
+        } else if (kind === 'selection_inspect') {
+            // The cell line inspect: the selected side, and either gate B or
+            // the rule that picks the comparison group (the group is derived
+            // again in the new tab, so its ids do not need to travel).
+            const gateAB = this._geInspectMode === 'gateAB' && this._geGateAB;
+            const grp = this._geInspectGroup;
+            popout = {
+                kind,
+                mode: gateAB ? 'gateAB' : 'rest',
+                selection: (gateAB ? this._geGateAB.aIds : (this._geInspectResults?.selected || [])).slice(),
+                comparison: gateAB ? this._geGateAB.bIds.slice() : null,
+                gateOrigin: gateAB ? (this._geGateABOrigin || 'clb') : null,
+                scope: this._geInspectScope || 'all',
+                group: grp ? { lineages: [...grp.lineages], sublineages: [...grp.sublineages], diseases: [...grp.diseases] } : null,
+                custom: this._geInspectCustom?.size ? [...this._geInspectCustom] : null,
+                needsExpr: !!this.expressionLoaded,
+                sort: this._geInspectSort ? JSON.parse(JSON.stringify(this._geInspectSort)) : null,
+                // Names clicked on or off, hidden genes and the auto count, per volcano.
+                volcanoLabels: this._geVolcanoLabels ? Object.fromEntries(Object.entries(this._geVolcanoLabels).map(([k, v]) =>
+                    [k, { added: [...v.added], removed: [...v.removed], hidden: [...v.hidden], autoN: v.autoN }])) : null,
+                controls: this._captureControls(this._SI_NEWTAB_CONTROLS())
+            };
         } else {
             popout = { kind };
         }
@@ -863,6 +888,10 @@ class CorrelationExplorer {
     }
     openCorrelationInNewTab() { this.openPopoutInNewTab(this._buildPopoutMeta('scatter')); }
     openCorrAnalysisInNewTab() { this.openPopoutInNewTab(this._buildPopoutMeta('correlation_analysis')); }
+    openSelectionInspectInNewTab() {
+        if (!this._geInspectResults?.selected?.length) return;
+        this.openPopoutInNewTab(this._buildPopoutMeta('selection_inspect'));
+    }
 
     // Recreate-metadata for the Mutation-Inspect distribution. Mirrors what
     // _exportMutationInspectChart embeds in exported images, plus the inspect-level
@@ -938,6 +967,35 @@ class CorrelationExplorer {
         } else if (popout.kind === 'correlation_analysis' && popout.gene1 && popout.gene2) {
             this.openCorrelationAnalysisModal(popout.gene1, popout.gene2, popout.view || 'tissue');
             this._restorePopoutControls(popout.controls, 'caTissueFilter', () => { this._savedScatterTextSettings = ts; this.switchCorrAnalysisView(popout.view || 'tissue'); });
+        } else if (popout.kind === 'selection_inspect' && popout.selection?.length) {
+            if (popout.mode === 'gateAB' && popout.comparison?.length) {
+                this.inspectGateComparison(popout.selection, popout.comparison, { origin: popout.gateOrigin || 'clb' });
+            } else {
+                this._clbSelectedCellLines = new Set(popout.selection);
+                this._resetGEInspectScope();
+                this._geInspectScope = popout.scope || 'all';
+                if (popout.group) {
+                    this._geInspectGroup = { lineages: new Set(popout.group.lineages || []),
+                        sublineages: new Set(popout.group.sublineages || []), diseases: new Set(popout.group.diseases || []) };
+                }
+                if (popout.custom?.length) {
+                    this._geInspectCustom = new Set(popout.custom);
+                    this._geInspectCustomRaw = popout.custom.join('\n');
+                }
+                this._geInspectPanel = ['group', 'custom'].includes(this._geInspectScope) ? this._geInspectScope : null;
+                this.inspectSelectionGE();
+            }
+            // The cutoffs, search and sort live in controls the inspect
+            // builds as it opens, so they go back after it, then one redraw.
+            if (popout.sort) this._geInspectSort = popout.sort;
+            if (popout.volcanoLabels) {
+                this._geVolcanoLabels = {};
+                for (const [k, v] of Object.entries(popout.volcanoLabels)) {
+                    this._geVolcanoLabels[k] = { added: new Set(v.added || []), removed: new Set(v.removed || []),
+                        hidden: new Set(v.hidden || []), autoN: v.autoN ?? 4 };
+                }
+            }
+            this._restorePopoutControls(popout.controls, null, () => this._renderGEInspectTables());
         } else if (popout.kind === 'scatter' && popout.gene1 && popout.gene2) {
             // Axis data types (GE / expression / growth) must be set BEFORE
             // openInspect reads them, otherwise both axes fall back to GE.
@@ -1023,7 +1081,7 @@ class CorrelationExplorer {
         // mutation_inspect (and other flat payloads) carry controls top-level,
         // not under .popout; without this the expr-view preload never fired.
         const pc = meta.popout?.controls || meta.controls || {};
-        const needsExpr = popoutDataType === 'expr' || pc.geDataType === 'expr' || pc.xAxisDataType === 'expr' || pc.yAxisDataType === 'expr' || meta.metric === 'expr' || meta.graphType === 'expr_correlate';
+        const needsExpr = popoutDataType === 'expr' || meta.popout?.needsExpr || pc.geDataType === 'expr' || pc.xAxisDataType === 'expr' || pc.yAxisDataType === 'expr' || meta.metric === 'expr' || meta.graphType === 'expr_correlate';
         const needsCn = pc.xAxisDataType === 'cn' || pc.yAxisDataType === 'cn';
         const run = () => this._doApplyRestoreMeta(meta);
         const pre = [];
@@ -1508,6 +1566,46 @@ class CorrelationExplorer {
         }
     }
 
+    // Fused cell lines of one gene that are also in `inSet`. Walks the
+    // gene's own (sparse) call list, not the whole cohort: 9,642 fusion
+    // genes times 1,208 cell lines was several seconds per popout open.
+    _countFusedIn(gene, inSet) {
+        const td = this.translocations?.geneData?.[gene]?.translocations;
+        if (!td) return 0;
+        let n = 0;
+        for (const cl in td) { if (td[cl] > 0 && inSet.has(cl)) n++; }
+        return n;
+    }
+
+    // The two fusion datalists (overlay gene and filter gene), one option
+    // per fusion gene with its count in `inSet`, priority genes first. Every
+    // fusion gene has at least one call, so this is ~9,600 options; the
+    // lists are only rebuilt when the cohort actually changed.
+    _fillFusionDatalists(inSet) {
+        const a = document.getElementById('translocationGeneList');
+        const b = document.getElementById('translocationFilterGeneList');
+        if (!a || !this.translocations?.genes?.length) return;
+        let h = 0;
+        for (const cl of inSet) { for (let i = 0; i < cl.length; i++) h = (h * 31 + cl.charCodeAt(i)) | 0; }
+        const key = `${inSet.size}:${h}`;
+        if (this._fusionDatalistKey === key && a.options.length) return;
+        this._fusionDatalistKey = key;
+        const geneCounts = [];
+        for (const g of this.translocations.genes) {
+            const count = this._countFusedIn(g, inSet);
+            if (count > 0) geneCounts.push({ gene: g, count });
+        }
+        const PRIO = CorrelationExplorer.PRIORITY_FUSION_GENES;
+        geneCounts.sort((x, y) => {
+            const xp = PRIO.has(x.gene) ? 1 : 0, yp = PRIO.has(y.gene) ? 1 : 0;
+            if (xp !== yp) return yp - xp;
+            return y.count - x.count;
+        });
+        const html = geneCounts.map(({ gene, count }) => `<option value="${gene}">${gene} (${count} fused)</option>`).join('');
+        a.innerHTML = html;
+        if (b) b.innerHTML = html;
+    }
+
     updateScatterHotspotFilterCounts() {
         if (!this.currentInspect?.data) return;
 
@@ -1542,22 +1640,10 @@ class CorrelationExplorer {
         if (hotspotSelect && this.mutations?.genes?.length > 0) {
             const hotspotVal = hotspotSelect.value;
             const mutFilterVal = mutFilterGeneSelect?.value || '';
-            hotspotSelect.innerHTML = '<option value="">Select gene...</option>';
-            if (mutFilterGeneSelect) mutFilterGeneSelect.innerHTML = '<option value="">No filter</option>';
-
-            this.mutations.genes.forEach(g => {
-                // Skip polymorphic loci (HLA / MIC / KIR), their hotspot calls
-                // are germline allelic divergence, not somatic hotspots, and
-                // would otherwise top the list with an inflated mutation count.
-                if (this._isPolymorphicLocus(g)) return;
-                const mutData = this.mutations.geneData?.[g]?.mutations || {};
-                let count = 0;
-                filteredCellLines.forEach(cl => { if (mutData[cl] > 0) count++; });
-                hotspotSelect.innerHTML += `<option value="${g}"${g === hotspotVal ? ' selected' : ''}>${g} (${count} mut)</option>`;
-                if (mutFilterGeneSelect) {
-                    mutFilterGeneSelect.innerHTML += `<option value="${g}"${g === mutFilterVal ? ' selected' : ''}>${g} (${count} mut)</option>`;
-                }
-            });
+            const optsHtml = this._mutOverlayOptionsHtml(filteredCellLines, hotspotVal);
+            hotspotSelect.innerHTML = '<option value="">Select gene...</option>' + optsHtml;
+            if (mutFilterGeneSelect) mutFilterGeneSelect.innerHTML = '<option value="">No filter</option>'
+                + this._mutOverlayOptionsHtml(filteredCellLines, mutFilterVal);
         }
 
         // Update translocation/fusion datalists
@@ -1565,28 +1651,7 @@ class CorrelationExplorer {
         const transFilterGeneDatalist = document.getElementById('translocationFilterGeneList');
 
         if (transGeneDatalist && this.translocations?.genes?.length > 0) {
-            const geneCounts = [];
-            for (const g of this.translocations.genes) {
-                const transData = this.translocations.geneData?.[g]?.translocations || {};
-                let count = 0;
-                for (const cl of filteredCellLines) {
-                    if (transData[cl] && transData[cl] > 0) count++;
-                }
-                if (count > 0) geneCounts.push({ gene: g, count });
-            }
-            geneCounts.sort((a, b) => {
-                const aPri = CorrelationExplorer.PRIORITY_FUSION_GENES.has(a.gene) ? 1 : 0;
-                const bPri = CorrelationExplorer.PRIORITY_FUSION_GENES.has(b.gene) ? 1 : 0;
-                if (aPri !== bPri) return bPri - aPri;
-                return b.count - a.count;
-            });
-
-            let transHtml = '';
-            geneCounts.forEach(({ gene, count }) => {
-                transHtml += `<option value="${gene}">${gene} (${count} fused)</option>`;
-            });
-            transGeneDatalist.innerHTML = transHtml;
-            if (transFilterGeneDatalist) transFilterGeneDatalist.innerHTML = transHtml;
+            this._fillFusionDatalists(filteredCellLines);
         }
     }
 
@@ -1714,8 +1779,7 @@ class CorrelationExplorer {
         const transLevel = document.getElementById('paramTranslocationLevel')?.value || 'all';
         const cnVal = document.getElementById('paramCnFilter')?.value || '';
         const cnLevel = document.getElementById('paramCnLevel')?.value || 'altered';
-        const hsMuts = (hotspotGene && hotspotLevel !== 'all')
-            ? (this.mutations?.geneData?.[hotspotGene]?.mutations || this.damagingMutations?.geneData?.[hotspotGene]?.mutations) : null;
+        const hsMuts = (hotspotGene && hotspotLevel !== 'all') ? this._mutCalls(hotspotGene) : null;
         const fusionActive = transGene && transLevel !== 'all';
         const set = new Set();
         for (const cl of this.metadata.cellLines) {
@@ -1743,7 +1807,8 @@ class CorrelationExplorer {
         const lineageFilter = document.getElementById('lineageFilter').value;
         const subLineageFilter = document.getElementById('subLineageFilter')?.value;
 
-        if (!gene || !this.mutations?.geneData?.[gene]) {
+        const geneCalls = this._mutCalls(gene);
+        if (!gene || !geneCalls) {
             levelSelect.innerHTML = `
                 <option value="1+2" selected>Mutated</option>
                 <option value="1">1 mut</option>
@@ -1754,7 +1819,7 @@ class CorrelationExplorer {
         }
 
         // Count mutations for selected gene (respecting lineage filter)
-        const mutations = this.mutations.geneData[gene].mutations;
+        const mutations = geneCalls;
         const cellLines = this.metadata.cellLines;
         let n0 = 0, n1 = 0, n2 = 0;
 
@@ -1779,12 +1844,16 @@ class CorrelationExplorer {
         const total = n0 + n1 + n2;
 
         const prev = levelSelect.value;
-        levelSelect.innerHTML = `
-            <option value="1+2">Mutated (${nMut})</option>
+        // Functional loss is lost-or-intact; "any mutation" keeps the copy
+        // counts but calls the wild-type side "no call".
+        const kind = this._parseMutFilter(gene).kind;
+        levelSelect.innerHTML = kind === 'lof'
+            ? `<option value="1+2">Functionally lost (${nMut})</option>
+            <option value="0">Functionally intact (${n0})</option>`
+            : `<option value="1+2">${kind === 'any' ? 'Mutated, any call' : 'Mutated'} (${nMut})</option>
             <option value="1">1 mut (${n1})</option>
             <option value="2">2 mut (${n2})</option>
-            <option value="0">WT (${n0})</option>
-        `;
+            <option value="0">${kind === 'any' ? 'No call' : 'WT'} (${n0})</option>`;
         // Default to "mutated 1+2"; keep an explicit prior non-default pick.
         levelSelect.value = (prev && prev !== 'all') ? prev : '1+2';
     }
@@ -2095,7 +2164,12 @@ class CorrelationExplorer {
         if (v('clbTissueFilter')) bits.push(`tissue = ${v('clbTissueFilter')}`);
         if (v('clbSubtypeFilter')) bits.push(`subtype = ${v('clbSubtypeFilter')}`);
         if (v('clbOncotreeFilter')) bits.push(`disease = ${v('clbOncotreeFilter')}`);
-        if (v('clbHotspotFilter')) bits.push(`hotspot mutation in ${v('clbHotspotFilter')}`);
+        if (v('clbHotspotFilter')) {
+            const mk = this._parseMutFilter(v('clbHotspotFilter'));
+            bits.push(mk.kind === 'hotspot' ? `hotspot mutation in ${mk.gene}`
+                : mk.kind === 'any' ? `any mutation call in ${mk.gene}`
+                : `functional loss of ${mk.gene}`);
+        }
         if (v('clbTranslocationFilter')) bits.push(`fusion ${v('clbTranslocationFilter')}`);
         if (v('clbCnFilter')) bits.push(`copy-number event in ${v('clbCnFilter')}`);
         for (const f of (this._activeOncoprintFilters || [])) bits.push(`${f.gene} ${this._gridStateWord(f.state)}`);
@@ -3303,7 +3377,7 @@ class CorrelationExplorer {
             const paramTransLevel = document.getElementById('paramTranslocationLevel')?.value || 'all';
             const paramCn = document.getElementById('paramCnFilter')?.value || '';
             const paramCnLevel = document.getElementById('paramCnLevel')?.value || 'altered';
-            const paramHotspotMuts = paramHotspot && paramHotspotLevel !== 'all' ? (this.mutations?.geneData?.[paramHotspot]?.mutations || this.damagingMutations?.geneData?.[paramHotspot]?.mutations) : null;
+            const paramHotspotMuts = paramHotspot && paramHotspotLevel !== 'all' ? this._mutCalls(paramHotspot) : null;
             const paramFusionActive = paramTrans && paramTransLevel !== 'all';
             filteredCLs = this.metadata.cellLines.filter(cl => {
                 if (lineageFilter && this.cellLineMetadata?.lineage?.[cl] !== lineageFilter) return false;
@@ -3418,7 +3492,9 @@ class CorrelationExplorer {
                             : gridKind === 'cn' ? 'focal copy-number event' : 'hotspot mutation';
             const empty = document.createElement('div');
             empty.id = 'oncoprintPopup';
-            empty.style.cssText = 'position:fixed; z-index:10000; right:20px; top:20px; width:420px; background:white; border:1px solid #d1d5db; border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,0.15); padding:14px 16px; font-size:12px; color:#374151;';
+            // Capped to the screen: a fixed 420px pinned to the right edge
+            // hung off the left of a phone.
+            empty.style.cssText = 'position:fixed; z-index:10000; right:20px; top:20px; width:min(420px, calc(100vw - 40px)); box-sizing:border-box; background:white; border:1px solid #d1d5db; border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,0.15); padding:14px 16px; font-size:12px; color:#374151;';
             empty.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">`
                 + `<b>No ${emptyWord}s to show</b>`
                 + `<button onclick="app._upsetClose?.(); document.getElementById('oncoprintPopup')?.remove();" style="background:none;border:none;font-size:18px;line-height:1;cursor:pointer;color:#9ca3af;">&times;</button></div>`
@@ -5209,6 +5285,124 @@ class CorrelationExplorer {
         return raw.replace(/^[▲▼]\s+/, '').replace(/\s*\(n=\d+\)\s*$/, '').trim();
     }
 
+    // --- Mutation filter kinds -------------------------------------------
+    // A mutation filter value carries its kind in the value itself, so a pick
+    // travels unchanged through saved state, New tab, chips and exports:
+    //   "TP53"                    hotspot copies (damaging matrix as fallback)
+    //   "TP53 (any mutation)"     hotspot OR likely loss-of-function variant
+    //   "TP53 (functional loss)"  DepMap's integrated TSG call (8 genes)
+
+    _parseMutFilter(raw) {
+        const s = String(raw == null ? '' : raw).trim();
+        if (!s) return { gene: '', kind: 'hotspot' };
+        const m = s.match(/^(.*?)\s*\(\s*(any\s+mutation|functional\s+loss)\s*\)$/i);
+        if (!m || !m[1].trim()) return { gene: s, kind: 'hotspot' };
+        return { gene: m[1].trim(), kind: /^f/i.test(m[2]) ? 'lof' : 'any' };
+    }
+
+    // The gene symbol alone, for display and for gene-level table lookups.
+    _stripMutDecoration(raw) { return this._parseMutFilter(raw).gene; }
+
+    _mutKindWord(kind) { return kind === 'any' ? 'any mutation' : kind === 'lof' ? 'functional loss' : ''; }
+
+    // {cellLine: level} for a mutation filter value, or null when the gene has
+    // no data of that kind. `hotspotOnly` drops the damaging fallback, for the
+    // callers that have always read the hotspot matrix alone.
+    _mutCalls(raw, opts = {}) {
+        const { gene, kind } = this._parseMutFilter(raw);
+        if (!gene) return null;
+        if (kind === 'lof') return this.functionalLoss?.geneData?.[gene]?.mutations || null;
+        if (kind === 'any') {
+            const hot = this.mutations?.geneData?.[gene]?.mutations || null;
+            const dmg = this.damagingMutations?.geneData?.[gene]?.mutations || null;
+            if (!hot && !dmg) return null;
+            const cache = (this._anyMutCallsCache ||= new Map());
+            if (cache.has(gene)) return cache.get(gene);
+            // max(hotspot copies, damaging ? 1 : 0), so the copy-count levels
+            // still mean what they mean and a damaging-only line counts as 1.
+            const out = {};
+            if (hot) for (const cl in hot) { const v = hot[cl] || 0; if (v > 0) out[cl] = v; }
+            if (dmg) for (const cl in dmg) { if ((dmg[cl] || 0) >= 1 && !(out[cl] >= 1)) out[cl] = 1; }
+            cache.set(gene, out);
+            return out;
+        }
+        const hot = this.mutations?.geneData?.[gene]?.mutations;
+        if (hot) return hot;
+        return opts.hotspotOnly ? null : (this.damagingMutations?.geneData?.[gene]?.mutations || null);
+    }
+
+    // Same resolve, shaped like a geneData entry for the callers that keep the
+    // object around and read `.mutations` from it.
+    _mutSource(raw, opts) {
+        const calls = this._mutCalls(raw, opts);
+        return calls ? { mutations: calls } : null;
+    }
+
+    // The words for each level, per kind. _FILTER_BAR_SPEC's HOT map is the
+    // hotspot row, so the chip menus and these stay in step.
+    _MUT_LEVEL_WORDS() {
+        return {
+            hotspot: {
+                '1+2': 'Mutated (either copy)', '1': 'One copy mutated',
+                '2': 'Both copies mutated', '0': 'Wild-type',
+                altered: 'Mutated', wt: 'Wild-type',
+            },
+            any: {
+                '1+2': 'Mutated (any call)', '1': 'Mutated, one copy',
+                '2': 'Mutated, both copies', '0': 'No mutation call',
+                altered: 'Mutated (any call)', wt: 'No mutation call',
+            },
+            lof: {
+                '1+2': 'Functionally lost', '0': 'Functionally intact',
+                altered: 'Functionally lost', wt: 'Functionally intact',
+            },
+        };
+    }
+
+    // How one level reads inside a chip or a caption. Returns null for plain
+    // hotspot values, where each caller keeps its own established wording.
+    _mutLevelWord(kind, level) {
+        if (kind !== 'any' && kind !== 'lof') return null;
+        const lvl = String(level == null || level === '' ? '1+2' : level);
+        if (kind === 'lof') return (lvl === '0' || lvl === 'wt') ? 'functionally intact' : 'functionally lost';
+        return { '0': 'no mutation call', wt: 'no mutation call', '1': 'mutated, one copy', '2': 'mutated, both copies' }[lvl]
+            || 'mutated (any call)';
+    }
+
+    // Legend / hover / panel wording for a mutation overlay, per kind.
+    // `hasTwo` is false for functional loss, which is lost-or-intact: its
+    // "two copies" trace would always be empty.
+    _mutOverlayWords(raw) {
+        const { gene, kind } = this._parseMutFilter(raw);
+        if (kind === 'lof') {
+            return { gene, kind, hasTwo: false, legend: ['Intact', 'Lost', 'Lost (2)'],
+                hover: ['Functionally intact', 'Functionally lost', 'Functionally lost'],
+                panel: ['Intact', 'Lost', 'Not applicable'],
+                typeWord: 'Functional loss', refWord: 'Intact', altWord: 'Lost',
+                refDesc: `${gene} functionally intact`, altDesc: `${gene} functionally lost` };
+        }
+        if (kind === 'any') {
+            return { gene, kind, hasTwo: true, legend: ['No call', 'Mutated (1)', 'Mutated (2)'],
+                hover: ['No mutation call', 'Mutated, one copy', 'Mutated, both copies'],
+                panel: ['No call', 'Mutated (1)', 'Mutated (2)'],
+                typeWord: 'Mutation (any call)', refWord: 'No call', altWord: 'Mutated',
+                refDesc: `no ${gene} mutation call`, altDesc: `${gene} mutated (any call)` };
+        }
+        return { gene, kind, hasTwo: true, legend: ['WT', '1 mut', '2 mut'],
+            hover: ['WT', '1 mutation', '2 mutations'],
+            panel: ['WT', '1 mut', '2 mut'],
+            typeWord: 'Mutation', refWord: 'WT', altWord: 'Mut',
+            refDesc: `0 ${gene} mutations`, altDesc: `2+ ${gene} mutations` };
+    }
+
+    // One phrase for a mutation filter, e.g. "TP53 functionally lost". Plain
+    // hotspot values fall back to the caller's own word for the level.
+    _mutFilterPhrase(raw, level, hotspotWord) {
+        const { gene, kind } = this._parseMutFilter(raw);
+        const w = this._mutLevelWord(kind, level);
+        return `${gene} ${w || hotspotWord || 'hotspot-mutated'}`;
+    }
+
     // Apply the CN filter to a single cell line. Decoded value is e.g.
     // "MYC_amp" or "BAP1_del", see _populateCnFilterItems for the encoding.
     _cellLinePassesCnFilter(cl, rawValue) {
@@ -5537,15 +5731,7 @@ class CorrelationExplorer {
     _ensureGlobalFilterItems() {
         if (this._globalFilterItems) return this._globalFilterItems;
         // Hotspot genes (this.mutations.genes already excludes polymorphic loci).
-        const hotspot = [];
-        if (this.mutations?.geneData && Array.isArray(this.mutations.genes)) {
-            for (const gene of this.mutations.genes) {
-                const muts = this.mutations.geneData[gene]?.mutations || {};
-                let n = 0; for (const cl in muts) if (muts[cl] >= 1) n++;
-                if (n > 0) hotspot.push({ value: gene, primary: gene, count: n, secondary: 'hotspot mutation' });
-            }
-            hotspot.sort((a, b) => b.count - a.count);
-        }
+        const hotspot = this._buildHotspotFilterItems(null);
         // Fusions: only curated clinical driver pairs (★). The broad per-gene
         // "any fusion involving this gene" list was mostly noise, so it's dropped.
         const fusion = [];
@@ -5585,7 +5771,7 @@ class CorrelationExplorer {
     // identically. Empty values are ignored.
     _cellLinePassesMutFilters(cl, f) {
         if (f.hotspot) {
-            const m = this.mutations?.geneData?.[f.hotspot]?.mutations || this.damagingMutations?.geneData?.[f.hotspot]?.mutations;
+            const m = this._mutCalls(f.hotspot);
             if (!m || !(m[cl] >= 1)) return false;
         }
         if (f.fusion && !this._geFusionPasses(cl, f.fusion)) return false;
@@ -5600,17 +5786,84 @@ class CorrelationExplorer {
     // given cohort (Set of cell-line ids) and ordered by count, so the options
     // reflect the other active filters (e.g. with Melanoma selected, BRAF rises
     // to the top of the hotspot list).
-    _buildFilterItems(kind, cohortSet) {
-        if (kind === 'hotspot') {
+    // Hotspot-filter options: each gene, then the two extra kinds it offers,
+    // so "TP53", "TP53 (any mutation)" and "TP53 (functional loss)" read as one
+    // group. "any mutation" is only offered where it actually adds cell lines
+    // over the hotspot call; functional loss only for the TSGs DepMap calls it
+    // for. `cohortSet` null counts the whole panel.
+    _buildHotspotFilterItems(cohortSet) {
+        const countIn = (calls) => {
+            if (!calls) return 0;
+            let n = 0;
+            for (const cl in calls) if (calls[cl] >= 1 && (!cohortSet || cohortSet.has(cl))) n++;
+            return n;
+        };
+        const lofGenes = new Set(this.functionalLoss?.geneData ? Object.keys(this.functionalLoss.geneData) : []);
+        const groups = [];
+        const seen = new Set();
+        for (const gene of (this.mutations?.genes || [])) {
+            const hotN = countIn(this.mutations.geneData?.[gene]?.mutations);
             const items = [];
-            for (const gene of (this.mutations?.genes || [])) {
-                const muts = this.mutations.geneData?.[gene]?.mutations || {};
-                let n = 0; for (const cl in muts) if (muts[cl] >= 1 && cohortSet.has(cl)) n++;
-                if (n > 0) items.push({ value: gene, primary: gene, count: n, secondary: 'hotspot mutation' });
+            if (hotN > 0) items.push({ value: gene, primary: gene, count: hotN, secondary: 'hotspot mutation' });
+            const anyVal = `${gene} (any mutation)`;
+            const anyN = countIn(this._mutCalls(anyVal));
+            if (anyN > hotN) items.push({ value: anyVal, primary: anyVal, count: anyN, secondary: 'hotspot or damaging call, DepMap' });
+            if (lofGenes.has(gene)) {
+                const lofVal = `${gene} (functional loss)`;
+                const lofN = countIn(this._mutCalls(lofVal));
+                if (lofN > 0) items.push({ value: lofVal, primary: lofVal, count: lofN, secondary: 'integrated functional-loss call: deep deletion, LoF mutation or silenced expression' });
             }
-            items.sort((a, b) => b.count - a.count);
-            return items;
+            if (items.length) { groups.push({ key: Math.max(hotN, items[0].count), items }); seen.add(gene); }
         }
+        // A TSG with no hotspot entry of its own still gets its functional-loss
+        // pick, or the gene would be missing from the menu entirely.
+        for (const gene of lofGenes) {
+            if (seen.has(gene)) continue;
+            const lofVal = `${gene} (functional loss)`;
+            const lofN = countIn(this._mutCalls(lofVal));
+            if (lofN > 0) groups.push({ key: lofN, items: [{ value: lofVal, primary: lofVal, count: lofN, secondary: 'integrated functional-loss call: deep deletion, LoF mutation or silenced expression' }] });
+        }
+        groups.sort((a, b) => b.key - a.key);
+        return groups.flatMap(g => g.items);
+    }
+
+    // Options for the scatter's overlay gene <select>: every hotspot gene in
+    // its usual order, each followed by the extra kinds that gene offers.
+    _mutOverlayOptionsHtml(cohort, selected) {
+        const set = cohort instanceof Set ? cohort : new Set(cohort || []);
+        const countIn = (calls) => {
+            if (!calls) return 0;
+            let n = 0;
+            for (const cl in calls) if (calls[cl] >= 1 && set.has(cl)) n++;
+            return n;
+        };
+        const sel = (v) => (selected && v === selected) ? ' selected' : '';
+        const opt = (v, text) => `<option value="${v}"${sel(v)}>${text}</option>`;
+        const lofGenes = new Set(this.functionalLoss?.geneData ? Object.keys(this.functionalLoss.geneData) : []);
+        let html = '';
+        for (const g of (this.mutations?.genes || [])) {
+            if (this._isPolymorphicLocus(g)) continue;
+            const hotN = countIn(this.mutations.geneData?.[g]?.mutations);
+            html += opt(g, `${g} (${hotN} mut)`);
+            const anyVal = `${g} (any mutation)`;
+            const anyN = countIn(this._mutCalls(anyVal));
+            if (anyN > hotN) html += opt(anyVal, `${g} (any mutation, ${anyN})`);
+            if (lofGenes.has(g)) {
+                const lofVal = `${g} (functional loss)`;
+                html += opt(lofVal, `${g} (functional loss, ${countIn(this._mutCalls(lofVal))})`);
+            }
+            lofGenes.delete(g);
+        }
+        // A TSG with no hotspot entry of its own still gets its loss pick.
+        for (const g of lofGenes) {
+            const lofVal = `${g} (functional loss)`;
+            html += opt(lofVal, `${g} (functional loss, ${countIn(this._mutCalls(lofVal))})`);
+        }
+        return html;
+    }
+
+    _buildFilterItems(kind, cohortSet) {
+        if (kind === 'hotspot') return this._buildHotspotFilterItems(cohortSet);
         if (kind === 'fusion') {
             const pairs = [];
             const curated = this._curatedFusionLinesByPair();
@@ -5698,7 +5951,7 @@ class CorrelationExplorer {
                 if (scOnc && (this.cellLineMetadata?.oncotreeSubtype?.[cl] || '') !== scOnc) continue;
             }
             if (kind !== 'hotspot' && mfg) {
-                const mm = (this.mutations?.geneData?.[mfg] || this.damagingMutations?.geneData?.[mfg])?.mutations;
+                const mm = this._mutCalls(mfg);
                 if (mm) { const l = mm[cl] || 0; if (mfl === '0' && l !== 0) continue; if (mfl === '1' && l !== 1) continue; if (mfl === '2' && l < 2) continue; if ((mfl === '1+2' || !mfl) && l < 1) continue; }
             }
             if (kind !== 'fusion' && tfg) {
@@ -5862,7 +6115,7 @@ class CorrelationExplorer {
             const cl = p.cellLineId;
             if (kind !== 'tissue' && tissue && p.lineage !== tissue) continue;
             if (kind !== 'tissue' && caOnc && (this.cellLineMetadata?.oncotreeSubtype?.[cl] || '') !== caOnc) continue;
-            if (kind !== 'hotspot' && hot) { const mm = this.mutations?.geneData?.[hot]?.mutations || this.damagingMutations?.geneData?.[hot]?.mutations; const l = mm ? (mm[cl] || 0) : 0; if (hotLvl === '0' ? l !== 0 : hotLvl === '1' ? l !== 1 : hotLvl === '2' ? l < 2 : l < 1) continue; }
+            if (kind !== 'hotspot' && hot) { const mm = this._mutCalls(hot); const l = mm ? (mm[cl] || 0) : 0; if (hotLvl === '0' ? l !== 0 : hotLvl === '1' ? l !== 1 : hotLvl === '2' ? l < 2 : l < 1) continue; }
             if (kind !== 'fusion' && fus) { const has = this._geFusionPasses(cl, fus); if (fusLvl === '0' ? has : !has) continue; }
             if (kind !== 'cn' && cn) { const has = this._cellLinePassesCnFilter(cl, cn); if (cnLvl === 'wt' ? has : !has) continue; }
             set.add(cl);
@@ -5893,7 +6146,7 @@ class CorrelationExplorer {
             }
             const wantWT = (id) => document.getElementById(id)?.value === 'wt';
             if (kind !== 'hotspot' && hotspot) {
-                const hs = this.mutations?.geneData?.[hotspot] || this.damagingMutations?.geneData?.[hotspot];
+                const hs = this._mutSource(hotspot);
                 if (hs && !this._mutLevelPasses(document.getElementById('geHotspotLevel')?.value || '1+2', hs.mutations[cl] || 0)) continue;
             }
             if (kind !== 'fusion' && fus && this._geFusionPasses(cl, fus) === wantWT('geFusionLevel')) continue;
@@ -6021,6 +6274,10 @@ class CorrelationExplorer {
                 document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
                 tab.classList.add('active');
                 document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+                // Drawn only when its tab is in front: Plotly sizes a chart to
+                // its container, and a hidden container has no width.
+                if (tab.dataset.tab === 'matrix') this.displayCorrelationMatrix();
+                if (tab.dataset.tab !== 'network') this._closeEnrichrIfFloating();
                 // Close Aa text settings panel on tab switch
                 const tsPanel = document.getElementById('textSettingsPanel');
                 if (tsPanel) tsPanel.style.display = 'none';
@@ -6554,6 +6811,11 @@ class CorrelationExplorer {
 
         // Download buttons
         document.getElementById('downloadCorrelations').addEventListener('click', () => this.downloadCSV('correlations'));
+        document.getElementById('matrixShowValues')?.addEventListener('change', () => this.displayCorrelationMatrix());
+        document.getElementById('matrixClusterOrder')?.addEventListener('change', () => this.displayCorrelationMatrix());
+        document.getElementById('matrixAboveCutoff')?.addEventListener('change', () => this.displayCorrelationMatrix());
+        document.getElementById('matrixExportPng')?.addEventListener('click', () => this.exportCorrelationMatrixImage());
+        document.getElementById('matrixDownloadCsv')?.addEventListener('click', () => this.downloadCorrelationMatrixCSV());
         document.getElementById('downloadClusters').addEventListener('click', () => this.downloadCSV('clusters'));
         document.getElementById('downloadSummary').addEventListener('click', () => this.downloadSummary());
 
@@ -6987,10 +7249,15 @@ class CorrelationExplorer {
             }
         });
         document.getElementById('enrichrDownloadBtn')?.addEventListener('click', () => this.downloadEnrichrCSV());
+        document.getElementById('enrichrExportAIBtn')?.addEventListener('click', () => this.exportEnrichrForAI());
 
         // Infographic modal
-        document.getElementById('showInfoGraphic')?.addEventListener('click', () => {
-            document.getElementById('infographicModal').style.display = 'flex';
+        // How it works opens the tour; the long-form page is a button on the
+        // tour's last page, or opens directly if the tour did not load.
+        document.getElementById('showInfoGraphic')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (window.CorrelateTour) window.CorrelateTour.open();
+            else document.getElementById('infographicModal').style.display = 'flex';
         });
         document.getElementById('closeInfoGraphic')?.addEventListener('click', () => {
             document.getElementById('infographicModal').style.display = 'none';
@@ -7477,9 +7744,21 @@ class CorrelationExplorer {
             btn.innerHTML = 'Exporting...';
             btn.disabled = true;
             await new Promise(r => setTimeout(r, 50));
-            await this.exportFullAIAnalysis();
+            // A throw anywhere in the export used to leave the button dead
+            // on "Exporting..." with an empty status line, which reads as
+            // the export doing nothing. Say what went wrong and stay open.
+            let failed = false;
+            try {
+                await this.exportFullAIAnalysis();
+            } catch (e) {
+                failed = true;
+                console.error('Export for AI failed:', e);
+                const st = document.getElementById('aiExportStatus');
+                if (st) st.textContent = `Export failed: ${e?.message || e}. Try again; if it repeats, close and reopen the view.`;
+            }
             btn.innerHTML = orig;
             btn.disabled = false;
+            if (failed) return;
             // Auto-close on success (status pane shows "Compressing..." then
             // clears once the download fires; if there was an error the
             // status text persists and we keep the dialog open).
@@ -8693,14 +8972,7 @@ class CorrelationExplorer {
         const cnLevel = document.getElementById('paramCnLevel')?.value || 'altered';
 
         // Get mutation data for hotspot/damaging filter
-        let mutationData = null;
-        if (hotspotGene) {
-            if (this.mutations?.geneData?.[hotspotGene]) {
-                mutationData = this.mutations.geneData[hotspotGene].mutations;
-            } else if (this.damagingMutations?.geneData?.[hotspotGene]) {
-                mutationData = this.damagingMutations.geneData[hotspotGene].mutations;
-            }
-        }
+        let mutationData = hotspotGene ? this._mutCalls(hotspotGene) : null;
 
         // Fusion filter now uses curated ★ clinical driver pairs (via
         // _geFusionPasses), WT vs with-fusion.
@@ -9071,6 +9343,7 @@ class CorrelationExplorer {
                 // network later (the heatmap) can reuse the exact lines the
                 // analysis ran on instead of falling back to its own default.
                 this._resultsCellLines = cellLineIndices.map(i => this.metadata.cellLines[i]);
+                this._resultsCellLineIndices = cellLineIndices;
                 if (this.results.success) {
                     this.displayResults();
                     this.showStatus('success',
@@ -9459,7 +9732,7 @@ class CorrelationExplorer {
         }
 
         // Get additional hotspot mutation data if specified
-        const additionalMutData = additionalHotspot ? this.mutations.geneData[additionalHotspot] : null;
+        const additionalMutData = additionalHotspot ? this._mutSource(additionalHotspot, { hotspotOnly: true }) : null;
 
         // Additional fusion filter now uses curated ★ driver pairs.
         const additionalFusionActive = additionalTransGene && additionalTransLevel !== 'all';
@@ -9672,7 +9945,7 @@ class CorrelationExplorer {
             throw new Error(`No translocation data for ${hotspotGene}`);
         }
 
-        const additionalMutData = additionalHotspot ? this.mutations?.geneData?.[additionalHotspot] : null;
+        const additionalMutData = additionalHotspot ? this._mutSource(additionalHotspot, { hotspotOnly: true }) : null;
         const additionalFusionActive = additionalTransGene && additionalTransGene !== hotspotGene && additionalTransLevel !== 'all';
 
         const cellLines = this.metadata.cellLines;
@@ -10247,8 +10520,8 @@ class CorrelationExplorer {
         if (mr.hotspotGene) shownGenes.add(mr.hotspotGene);
         if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
             const ll = { '0': 'WT', '1': 'Mut', '2': 'Mut', '1+2': 'Mut' };
-            mutFilterParts.push(`${mr.additionalHotspot} ${ll[mr.additionalHotspotLevel] || mr.additionalHotspotLevel}`);
-            shownGenes.add(mr.additionalHotspot);
+            mutFilterParts.push(this._mutFilterPhrase(mr.additionalHotspot, mr.additionalHotspotLevel, ll[mr.additionalHotspotLevel] || mr.additionalHotspotLevel));
+            shownGenes.add(this._stripMutDecoration(mr.additionalHotspot));
         }
         if (mr.additionalTransGene && mr.additionalTransLevel !== 'all') {
             const ll = { '0': 'WT', '1': 'Fused', '2': 'Fused', '1+2': 'Fused' };
@@ -10547,10 +10820,10 @@ class CorrelationExplorer {
         const allMutFilters = [];
         if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
             const ll = { '0': 'WT', '1': 'Mut', '2': 'Mut', '1+2': 'Mut' };
-            allMutFilters.push(`${mr.additionalHotspot} ${ll[mr.additionalHotspotLevel] || mr.additionalHotspotLevel}`);
+            allMutFilters.push(this._mutFilterPhrase(mr.additionalHotspot, mr.additionalHotspotLevel, ll[mr.additionalHotspotLevel] || mr.additionalHotspotLevel));
         }
         if (this._activeOncoprintFilters) {
-            const shown = new Set([mr.hotspotGene, mr.additionalHotspot].filter(Boolean));
+            const shown = new Set([mr.hotspotGene, this._stripMutDecoration(mr.additionalHotspot)].filter(Boolean));
             for (const f of this._activeOncoprintFilters) {
                 if (!shown.has(f.gene)) {
                     allMutFilters.push(`${f.gene} ${this._gridStateWord(f.state)}`);
@@ -10747,7 +11020,7 @@ class CorrelationExplorer {
             // hotspot filter overrides it, so setting one in inspect mode replaces
             // the conserved analysis filter instead of stacking with it.
             if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all' && !inspectHotspot) {
-                const addMutData = this.mutations?.geneData?.[mr.additionalHotspot];
+                const addMutData = this._mutSource(mr.additionalHotspot, { hotspotOnly: true });
                 if (addMutData) {
                     const addMutLevel = addMutData.mutations[cellLine] || 0;
                     if (mr.additionalHotspotLevel === '0' && addMutLevel !== 0) return;
@@ -10772,8 +11045,7 @@ class CorrelationExplorer {
 
             // Check inspect-level additional hotspot/damaging filter
             if (inspectHotspot) {
-                const inspHotData = this.mutations?.geneData?.[inspectHotspot]
-                    || this.damagingMutations?.geneData?.[inspectHotspot];
+                const inspHotData = this._mutSource(inspectHotspot);
                 if (inspHotData) {
                     const inspMutLevel = inspHotData.mutations[cellLine] || 0;
                     if (inspMutLevel === 0) return;
@@ -10991,14 +11263,14 @@ class CorrelationExplorer {
         }
         if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
             const ll = { '0': 'WT', '1': 'Mut', '2': 'Mut', '1+2': 'Mut' };
-            filterInfo.push(`${mr.additionalHotspot} ${ll[mr.additionalHotspotLevel] || mr.additionalHotspotLevel}`);
+            filterInfo.push(this._mutFilterPhrase(mr.additionalHotspot, mr.additionalHotspotLevel, ll[mr.additionalHotspotLevel] || mr.additionalHotspotLevel));
         }
         if (mr.additionalTransGene && mr.additionalTransLevel !== 'all') {
             const ll = { '0': 'WT', '1': 'Fused', '2': 'Fused', '1+2': 'Fused' };
             filterInfo.push(`${mr.additionalTransGene} ${ll[mr.additionalTransLevel] || mr.additionalTransLevel}`);
         }
         if (this._activeOncoprintFilters && this._activeOncoprintFilters.length > 0) {
-            const shown = new Set([mr.hotspotGene, mr.additionalHotspot, mr.additionalTransGene].filter(Boolean));
+            const shown = new Set([mr.hotspotGene, this._stripMutDecoration(mr.additionalHotspot), mr.additionalTransGene].filter(Boolean));
             for (const f of this._activeOncoprintFilters) {
                 if (!shown.has(f.gene)) {
                     filterInfo.push(`${f.gene} ${this._gridStateWord(f.state)}`);
@@ -11006,7 +11278,10 @@ class CorrelationExplorer {
             }
         }
         if (inspectHotspot) {
-            filterInfo.push(`Also ${inspectHotspot}-mutated`);
+            const mk = this._parseMutFilter(inspectHotspot);
+            filterInfo.push(mk.kind === 'lof' ? `Also ${mk.gene} functionally lost`
+                : mk.kind === 'any' ? `Also ${mk.gene}-mutated (any call)`
+                : `Also ${mk.gene}-mutated`);
         }
         if (inspectFusion) {
             filterInfo.push(`Also ${this._stripFusionFilterDecoration(inspectFusion)}-fused`);
@@ -11066,6 +11341,10 @@ class CorrelationExplorer {
                 `${tick1Label} (n=${data.mut1.length})`,
                 `${tick2Label} (n=${data.mut2.length})`
             ];
+        // The popout is shown BEFORE anything is measured: hidden, the plot
+        // div reads a width of 0 and the fallback (600px) let a phone's
+        // title run off the right edge unwrapped.
+        document.getElementById('geneEffectModal').style.display = 'flex';
         // Size the chart container to its width ratio BEFORE measuring, so the
         // y-axis label is positioned against the real plot width (it was computed
         // against a stale width, which pushed the rotated label off-screen on the
@@ -11081,7 +11360,11 @@ class CorrelationExplorer {
         // text within the plot area plus a ~right-margin gap, so it never touches
         // the SVG edge (the absolute clip ceiling would be + right-margin more).
         const geRightMargin = 30;
-        const geContainerW = document.getElementById('geneEffectPlot')?.clientWidth || 600;
+        // On a phone the popout is measured before its stacked layout has
+        // settled and reads wider than the screen, which centred the title
+        // off to the right and let it run past the edge: cap at the viewport.
+        const _geMeasuredW = document.getElementById('geneEffectPlot')?.clientWidth || 600;
+        const geContainerW = _gePhone ? Math.min(_geMeasuredW, window.innerWidth - 20) : _geMeasuredW;
         // On phones the wide y-axis left margin squeezed the heading into many
         // wrapped rows. Wrap to (almost) the full container width instead, and
         // recenter the title on the whole container so the wider text doesn't
@@ -11181,9 +11464,7 @@ class CorrelationExplorer {
             height: Math.round(400 * (this.geChartHeightRatio || 1))
         };
 
-        // Show modal
-        document.getElementById('geneEffectModal').style.display = 'flex';
-        document.getElementById('geneEffectTitle').textContent = `${gene} ${useExpr ? 'mRNA expression' : 'Gene Effect'} by ${hotspotGene} ${L.noun}`;
+        this._setGeneEffectTitle(gene, ` ${useExpr ? 'mRNA expression' : 'Gene Effect'} by ${hotspotGene} ${L.noun}`);
 
         // Populate tissue filter dropdown with ALL lineages (inspect can override analysis filters)
         const tissueFilterEl = document.getElementById('geTissueFilter');
@@ -11838,6 +12119,228 @@ class CorrelationExplorer {
         };
     }
 
+    // The set against itself. Computed here rather than read from the
+    // results, which hold only the pairs above the cutoff, on the exact cell
+    // lines and basis of the run. Capped at sixty genes, the entered ones
+    // first, so an expanded network does not draw an unreadable grid.
+    _correlationMatrixData() {
+        const res = this.results;
+        if (!res || !res.success) return null;
+        const MAX = 60;
+        const usable = (g) => g !== '⚡ Growth Rate' && !String(g).startsWith('📊') && (this.geneIndex.has(g) || res.basis === 'expr');
+        const input = (res.geneList || []).filter(usable);
+        const inputSet = new Set(input);
+        const clusterOf = new Map((res.clusters || []).map(c => [c.gene, c.cluster]));
+        const extra = (res.clusters || []).map(c => c.gene).filter(g => !inputSet.has(g) && usable(g));
+        let genes = input.concat(extra);
+        const truncated = genes.length > MAX;
+        genes = genes.slice(0, MAX);
+        if (genes.length < 2) return null;
+        if (document.getElementById('matrixClusterOrder')?.checked !== false) {
+            const rank = (g) => { const c = clusterOf.get(g); return (typeof c === 'number' && c > 0) ? c : 1e9; };
+            genes = genes.map((g, i) => ({ g, i })).sort((a, b) => rank(a.g) - rank(b.g) || a.i - b.i).map(x => x.g);
+        }
+        const idx = (this._resultsCellLineIndices && this._resultsCellLineIndices.length)
+            ? this._resultsCellLineIndices : Array.from({ length: this.nCellLines }, (_, i) => i);
+        this._runBasis = res.basis || this._runBasis || 'ge';
+        const vec = genes.map(g => {
+            const full = this._analysisVector(g);
+            if (!full) return null;
+            const v = new Float32Array(idx.length);
+            for (let k = 0; k < idx.length; k++) v[k] = full[idx[k]];
+            return v;
+        });
+        const n = genes.length;
+        const r = Array.from({ length: n }, () => new Array(n).fill(null));
+        const nn = Array.from({ length: n }, () => new Array(n).fill(0));
+        for (let a = 0; a < n; a++) {
+            for (let b = a; b < n; b++) {
+                if (!vec[a] || !vec[b]) continue;
+                const st = this.pearsonWithSlope(vec[a], vec[b]);
+                const val = (a === b) ? 1 : (isNaN(st.correlation) ? null : st.correlation);
+                r[a][b] = val; r[b][a] = val;
+                nn[a][b] = st.n; nn[b][a] = st.n;
+            }
+        }
+        return { genes, r, n: nn, truncated, cohortN: idx.length, basis: this._runBasis, clusterOf };
+    }
+
+    // A coloured grid drawn on canvas: row and column labels, a colour scale
+    // under it, values in the cells when asked, a hover tooltip and a click.
+    // Used by the Matrix tab and by the tour. Sized exactly as given, so a
+    // phone scrolls it sideways rather than squeezing it.
+    _drawCorrelationGrid(host, spec) {
+        const phone = window.innerWidth <= 640;
+        const rows = spec.rowLabels, cols = spec.colLabels, nR = rows.length, nC = cols.length;
+        const FONT = 'Arial, Helvetica, sans-serif';
+        const stops = spec.colorscale || [[0, '#2166ac'], [0.5, '#f7f7f7'], [1, '#b2182b']];
+        const hex = (c) => [1, 3, 5].map(k => parseInt(c.slice(k, k + 2), 16));
+        const lerp = (t) => {
+            t = Math.max(0, Math.min(1, t));
+            let a = stops[0], b = stops[stops.length - 1];
+            for (let k = 0; k < stops.length - 1; k++) if (t >= stops[k][0] && t <= stops[k + 1][0]) { a = stops[k]; b = stops[k + 1]; break; }
+            const f = b[0] === a[0] ? 0 : (t - a[0]) / (b[0] - a[0]);
+            const ca = hex(a[1]), cb = hex(b[1]);
+            return ca.map((v, k) => Math.round(v + (cb[k] - v) * f));
+        };
+        const rgb = (c) => `rgb(${c.join(',')})`;
+        const avail = Math.max(240, host.parentElement?.clientWidth || host.clientWidth || 360);
+        const probe = document.createElement('canvas').getContext('2d');
+        const lf = phone ? 10 : 11;
+        probe.font = `${lf}px ${FONT}`;
+        const left = Math.ceil(Math.max.apply(null, rows.map(r => probe.measureText(r).width))) + 12;
+        const showCols = spec.showColLabels !== false;
+        const colLabelW = showCols ? Math.ceil(Math.max.apply(null, cols.map(c => probe.measureText(c).width))) : 0;
+        const top = spec.title ? (spec.sub ? 44 : 30) : 6;
+        const cell = spec.cell || Math.max(phone ? 8 : 10, Math.min(44, Math.floor((avail - left - 24) / nC)));
+        const bottom = (showCols ? Math.ceil(colLabelW * 0.87) + 10 : (spec.xLabel ? 22 : 6)) + 40;
+        const W = Math.max(avail, left + nC * cell + 16), H = top + nR * cell + bottom;
+        host.innerHTML = '';
+        host.style.position = 'relative';
+        host.style.width = W + 'px';
+        const dpr = Math.min(2, window.devicePixelRatio || 1);
+        const c = document.createElement('canvas');
+        c.width = Math.round(W * dpr); c.height = Math.round(H * dpr);
+        c.style.width = W + 'px'; c.style.height = H + 'px'; c.style.display = 'block';
+        host.appendChild(c);
+        const ctx = c.getContext('2d');
+        ctx.scale(dpr, dpr);
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, W, H);
+        if (spec.title) {
+            ctx.fillStyle = '#374151'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+            ctx.font = `bold ${phone ? 12 : 14}px ${FONT}`; ctx.fillText(spec.title, W / 2, 18);
+            if (spec.sub) { ctx.font = `10px ${FONT}`; ctx.fillStyle = '#6b7280'; ctx.fillText(spec.sub, W / 2, 33); }
+        }
+        const zmin = spec.zmin, zmax = spec.zmax;
+        const showValues = spec.showValues && cell >= 20;
+        ctx.font = `${Math.min(11, cell * 0.42)}px ${FONT}`;
+        for (let i = 0; i < nR; i++) {
+            for (let j = 0; j < nC; j++) {
+                const v = spec.z[i][j];
+                const x = left + j * cell, y = top + i * cell;
+                if (v == null || !isFinite(v)) { ctx.fillStyle = '#f3f4f6'; ctx.fillRect(x + 0.5, y + 0.5, cell - 1, cell - 1); continue; }
+                const t = (v - zmin) / (zmax - zmin);
+                const col = lerp(t);
+                ctx.fillStyle = rgb(col); ctx.fillRect(x + 0.5, y + 0.5, cell - 1, cell - 1);
+                if (showValues) {
+                    const lum = (0.299 * col[0] + 0.587 * col[1] + 0.114 * col[2]) / 255;
+                    ctx.fillStyle = lum < 0.55 ? '#ffffff' : '#374151';
+                    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+                    ctx.fillText(v.toFixed(2), x + cell / 2, y + cell / 2);
+                }
+            }
+        }
+        ctx.fillStyle = '#374151'; ctx.font = `${lf}px ${FONT}`;
+        ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+        rows.forEach((r, i) => ctx.fillText(r, left - 6, top + i * cell + cell / 2));
+        const gridBottom = top + nR * cell;
+        if (showCols) {
+            cols.forEach((cl, j) => {
+                ctx.save(); ctx.translate(left + j * cell + cell / 2, gridBottom + 6); ctx.rotate(-Math.PI / 3);
+                ctx.textAlign = 'right'; ctx.textBaseline = 'middle'; ctx.fillText(cl, 0, 0); ctx.restore();
+            });
+        } else if (spec.xLabel) {
+            ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.font = `${phone ? 11 : 12}px ${FONT}`;
+            ctx.fillText(spec.xLabel, left + nC * cell / 2, gridBottom + 6);
+        }
+        // Colour scale under the grid.
+        const by = H - 24, bw = Math.min(180, W - left - 20), bx = left;
+        for (let k = 0; k < bw; k++) { ctx.fillStyle = rgb(lerp(k / bw)); ctx.fillRect(bx + k, by, 1, 10); }
+        ctx.strokeStyle = '#9ca3af'; ctx.lineWidth = 1; ctx.strokeRect(bx + 0.5, by + 0.5, bw, 10);
+        ctx.fillStyle = '#374151'; ctx.font = `10px ${FONT}`; ctx.textBaseline = 'top';
+        ctx.textAlign = 'left'; ctx.fillText(String(zmin), bx, by + 13);
+        ctx.textAlign = 'center'; ctx.fillText(String((zmin + zmax) / 2), bx + bw / 2, by + 13);
+        ctx.textAlign = 'right'; ctx.fillText(String(zmax), bx + bw, by + 13);
+        if (spec.colorbarTitle) { ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(spec.colorbarTitle, bx + bw + 8, by + 5); }
+        // Hover and click, by cell.
+        if (spec.hover || spec.onClick) {
+            const tip = document.createElement('div');
+            tip.style.cssText = 'display:none; position:absolute; z-index:5; background:#fff; border:1px solid #d1d5db; border-radius:4px; padding:4px 8px; font-size:11px; color:#374151; box-shadow:0 2px 8px rgba(0,0,0,0.12); pointer-events:none; white-space:nowrap;';
+            host.appendChild(tip);
+            const cellAt = (ev) => {
+                const r = c.getBoundingClientRect();
+                const x = ev.clientX - r.left, y = ev.clientY - r.top;
+                const j = Math.floor((x - left) / cell), i = Math.floor((y - top) / cell);
+                return (i >= 0 && i < nR && j >= 0 && j < nC) ? { i, j, x, y } : null;
+            };
+            c.style.cursor = spec.onClick ? 'pointer' : 'default';
+            c.addEventListener('mousemove', (ev) => {
+                const hit = cellAt(ev);
+                if (!hit || !spec.hover) { tip.style.display = 'none'; return; }
+                tip.innerHTML = spec.hover(hit.i, hit.j);
+                tip.style.display = 'block';
+                tip.style.left = Math.min(hit.x + 12, W - 160) + 'px';
+                tip.style.top = (hit.y + 14) + 'px';
+            });
+            c.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+            if (spec.onClick) c.addEventListener('click', (ev) => { const hit = cellAt(ev); if (hit) spec.onClick(hit.i, hit.j); });
+        }
+        return c;
+    }
+
+    displayCorrelationMatrix() {
+        const host = document.getElementById('matrixPlot');
+        const note = document.getElementById('matrixNote');
+        if (!host) return;
+        const data = this._correlationMatrixData();
+        if (!data) {
+            host.innerHTML = '<div style="text-align:center; color:var(--gray-500); padding:40px;">Run analysis to see the matrix</div>';
+            host.style.width = '';
+            if (note) note.textContent = '';
+            return;
+        }
+        this._matrixData = data;
+        const n = data.genes.length;
+        const phone = window.innerWidth <= 640;
+        const aboveOnly = document.getElementById('matrixAboveCutoff')?.checked === true;
+        const cutoff = Number(this.results?.cutoff) || 0;
+        const showValues = document.getElementById('matrixShowValues')?.checked !== false && n <= 15;
+        const basisWord = data.basis === 'expr' ? 'mRNA expression' : 'gene effect';
+        if (note) {
+            note.textContent = `${n} genes against each other, Pearson r of ${basisWord} over ${data.cohortN.toLocaleString('en-US')} cell lines`
+                + (aboveOnly ? `, pairs below the cutoff of ${cutoff.toFixed(2)} left blank` : '')
+                + (data.truncated ? `. The network has more genes than fit here: the first sixty are shown, your own genes first.` : '.');
+        }
+        // A cell that did not clear the cutoff is left blank when asked; the
+        // diagonal stays so the rows keep their place.
+        const z = data.r.map((row, i) => row.map((v, j) => (aboveOnly && i !== j && (v == null || Math.abs(v) < cutoff)) ? null : v));
+        const avail = document.getElementById('matrixScroll')?.clientWidth || 600;
+        const cell = phone ? 24 : Math.max(24, Math.min(44, Math.floor((avail - 130) / n)));
+        this._drawCorrelationGrid(host, {
+            rowLabels: data.genes, colLabels: data.genes, z, zmin: -1, zmax: 1,
+            colorscale: [[0, '#2166ac'], [0.5, '#f7f7f7'], [1, '#b2182b']],
+            showValues, cell, colorbarTitle: 'r',
+            hover: (i, j) => i === j ? data.genes[i]
+                : `${data.genes[i]} vs ${data.genes[j]}<br>r = ${data.r[i][j] == null ? 'n/a' : data.r[i][j].toFixed(3)}, n = ${data.n[i][j]}`,
+            onClick: (i, j) => { if (i !== j) this.openInspectByGenes(data.genes[i], data.genes[j]); }
+        });
+    }
+
+    downloadCorrelationMatrixCSV() {
+        const data = this._matrixData || this._correlationMatrixData();
+        if (!data) { this.showCopyNotification?.('Run an analysis first.'); return; }
+        const q = (s) => '"' + String(s).replace(/"/g, '""') + '"';
+        const lines = [[''].concat(data.genes).map(q).join(',')];
+        data.r.forEach((row, i) => lines.push([data.genes[i]].concat(row.map(v => v == null ? '' : v.toFixed(4))).map(q).join(',')));
+        lines.push('');
+        lines.push(q(`Pearson r of ${data.basis === 'expr' ? 'mRNA expression' : 'gene effect'} over ${data.cohortN} cell lines, DepMap ${DEPMAP_VERSION}`));
+        this.downloadFile(lines.join('\n'), csvName('correlation_matrix'), 'text/csv');
+    }
+
+    exportCorrelationMatrixImage() {
+        const canvas = document.querySelector('#matrixPlot canvas');
+        if (!canvas) { this.showCopyNotification?.('Run an analysis first.'); return; }
+        canvas.toBlob((blob) => {
+            if (!blob) { this.showCopyNotification?.('The image could not be made.'); return; }
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = csvName('correlation_matrix').replace(/\.csv$/, '.png');
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 2000);
+        }, 'image/png');
+    }
+
     pearsonWithSlope(x, y) {
         let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0, sumY2 = 0, n = 0;
 
@@ -11965,6 +12468,9 @@ class CorrelationExplorer {
         this.displayCorrelationsTable();
         this.displayClustersTable();
         this.displaySummary();
+        this._matrixDrawnFor = null;
+        const _mp = document.getElementById('matrixPlot');
+        if (_mp && document.getElementById('tab-matrix')?.classList.contains('active')) this.displayCorrelationMatrix();
 
         // A restored figure has its display toggles ticked but nothing has run
         // their handlers, so apply them now that the network exists.
@@ -12042,7 +12548,7 @@ class CorrelationExplorer {
     _armPhoneCollapsibles() {
         if (window.innerWidth > 640 || this._phoneCollapseArmed) return;
         this._phoneCollapseArmed = true;
-        const run = () => this._setupPhoneCollapsibles(document);
+        const run = () => { this._setupPhoneCollapsibles(document); this._phoneifySelectLabels(document); };
         run();
         let pending = null;
         new MutationObserver(() => {
@@ -12065,6 +12571,34 @@ class CorrelationExplorer {
             clearTimeout(pending);
             pending = setTimeout(run, 60);
         }).observe(document.body, { childList: true, subtree: true });
+    }
+
+    // iOS draws a select's menu itself, in its own large font, and cuts
+    // every option at about forty characters. "Oral Cavity Squamous Cell
+    // Carcinoma (n=12)" lost its count and the disease names all ended the
+    // same way. Count first, and the standard SCC abbreviation when the name
+    // is still too long, so what shows is what tells the entries apart. The
+    // option's value is untouched; only what is read on screen changes.
+    _phoneifySelectLabels(root) {
+        if (window.innerWidth > 640) return;
+        const RE = /^(.+?) \(n=(\d[\d,]*)\)$/;
+        const scope = root || document;
+        const selects = scope.tagName === 'SELECT' ? [scope] : scope.querySelectorAll('select');
+        for (const sel of selects) {
+            const hits = [];
+            for (const o of sel.options) {
+                const m = RE.exec(o.textContent.trim());
+                if (m) hits.push({ o, name: m[1], n: m[2] });
+            }
+            // Only lists with a long name are touched, and then every counted
+            // entry in the list, so it reads alike throughout.
+            if (!hits.some(h => h.name.length >= 30)) continue;
+            const abbreviate = hits.some(h => `${h.n} · ${h.name}`.length > 36);
+            for (const h of hits) {
+                const name = abbreviate ? h.name.replace(/Squamous Cell Carcinoma/g, 'SCC') : h.name;
+                h.o.textContent = `${h.n} · ${name}`;
+            }
+        }
     }
 
     _setupPhoneCollapsibles(root, sidebarOnly = false) {
@@ -12838,12 +13372,14 @@ class CorrelationExplorer {
             if (params.nodes.length > 0) {
                 // Node double-clicked - open Gene Effect analysis
                 const nodeId = params.nodes[0];
+                this._closeEnrichrIfFloating();
                 this.openGeneEffectFromNetwork(nodeId);
             } else {
                 // Edge double-clicked - open correlation inspect
                 const edgeId = edgeNear(params);
                 const edge = edgeId != null ? this.networkData.edges.get(edgeId) : null;
                 if (edge) {
+                    this._closeEnrichrIfFloating();
                     this.openInspectByGenes(edge.from, edge.to);
                     this._revealScatterPlot();
                 }
@@ -14109,7 +14645,9 @@ ${this.genesNotFound.join(', ')}
         const paramHotspotGene = document.getElementById('paramHotspotGene')?.value;
         const paramHotspotLevel = document.getElementById('paramHotspotLevel')?.value;
         if (paramHotspotGene) {
-            hotspotFilterText = `\nHotspot Mutation Filter: ${paramHotspotGene} (${paramHotspotLevel || 'all'})`;
+            const mk = this._parseMutFilter(paramHotspotGene);
+            const kindWord = this._mutKindWord(mk.kind);
+            hotspotFilterText = `\nMutation Filter: ${mk.gene}${kindWord ? `, ${kindWord}` : ''} (${paramHotspotLevel || 'all'})`;
         }
         const paramTranslocGene = document.getElementById('paramTranslocationGene')?.value;
         const paramTranslocLevel = document.getElementById('paramTranslocationLevel')?.value;
@@ -14376,7 +14914,7 @@ Results:
         const hotspotLevel = document.getElementById('paramHotspotLevel')?.value;
         if (hotspotGene) {
             const levelLabel = hotspotLevel === '1+2' ? 'mut' : hotspotLevel === '0' ? 'WT' : `level ${hotspotLevel}`;
-            parts.push(`${hotspotGene} ${levelLabel}`);
+            parts.push(this._mutFilterPhrase(hotspotGene, hotspotLevel, levelLabel));
         }
         const translocGene = document.getElementById('paramTranslocationGene')?.value;
         const translocLevel = document.getElementById('paramTranslocationLevel')?.value;
@@ -14387,7 +14925,7 @@ Results:
         // Include oncoprint multi-gene filters
         if (this._activeOncoprintFilters && this._activeOncoprintFilters.length > 0) {
             const shown = new Set();
-            if (hotspotGene) shown.add(hotspotGene);
+            if (hotspotGene) shown.add(this._stripMutDecoration(hotspotGene));
             if (translocGene) shown.add(translocGene);
             for (const f of this._activeOncoprintFilters) {
                 if (!shown.has(f.gene)) {
@@ -15188,8 +15726,11 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
                 const weight = lbl.bold ? ' font-weight: bold;' : '';
                 const italic = lbl.italic ? ' font-style: italic;' : '';
                 const labelLines = lbl.text.split('\n');
+                // The label hangs from the node's lower edge, as vis draws it
+                // on screen: the baseline is one text ascent below the edge,
+                // so a big font over a small node never climbs into the circle.
                 labelLines.forEach((line, i) => {
-                    const yOffset = pos.y + nodeRadius + 14 * scale + (i * nodeFontSize);
+                    const yOffset = pos.y + nodeRadius + 3 * scale + nodeFontSize * 0.8 + (i * nodeFontSize * 1.15);
                     svg += `  <text x="${pos.x}" y="${yOffset}" text-anchor="middle" style="font-family: ${node.font?.face || 'Arial'}; font-size: ${nodeFontSize}px;${weight}${italic} fill: ${node.font?.color || '#333'};">${this.escapeXml(line)}</text>\n`;
                 });
             }
@@ -17516,8 +18057,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 const weight = lbl.bold ? ' font-weight: bold;' : '';
                 const italic = lbl.italic ? ' font-style: italic;' : '';
                 const labelLines = lbl.text.split('\n');
+                // The label hangs from the node's lower edge, as vis draws it
+                // on screen: the baseline is one text ascent below the edge,
+                // so a big font over a small node never climbs into the circle.
                 labelLines.forEach((line, i) => {
-                    const yOffset = pos.y + nodeRadius + 14 * scale + (i * nodeFontSize);
+                    const yOffset = pos.y + nodeRadius + 3 * scale + nodeFontSize * 0.8 + (i * nodeFontSize * 1.15);
                     svg += `  <text x="${pos.x}" y="${yOffset}" text-anchor="middle" style="font-family: ${node.font?.face || 'Arial'}; font-size: ${nodeFontSize}px;${weight}${italic} fill: ${node.font?.color || '#333'};">${this.escapeXml(line)}</text>\n`;
                 });
             }
@@ -17727,8 +18271,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             }
             c = { gene1, gene2, correlation: null };
         }
+        // Arriving from the network (an edge, the matrix, the pairs table)
+        // always starts from a clean scatter: a filter set on a previous
+        // visit does not linger, and the analysis's own cohort filters are
+        // then put on, so the plot shows the cell lines the network was run on.
+        this._resetInspectSettings();
         this.openInspect(c);
-        // Apply current network filters to the scatter inspect
         this._applyNetworkFiltersToInspect();
     }
 
@@ -17752,24 +18300,37 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             this._prefillOncotreeSelect('scatterOncotreeFilter', lineage,
                 document.getElementById('scatterSubtypeFilter')?.value, paramOnc);
         }
-        // Apply param hotspot as scatter hotspot overlay
+        // The analysis's alteration filters become the scatter's own filters,
+        // so the cohort is the one the network was run on. Setting them only
+        // as a colour overlay, as before, left every cell line on the plot.
+        // A value the scatter's control cannot hold (a select without that
+        // option) is left unset rather than half-applied.
+        const carry = (fromId, toId, levelFrom, levelTo, defLevel) => {
+            const gene = document.getElementById(fromId)?.value || '';
+            const lvl = document.getElementById(levelFrom)?.value || defLevel;
+            if (!gene || lvl === 'all') return false;
+            const to = document.getElementById(toId);
+            if (!to) return false;
+            to.value = gene;
+            if (to.value !== gene) { to.value = ''; return false; }
+            const lt = document.getElementById(levelTo);
+            if (lt) { lt.value = lvl; if (lt.value !== lvl) lt.value = defLevel; }
+            return true;
+        };
+        const hotOn = carry('paramHotspotGene', 'mutationFilterGene', 'paramHotspotLevel', 'mutationFilterLevel', '1+2');
+        // Colouring by the same gene still says which copies are hit among
+        // the mutated lines; among wild-type lines it would say nothing.
         const paramHotspot = document.getElementById('paramHotspotGene')?.value;
         const paramLevel = document.getElementById('paramHotspotLevel')?.value;
-        if (paramHotspot && paramLevel !== 'all') {
+        if (hotOn && paramLevel !== '0') {
             const hotspotSelect = document.getElementById('hotspotGene');
             const hotspotMode = document.getElementById('hotspotMode');
             if (hotspotSelect) hotspotSelect.value = paramHotspot;
             if (hotspotMode) hotspotMode.value = 'color';
         }
-        // Apply param translocation as scatter translocation overlay
-        const paramTrans = document.getElementById('paramTranslocationGene')?.value;
-        const paramTransLevel = document.getElementById('paramTranslocationLevel')?.value;
-        if (paramTrans && paramTransLevel !== 'all') {
-            const transSelect = document.getElementById('translocationGene');
-            const transMode = document.getElementById('translocationMode');
-            if (transSelect) transSelect.value = paramTrans;
-            if (transMode) transMode.value = 'color';
-        }
+        carry('paramTranslocationGene', 'translocationFilterGene', 'paramTranslocationLevel', 'translocationFilterLevel', '1+2');
+        carry('paramCnFilter', 'scatterCnFilter', 'paramCnLevel', 'scatterCnLevel', 'altered');
+        this._renderFilterChips?.('scatter');
         // Re-render with filters
         setTimeout(() => this.updateInspectPlot(), 100);
     }
@@ -17864,46 +18425,55 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
 
     _computeInspectFilteredIdsFromDOM() {
-        // Mirror the filter stack in updateInspectPlot, but applied from
-        // scratch to all cell lines. Used when the inspect plot hasn't
-        // been built yet but the user wants Find correlates to honour the
-        // tissue / mutation / fusion / custom-CL filters they set.
+        // The scatter's own filter chain, run over every cell line, so Find
+        // correlates scores exactly the cohort the plot would show. A separate
+        // copy of the rules drifted (fusion pairs, the CN wild-type switch,
+        // the default mutation level, the gate filter) and the list then
+        // disagreed with the plot it feeds.
         const cells = this.metadata?.cellLines || [];
+        const items = cells.map(cl => ({ cellLineId: cl, lineage: this.cellLineMetadata?.lineage?.[cl] }));
+        return this._applyScatterFilters(items).map(d => d.cellLineId);
+    }
+
+    // The cohort filters active on the scatter, as short phrases. One list
+    // serves the plot title, the chip strip's summary and Find correlates,
+    // so they can never describe different cohorts.
+    _scatterFilterParts() {
+        const parts = [];
         const cancerFilter = document.getElementById('scatterCancerFilter')?.value || '';
         const subtypeFilter = document.getElementById('scatterSubtypeFilter')?.value || '';
+        if (cancerFilter) parts.push(`Cancer: ${cancerFilter}${subtypeFilter ? ` / ${subtypeFilter}` : ''}`);
+        const onc = document.getElementById('scatterOncotreeFilter');
+        if (onc?.value) parts.push(`Disease: ${onc.selectedOptions?.[0]?.textContent?.trim() || onc.value}`);
         const mutFilterGene = document.getElementById('mutationFilterGene')?.value || '';
-        const mutFilterLevel = document.getElementById('mutationFilterLevel')?.value || 'all';
-        const transFilterGene = document.getElementById('translocationFilterGene')?.value || '';
-        const transFilterLevel = document.getElementById('translocationFilterLevel')?.value || 'all';
-        const mutData = mutFilterGene ? (this.mutations?.geneData?.[mutFilterGene]?.mutations || this.damagingMutations?.geneData?.[mutFilterGene]?.mutations || {}) : null;
-        const transData = transFilterGene ? (this.translocations?.geneData?.[transFilterGene]?.translocations || {}) : null;
-        const out = [];
-        const cnFilterVal = document.getElementById('scatterCnFilter')?.value || '';
-        const oncActive = !!document.getElementById('scatterOncotreeFilter')?.value;
-        for (const cl of cells) {
-            if (cancerFilter && this.cellLineMetadata?.lineage?.[cl] !== cancerFilter) continue;
-            if (subtypeFilter && this.cellLineMetadata?.primaryDisease?.[cl] !== subtypeFilter) continue;
-            if (oncActive && !this._passesOncotree(cl, 'scatterOncotreeFilter')) continue;
-            if (mutData && mutFilterLevel !== 'all') {
-                const ml = mutData[cl] || 0;
-                if (mutFilterLevel === '0' && ml !== 0) continue;
-                if (mutFilterLevel === '1' && ml !== 1) continue;
-                if (mutFilterLevel === '2' && ml < 2) continue;
-                if (mutFilterLevel === '1+2' && ml < 1) continue;
-            }
-            if (transData && transFilterLevel !== 'all') {
-                const fl = transData[cl] || 0;
-                if (transFilterLevel === '0' && fl !== 0) continue;
-                if (transFilterLevel === '1+2' && fl < 1) continue;
-            }
-            if (cnFilterVal && !this._cellLinePassesCnFilter(cl, cnFilterVal)) continue;
-            // Grid picks: the shared set and the scatter's own, same as the plot.
-            if (this._activeOncoprintFilters?.length && !this._cellLinePassesOncoprintFilters(cl)) continue;
-            if (this._scatterGridActive?.length && !this._cellLinePassesOncoprintFilters(cl, this._scatterGridActive)) continue;
-            if (this._customCellLineFilter && !this._customCellLineFilter.has(cl)) continue;
-            out.push(cl);
+        if (mutFilterGene) {
+            const lvl = document.getElementById('mutationFilterLevel')?.value || '1+2';
+            const mk = this._parseMutFilter(mutFilterGene);
+            const levelText = this._mutLevelWord(mk.kind, lvl)
+                || (lvl === '0' ? 'hotspot WT' : lvl === '1' ? 'hotspot mut (1 copy)' : lvl === '2' ? 'hotspot mut (2 copies)' : 'hotspot mut (1+2)');
+            parts.push(`${mk.gene}: ${levelText}`);
         }
-        return out;
+        const transFilterGene = document.getElementById('translocationFilterGene')?.value || '';
+        if (transFilterGene) {
+            const lvl = document.getElementById('translocationFilterLevel')?.value || '1+2';
+            parts.push(`${this._stripFusionFilterDecoration(transFilterGene)}: ${lvl === '0' ? 'no fusion' : 'fused'}`);
+        }
+        const cnFilterVal = document.getElementById('scatterCnFilter')?.value || '';
+        if (cnFilterVal) {
+            const cnLvl = document.getElementById('scatterCnLevel')?.value || 'altered';
+            const cnLabel = this._stripCnFilterDecoration(cnFilterVal).replace(/_(amp|del)$/, (_, k) => k === 'amp' ? ' amp' : ' deep-del');
+            parts.push(`${cnLabel}${cnLvl === 'wt' ? ' (WT)' : ''}`);
+        }
+        // A grid pick inherited from the analysis usually arrives together
+        // with the same gene in the scatter's own hotspot / fusion / CN
+        // selector, so a gene already named above is not named twice.
+        const named = new Set([this._stripMutDecoration(mutFilterGene), this._stripFusionFilterDecoration(transFilterGene), this._stripCnFilterDecoration(cnFilterVal).replace(/_(amp|del)$/, '')].filter(Boolean).map(g => g.toUpperCase()));
+        const gridWord = (f) => `${f.gene} ${this._gridStateWord(f.state)}`;
+        (this._activeOncoprintFilters || []).forEach(f => { if (!named.has(String(f.gene).toUpperCase())) { parts.push(gridWord(f)); named.add(String(f.gene).toUpperCase()); } });
+        (this._scatterGridActive || []).forEach(f => { if (!named.has(String(f.gene).toUpperCase())) { parts.push(gridWord(f)); named.add(String(f.gene).toUpperCase()); } });
+        if (this._gateFilter) parts.push(`Gate ${this._gateFilter.gate} (${this._gateFilter.n} cell lines)`);
+        else if (this._customCellLineFilter?.size) parts.push(`Pasted list (${this._customCellLineFilter.size} cell lines)`);
+        return parts;
     }
 
     _prepopulateInspectFiltersStandalone() {
@@ -17947,13 +18517,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const hotspotSelect = document.getElementById('hotspotGene');
             if (hotspotSelect) {
                 const prevHot = hotspotSelect.value;
-                hotspotSelect.innerHTML = '<option value="">Select gene...</option>' +
-                    this.mutations.genes.map(g => {
-                        const mutData = this.mutations.geneData?.[g]?.mutations || {};
-                        let count = 0;
-                        for (const cl of cells) if (mutData[cl] > 0) count++;
-                        return `<option value="${g}">${g} (${count} mut)</option>`;
-                    }).join('');
+                hotspotSelect.innerHTML = '<option value="">Select gene...</option>'
+                    + this._mutOverlayOptionsHtml(cells);
                 if (prevHot) hotspotSelect.value = prevHot;
             }
             document.getElementById('mutationBox').style.display = 'block';
@@ -18204,21 +18769,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const keptHotspot = hotspotSelect?.value || '';
 
         if (this.mutations?.genes?.length > 0) {
-            hotspotSelect.innerHTML = '<option value="">Select gene...</option>';
-            mutFilterGeneSelect.innerHTML = '<option value="">No filter</option>';
-            this.mutations.genes.forEach(g => {
-                const mutData = this.mutations.geneData?.[g]?.mutations || {};
-                let count = 0;
-                cellLinesInPlot.forEach(cl => { if (mutData[cl] > 0) count++; });
-                hotspotSelect.innerHTML += `<option value="${g}">${g} (${count} mut)</option>`;
-                mutFilterGeneSelect.innerHTML += `<option value="${g}">${g} (${count} mut)</option>`;
-            });
+            const overlayOpts = this._mutOverlayOptionsHtml(cellLinesInPlot);
+            hotspotSelect.innerHTML = '<option value="">Select gene...</option>' + overlayOpts;
+            mutFilterGeneSelect.innerHTML = '<option value="">No filter</option>' + overlayOpts;
             // Pre-select the hotspot gene from parameters, but again only when
             // arriving fresh: on an in-place Update the user's own choice, or
             // their choice to have none, wins.
-            if (keep && keptHotspot && this.mutations.genes.includes(keptHotspot)) {
+            const overlayHas = (v) => !!v && [...hotspotSelect.options].some(o => o.value === v);
+            if (keep && overlayHas(keptHotspot)) {
                 hotspotSelect.value = keptHotspot;
-            } else if (!keep && paramHotspotGene && this.mutations.genes.includes(paramHotspotGene)) {
+            } else if (!keep && overlayHas(paramHotspotGene)) {
                 hotspotSelect.value = paramHotspotGene;
             }
             document.getElementById('mutationBox').style.display = 'block';
@@ -18231,34 +18791,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Populate translocation/fusion selectors (datalists, sorted by count desc)
         const transGeneInput = document.getElementById('translocationGene');
         const transFilterGeneInput = document.getElementById('translocationFilterGene');
-        const transGeneDatalist = document.getElementById('translocationGeneList');
-        const transFilterGeneDatalist = document.getElementById('translocationFilterGeneList');
 
         if (this.translocations?.genes?.length > 0) {
             transGeneInput.value = '';
             transFilterGeneInput.value = '';
-            const geneCounts = [];
-            for (const g of this.translocations.genes) {
-                const transData = this.translocations.geneData?.[g]?.translocations || {};
-                let count = 0;
-                for (const cl of cellLinesInPlot) {
-                    if (transData[cl] && transData[cl] > 0) count++;
-                }
-                if (count > 0) geneCounts.push({ gene: g, count });
-            }
-            geneCounts.sort((a, b) => {
-                const aPri = CorrelationExplorer.PRIORITY_FUSION_GENES.has(a.gene) ? 1 : 0;
-                const bPri = CorrelationExplorer.PRIORITY_FUSION_GENES.has(b.gene) ? 1 : 0;
-                if (aPri !== bPri) return bPri - aPri;
-                return b.count - a.count;
-            });
-
-            let transHtml = '';
-            geneCounts.forEach(({ gene, count }) => {
-                transHtml += `<option value="${gene}">${gene} (${count} fused)</option>`;
-            });
-            transGeneDatalist.innerHTML = transHtml;
-            transFilterGeneDatalist.innerHTML = transHtml;
+            this._fillFusionDatalists(cellLinesInPlot instanceof Set ? cellLinesInPlot : new Set(cellLinesInPlot));
             document.getElementById('translocationBox').style.display = 'block';
             document.getElementById('translocationFilterBox').style.display = 'block';
             document.getElementById('compareAllTranslocationsBtn').style.display = '';
@@ -18308,6 +18845,17 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         document.getElementById('downloadTissuePNG').style.display = 'none';
         { const _c = document.getElementById('copyTissueChart'); if (_c) _c.style.display = 'none'; }
         document.getElementById('downloadTissueCSV').style.display = 'none';
+
+        // A caller may ask for the popout to open with an overlay or a
+        // hotspot filter already set (the tour does). Applied here, after
+        // the selects above were rebuilt, so the first draw already has it.
+        const pre = this._inspectPreset;
+        this._inspectPreset = null;
+        if (pre) {
+            const set = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
+            if (pre.hotspotGene) { set('hotspotGene', pre.hotspotGene); set('hotspotMode', pre.hotspotMode || 'color'); }
+            if (pre.filterGene) { set('mutationFilterGene', pre.filterGene); set('mutationFilterLevel', pre.filterLevel || '1+2'); }
+        }
 
         this.updateInspectPlot();
     }
@@ -18485,7 +19033,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const chips = [];
         const val = (id) => document.getElementById(id)?.value || '';
         const fire = (id) => { const e = document.getElementById(id); if (e) e.dispatchEvent(new Event('change', { bubbles: true })); };
-        const add = (label, clear, title) => chips.push({ label, clear, title });
+        // `menu` names a filter kind whose chip opens the shared level menu
+        // (mutated / one copy / wild-type ...) the other panels' chips have,
+        // so the state can be changed here without hunting for the selector.
+        const add = (label, clear, title, menu) => chips.push({ label, clear, title, menu });
 
         // Tissue, subtype and disease are one nested choice, not three. Three
         // chips reading "Lung", "Non-Small Cell Lung Cancer" and "Lung
@@ -18505,14 +19056,21 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             add(label, () => this._clearLocationFilters(), `Tissue split: ${label}`);
         }
         const hs = val('paramHotspotGene');
-        if (hs) add(`${hs} ${val('paramHotspotLevel') === '0' ? 'WT' : 'mutated'}`,
-            () => { const e = document.getElementById('paramHotspotGene'); e.value = ''; fire('paramHotspotGene'); }, 'Mutation');
+        if (hs) {
+            const lvl = val('paramHotspotLevel') || '1+2';
+            const word = { '0': 'WT', '1': 'mutated (one copy)', '2': 'mutated (both copies)' }[lvl] || 'mutated';
+            add(this._mutFilterPhrase(hs, lvl, word),
+                () => { const e = document.getElementById('paramHotspotGene'); e.value = ''; fire('paramHotspotGene'); },
+                'Mutation. Click to change which cell lines are kept, or to remove this filter', 'hotspot');
+        }
         const tg = val('paramTranslocationGene');
-        if (tg) add(`${tg} ${val('paramTranslocationLevel') === '0' ? 'not fused' : 'fused'}`,
-            () => { const e = document.getElementById('paramTranslocationGene'); e.value = ''; fire('paramTranslocationGene'); }, 'Fusion');
+        if (tg) add(`${this._stripFusionFilterDecoration(tg)} ${val('paramTranslocationLevel') === '0' ? 'not fused' : 'fused'}`,
+            () => { const e = document.getElementById('paramTranslocationGene'); e.value = ''; fire('paramTranslocationGene'); },
+            'Fusion. Click to change which cell lines are kept, or to remove this filter', 'fusion');
         const cn = val('paramCnFilter');
-        if (cn) add(`${cn} ${val('paramCnLevel') || 'altered'}`,
-            () => { const e = document.getElementById('paramCnFilter'); e.value = ''; fire('paramCnFilter'); }, 'Copy number');
+        if (cn) add(`${this._stripCnFilterDecoration(cn).replace(/_(amp|del)$/, (_, k) => k === 'amp' ? ' amp' : ' del')} ${(val('paramCnLevel') || 'altered') === 'wt' ? 'absent' : 'present'}`,
+            () => { const e = document.getElementById('paramCnFilter'); e.value = ''; fire('paramCnFilter'); },
+            'Copy number. Click to change which cell lines are kept, or to remove this filter', 'cn');
         if (this.excludedTissues?.size) add(`${this.excludedTissues.size} tissue${this.excludedTissues.size > 1 ? 's' : ''} excluded`,
             () => { this.excludedTissues = new Set(); document.querySelectorAll('#tissueExcludeList input[type="checkbox"]').forEach(cb => { cb.checked = false; }); this._markMutationRunStale?.(); }, 'Excluded');
         // Picks made from an alteration grid, when they apply to the analysis.
@@ -18536,7 +19094,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             + `<button type="button" id="activeFiltersClearAll" style="border:none; background:none; padding:0; font-size:10px; color:var(--green-700); text-decoration:underline; cursor:pointer;">Remove all</button></div>`
             + `<div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;">`
             + chips.map((c, i) => `<span title="${this.esc(c.title)}" style="display:inline-flex; align-items:center; gap:5px; font-size:11px; background:#f0fdf4; border:1px solid #86c26f; color:#4c782e; border-radius:12px; padding:2px 4px 2px 10px;">`
-                + `${this.esc(c.label)}`
+                + (c.menu
+                    ? `<span data-chip-menu="${c.menu}" style="cursor:pointer;">${this.esc(c.label)} &#9662;</span>`
+                    : `${this.esc(c.label)}`)
                 + `<button type="button" data-chip="${i}" title="Remove" style="border:none; background:#dcfce7; color:#4c782e; border-radius:50%; width:16px; height:16px; line-height:1; cursor:pointer; font-size:12px; padding:0;">&times;</button>`
                 + `</span>`).join('')
             + `</div>`;
@@ -18545,6 +19105,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 const c = chips[parseInt(b.dataset.chip, 10)];
                 if (c?.clear) { c.clear(); this._renderAnalysisSubsetChip(); }
             });
+        });
+        // The same level menu the chips in every other panel open; its
+        // "after" step re-renders these chips through the params context.
+        box.querySelectorAll('[data-chip-menu]').forEach(el => {
+            el.addEventListener('click', () => this._showFilterChipMenu('params', el.dataset.chipMenu, el));
         });
         box.querySelector('#activeFiltersClearAll')?.addEventListener('click', () => {
             chips.forEach(c => { try { c.clear(); } catch (e) {} });
@@ -18845,8 +19410,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // filters (default level = mutated 1+2); clear the gene to turn it off.
         const mutFilterGene = document.getElementById('mutationFilterGene')?.value || '';
         const mutFilterLevel = document.getElementById('mutationFilterLevel')?.value || '1+2';
-        if (mutFilterGene && (this.mutations?.geneData?.[mutFilterGene] || this.damagingMutations?.geneData?.[mutFilterGene])) {
-            const filterMutations = (this.mutations?.geneData?.[mutFilterGene] || this.damagingMutations?.geneData?.[mutFilterGene])?.mutations;
+        const _scatterFilterCalls = this._mutCalls(mutFilterGene);
+        if (mutFilterGene && _scatterFilterCalls) {
+            const filterMutations = _scatterFilterCalls;
             const lvl = mutFilterLevel || '1+2';
             filteredData = filteredData.filter(d => {
                 const mutLevel = filterMutations[d.cellLineId] || 0;
@@ -18937,7 +19503,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         // Get mutation info for overlay (separate gene, hotspot or damaging)
         let mutationMap = new Map();
-        const overlayMutSource = hotspotGene && (this.mutations?.geneData?.[hotspotGene] || this.damagingMutations?.geneData?.[hotspotGene]);
+        const overlayMutSource = hotspotGene && this._mutSource(hotspotGene);
         if (overlayMutSource) {
             Object.entries(overlayMutSource.mutations).forEach(([cellLine, mutLevel]) => {
                 mutationMap.set(cellLine, mutLevel);
@@ -18967,34 +19533,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             translocationPartners: translocationPartnersMap.get(d.cellLineId) || []
         }));
 
-        // Build filter description for title
-        let filterParts = [];
-        if (cancerFilter) {
-            let cancerText = cancerFilter;
-            if (subtypeFilter) cancerText += ` / ${subtypeFilter}`;
-            filterParts.push(`Cancer: ${cancerText}`);
-        }
-        if (mutFilterGene) {
-            const lvl = mutFilterLevel || '1+2';
-            const levelText = lvl === '0' ? 'hotspot WT' : lvl === '1' ? 'hotspot mut (1 copy)' : lvl === '2' ? 'hotspot mut (2 copies)' : 'hotspot mut (1+2)';
-            filterParts.push(`${mutFilterGene}: ${levelText}`);
-        }
-        if (transFilterGene) {
-            const lvl = transFilterLevel || '1+2';
-            filterParts.push(`${this._stripFusionFilterDecoration(transFilterGene)}: ${lvl === '0' ? 'no fusion' : 'fused'}`);
-        }
-        const cnFilterVal = document.getElementById('scatterCnFilter')?.value || '';
-        if (cnFilterVal) {
-            const cnLvl = document.getElementById('scatterCnLevel')?.value || 'altered';
-            const cnLabel = this._stripCnFilterDecoration(cnFilterVal).replace(/_(amp|del)$/, (_, k) => k === 'amp' ? ' amp' : ' deep-del');
-            filterParts.push(`${cnLabel}${cnLvl === 'wt' ? ' (WT)' : ''}`);
-        }
-        // The scatter's own grid picks are cohort filters too, so the title
-        // names them alongside the rest.
-        (this._scatterGridActive || []).forEach(f => filterParts.push(`${f.gene} ${this._gridStateWord(f.state)}`));
-        // A gate used as a filter is a cohort filter like the rest, so the
-        // line above the plot names it too.
-        if (this._gateFilter) filterParts.push(`Gate ${this._gateFilter.gate} (${this._gateFilter.n} cell lines)`);
+        const filterParts = this._scatterFilterParts();
         const filterDesc = filterParts.length > 0 ? filterParts.join(' | ') : '';
 
         // Show/hide plot and table based on mode
@@ -19062,46 +19601,50 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                        this.getInputNum('scatterYmax')];
 
         if (hotspotMode === 'color' && hotspotGene) {
-            // Color by mutation (0/1/2) mode with separate traces for legend
+            // Color by mutation level, one trace per level so the legend reads
+            // as a key. The words follow the pick's kind (hotspot copies /
+            // any call / functional loss).
+            const ow = this._mutOverlayWords(hotspotGene);
             const pctOf = (k) => filteredData.length > 0 ? (k / filteredData.length * 100).toFixed(1) : '0.0';
             const wtPct = pctOf(wt.length);
             const mut1Pct = pctOf(mut1.length);
             const mut2Pct = pctOf(mut2.length);
 
-            // WT trace (gray)
+            // Reference trace (gray)
             traces.push({
                 x: wt.map(d => d.x),
                 y: wt.map(d => d.y),
                 mode: 'markers',
                 type: 'scatter',
-                text: wt.map(d => `${d.cellLineName}<br>${d.lineage}<br>WT`),
+                text: wt.map(d => `${d.cellLineName}<br>${d.lineage}<br>${ow.hover[0]}`),
                 hovertemplate: '%{text}<br>x: %{x:.3f}<br>y: %{y:.3f}<extra></extra>',
                 marker: { color: '#9ca3af', size: 10, opacity: 0.6 },
-                name: `WT (n=${wt.length}, ${wtPct}%)`
+                name: `${ow.legend[0]} (n=${wt.length}, ${wtPct}%)`
             });
 
-            // 1 mut trace (blue)
+            // One-copy / carrier trace (blue)
             traces.push({
                 x: mut1.map(d => d.x),
                 y: mut1.map(d => d.y),
                 mode: 'markers',
                 type: 'scatter',
-                text: mut1.map(d => `${d.cellLineName}<br>${d.lineage}<br>1 mutation`),
+                text: mut1.map(d => `${d.cellLineName}<br>${d.lineage}<br>${ow.hover[1]}`),
                 hovertemplate: '%{text}<br>x: %{x:.3f}<br>y: %{y:.3f}<extra></extra>',
                 marker: { color: '#3b82f6', size: 10, opacity: 0.7 },
-                name: `1 mut (n=${mut1.length}, ${mut1Pct}%)`
+                name: `${ow.legend[1]} (n=${mut1.length}, ${mut1Pct}%)`
             });
 
-            // 2 mut trace (red)
-            traces.push({
+            // Both-copies trace (red). Functional loss has no second level, so
+            // it gets two legend entries rather than an empty third.
+            if (ow.hasTwo) traces.push({
                 x: mut2.map(d => d.x),
                 y: mut2.map(d => d.y),
                 mode: 'markers',
                 type: 'scatter',
-                text: mut2.map(d => `${d.cellLineName}<br>${d.lineage}<br>2 mutations`),
+                text: mut2.map(d => `${d.cellLineName}<br>${d.lineage}<br>${ow.hover[2]}`),
                 hovertemplate: '%{text}<br>x: %{x:.3f}<br>y: %{y:.3f}<extra></extra>',
                 marker: { color: '#dc2626', size: 10, opacity: 0.8 },
-                name: `2 mut (n=${mut2.length}, ${mut2Pct}%)`
+                name: `${ow.legend[2]} (n=${mut2.length}, ${mut2Pct}%)`
             });
         } else if (transOverlayMode === 'color' && transOverlayGene) {
             // Color by translocation/fusion level (purple tones)
@@ -19397,7 +19940,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             titleLines.push(`<span style="font-size:${subSize}px;color:#666;">${filterDesc}</span>`);
         }
         titleLines.push(`<span style="font-size:${subSize}px;">n=${filteredData.length}, r=${this.formatNum(allStats.correlation)}, ${this.formatPClause(allStats.pValue)}, slope=${this.formatNum(allStats.slope)}</span>`);
-        titleLines.push(`<span style="font-size:${subSize}px;">mean (X: ${meanX.toFixed(2)}, Y: ${meanY.toFixed(2)}) median (X: ${medianX.toFixed(2)}, Y: ${medianY.toFixed(2)})</span>`);
+        // The mean/median line is wider than a phone screen and was clipped
+        // mid-number, so it breaks before "median" when it will not fit.
+        const _mmSegs = [`mean (X: ${meanX.toFixed(2)}, Y: ${meanY.toFixed(2)})`, `median (X: ${medianX.toFixed(2)}, Y: ${medianY.toFixed(2)})`];
+        // 0.62 em per character: the phone's real glyph width, measured; the
+        // 0.55 used elsewhere let a line that did not fit call itself fitting.
+        const _mmBrk = _mmSegs.join(' ').length * subSize * 0.62 > _plotW ? '<br>' : ' ';
+        titleLines.push(`<span style="font-size:${subSize}px;">${_mmSegs.join(_mmBrk)}</span>`);
         if (this.currentInspect?.sparseNote) {
             // The note is a full sentence and easily wider than the canvas,
             // which clips it at both ends. Wrap it on words to the plot width
@@ -19421,8 +19970,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Plotly does not wrap, so it was being cut off at the plot edge. Break
         // it across lines when it will not fit the chosen width.
         const _wrapStatLine = (segments, sep = ' | ') => {
-            const perChar = subSize * 0.55;
-            const budget = Math.max(240, (parseInt(document.getElementById('plotWidth')?.value, 10) || 500) * 0.95);
+            const perChar = subSize * (_scPhone ? 0.62 : 0.55);
+            const budget = _scPhone ? _plotW : Math.max(240, (parseInt(document.getElementById('plotWidth')?.value, 10) || 500) * 0.95);
             const out = [];
             let line = '';
             for (const seg of segments) {
@@ -19434,11 +19983,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             return out;
         };
         if (hotspotMode === 'color' && hotspotGene) {
+            const ow = this._mutOverlayWords(hotspotGene);
             const segs = [
-                `<b>${hotspotGene}:</b> WT n=${wt.length} r=${this.formatNum(wtStats.correlation)}`,
-                `1mut n=${mut1.length} r=${this.formatNum(mut1Stats.correlation)}`,
-                `2mut n=${mut2.length} r=${this.formatNum(mut2Stats.correlation)}`,
+                `<b>${ow.gene}${ow.kind === 'hotspot' ? '' : ` (${this._mutKindWord(ow.kind)})`}:</b> ${ow.legend[0]} n=${wt.length} r=${this.formatNum(wtStats.correlation)}`,
+                `${ow.legend[1]} n=${mut1.length} r=${this.formatNum(mut1Stats.correlation)}`,
             ];
+            if (ow.hasTwo) segs.push(`${ow.legend[2]} n=${mut2.length} r=${this.formatNum(mut2Stats.correlation)}`);
             for (const ln of _wrapStatLine(segs)) {
                 titleLines.push(`<span style="font-size:${subSize}px;">${ln}</span>`);
             }
@@ -19492,38 +20042,21 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // exist gave a nonsense offset, which is what put the statistics lines
         // through the heading and into the chart.
         const _titleRows = _fitsOneLine ? 1 : 2;
-        const _plotPx = Math.max(160, parseInt(document.getElementById('plotHeight')?.value, 10)
-            || document.getElementById('scatterPlot')?.clientHeight || 400);
         const _subSizePx = Math.round(subSize * 0.85);
         // Measured from the top of the plot upwards, in pixels, then converted.
         // Both blocks are anchored by their bottom edge, so the reserve above the
         // plot has to cover the whole stack: the subtitle, the gap, and the full
         // height of the heading. Leaving out that last part is what clipped the
         // top line of a wrapped heading.
-        const _subBlockPx = _subLines.length * _subSizePx * 1.35;
+        // Rows, not entries: the mean/median entry breaks into two on a phone.
+        const _subRows = _subLines.reduce((n, l) => n + 1 + (l.match(/<br>/g) || []).length, 0);
+        const _subBlockPx = _subRows * _subSizePx * 1.35;
         const _titleBlockPx = _titleRows * titleFontSize * 1.3;
         const _subBottomPx = 8;
         const _titleBottomPx = _subBottomPx + _subBlockPx + 10;
-        const _baseY = 1 + _subBottomPx / _plotPx;
-        titleAnnotation.y = this._userTitlePosition ? this._userTitlePosition.y
-            : 1 + _titleBottomPx / _plotPx;
-        const subtitleAnnotation = _subLines.length ? {
-            x: titleAnnotation.x,
-            y: _baseY,
-            xref: 'paper', yref: 'paper',
-            xanchor: titleAnnotation.xanchor, yanchor: 'bottom',
-            text: _subLines.join('<br>'),
-            showarrow: false,
-            font: { size: _subSizePx },
-            _tsRole: 'subtitle'
-        } : null;
-
         // Room for the title block. A wrapped pair label is spaced by the title
         // size, so the reserve has to follow the same number.
         const topMargin = _titleBottomPx + _titleBlockPx + 16;
-
-        const showZero = document.getElementById('showZeroLines')?.checked !== false;
-
         // Axis labels as draggable annotations instead of axis titles.
         // A label longer than the axis it sits against gets clipped at both
         // ends ("MDM2 Expression (log2 TPM+1)" losing its M on a 400px plot),
@@ -19542,6 +20075,40 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             _plotWpx * 0.78, sts?.xLabelFontSize || 20);
         const yLabelText = _wrapAxisLabel(this.getAxisLabel(gene2, this.currentInspect?.yType || 'ge'),
             _plotHpx * 0.62, sts?.yLabelFontSize || (_isPhone ? 13 : 20));
+        // On a phone the mutation legend moves under the plot (see the legend
+        // below), so the bottom margin has to hold it as well as the x label.
+        const _legendBelow = _scPhone && !colorByCategory && !this._userLegendPosition
+            && ((hotspotMode === 'color' && hotspotGene) || (transOverlayMode === 'color' && transOverlayGene));
+        const _xLabelRows = xLabelText.includes('<br>') ? 2 : 1;
+        const _botMargin = colorByCategory ? 100 : (_legendBelow ? 90 + _xLabelRows * 17 : 60);
+        // The offsets below are pixels divided by the plot height, so they have
+        // to use the height that is actually drawn. On a phone the plot is
+        // capped further down, and measuring against the uncapped control
+        // value shrank the offsets and put the heading on top of the stats.
+        let _plotPx = Math.max(160, parseInt(document.getElementById('plotHeight')?.value, 10)
+            || document.getElementById('scatterPlot')?.clientHeight || 400);
+        // Capped at about two thirds of the screen (a little more when the
+        // legend sits underneath) so the head of the controls shows below it.
+        const _phoneCap = _scPhone
+            ? Math.round(window.innerHeight * 0.62) + (_legendBelow ? 44 : 0) - topMargin - _botMargin
+            : Infinity;
+        if (_scPhone && _phoneCap > 160 && _plotPx > _phoneCap) _plotPx = _phoneCap;
+        const _baseY = 1 + _subBottomPx / _plotPx;
+        titleAnnotation.y = this._userTitlePosition ? this._userTitlePosition.y
+            : 1 + _titleBottomPx / _plotPx;
+        const subtitleAnnotation = _subLines.length ? {
+            x: titleAnnotation.x,
+            y: _baseY,
+            xref: 'paper', yref: 'paper',
+            xanchor: titleAnnotation.xanchor, yanchor: 'bottom',
+            text: _subLines.join('<br>'),
+            showarrow: false,
+            font: { size: _subSizePx },
+            _tsRole: 'subtitle'
+        } : null;
+
+        const showZero = document.getElementById('showZeroLines')?.checked !== false;
+
         const xLabelAnnotation = {
             x: this._userXLabelPos ? this._userXLabelPos.x : 0.5,
             y: this._userXLabelPos ? this._userXLabelPos.y : -0.08,
@@ -19587,7 +20154,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 tickfont: { size: sts?.yTickSize || (_isPhone ? 11 : 17) }
             },
             hovermode: 'closest',
-            margin: { t: topMargin, r: _isPhone ? 14 : 30, b: colorByCategory ? 100 : 60, l: _isPhone ? 52 : 96, autoexpand: false },
+            margin: { t: topMargin, r: _isPhone ? 14 : 30, b: _botMargin, l: _isPhone ? 52 : 96, autoexpand: false },
             showlegend: (hotspotMode === 'color' && hotspotGene) || (transOverlayMode === 'color' && transOverlayGene) || !!colorByCategory,
             legend: colorByCategory ? {
                 orientation: 'h',
@@ -19605,6 +20172,19 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 tracegroupgap: 0,
                 entrywidth: this._colorByLegendEntryW || 120,
                 entrywidthmode: 'pixels'
+            } : _legendBelow ? {
+                // A corner legend covers half of a phone-sized plot, so it goes
+                // in a row under the x label instead, wrapping as it needs to.
+                orientation: 'h',
+                x: 0.5,
+                y: -(0.08 + (_xLabelRows * 13 * 1.3 + 10) / _plotPx),
+                xanchor: 'center',
+                yanchor: 'top',
+                bgcolor: 'white',
+                bordercolor: '#ddd',
+                borderwidth: 1,
+                title: { text: (transOverlayMode === 'color' && transOverlayGene) ? `${transOverlayGene} (fusion)` : hotspotGene, font: { size: 11 }, side: 'left' },
+                font: { size: 11 }
             } : (() => {
                 // Auto-placed unless the user has dragged it somewhere.
                 const corner = this._userLegendPosition
@@ -19669,16 +20249,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         layout.height = plotAreaH + m.t + m.b;
         // On a phone the chart filled the window exactly, so nothing below it
         // showed and the gene boxes, the filters and Update read as absent
-        // rather than as further down. Cap the whole thing at about two thirds
-        // of the screen: the head of the controls is then visible under it and
-        // says, without a word, that there is more.
-        if (_scPhone) {
-            const cap = Math.round(window.innerHeight * 0.62) - m.t - m.b;
-            if (cap > 160 && plotAreaH > cap) {
-                plotAreaH = cap;
-                if (heightEl) heightEl.value = plotAreaH;
-                layout.height = plotAreaH + m.t + m.b;
-            }
+        // rather than as further down. Cap it (the same cap the header offsets
+        // were computed against) so the head of the controls shows under it.
+        if (_scPhone && _phoneCap > 160 && plotAreaH > _phoneCap) {
+            plotAreaH = _phoneCap;
+            if (heightEl) heightEl.value = plotAreaH;
+            layout.height = plotAreaH + m.t + m.b;
         }
         // Constrain to available space
         const availableWidth = plotContainer.parentElement?.offsetWidth || 600;
@@ -19841,7 +20417,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Panel labels
         const panelLabels = isFusion
             ? ['No fusion', '1 partner', '2+ partners']
-            : ['WT', '1 mut', '2 mut'];
+            : this._mutOverlayWords(hotspotGene).panel;
 
         // Build category map for color-by mode (shared across panels)
         let categoryOrder = null;
@@ -19990,8 +20566,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         addHighlights(mut2, 'x3', 'y3');
 
         // Build title with filter info
-        const stratLabel = isFusion ? 'fusion stratification' : 'hotspot mutation stratification';
-        let titleText = `<b>${gene1} vs ${gene2} - ${hotspotGene} ${stratLabel}</b>`;
+        const _ow3 = isFusion ? null : this._mutOverlayWords(hotspotGene);
+        const stratLabel = isFusion ? 'fusion stratification'
+            : _ow3.kind === 'lof' ? 'functional-loss stratification'
+            : _ow3.kind === 'any' ? 'mutation stratification (any call)'
+            : 'hotspot mutation stratification';
+        let titleText = `<b>${gene1} vs ${gene2} - ${isFusion ? hotspotGene : _ow3.gene} ${stratLabel}</b>`;
         if (filterDesc) {
             titleText += `<br><span style="font-size: 11px; color: #666;">Filter: ${filterDesc}</span>`;
         }
@@ -19999,7 +20579,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Annotation labels for panels
         const annotLabels = isFusion
             ? [`<b>No fusion</b>`, `<b>1 partner</b>`, `<b>2+ partners</b>`]
-            : [`<b>WT (0 mut)</b>`, `<b>1 mutation</b>`, `<b>2 mutations</b>`];
+            : _ow3.kind === 'hotspot'
+                ? [`<b>WT (0 mut)</b>`, `<b>1 mutation</b>`, `<b>2 mutations</b>`]
+                : _ow3.panel.map(w => `<b>${w}</b>`);
 
         // Title annotation (draggable)
         const titleAnnotation = {
@@ -20032,8 +20614,17 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Header and title offsets in pixels, converted to paper units, so the
         // spacing holds at any plot size instead of drifting with it.
         const panelPx3 = this._threePanelSidePx || 260;
+        // A narrow popout gives each panel less width than its stats line, and
+        // the three headers ran into each other. When the line will not fit
+        // the panel (plus a little of the gutter), the label goes on its own
+        // row above the stats, and the title moves up to make room.
+        const _hdrFits = (label, rows, st) => {
+            const plain = `${label.replace(/<[^>]*>/g, '')} n=${rows.length}, r=${isNaN(st.correlation) ? 'n/a' : st.correlation.toFixed(3)}, ${isNaN(st.pValue) ? 'p = n/a' : this.formatPClause(st.pValue).replace(/<[^>]*>/g, '')}`;
+            return plain.length * 11 * 0.55 <= panelPx3 * 1.12;
+        };
+        const _hdrWrap = !(_hdrFits(annotLabels[0], wt, wtStats) && _hdrFits(annotLabels[1], mut1, mut1Stats) && _hdrFits(annotLabels[2], mut2, mut2Stats));
         const yHeader = 1 + 10 / panelPx3;
-        const yTitle = 1 + 40 / panelPx3;
+        const yTitle = 1 + (_hdrWrap ? 58 : 40) / panelPx3;
 
         titleAnnotation.y = this._userTitlePosition ? this._userTitlePosition.y : yTitle;
         titleAnnotation._tsRole = 'title';
@@ -20046,7 +20637,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const rTxt = isNaN(st.correlation) ? 'n/a' : st.correlation.toFixed(3);
             const pTxt = isNaN(st.pValue) ? 'p = n/a' : this.formatPClause(st.pValue);
             const medTxt = `median x=${isNaN(mx) ? 'n/a' : mx.toFixed(2)}, y=${isNaN(my) ? 'n/a' : my.toFixed(2)}`;
-            return `${label} n=${rows.length}, r=${rTxt}, ${pTxt}`
+            return `${label}${_hdrWrap ? '<br>' : ' '}n=${rows.length}, r=${rTxt}, ${pTxt}`
                 + `<br><span style="font-size:10px; color:#6b7280;">${medTxt}</span>`;
         };
 
@@ -20093,7 +20684,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                   text: yLabelText3, showarrow: false, font: { size: 13 }, textangle: -90, _tsRole: 'ylabel' },
                 ...threePanelHighlightAnnotations
             ],
-            margin: { t: 76, r: 30, b: categoryOrder ? 110 : 66, l: 76 },
+            margin: { t: _hdrWrap ? 96 : 76, r: 30, b: categoryOrder ? 110 : 66, l: 76 },
             showlegend: !!categoryOrder,
             legend: {
                 orientation: 'h',
@@ -20300,6 +20891,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     renderCompareTable(filteredData, gene1, gene2, hotspotGene, filterDesc = '', isFusion = false) {
         // Group by cancer type (lineage) - comparing 0 vs 2+ level only
         const levelField = isFusion ? 'translocationLevel' : 'mutationLevel';
+        // Hotspot copies compare 0 against both copies; the binary kinds (any
+        // call, functional loss) have nothing to exclude, so they compare at 1.
+        const ow = isFusion ? null : this._mutOverlayWords(hotspotGene);
+        const mutMin = isFusion ? 1 : (ow.kind === 'hotspot' ? 2 : 1);
         const lineageGroups = {};
         filteredData.forEach(d => {
             if (!d.lineage) return;
@@ -20308,10 +20903,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             }
             if (d[levelField] === 0) {
                 lineageGroups[d.lineage].wt.push(d);
-            } else if (d[levelField] >= (isFusion ? 1 : 2)) {
+            } else if (d[levelField] >= mutMin) {
                 lineageGroups[d.lineage].mut.push(d);
             }
-            // Note: for hotspot, mutationLevel === 1 is excluded from comparison
         });
 
         // Calculate stats for each lineage
@@ -20357,19 +20951,20 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         tableData.sort((a, b) => a.pR - b.pR);
 
         // Build HTML table
-        const typeLabel = isFusion ? 'Fusion' : 'Mutation';
-        const wtLabel = isFusion ? 'No fusion' : 'WT';
-        const mutLabel = isFusion ? 'Fused (1+)' : 'Mut';
+        const geneLabel = isFusion ? hotspotGene : ow.gene;
+        const typeLabel = isFusion ? 'Fusion' : ow.typeWord;
+        const wtLabel = isFusion ? 'No fusion' : ow.refWord;
+        const mutLabel = isFusion ? 'Fused (1+)' : ow.altWord;
         const filterInfo = filterDesc ? `<p style="font-size: 11px; color: #333; margin-bottom: 8px; background: #f0f9ff; padding: 4px 8px; border-radius: 4px;"><b>Filter:</b> ${filterDesc}</p>` : '';
-        const exclusionNote = isFusion ? '' : ' Note: Cells with exactly 1 mutation are excluded from this comparison.';
-        const wtDesc = isFusion ? `no ${hotspotGene} fusions` : `0 ${hotspotGene} mutations`;
-        const mutDesc = isFusion ? `${hotspotGene} fused (1+)` : `2+ ${hotspotGene} mutations`;
+        const exclusionNote = (isFusion || mutMin < 2) ? '' : ' Note: Cells with exactly 1 mutation are excluded from this comparison.';
+        const wtDesc = isFusion ? `no ${hotspotGene} fusions` : ow.refDesc;
+        const mutDesc = isFusion ? `${hotspotGene} fused (1+)` : ow.altDesc;
         let html = `
-            <h4 style="margin-bottom: 8px;">Effect of <span style="color: #0066cc;">${hotspotGene}</span> ${typeLabel} on ${gene1} vs ${gene2} Correlation</h4>
+            <h4 style="margin-bottom: 8px;">Effect of <span style="color: #0066cc;">${geneLabel}</span> ${typeLabel} on ${gene1} vs ${gene2} Correlation</h4>
             ${filterInfo}
             <p style="font-size: 11px; color: #666; margin-bottom: 8px;">
                 Comparing correlation between ${wtLabel} (${wtDesc}) vs ${mutLabel} (${mutDesc}) cells, stratified by cancer type.${exclusionNote}
-                <strong>Click a cancer type</strong> to view its scatter plot with the ${hotspotGene} ${typeLabel.toLowerCase()} overlay.
+                <strong>Click a cancer type</strong> to view its scatter plot with the ${geneLabel} ${typeLabel.toLowerCase()} overlay.
             </p>
             <p style="font-size: 10px; color: #0c4a6e; background: #f0f9ff; padding: 4px 8px; border-radius: 4px; margin-bottom: 12px;">
                 <b>Statistics:</b> p(Δr) uses Fisher z-transformation to compare correlations. p(Δslope) is an approximation based on correlation difference.
@@ -20500,8 +21095,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
 
         // Apply mutation filter
-        if (mutFilterGene && (this.mutations?.geneData?.[mutFilterGene] || this.damagingMutations?.geneData?.[mutFilterGene]) && mutFilterLevel !== 'all') {
-            const filterMutations = (this.mutations?.geneData?.[mutFilterGene] || this.damagingMutations?.geneData?.[mutFilterGene])?.mutations;
+        const _mutFilterCalls = this._mutCalls(mutFilterGene);
+        if (mutFilterGene && _mutFilterCalls && mutFilterLevel !== 'all') {
+            const filterMutations = _mutFilterCalls;
             filteredData = filteredData.filter(d => {
                 const mutLevel = filterMutations[d.cellLineId] || 0;
                 if (mutFilterLevel === '0') return mutLevel === 0;
@@ -20709,7 +21305,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         let fd = cancerFilter ? data.filter(d => d.lineage === cancerFilter) : data.slice();
         if (subtypeFilter && this.cellLineMetadata?.primaryDisease) fd = fd.filter(d => this.cellLineMetadata.primaryDisease[d.cellLineId] === subtypeFilter);
         if (mutFilterGene && mutFilterLevel !== 'all') {
-            const mm = (this.mutations?.geneData?.[mutFilterGene] || this.damagingMutations?.geneData?.[mutFilterGene])?.mutations;
+            const mm = this._mutCalls(mutFilterGene);
             if (mm) fd = fd.filter(d => { const l = mm[d.cellLineId] || 0; if (mutFilterLevel === '0') return l === 0; if (mutFilterLevel === '1') return l === 1; if (mutFilterLevel === '2') return l >= 2; if (mutFilterLevel === '1+2') return l >= 1; return true; });
         }
         if (transFilterGene) {
@@ -20731,7 +21327,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const parts = [];
         if (cancerFilter) parts.push(`Cancer: ${cancerFilter}${subtypeFilter ? ` (${subtypeFilter})` : ''}`);
         if (oncVal) parts.push(`Disease: ${oncVal === '__mr_multi__' ? (this.mutationResults?.oncotreeFilterMulti || []).join(' + ') : oncVal}`);
-        if (mutFilterGene && mutFilterLevel !== 'all') parts.push(`${mutFilterGene}: ${mutFilterLevel}`);
+        if (mutFilterGene && mutFilterLevel !== 'all') {
+            const mk = this._parseMutFilter(mutFilterGene);
+            parts.push(`${mk.gene}: ${this._mutLevelWord(mk.kind, mutFilterLevel) || mutFilterLevel}`);
+        }
         if (transFilterGene) parts.push(`Fusion: ${this._stripFusionFilterDecoration(transFilterGene)}`);
         if (cnFilterVal) parts.push(`CN: ${this._stripCnFilterDecoration(cnFilterVal)}`);
         (this._scatterGridActive || []).forEach(f => parts.push(`${f.gene} ${this._gridStateWord(f.state)}`));
@@ -21034,11 +21633,15 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // (Using _inspectFilteredCellLineIds here would bias the set by
         // whichever Y gene was previously displayed, making Find correlates'
         // r differ from the scatter's r after a click.)
+        const filterParts = this._scatterFilterParts();
         let clIds = this._computeInspectFilteredIdsFromDOM();
-        if (!Array.isArray(clIds) || clIds.length < 3) clIds = this.metadata.cellLines.slice();
+        if (!Array.isArray(clIds)) clIds = this.metadata.cellLines.slice();
         const clIndexOf = new Map(this.metadata.cellLines.map((cl, i) => [cl, i]));
         const clIdxs = clIds.map(cl => clIndexOf.get(cl)).filter(i => i !== undefined);
-        if (clIdxs.length < 3) { alert('Need ≥ 3 cell lines after filters.'); return; }
+        if (clIdxs.length < 3) {
+            alert(`Only ${clIdxs.length} cell line${clIdxs.length === 1 ? '' : 's'} pass the scatter's filters (${filterParts.join(' | ') || 'none'}). Widen the filters to find correlates.`);
+            return;
+        }
 
         // Build the X-vector from the selected data type.
         const xIdx = xType === 'ge'
@@ -21127,10 +21730,22 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         // Stash hits so the threshold input and Enrichr buttons can re-filter
         // without re-computing correlations.
-        this._inspectCorrelatesState = { geHits, exprHits, xGene, xType, xN, expressionLoaded: this.expressionLoaded };
+        this._inspectCorrelatesState = { geHits, exprHits, xGene, xType, xN, filterParts, expressionLoaded: this.expressionLoaded };
 
-        document.getElementById('inspectCorrelatesTitle').textContent = `Correlates of ${xGene} (${xType === 'ge' ? 'GE' : 'Expression'})`;
-        document.getElementById('inspectCorrelatesSubtitle').textContent = `n = ${xN} cell lines (after the inspect modal's current filters). Click a gene to put it on the Y axis, or send the filtered list to Enrichr for pathway enrichment.`;
+        const panelN = (this.metadata?.cellLines || []).length;
+        document.getElementById('inspectCorrelatesTitle').textContent = `Correlates of ${xGene} (${xType === 'ge' ? 'GE' : 'Expression'})${filterParts.length ? ', filtered cohort' : ''}`;
+        document.getElementById('inspectCorrelatesSubtitle').textContent = filterParts.length
+            ? `n = ${xN} of ${panelN.toLocaleString()} cell lines, the scatter's filters applied (listed below). Click a gene to put it on the Y axis, or send the list to Enrichr.`
+            : `n = ${xN} cell lines, the whole panel, no filters. Click a gene to put it on the Y axis, or send the list to Enrichr.`;
+        // The filters are what make this list differ from the same gene's list
+        // on the whole panel, so they are named in a banner of their own, in
+        // the same chips the scatter shows, rather than left to a sentence.
+        const filterBanner = filterParts.length
+            ? `<div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; padding:7px 10px; background:#fffbeb; border:1px solid #fcd34d; border-radius:6px; margin-bottom:10px; font-size:11px; color:#92400e;">
+                <b>Filtered cohort:</b> ${filterParts.map(t => `<span style="background:#fff; border:1px solid #fcd34d; color:#92400e; padding:1px 7px; border-radius:10px; font-weight:600;">${this.esc(t)}</span>`).join(' ')}
+                <span style="color:#b45309;">Correlations computed on these ${xN} cell lines only. Change the filters on the scatter and press Find correlates again to redo the scan.</span>
+              </div>`
+            : '';
 
         // Hard display cap guards the DOM when the user drops the threshold
         // near zero, Enrichr still receives the full thresholded list.
@@ -21148,6 +21763,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const thStyle = 'padding:6px 8px; border-bottom:2px solid #d1d5db; cursor:pointer; user-select:none;';
 
         document.getElementById('inspectCorrelatesBody').innerHTML = `
+            ${filterBanner}
             <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; padding:8px 10px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:6px; margin-bottom:10px;">
                 <label style="font-weight:600; color:#374151;" title="Cutoff for the GE correlate list">GE |r| ≥
                     <input type="text" inputmode="decimal" id="icThreshold" value="${defaultThresholdGe}" min="0" max="1" step="0.05" style="width:52px; margin-left:6px; padding:2px 4px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;">
@@ -21368,7 +21984,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const modal = document.getElementById('enrichrModal');
         const content = document.getElementById('enrichrContent');
         const title = document.getElementById('enrichrTitle');
-        title.textContent = `Enrichr / ${genes.length} ${kind === 'ge' ? 'GE' : 'Expression'} correlates of ${st.xGene}`;
+        title.textContent = `Enrichr / ${genes.length} ${kind === 'ge' ? 'GE' : 'Expression'} correlates of ${st.xGene}${st.filterParts?.length ? ` (${st.filterParts.join(' | ')})` : ''}`;
         content.innerHTML = '<div style="text-align:center; padding:60px; color:#aaa;"><div style="font-size:24px; margin-bottom:12px;">⏳</div>Submitting to Enrichr...</div>';
         modal.style.display = 'block';
         try {
@@ -21522,6 +22138,36 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // Keep the "Open in Gene Effect" buttons naming the genes actually on the
     // axes, and make the gene names in the heading hoverable for their
     // description, the same as gene names anywhere else in the app.
+    // A gene name in a popout heading: hover previews the gene card the
+    // network shows, click pins it (click again closes it).
+    _geneChipHtml(gene) {
+        return `<span class="gene-hover gene-title-chip" data-gene="${this.esc(gene)}" style="text-decoration:underline dotted; text-underline-offset:2px; cursor:pointer;">${this.esc(gene)}</span>`;
+    }
+
+    _wireGeneTitleChips(root) {
+        if (!root) return;
+        this.attachGeneTooltips?.(root);
+        root.querySelectorAll('.gene-title-chip').forEach(el => {
+            el.addEventListener('click', (e) => {
+                e.preventDefault();
+                const gene = el.dataset.gene;
+                const cur = document.getElementById('geneTooltip');
+                if (cur && cur.dataset.pinned === '1' && cur.dataset.gene === gene) { this.hideGeneTooltip(true); return; }
+                const r = el.getBoundingClientRect();
+                this.showGeneTooltip({ clientX: r.left - 10, clientY: r.bottom - 4, shiftKey: true }, gene);
+            });
+        });
+    }
+
+    // Gene Effect heading with the gene name as a chip; the rest stays text.
+    _setGeneEffectTitle(gene, rest) {
+        const t = document.getElementById('geneEffectTitle');
+        if (!t) return;
+        const known = gene && (this.geneIndex?.has(String(gene).toUpperCase()) || this.expressionGeneIndex?.has(String(gene).toUpperCase()));
+        t.innerHTML = (known ? this._geneChipHtml(String(gene).toUpperCase()) : this.esc(gene || '')) + this.esc(rest || '');
+        if (known) this._wireGeneTitleChips(t);
+    }
+
     _syncInspectAxisTools() {
         const word = (t) => t === 'expr' ? 'mRNA' : t === 'cn' ? 'CN' : t === 'growth' ? 'growth' : t === 'geneset' ? 'set' : 'GE';
         const ci = this.currentInspect || {};
@@ -21561,7 +22207,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Gene names in the heading, hoverable.
         const t = document.getElementById('inspectTitle');
         if (t && ci.gene1 && ci.gene2) {
-            const chip = (g) => `<span class="gene-hover" data-gene="${this.esc(g)}" style="text-decoration:underline dotted; text-underline-offset:2px; cursor:help;">${this.esc(g)}</span>`;
+            const chip = (g) => this._geneChipHtml(g);
             // Only the two gene names become chips; everything else in the
             // heading (the r, the n, the filter note) is left exactly as it
             // was. The heading comes in a few shapes, so match the pair
@@ -21573,7 +22219,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 t.innerHTML = this.esc(plain.slice(0, at))
                     + `${chip(ci.gene1)} vs ${chip(ci.gene2)}`
                     + this.esc(plain.slice(at + marker.length));
-                this.attachGeneTooltips?.(t);
+                this._wireGeneTitleChips(t);
             }
         }
     }
@@ -21590,8 +22236,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         let filteredData = [...data];
 
         // Apply mutation filter
-        if (mutFilterGene && (this.mutations?.geneData?.[mutFilterGene] || this.damagingMutations?.geneData?.[mutFilterGene]) && mutFilterLevel !== 'all') {
-            const filterMutations = (this.mutations?.geneData?.[mutFilterGene] || this.damagingMutations?.geneData?.[mutFilterGene])?.mutations;
+        const _mutFilterCalls = this._mutCalls(mutFilterGene);
+        if (mutFilterGene && _mutFilterCalls && mutFilterLevel !== 'all') {
+            const filterMutations = _mutFilterCalls;
             filteredData = filteredData.filter(d => {
                 const mutLevel = filterMutations[d.cellLineId] || 0;
                 if (mutFilterLevel === '0') return mutLevel === 0;
@@ -24940,7 +25587,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (deepest) parts.push(deepest);
             if (val('clbSexFilter')) parts.push(val('clbSexFilter'));
             const hs = val('clbHotspotFilter');
-            if (hs) parts.push(`${hs} ${val('clbHotspotLevel') === '0' ? 'WT' : 'mutated'}`);
+            if (hs) parts.push(this._mutFilterPhrase(hs, val('clbHotspotLevel'), val('clbHotspotLevel') === '0' ? 'WT' : 'mutated'));
             const fu = val('clbTranslocationFilter');
             if (fu) parts.push(`${this._stripFusionFilterDecoration?.(fu) || fu} fused`);
             const cn = val('clbCnFilter');
@@ -24958,7 +25605,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 parts.push(incl.length <= 4 ? incl.join(', ') : `${incl.length} tissues`);
             }
             const hs = val('paramHotspotGene');
-            if (hs) parts.push(`${hs} ${val('paramHotspotLevel') === '0' ? 'WT' : 'mutated'}`);
+            if (hs) parts.push(this._mutFilterPhrase(hs, val('paramHotspotLevel'), val('paramHotspotLevel') === '0' ? 'WT' : 'mutated'));
         }
         return parts.join(' · ');
     }
@@ -25461,9 +26108,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Hotspot filter (mutated 1+2 by default), with WT / 1 / 2 / 1+2 levels.
         const hotspotVal = document.getElementById('caHotspotFilter')?.value;
         if (hotspotVal) {
-            const mutData = this.mutations?.geneData?.[hotspotVal]?.mutations
-                || this.damagingMutations?.geneData?.[hotspotVal]?.mutations
-                || {};
+            const mutData = this._mutCalls(hotspotVal) || {};
             const lvl = document.getElementById('caHotspotLevel')?.value || '1+2';
             filtered = filtered.filter(p => {
                 const l = mutData[p.cellLineId] || 0;
@@ -25555,7 +26200,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const hot = document.getElementById('caHotspotFilter')?.value;
         if (hot) {
             const lvl = document.getElementById('caHotspotLevel')?.value || '1+2';
-            parts.push(`${hot}: ${lvl === '0' ? 'hotspot WT' : lvl === '1' ? 'hotspot mut (1 copy)' : lvl === '2' ? 'hotspot mut (2 copies)' : 'hotspot mut (1+2)'}`);
+            const mk = this._parseMutFilter(hot);
+            parts.push(`${mk.gene}: ${this._mutLevelWord(mk.kind, lvl)
+                || (lvl === '0' ? 'hotspot WT' : lvl === '1' ? 'hotspot mut (1 copy)' : lvl === '2' ? 'hotspot mut (2 copies)' : 'hotspot mut (1+2)')}`);
         }
         const fus = document.getElementById('caFusionFilter')?.value;
         if (fus) {
@@ -25971,7 +26618,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             };
         } else {
             // Hotspot: scatter with WT (blue) vs Mut (red)
-            const mutData = (this.mutations?.geneData?.[group] || this.damagingMutations?.geneData?.[group])?.mutations || {};
+            const mutData = this._mutCalls(group) || {};
             const wtPts = d.data.filter(p => (mutData[p.cellLineId] || 0) === 0);
             const mutPts = d.data.filter(p => (mutData[p.cellLineId] || 0) > 0);
 
@@ -26147,15 +26794,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const cellLinesInPlot = new Set(data.map(d => d.cellLineId));
 
         if (this.mutations?.genes?.length > 0) {
-            hotspotSelect.innerHTML = '<option value="">Select gene...</option>';
-            mutFilterGeneSelect.innerHTML = '<option value="">No filter</option>';
-            this.mutations.genes.forEach(g => {
-                const mutData = this.mutations.geneData?.[g]?.mutations || {};
-                let count = 0;
-                cellLinesInPlot.forEach(cl => { if (mutData[cl] > 0) count++; });
-                hotspotSelect.innerHTML += `<option value="${g}">${g} (${count} mut)</option>`;
-                mutFilterGeneSelect.innerHTML += `<option value="${g}">${g} (${count} mut)</option>`;
-            });
+            const overlayOpts = this._mutOverlayOptionsHtml(cellLinesInPlot);
+            hotspotSelect.innerHTML = '<option value="">Select gene...</option>' + overlayOpts;
+            mutFilterGeneSelect.innerHTML = '<option value="">No filter</option>' + overlayOpts;
             document.getElementById('mutationBox').style.display = 'block';
             document.getElementById('mutationFilterBox').style.display = 'block';
         } else {
@@ -26166,34 +26807,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Populate translocation/fusion selectors (datalists, sorted by count desc)
         const transGeneInput2 = document.getElementById('translocationGene');
         const transFilterGeneInput2 = document.getElementById('translocationFilterGene');
-        const transGeneDatalist2 = document.getElementById('translocationGeneList');
-        const transFilterGeneDatalist2 = document.getElementById('translocationFilterGeneList');
 
         if (this.translocations?.genes?.length > 0) {
             transGeneInput2.value = '';
             transFilterGeneInput2.value = '';
-            const geneCounts2 = [];
-            for (const g of this.translocations.genes) {
-                const transData = this.translocations.geneData?.[g]?.translocations || {};
-                let count = 0;
-                for (const cl of cellLinesInPlot) {
-                    if (transData[cl] && transData[cl] > 0) count++;
-                }
-                if (count > 0) geneCounts2.push({ gene: g, count });
-            }
-            geneCounts2.sort((a, b) => {
-                const aPri = CorrelationExplorer.PRIORITY_FUSION_GENES.has(a.gene) ? 1 : 0;
-                const bPri = CorrelationExplorer.PRIORITY_FUSION_GENES.has(b.gene) ? 1 : 0;
-                if (aPri !== bPri) return bPri - aPri;
-                return b.count - a.count;
-            });
-
-            let transHtml2 = '';
-            geneCounts2.forEach(({ gene, count }) => {
-                transHtml2 += `<option value="${gene}">${gene} (${count} fused)</option>`;
-            });
-            transGeneDatalist2.innerHTML = transHtml2;
-            transFilterGeneDatalist2.innerHTML = transHtml2;
+            this._fillFusionDatalists(cellLinesInPlot instanceof Set ? cellLinesInPlot : new Set(cellLinesInPlot));
             document.getElementById('translocationBox').style.display = 'block';
             document.getElementById('translocationFilterBox').style.display = 'block';
             document.getElementById('compareAllTranslocationsBtn').style.display = '';
@@ -26298,9 +26916,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const gX = this.currentInspect?.gene1 || 'GeneX';
         const gY = this.currentInspect?.gene2 || 'GeneY';
         let header = `CellLine,CellLineID,Lineage,Subtype,${gX}_${colSuffix(xType)}_xAxis,${gY}_${colSuffix(yType)}_yAxis`;
-        const csvMutSource = hotspotGene && (this.mutations?.geneData?.[hotspotGene] || this.damagingMutations?.geneData?.[hotspotGene]);
+        const csvMutSource = hotspotGene && this._mutSource(hotspotGene);
         if (csvMutSource) {
-            header += `,${hotspotGene}_mutation`;
+            const mk = this._parseMutFilter(hotspotGene);
+            header += `,${mk.gene}_${mk.kind === 'lof' ? 'functional_loss' : mk.kind === 'any' ? 'any_mutation' : 'mutation'}`;
         }
         if (hasGates) {
             header += ',Gate_A,Gate_B';
@@ -26334,7 +26953,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         });
 
         const csvTissue = document.getElementById('scatterCancerFilter')?.value || '';
-        const suffix = (hotspotGene ? `_${hotspotGene}` : '') + this._csvSlug(csvTissue);
+        const _hk = this._parseMutFilter(hotspotGene);
+        const suffix = (hotspotGene ? `_${_hk.gene}${_hk.kind === 'lof' ? '_functional_loss' : _hk.kind === 'any' ? '_any_mutation' : ''}` : '')
+            + this._csvSlug(csvTissue);
         this.downloadFile(csv,
             csvName(`scatter_${this.currentInspect.gene1}_vs_${this.currentInspect.gene2}${suffix}`),
             'text/csv');
@@ -26501,7 +27122,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         // Update UI
         const geMetric = this._geMetric();
-        document.getElementById('geneEffectTitle').textContent = `${geneUpper} - ${geMetric.full} Analysis`;
+        this._setGeneEffectTitle(geneUpper, ` - ${geMetric.full} Analysis`);
         document.getElementById('geneEffectSearch').value = geneUpper;
         document.getElementById('geneEffectCurrentGene').textContent = '';
         const geCellLineSearch = document.getElementById('geCellLineSearch');
@@ -27002,7 +27623,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         this.currentGeneEffectGene = label;
 
         // Update UI
-        document.getElementById('geneEffectTitle').textContent = `${label} - By Tissue`;
+        this._setGeneEffectTitle(label, ' - By Tissue');
         document.getElementById('geneEffectSearch').value = '';
         document.getElementById('geneEffectCurrentGene').textContent = label;
 
@@ -27405,7 +28026,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         } else if (geOnc) parts.push(geOnc);
         // Say which side of each filter is in view, now that WT can be chosen.
         const isWT = (id) => document.getElementById(id)?.value === 'wt';
-        if (hotspot) parts.push(`${hotspot} ${isWT('geHotspotLevel') ? 'WT' : 'mutated'}`);
+        if (hotspot) parts.push(this._mutFilterPhrase(hotspot, document.getElementById('geHotspotLevel')?.value, isWT('geHotspotLevel') ? 'WT' : 'mutated'));
         if (fusion) parts.push(`${this._stripFusionFilterDecoration(fusion)} ${isWT('geFusionLevel') ? 'not fused' : 'fused'}`);
         if (cn) {
             const label = this._stripCnFilterDecoration(cn).replace(/_(amp|del)$/, (_, k) => k === 'amp' ? ' amp' : ' del');
@@ -27456,7 +28077,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Hotspot / fusion / CN filters, each with its own carrier-vs-WT choice.
         const wantWT = (id) => document.getElementById(id)?.value === 'wt';
         const hotspotGene = document.getElementById('geHotspotFilter')?.value;
-        const geFilterMutSource = hotspotGene && (this.mutations?.geneData?.[hotspotGene] || this.damagingMutations?.geneData?.[hotspotGene]);
+        const geFilterMutSource = hotspotGene && this._mutSource(hotspotGene);
         if (geFilterMutSource) {
             const mutData = geFilterMutSource.mutations || {};
             const lvl = document.getElementById('geHotspotLevel')?.value || '1+2';
@@ -27609,13 +28230,39 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const hlColor = '#dc2626';
         // Shorten the row label, keeping the full name on hover; names are
         // made unique afterwards so two shortened labels cannot share a row.
-        // On a phone the label competes with the plot for the same ~390px, so
-        // cut hard (9 chars): longer names left the boxes too narrow to
-        // compare, which is the whole point of the chart.
-        const LABEL_MAX = (window.innerWidth <= 640) ? 9 : 34;
+        // On a phone the label competes with the plot for the same ~390px.
+        // Cutting at 9 characters left "Renal Cl…", which names nothing, so
+        // there the name wraps on words onto two short rows in a smaller
+        // font, and only what will not fit two rows is cut.
+        const _gePhoneLabels = window.innerWidth <= 640;
+        const LABEL_MAX = _gePhoneLabels ? 30 : 34;
+        const PHONE_ROW_CHARS = 15;
         const seenLabels = new Map();
+        const wrapPhone = (name) => {
+            const lines = [];
+            let line = '';
+            for (const w of name.split(' ')) {
+                const cand = line ? `${line} ${w}` : w;
+                if (line && cand.length > PHONE_ROW_CHARS) { lines.push(line); line = w; }
+                else line = cand;
+                if (lines.length === 2) break;
+            }
+            if (lines.length < 2 && line) lines.push(line);
+            const fits = lines.join(' ') === name;
+            if (!fits) lines[lines.length - 1] = lines[lines.length - 1].slice(0, PHONE_ROW_CHARS - 1).trimEnd() + '…';
+            return { text: lines.join('<br>'), cut: !fits };
+        };
+        let anyTwoRow = false;
         const shortLabel = (group, count) => {
-            let base = group.length > LABEL_MAX ? group.slice(0, LABEL_MAX - 1).trimEnd() + '…' : group;
+            let base, cut;
+            if (_gePhoneLabels) {
+                const w = wrapPhone(group);
+                base = w.text; cut = w.cut;
+                if (base.includes('<br>')) anyTwoRow = true;
+            } else {
+                cut = group.length > LABEL_MAX;
+                base = cut ? group.slice(0, LABEL_MAX - 1).trimEnd() + '…' : group;
+            }
             const k = seenLabels.get(base) || 0;
             seenLabels.set(base, k + 1);
             if (k > 0) base = `${base} (${k + 1})`;
@@ -27677,8 +28324,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         // Calculate dynamic sizing
         const numEntries = stats.length;
-        const tickFontSize = numEntries > 25 ? 12 : numEntries > 15 ? 13 : 14;
-        const boxHeight = numEntries > 25 ? 22 : numEntries > 15 ? 26 : 32;
+        const tickFontSize = _gePhoneLabels ? 11 : (numEntries > 25 ? 12 : numEntries > 15 ? 13 : 14);
+        // Two-row labels need taller rows or they overlap their neighbours.
+        const boxHeight = (numEntries > 25 ? 22 : numEntries > 15 ? 26 : 32) + (anyTwoRow ? 8 : 0);
         const chartHeight = Math.max(400, numEntries * boxHeight + 100);
 
         // Determine data type label. Data type is set by openGeneEffectModal
@@ -27747,6 +28395,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         Plotly.newPlot('geneEffectPlot', traces, layout, { responsive: true, edits: { annotationPosition: true, annotationTail: true }, displaylogo: false, modeBarButtonsToRemove: ['lasso2d', 'select2d'] });
         this._attachGEGateHandler('geneEffectPlot');
         this._attachGECellInteractivity('geneEffectPlot');
+        this._attachGERowLabelTap('geneEffectPlot', filteredStats.map(s => ({ label: labelFor.get(s.group), group: s.group, n: s.n })));
 
         // Highlight cell line if requested (from CLB gene link or cell line search)
         const highlightCl = this._geHighlightCellLine;
@@ -29805,7 +30454,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             // run with a TP53 filter exported 20 extra TP53-WT lines and
             // reported their split as the analysis result).
             const addMutData = mr.additionalHotspot && mr.additionalHotspotLevel !== 'all'
-                ? this.mutations?.geneData?.[mr.additionalHotspot]?.mutations : null;
+                ? this._mutCalls(mr.additionalHotspot, { hotspotOnly: true }) : null;
             const addFusionActive = !!(mr.additionalTransGene && mr.additionalTransLevel !== 'all');
             this.metadata.cellLines.forEach(cl => {
                 if (mr.lineageFilter && this.cellLineMetadata?.lineage?.[cl] !== mr.lineageFilter) return;
@@ -30952,7 +31601,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 tissueGroups: mr?.tissueGroups || null,
                 excludedTissues: excludedList,
                 additionalHotspot: mr?.additionalHotspot && mr?.additionalHotspotLevel !== 'all'
-                    ? `${mr.additionalHotspot} ${mr.additionalHotspotLevel}` : '',
+                    ? this._mutFilterPhrase(mr.additionalHotspot, mr.additionalHotspotLevel, mr.additionalHotspotLevel) : '',
                 oncoprintFilters: this._activeOncoprintFilters?.map(f => `${f.gene} ${f.state}`) || [],
                 customCellLineListCount: this._customCellLineFilter?.size || 0,
                 measure: mr?.metric === 'expr' ? 'mRNA expression' : 'gene effect'
@@ -30990,7 +31639,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (this.excludedTissues?.size > 0) filterParts.push(`Excluded tissues: ${[...this.excludedTissues].join(', ')}`);
             const hotspotGene = document.getElementById('paramHotspotGene')?.value;
             const hotspotLevel = document.getElementById('paramHotspotLevel')?.value;
-            if (hotspotGene) filterParts.push(`Hotspot: ${hotspotGene} ${hotspotLevel === '1+2' ? 'Mut' : hotspotLevel === '0' ? 'WT' : `level ${hotspotLevel}`}`);
+            if (hotspotGene) filterParts.push(`Mutation: ${this._mutFilterPhrase(hotspotGene, hotspotLevel, hotspotLevel === '1+2' ? 'Mut' : hotspotLevel === '0' ? 'WT' : `level ${hotspotLevel}`)}`);
             const transGene = document.getElementById('paramTranslocationGene')?.value;
             const transLevel = document.getElementById('paramTranslocationLevel')?.value;
             if (transGene) filterParts.push(`Fusion: ${transGene} ${transLevel === '1+2' ? 'Fused' : transLevel === '0' ? 'Not fused' : `level ${transLevel}`}`);
@@ -31823,6 +32472,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 if (M.sampleCollectionSite?.[cl]) donor.collectionSite = M.sampleCollectionSite[cl];
                 if (Object.keys(donor).length) entry.donor = donor;
                 if (M.rrid?.[cl]) entry.rrid = M.rrid[cl];
+                const sc = M.sexChromosomes?.[cl];
+                if (sc) entry.sexChromosomes = { status: sc.status, yLinkedExpr: sc.y, xistExpr: sc.xist, ...(sc.xcn != null ? { chrXCn: sc.xcn } : {}) };
             }
             // Proliferation is the standard alternative explanation for a
             // dependency of modest size, so it belongs in the file rather than
@@ -32859,7 +33510,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             nTotal: cellLines.length,
             dataStructure: {
                 cellLineOrder: 'Array of DepMap cell line IDs. Defines column order for geneEffect and expression matrices. Length = nTotal.',
-                cellLineMetadata: 'Object keyed by cell line ID. Per cell line: name, tissue, subtype, mutations (gene → {hotspot: 0|1|2 where 0 = wild type, 1 = one copy carries the hotspot, 2 = both copies or multiple hits; damaging: bool, a likely loss-of-function variant; caveat?: "polymorphic_locus"}. The list per line is every call DepMap makes for it, not a top N, so its length varies by line because mutational burden does; a gene absent from a line was called wild type), clinicalFusions (curated driver fusion calls with tier), inferred (DepMap inferred subtypes, specificVariants like KRAS p.G12D, namedFusions, functionalLoss, msi. Every field in `inferred` is emitted ONLY when it is true or non-empty, so absence means the call was not made and never means it was made negative. functionalLoss covers exactly eight tumour suppressors and no others (TP53, CDKN2A, MTAP, APC, PTEN, NF1, RB1, VHL): a gene outside those eight is never listed here however deleted it is, so absence for any other gene says nothing at all. It is an integrated copy-number + mutation + expression call, so a line can be listed with no damaging coding mutation anywhere, deletion alone being enough), signatures, whose numbers are useless without their scales, so: ploidy (average copies per locus, ~2 is diploid, ~4 after a whole-genome doubling), wgd (boolean, whole-genome doubled), cin (chromosomal instability, 0 to 1, higher is more rearranged), lohFraction (fraction of the genome under loss of heterozygosity, 0 to 1), msiScore (continuous microsatellite-instability score; it is NOT a percentage and has no fixed ceiling. Do not invent a threshold for it: use inferred.msi as the call, and read msiScore only as a severity gradient underneath that call), aneuploidy (count of chromosome arms called aneuploid, out of 39). These are emitted only where DepMap computed them, so a line missing them was not measured rather than measured as normal; the boolean flags among them are emitted only when true, so an absent flag means not called rather than called negative, cnEvents ({ amplifications: [{gene, cn, tier}], deletions: [{gene, cn, tier}] }, curated focal CN events from a clinically actionable panel; amp tier is "amp" (CN ≥ 3.0) or "strong_amp" (≥ 5.0); deletion tier is "del" (CN ≤ 0.5) or "deep_del" (≤ 0.3) on DepMap relative-CN scale where 1.0 = diploid; the 8 TSGs in inferred.functionalLoss are NOT duplicated here), lehmannTnbc ({ tnbcType6, tnbcType4 }, Lehmann TNBC subtype assignments from JCI 2011 / PLOS ONE 2016 for the ~22 panel cell lines that overlap DepMap; six-class: BL1, BL2, IM, M, MSL, LAR; four-class collapses IM/MSL as immune/stromal contamination), class1AntigenPresentation (ABSENT on a line means either not compromised or never assessed, and the two cannot be told apart here; { status: "reduced" | "likely_lost", reasons: [...], evidence: { b2mDamaging?, classOneExprMeanZ?, classOneCn? } }, functional inference combining B2M damaging mutations + HLA-A/B/C expression z-score vs cohort + B2M-normalized HLA copy number; only emitted when class-I presentation looks compromised; NOT allele-specific LOH detection). Also per cell line where available: donor ({ age in years, ageCategory, sex, primaryOrMetastasis, collectionSite } describing the patient the line came from, not how the line behaves in culture) and rrid (the Cellosaurus accession, the unambiguous identifier to quote when ordering or citing a line), oncotreeSubtype / oncotreeCode (finer than `subtype`, which is the Oncotree disease GROUP and cannot separate CLL from DLBCL or myeloma), retroelements ({ totalCpm, line1Cpm, hervkCpm, svaCpm, activeElements, retroelementHigh }, RNA-seq reads over 750 full-length intergenic LINE-1 / HERV-K / SVA elements, unique reads only, counts per million, from public CCLE hg19 alignments; retroelementHigh marks the top decile of MEASURED lines, a runtime cutoff around 80 CPM. Emitted ONLY for lines with a public alignment: 669 of the 1,208 panel lines are covered, so a line without this field was never measured and that is NOT a value of zero. The distribution is heavily right-skewed (median around 40 CPM, maximum 856), so read it as a percentile rather than a z-score. This is element TRANSCRIPTION, not retrotransposition: new genomic insertions cannot be seen in RNA, and poly-A selected RNA-seq cannot assign reads to individual loci, so treat it as an aggregate signal. If a group in this file was built by sorting on this measure, this is the axis that produced it), interferonScore (mean z-score across a curated interferon-stimulated-gene panel, computed across the whole expression cohort, so 0 is the panel average and +1 is a standard deviation high; emitted only where at least 60 % of the panel genes are measured in that line. Higher retroelement signal is associated with greater ADAR1 dependency (r = -0.18, p = 2.6e-06, n = 669), and that association survives controlling for this score (partial r = -0.15), so the two are related but not interchangeable), growthRate (CRISPR-inferred proliferation, on a relative scale where 1.0 is a typical line in the panel and higher is faster, NOT doublings per day; the standard alternative explanation for a modest dependency, so compare it between your groups before crediting a difference in dependency), meanGeneEffect + meanGeneEffectPercentile (that line\'s mean across the whole gene-effect matrix, and where that mean ranks among EVERY screened cell line in the release, not just the ones in this file; the "is this screen globally sick" control, so a percentile near 0 means the line looks sensitive to almost any knockout and a strong-looking dependency in it deserves less weight) and focalGeneZWithinLine (the focal gene\'s z against that line\'s OWN dependency distribution, the "is this gene unusual for this line" control). The `caveat: "polymorphic_locus"` flag marks HLA / MIC / KIR genes, calls in these highly polymorphic regions typically reflect germline allelic divergence from GRCh38, not somatic events.',
+                cellLineMetadata: 'Object keyed by cell line ID. Per cell line: name, tissue, subtype, mutations (gene → {hotspot: 0|1|2 where 0 = wild type, 1 = one copy carries the hotspot, 2 = both copies or multiple hits; damaging: bool, a likely loss-of-function variant; caveat?: "polymorphic_locus"}. The list per line is every call DepMap makes for it, not a top N, so its length varies by line because mutational burden does; a gene absent from a line was called wild type), clinicalFusions (curated driver fusion calls with tier), inferred (DepMap inferred subtypes, specificVariants like KRAS p.G12D, namedFusions, functionalLoss, msi. Every field in `inferred` is emitted ONLY when it is true or non-empty, so absence means the call was not made and never means it was made negative. functionalLoss covers exactly eight tumour suppressors and no others (TP53, CDKN2A, MTAP, APC, PTEN, NF1, RB1, VHL): a gene outside those eight is never listed here however deleted it is, so absence for any other gene says nothing at all. It is an integrated copy-number + mutation + expression call, so a line can be listed with no damaging coding mutation anywhere, deletion alone being enough), signatures, whose numbers are useless without their scales, so: ploidy (average copies per locus, ~2 is diploid, ~4 after a whole-genome doubling), wgd (boolean, whole-genome doubled), cin (chromosomal instability, 0 to 1, higher is more rearranged), lohFraction (fraction of the genome under loss of heterozygosity, 0 to 1), msiScore (continuous microsatellite-instability score; it is NOT a percentage and has no fixed ceiling. Do not invent a threshold for it: use inferred.msi as the call, and read msiScore only as a severity gradient underneath that call), aneuploidy (count of chromosome arms called aneuploid, out of 39). These are emitted only where DepMap computed them, so a line missing them was not measured rather than measured as normal; the boolean flags among them are emitted only when true, so an absent flag means not called rather than called negative, cnEvents ({ amplifications: [{gene, cn, tier}], deletions: [{gene, cn, tier}] }, curated focal CN events from a clinically actionable panel; amp tier is "amp" (CN ≥ 3.0) or "strong_amp" (≥ 5.0); deletion tier is "del" (CN ≤ 0.5) or "deep_del" (≤ 0.3) on DepMap relative-CN scale where 1.0 = diploid; the 8 TSGs in inferred.functionalLoss are NOT duplicated here), lehmannTnbc ({ tnbcType6, tnbcType4 }, Lehmann TNBC subtype assignments from JCI 2011 / PLOS ONE 2016 for the ~22 panel cell lines that overlap DepMap; six-class: BL1, BL2, IM, M, MSL, LAR; four-class collapses IM/MSL as immune/stromal contamination), class1AntigenPresentation (ABSENT on a line means either not compromised or never assessed, and the two cannot be told apart here; { status: "reduced" | "likely_lost", reasons: [...], evidence: { b2mDamaging?, classOneExprMeanZ?, classOneCn? } }, functional inference combining B2M damaging mutations + HLA-A/B/C expression z-score vs cohort + B2M-normalized HLA copy number; only emitted when class-I presentation looks compromised; NOT allele-specific LOH detection). Also per cell line where available: donor ({ age in years, ageCategory, sex, primaryOrMetastasis, collectionSite } describing the patient the line came from, not how the line behaves in culture), sexChromosomes ({ status, yLinkedExpr, xistExpr, chrXCn? }: the measured sex-chromosome state of the line in culture, as opposed to donor.sex. yLinkedExpr is the mean log-TPM of six Y-linked genes, xistExpr the XIST log-TPM, chrXCn the median relative copy number over non-pseudoautosomal chrX genes where 1.0 is the line\'s own modal baseline so one X in a diploid line reads about 0.5. status is one of y_present, y_loss (annotated male with Y-linked expression below 1: FUNCTIONAL loss of Y, an expression call that cannot separate a missing Y from a silent one), xist_present, xi_lost (annotated female, XIST below 1, chrXCn below 0.75: the inactive X is gone and X-linked genes are haploid), xist_silenced (annotated female, XIST below 1, two X copies retained: the inactive X eroded or the active X was duplicated, both transcribed), both_low (no Y-linked expression and no XIST, annotation cannot split it). Emitted ONLY for lines with expression data, so an absent field means not measured, never a normal result) and rrid (the Cellosaurus accession, the unambiguous identifier to quote when ordering or citing a line), oncotreeSubtype / oncotreeCode (finer than `subtype`, which is the Oncotree disease GROUP and cannot separate CLL from DLBCL or myeloma), retroelements ({ totalCpm, line1Cpm, hervkCpm, svaCpm, activeElements, retroelementHigh }, RNA-seq reads over 750 full-length intergenic LINE-1 / HERV-K / SVA elements, unique reads only, counts per million, from public CCLE hg19 alignments; retroelementHigh marks the top decile of MEASURED lines, a runtime cutoff around 80 CPM. Emitted ONLY for lines with a public alignment: 669 of the 1,208 panel lines are covered, so a line without this field was never measured and that is NOT a value of zero. The distribution is heavily right-skewed (median around 40 CPM, maximum 856), so read it as a percentile rather than a z-score. This is element TRANSCRIPTION, not retrotransposition: new genomic insertions cannot be seen in RNA, and poly-A selected RNA-seq cannot assign reads to individual loci, so treat it as an aggregate signal. If a group in this file was built by sorting on this measure, this is the axis that produced it), interferonScore (mean z-score across a curated interferon-stimulated-gene panel, computed across the whole expression cohort, so 0 is the panel average and +1 is a standard deviation high; emitted only where at least 60 % of the panel genes are measured in that line. Higher retroelement signal is associated with greater ADAR1 dependency (r = -0.18, p = 2.6e-06, n = 669), and that association survives controlling for this score (partial r = -0.15), so the two are related but not interchangeable), growthRate (CRISPR-inferred proliferation, on a relative scale where 1.0 is a typical line in the panel and higher is faster, NOT doublings per day; the standard alternative explanation for a modest dependency, so compare it between your groups before crediting a difference in dependency), meanGeneEffect + meanGeneEffectPercentile (that line\'s mean across the whole gene-effect matrix, and where that mean ranks among EVERY screened cell line in the release, not just the ones in this file; the "is this screen globally sick" control, so a percentile near 0 means the line looks sensitive to almost any knockout and a strong-looking dependency in it deserves less weight) and focalGeneZWithinLine (the focal gene\'s z against that line\'s OWN dependency distribution, the "is this gene unusual for this line" control). The `caveat: "polymorphic_locus"` flag marks HLA / MIC / KIR genes, calls in these highly polymorphic regions typically reflect germline allelic divergence from GRCh38, not somatic events.',
                 geneEffect: 'Object keyed by gene name. Each value is an array of CRISPR gene effect scores aligned to cellLineOrder. Negative = essential. null = missing. READ THIS BEFORE CONCLUDING ANYTHING FROM A GENE YOU CANNOT FIND: this matrix is VARIANCE-FILTERED and carries a fraction of the release, so a gene missing from it was DROPPED FOR LOW VARIANCE ACROSS THE PANEL, which is not the same as scoring near zero and is never evidence that it is not a partner. `matrixCoverage` says how many genes of the release survived the filter here. If your question turns on a specific gene that is absent, say so and ask for it by name in a Custom export (see notIncluded.howToAskForMore); naming genes disables the filter for them. Always included regardless of the variance threshold: the focal gene, every gene named in topCoessentials, and every gene the user typed into a multi-gene view, so any precomputed number about them can be recomputed from this file.',
                 expression: 'Object keyed by gene name. Each value is an array of log2(TPM+1) RNA expression values aligned to cellLineOrder. null = missing. Variance-filtered in the same way as geneEffect, with the same warning: a gene absent from here was dropped for low variance, not measured as flat, and `matrixCoverage` gives the counts. Always included regardless of the variance threshold: the focal gene where there is one, the genes surfaced in topCorrelates, the focal gene\'s pathway / complex partners, and every gene the user typed into a multi-gene view. Partner sources are layered: hand-curated high-value complexes (NEDD8/CRL, Proteasome, Hippo, MYC, TP53, BRCA, mTOR, BCL2, splicing) → CORUM physical protein complexes (~5000 human genes) → wiki cancer pathways (RAS/MAPK, PI3K, RTK family, etc.) → Reactome pathway / signaling-cascade co-members (~10000 human genes; broad parents filtered out, only pathways with 5-100 genes kept). So for SMARCA4 you get the BAF subunits via CORUM; for MCM4 the MCM2-7 helicase; for IL4R the JAK/STAT cascade via Reactome; for arbitrary genes you typically get something useful from at least one of the four layers.',
                 topCorrelates: 'Optional. Top 30 expression-vs-GE correlates of the focal gene: { gene, r (Pearson, focal-gene GE vs partner expression across the cohort), n }. Gated at n >= max(50, 0.6 * cohortSize) to drop partial-coverage genes. Polarity: positive r means high partner expression covaries with weaker focal-gene dependency (less negative GE).',
@@ -33336,6 +33987,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                         say(has(m => m?.meanGeneEffectPercentile != null), 'how globally sensitive that line\'s whole screen is, at cellLineMetadata[id].meanGeneEffectPercentile'),
                         say(has(m => m?.meanGeneEffect != null), 'the raw mean gene effect behind that percentile, at cellLineMetadata[id].meanGeneEffect'),
                         say(has(m => m?.donor), 'donor age, age category, sex, primary-vs-metastasis and collection site, at cellLineMetadata[id].donor'),
+                        say(has(m => m?.sexChromosomes), 'the measured sex-chromosome state of the line in culture (functional loss of Y, XIST silenced with one or two X copies, with the numbers behind the call), at cellLineMetadata[id].sexChromosomes; absent means not measured'),
                         say(has(m => m?.oncotreeCode), 'the Oncotree disease CODE, at cellLineMetadata[id].oncotreeCode'),
                         say(has(m => m?.rrid), 'the Cellosaurus RRID identifier, at cellLineMetadata[id].rrid'),
                         say(has(m => m?.signatures?.wgd != null), 'whole-genome doubling status, at cellLineMetadata[id].signatures.wgd'),
@@ -33511,6 +34163,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // The dialog offers the image and defaults it on; the custom dialog
         // has no checkbox and keeps its own rule below.
         const wantCompanionImage = custom ? true : (document.getElementById('aiIncludeImage')?.checked !== false);
+        // The picture is a courtesy; the data file is the export. A capture
+        // that never returns (a stalled chart render) must not hold the file
+        // hostage, so it is given a fixed time and then skipped.
+        const timed = (p, ms = 25000) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('picture timed out')), ms))]);
+        if (wantCompanionImage) setStatus('Saving a picture of the view...');
         try {
             // A custom export whose request replaced the cohort describes
             // nothing on screen: its context says so, and a screenshot of
@@ -33545,13 +34202,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 // mode it is in (selection vs rest, or gate A vs gate B). The
                 // gate export shipped no picture at all previously.
                 const el = document.getElementById('selectionInspectInner');
-                if (el && el.offsetParent !== null) _pngUrl = await this._domToPngUrl(el);
+                if (el && el.offsetParent !== null) _pngUrl = await timed(this._domToPngUrl(el));
             } else if (source === 'clb') {
                 const el = document.getElementById('clbModalCard');
-                if (el && el.offsetParent !== null) _pngUrl = await this._domToPngUrl(el);
+                if (el && el.offsetParent !== null) _pngUrl = await timed(this._domToPngUrl(el));
             } else if (source === 'wiki') {
                 const el = document.getElementById('clbWikiBody');
-                if (el && el.offsetParent !== null) _pngUrl = await this._domToPngUrl(el);
+                if (el && el.offsetParent !== null) _pngUrl = await timed(this._domToPngUrl(el));
             } else if (source === 'heatmap') {
                 // Also not a Plotly chart: the same composed canvas Export
                 // image / Copy use (labels + dendrogram, grid + group strip,
@@ -33571,11 +34228,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     : null;
                 const el = plotId && document.getElementById(plotId);
                 if (el && el.data && typeof Plotly !== 'undefined') {
-                    _pngUrl = await Plotly.toImage(el, {
+                    _pngUrl = await timed(Plotly.toImage(el, {
                         format: 'png',
                         width: (el._fullLayout?.width || el.clientWidth || 900) * 2,
                         height: (el._fullLayout?.height || el.clientHeight || 600) * 2
-                    });
+                    }));
                 }
             }
             // A question-less exprCorrelates table has no chart: plotId stays
@@ -34102,7 +34759,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             // Links wrap onto their own line so adding more of them doesn't
             // squeeze the hint next to them.
             html += `<div style="margin-top:8px; padding-top:6px; border-top:1px solid #f3f4f6; font-size:10px; color:#6b7280;">`;
-            html += `<div style="display:flex; flex-wrap:wrap; gap:2px 4px;">${links}</div>`;
+            // The way into the analyses from a pinned card, so a name that
+            // opens a card rather than a popout still leads somewhere.
+            const inApp = el.dataset.pinned === '1' && this.geneIndex?.has(String(gene).toUpperCase())
+                ? `<a href="#" onclick="event.preventDefault(); app._openGeneEffectFromCard('${this.esc(gene)}')" style="color:#4c782e; font-weight:600; margin-right:6px;">Gene effect in this app &#9656;</a>`
+                : '';
+            html += `<div style="display:flex; flex-wrap:wrap; gap:2px 4px;">${inApp}${links}</div>`;
             // No Shift key and no Esc on a phone, so neither hint leads
             // anywhere: the card is dismissed by tapping away from it.
             const _hint = window.innerWidth <= 640
@@ -34119,6 +34781,15 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 el.style.top = Math.max(10, window.innerHeight - rect.height - 10) + 'px';
             }
         });
+    }
+
+    // From a pinned gene card: the gene-effect popout, with the cell line
+    // whose wiki or browser card the gene was pressed in highlighted.
+    _openGeneEffectFromCard(gene) {
+        this.hideGeneTooltip(true);
+        const wikiOpen = document.getElementById('clbWikiModal')?.style.display === 'flex';
+        this._geHighlightCellLine = wikiOpen ? (this._wikiCellLineId || this._clbInspectedCellLine) : this._clbInspectedCellLine;
+        this.openGeneEffectModal(gene, 'tissue');
     }
 
     // `force` dismisses pinned tooltips too (used by the close button / Esc /
@@ -34265,6 +34936,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (lin && lin.toLowerCase() !== String(lineageTxt).toLowerCase()) s1 += ` <span style="color:#6b7280;">(${this.esc(lin)})</span>`;
         if (originParts.length) s1 += ` <span style="color:#6b7280;">(${originParts.join(', ')})</span>`;
         s1 += '.';
+        {
+            // Only the states that change what the line is: a lost Y or a
+            // lost / silenced inactive X. The ordinary states say nothing.
+            const st = this._getSexChromosomes(cellLineId)?.status;
+            if (st === 'y_loss') s1 += ' The Y chromosome is functionally lost (no Y-linked expression).';
+            else if (st === 'xi_lost') s1 += ' XIST is off and one X copy remains, so the inactive X is lost.';
+            else if (st === 'xist_silenced') s1 += ' XIST is off although two X copies remain.';
+        }
         if ((lin || '').toLowerCase().includes('breast')) {
             // A published classification leads. Where this line's own data says
             // something else, that is stated next to it rather than either one
@@ -34449,7 +35128,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const bodyText = [s2, s3, s4].filter(Boolean).join(' ');
         return warn + (bodyText
             ? `${s1} ${bodyText}`
-            : `${s1} <span style="color:#6b7280;">No driver fusion, canonical oncogene hotspot or focal copy-number change was found in the integrated DepMap layers. That is a statement about these layers, not proof the cell line carries no driver.</span>`);
+            : `${s1} <span style="color:#6b7280;">No driver fusion, oncogene hotspot or focal copy-number change was found in the curated data. That does not prove the cell line has no driver.</span>`);
     }
 
     // Thin wrapper: same text as the wiki, plus the ID / RRID footer the
@@ -34607,6 +35286,70 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
 
     // Wire hover (exec summary) + click (label / double-click Wiki) on a GE dot plot.
+    // A press on a row label shows the whole group name in a card: the
+    // label is shortened to fit beside the plot, on a phone to two short
+    // rows, so the name itself is often not readable there. Plotly gives
+    // tick labels no events of their own, so the press is matched against
+    // the drawn labels' boxes instead, which also survives its re-renders.
+    _attachGERowLabelTap(plotId, rows) {
+        const el = document.getElementById(plotId);
+        if (!el) return;
+        el._geRowLabels = rows;
+        if (el._geRowTapWired) return;
+        el._geRowTapWired = true;
+        const showCard = (clientX, clientY) => {
+            const ticks = el.querySelectorAll('.ytick text');
+            let hit = null;
+            for (const t of ticks) {
+                const r = t.getBoundingClientRect();
+                if (clientY >= r.top - 4 && clientY <= r.bottom + 4 && clientX <= r.right + 8) { hit = t; break; }
+            }
+            if (!hit) return false;
+            const raw = hit.getAttribute('data-unformatted') || hit.textContent;
+            const row = (el._geRowLabels || []).find(r => r.label === raw);
+            if (!row) return false;
+            let card = document.getElementById('geRowLabelCard');
+            if (!card) {
+                card = document.createElement('div');
+                card.id = 'geRowLabelCard';
+                card.style.cssText = 'position:fixed; z-index:10002; background:#fff; border:1px solid var(--gray-200);'
+                    + ' border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,0.16); padding:10px 14px; max-width:calc(100vw - 16px);';
+                document.body.appendChild(card);
+            }
+            card.innerHTML = `<div style="font-size:16px; font-weight:700; color:#374151;">${this.esc(row.group)}</div>`
+                + `<div style="font-size:12px; color:#6b7280; margin-top:2px;">${row.n} cell line${row.n === 1 ? '' : 's'}. Tap anywhere to close.</div>`;
+            card.style.display = 'block';
+            const r = hit.getBoundingClientRect();
+            const m = card.getBoundingClientRect();
+            const top = (r.bottom + 6 + m.height > window.innerHeight - 8) ? Math.max(8, r.top - m.height - 6) : r.bottom + 6;
+            card.style.left = Math.round(Math.max(8, Math.min(r.left, window.innerWidth - m.width - 8))) + 'px';
+            card.style.top = Math.round(top) + 'px';
+            const openedAt = Date.now();
+            const dismiss = (e) => {
+                if (Date.now() - openedAt < 400) return;
+                card.style.display = 'none';
+                document.removeEventListener('click', dismiss, true);
+                document.removeEventListener('touchend', dismiss, true);
+            };
+            document.addEventListener('click', dismiss, true);
+            document.addEventListener('touchend', dismiss, true);
+            return true;
+        };
+        // Taken at touchend on a phone (see the scatter chips for why), with
+        // the click kept for a mouse.
+        let t0 = null;
+        el.addEventListener('touchstart', (e) => {
+            const t = e.changedTouches[0];
+            t0 = t ? { x: t.clientX, y: t.clientY } : null;
+        }, { passive: true });
+        el.addEventListener('touchend', (e) => {
+            const t = e.changedTouches[0];
+            if (!t0 || !t || Math.hypot(t.clientX - t0.x, t.clientY - t0.y) > 10) return;
+            if (showCard(t.clientX, t.clientY) && e.cancelable) e.preventDefault();
+        });
+        el.addEventListener('click', (e) => { showCard(e.clientX, e.clientY); });
+    }
+
     _attachGECellInteractivity(plotId) {
         this._attachDotHoverSummary(plotId, null, window.innerWidth <= 640
             ? 'Tap to name this cell line \u00b7 tap the named dot again to open it'
@@ -34667,7 +35410,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (inspectSubtype && this.cellLineMetadata?.primaryDisease?.[cellLine] !== inspectSubtype) return;
             if (!this._passesOncotree(cellLine, 'geOncotreeFilter')) return;
             if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
-                const addMutData = this.mutations.geneData[mr.additionalHotspot];
+                const addMutData = this._mutSource(mr.additionalHotspot, { hotspotOnly: true });
                 if (addMutData) {
                     const addMutLevel = addMutData.mutations[cellLine] || 0;
                     if (mr.additionalHotspotLevel === '0' && addMutLevel !== 0) return;
@@ -34677,7 +35420,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 }
             }
             if (inspectHotspot) {
-                const inspHotData = this.mutations?.geneData?.[inspectHotspot] || this.damagingMutations?.geneData?.[inspectHotspot];
+                const inspHotData = this._mutSource(inspectHotspot);
                 if (inspHotData) {
                     const inspMutLevel = inspHotData.mutations[cellLine] || 0;
                     if (inspMutLevel === 0) return;
@@ -34777,7 +35520,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (inspectSubtype && this.cellLineMetadata?.primaryDisease?.[cellLine] !== inspectSubtype) return;
             if (!this._passesOncotree(cellLine, 'geOncotreeFilter')) return;
             if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
-                const addMutData = this.mutations?.geneData?.[mr.additionalHotspot];
+                const addMutData = this._mutSource(mr.additionalHotspot, { hotspotOnly: true });
                 if (addMutData) {
                     const addMutLevel = addMutData.mutations[cellLine] || 0;
                     if (mr.additionalHotspotLevel === '0' && addMutLevel !== 0) return;
@@ -34883,7 +35626,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (inspectSubtype && this.cellLineMetadata?.primaryDisease?.[cellLine] !== inspectSubtype) return;
             if (!this._passesOncotree(cellLine, 'geOncotreeFilter')) return;
             if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
-                const addMutData = this.mutations?.geneData?.[mr.additionalHotspot];
+                const addMutData = this._mutSource(mr.additionalHotspot, { hotspotOnly: true });
                 if (addMutData) {
                     const addMutLevel = addMutData.mutations[cellLine] || 0;
                     if (mr.additionalHotspotLevel === '0' && addMutLevel !== 0) return;
@@ -34918,11 +35661,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const tData = this.translocations.geneData[tGene];
             if (!tData) continue;
             // Quick check: does this gene have any fused cells in our base set?
-            let hasFused = false;
-            for (const cl of baseCellIds) {
-                if (tData.translocations[cl] && tData.translocations[cl] > 0) { hasFused = true; break; }
-            }
-            if (!hasFused) continue;
+            if (!this._countFusedIn(tGene, baseCellIds)) continue;
             const filtered = baseCells.filter(c => (tData.translocations[c.cellLine] || 0) >= 1);
             const wtGE = filtered.filter(c => c.mainMut === 0).map(c => c.ge);
             const mutGE = filtered.filter(c => c.mainMut >= 1).map(c => c.ge);
@@ -34992,7 +35731,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (inspectSubtype && this.cellLineMetadata?.primaryDisease?.[cellLine] !== inspectSubtype) return;
             if (!this._passesOncotree(cellLine, 'geOncotreeFilter')) return;
             if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
-                const addMutData = this.mutations?.geneData?.[mr.additionalHotspot];
+                const addMutData = this._mutSource(mr.additionalHotspot, { hotspotOnly: true });
                 if (addMutData) {
                     const addMutLevel = addMutData.mutations[cellLine] || 0;
                     if (mr.additionalHotspotLevel === '0' && addMutLevel !== 0) return;
@@ -35715,7 +36454,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (geSub && this.cellLineMetadata?.primaryDisease?.[cellLine] !== geSub) return;
             if (!this._passesOncotree(cellLine, 'geOncotreeFilter')) return;
             if (mr?.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
-                const addMutData = this.mutations.geneData[mr.additionalHotspot];
+                const addMutData = this._mutSource(mr.additionalHotspot, { hotspotOnly: true });
                 if (addMutData) {
                     const addMutLevel = addMutData.mutations[cellLine] || 0;
                     if (mr.additionalHotspotLevel === '0' && addMutLevel !== 0) return;
@@ -35994,7 +36733,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
                 // Still apply additional hotspot filter
                 if (mr?.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
-                    const addMutData = this.mutations.geneData[mr.additionalHotspot];
+                    const addMutData = this._mutSource(mr.additionalHotspot, { hotspotOnly: true });
                     if (addMutData) {
                         const addMutLevel = addMutData.mutations[cellLine] || 0;
                         if (mr.additionalHotspotLevel === '0' && addMutLevel !== 0) continue;
@@ -36348,6 +37087,15 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const modal = document.getElementById('enrichrModal');
         if (!modal) return;
         modal.classList.toggle('enrichr-floating', !!on);
+    }
+
+    // The window that floats beside the network is about the network; once
+    // the user leaves it (a double-click opening a gene or a pair, another
+    // results tab) it would sit over the new view, so it goes.
+    _closeEnrichrIfFloating() {
+        const modal = document.getElementById('enrichrModal');
+        if (!modal || modal.style.display === 'none' || !this._enrichrFromNetwork) return;
+        modal.style.display = 'none';
     }
 
     // Enrichr from the network. Three sets, because they answer different
@@ -36826,7 +37574,25 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         this._enrichrData = { genes, results, libraries };
         this._enrichrSortState = {};
+        this._enrichrFocus = { genes: [], only: false, all: false };
         this.renderEnrichrResults(libraries[0].key);
+    }
+
+    // Does this term's overlap include the genes of interest: any of them,
+    // or with `all` set, every one of them?
+    _enrichrRowHasFocus(row, focus, all) {
+        if (!focus || !focus.length) return false;
+        const genes = Array.isArray(row.genes) ? row.genes : (Array.isArray(row[5]) ? row[5] : []);
+        const have = new Set(genes.map(g => String(g).toUpperCase()));
+        return all ? focus.every(g => have.has(g)) : focus.some(g => have.has(g));
+    }
+
+    // The genes of interest as a phrase: "TP53", "TP53 or MDM2", "TP53 and MDM2".
+    _enrichrFocusLabel() {
+        const f = this._enrichrFocus || {};
+        const g = f.genes || [];
+        if (!g.length) return '';
+        return g.length === 1 ? g[0] : g.slice(0, -1).join(', ') + (f.all ? ' and ' : ' or ') + g[g.length - 1];
     }
 
     renderEnrichrResults(activeLibrary) {
@@ -36835,11 +37601,22 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const contentEl = document.getElementById('enrichrContent');
 
         // Render tabs
+        const focusGenes = (this._enrichrFocus?.genes || []).map(g => String(g).toUpperCase());
+        const focus = focusGenes.length ? focusGenes : null;
+        const focusAll = !!this._enrichrFocus?.all && focusGenes.length > 1;
+        const focusLabel = this._enrichrFocusLabel();
+        const onlyFocus = !!this._enrichrFocus?.only;
         tabsEl.innerHTML = libraries.map(lib => {
             const active = lib.key === activeLibrary;
             const total = results[lib.key]?.length || 0;
-            const sig = (results[lib.key] || []).filter(r => r[6] < 0.05).length;
-            return `<button data-lib="${lib.key}" style="padding:5px 12px; font-size:12px; border:1px solid ${active ? '#6ba544' : 'var(--gray-200)'}; background:${active ? '#6ba544' : '#fff'}; color:${active ? '#fff' : '#374151'}; border-radius:4px; cursor:pointer;">${lib.label} (${sig}/${total})</button>`;
+            const sigRows = (results[lib.key] || []).filter(r => r[6] < 0.05);
+            const sig = sigRows.length;
+            // With a gene of interest set, each tab also says how many of its
+            // significant sets contain that gene, so the right library can
+            // be picked without opening each one.
+            const withFocus = focus ? sigRows.filter(r => this._enrichrRowHasFocus(r, focus, focusAll)).length : 0;
+            const focusNote = focus ? ` <span style="opacity:0.85;">· ${withFocus} with ${this.esc(focusLabel)}</span>` : '';
+            return `<button data-lib="${lib.key}" style="padding:5px 12px; font-size:12px; border:1px solid ${active ? '#6ba544' : 'var(--gray-200)'}; background:${active ? '#6ba544' : '#fff'}; color:${active ? '#fff' : '#374151'}; border-radius:4px; cursor:pointer;">${lib.label} (${sig}/${total})${focusNote}</button>`;
         }).join('');
 
         tabsEl.querySelectorAll('button').forEach(btn => {
@@ -36878,6 +37655,50 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (typeof va === 'string') return sortState.asc ? va.localeCompare(vb) : vb.localeCompare(va);
             return sortState.asc ? va - vb : vb - va;
         });
+        // Gene of interest: the sets that contain it come first, in the
+        // current sort order, or are the only ones shown. The sort itself is
+        // untouched, so the column headers still mean what they say within
+        // each block.
+        const nSigAll = parsed.length;
+        let nWithFocus = 0;
+        if (focus) {
+            parsed.forEach(r => { r.hasFocus = this._enrichrRowHasFocus(r, focus, focusAll); if (r.hasFocus) nWithFocus++; });
+            parsed = onlyFocus ? parsed.filter(r => r.hasFocus) : [...parsed.filter(r => r.hasFocus), ...parsed.filter(r => !r.hasFocus)];
+        }
+        // How many significant sets in this library each sent gene sits in,
+        // so the picker offers the genes that carry the enrichment first.
+        const perGene = new Map();
+        for (const g of (this._enrichrData.genes || [])) perGene.set(String(g).toUpperCase(), 0);
+        for (const r of (results[activeLibrary] || []).filter(r => r[6] < 0.05)) {
+            for (const g of (Array.isArray(r[5]) ? r[5] : [])) { const k = String(g).toUpperCase(); if (perGene.has(k)) perGene.set(k, perGene.get(k) + 1); }
+        }
+        const ranked = [...perGene.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+        const chosen = new Set(focusGenes);
+        const geneChip = (g) => `<span class="clb-chip" data-focus-rm="${this.esc(g)}" title="Click to remove ${this.esc(g)} from the genes of interest" style="background:#eef2ff; color:#3730a3; border:1px solid #c7d2fe; padding:1px 7px; border-radius:10px; font-size:10px; font-weight:600; cursor:pointer;">${this.esc(g)} <span style="font-weight:400; color:#6b7280;">${perGene.get(g) ?? 0}</span> &times;</span>`;
+        const focusRow = `<div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:0 0 8px; padding:6px 10px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:6px; font-size:11px; color:#374151;">
+            <span style="font-weight:600;" title="Sets that contain a gene of interest are listed first, in the current sort order. The number on each chip is how many significant sets in this library contain that gene.">Genes of interest</span>
+            ${focusGenes.map(geneChip).join(' ')}
+            <select id="enrichrFocusPick" title="The genes that were sent, most-often-found first: the number is how many significant sets in this library contain the gene" style="font-size:11px; padding:2px 4px; border:1px solid #d1d5db; border-radius:4px; max-width:190px;">
+                <option value="">Add a sent gene (ranked by sets)…</option>
+                ${ranked.filter(([g]) => !chosen.has(g)).map(([g, n]) => `<option value="${this.esc(g)}">${this.esc(g)} (${n} set${n === 1 ? '' : 's'})</option>`).join('')}
+            </select>
+            <input type="text" id="enrichrFocusGene" placeholder="or type genes…" autocomplete="off" title="Type one or more gene symbols, separated by commas or spaces, and press Enter" style="width:110px; padding:2px 6px; border:1px solid #d1d5db; border-radius:4px; font-size:11px; text-transform:uppercase;">
+            <label style="display:inline-flex; align-items:center; gap:4px;${focusGenes.length > 1 ? '' : ' opacity:0.5;'}" title="With several genes, keep only the sets that contain every one of them rather than any of them">
+                <input type="checkbox" id="enrichrFocusAll"${focusAll ? ' checked' : ''}${focusGenes.length > 1 ? '' : ' disabled'} style="margin:0;"> must contain all
+            </label>
+            <label style="display:inline-flex; align-items:center; gap:4px;${focus ? '' : ' opacity:0.5;'}" title="Hide the sets that contain none of the genes of interest">
+                <input type="checkbox" id="enrichrFocusOnly"${onlyFocus ? ' checked' : ''}${focus ? '' : ' disabled'} style="margin:0;"> only those sets
+            </label>
+            <span style="color:#6b7280; flex-basis:100%;">${focus
+                ? (nWithFocus ? `<b style="color:#4c782e;">${nWithFocus}</b> of ${nSigAll} significant sets in this library contain ${this.esc(focusLabel)}${onlyFocus ? '' : ', listed first and tinted'}.`
+                    : `No significant set in this library contains ${this.esc(focusLabel)}${focusGenes.every(g => perGene.has(g)) ? '' : ' (a gene typed here was not among the genes sent)'}.`)
+                : 'Pick or type genes to bring the sets that contain them to the top.'}</span>
+        </div>`;
+        if (focus && onlyFocus && !parsed.length) {
+            contentEl.innerHTML = focusRow + `<div style="text-align:center; padding:40px; color:#aaa;">No significant set in this library contains ${this.esc(focusLabel)}.</div>`;
+            this._wireEnrichrFocus(activeLibrary);
+            return;
+        }
 
         const columns = [
             { key: 'rank', label: '#' },
@@ -36912,7 +37733,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             // Each gene as its own item, so the column flow breaks between
             // genes instead of wherever the text happens to reach the edge.
             const geneHtml = _genes.length
-                ? _genes.map(g => `<span class="eg">${this.esc(g)}</span>`).join('')
+                ? _genes.map(g => `<span class="eg"${focus && focus.includes(String(g).toUpperCase()) ? ' style="font-weight:700; color:#4c782e;"' : ''}>${this.esc(g)}</span>`).join('')
                 : this.esc(String(row.genes));
             const geneCount = _genes.length;
             // The cell is wider than it was, so more rows fit whole; and cut at
@@ -36929,7 +37750,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 + ` data-enrichr-term="${this.esc(row.term)}" data-enrichr-q="${row.adjPValue}" data-enrichr-n="${geneCount}"`
                 + ` title="Highlight these genes in the network"`
                 : '';
-            html += `<tr${_gsAttr} style="border-bottom:1px solid #333;${_clickable ? ' cursor:pointer;' : ''}">`;
+            html += `<tr${_gsAttr} style="border-bottom:1px solid #333;${_clickable ? ' cursor:pointer;' : ''}${row.hasFocus ? ' background:#f0fdf4;' : ''}">`;
             html += `<td style="padding:5px 8px; color:#9ca3af;">${row.rank}</td>`;
             html += `<td style="padding:5px 8px; max-width:350px; overflow:hidden; text-overflow:ellipsis;" title="${this.esc(row.term)}">${this.esc(row.term)}</td>`;
             html += `<td style="padding:5px 8px; font-family:monospace; font-size:11px;">${this.formatPValue(row.pValue)}</td>`;
@@ -36970,7 +37791,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                  + `<input type="color" id="enrichrHlColor" value="${_co}" title="Mark colour, shared with the network's Settings panel" style="width:30px; height:22px; padding:0; border:1px solid #d1d5db; border-radius:4px; background:none; cursor:pointer;" oninput="app.setNetworkHighlightLook({color:this.value})">`
                  + '</div>' + html;
         }
-        contentEl.innerHTML = html;
+        contentEl.innerHTML = focusRow + html;
+        this._wireEnrichrFocus(activeLibrary);
 
         if (this._enrichrFromNetwork) {
             contentEl.querySelectorAll('tr[data-enrichr-hl]').forEach(tr => {
@@ -37037,6 +37859,96 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 td.title = isExpanded ? 'Click to expand' : 'Click to collapse';
             });
         });
+    }
+
+    _wireEnrichrFocus(activeLibrary) {
+        const st = (this._enrichrFocus ||= { genes: [], only: false, all: false });
+        const content = document.getElementById('enrichrContent');
+        const redraw = () => {
+            st.only = st.only && st.genes.length > 0;
+            st.all = st.all && st.genes.length > 1;
+            this.renderEnrichrResults(activeLibrary);
+        };
+        const addGenes = (text) => {
+            const add = String(text || '').toUpperCase().split(/[\s,;]+/).map(t => t.trim()).filter(Boolean);
+            if (!add.length) return;
+            for (const g of add) if (!st.genes.includes(g)) st.genes.push(g);
+            redraw();
+        };
+        const inp = document.getElementById('enrichrFocusGene');
+        inp?.addEventListener('change', () => addGenes(inp.value));
+        inp?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addGenes(inp.value); } });
+        document.getElementById('enrichrFocusPick')?.addEventListener('change', (e) => { if (e.target.value) addGenes(e.target.value); });
+        document.getElementById('enrichrFocusOnly')?.addEventListener('change', (e) => { st.only = e.target.checked; redraw(); });
+        document.getElementById('enrichrFocusAll')?.addEventListener('change', (e) => { st.all = e.target.checked; redraw(); });
+        content?.querySelectorAll('[data-focus-rm]').forEach(chip => chip.addEventListener('click', () => {
+            st.genes = st.genes.filter(g => g !== chip.dataset.focusRm);
+            redraw();
+        }));
+    }
+
+    // The enrichment as a text file for a language model: what was sent, the
+    // significant sets per library with their genes, and the gene of
+    // interest if one is set. Numbers are Enrichr's own; the file says what
+    // each is so they are not misread.
+    exportEnrichrForAI() {
+        const d = this._enrichrData;
+        if (!d) { this.showCopyNotification?.('Run Enrichr first.'); return; }
+        const ver = document.getElementById('versionBadge')?.textContent?.trim() || 'unknown';
+        const title = document.getElementById('enrichrTitle')?.textContent?.trim() || 'Enrichr';
+        const focus = (this._enrichrFocus?.genes || []).map(g => String(g).toUpperCase());
+        const focusAll = !!this._enrichrFocus?.all && focus.length > 1;
+        const focusLabel = this._enrichrFocusLabel();
+        const focusTag = focusLabel ? `contains ${focusLabel}` : '';
+        const CAP = 40;
+        const fmt = (v) => (v == null || !isFinite(v)) ? 'n/a' : (Math.abs(v) < 0.001 ? v.toExponential(2) : v.toFixed(4));
+        const lines = [
+            `# Correlate ${ver}, Enrichr pathway enrichment`,
+            '',
+            `**What was sent:** ${title}.`,
+            'Exported from Correlate, a browser tool for exploring DepMap CRISPR screen,',
+            'expression, mutation, fusion and copy-number data across human cancer cell',
+            'lines. The gene list below was sent to Enrichr (maayanlab.cloud/Enrichr), which',
+            'tests it against each gene-set library with a Fisher exact test on the overlap.',
+            'Answer using this text; where it does not say, say so rather than guessing.',
+            '',
+            '## How to read the numbers',
+            '- Adjusted p-value: Benjamini-Hochberg over the terms of one library. Only terms with adjusted p below 0.05 are listed here; a library with none says so.',
+            '- Z-score: Enrichr\'s deviation from the expected rank of the term, more negative is a stronger result.',
+            '- Combined score: ln(p) times z, Enrichr\'s own ranking score, larger is stronger.',
+            '- Overlap: the genes from the sent list that are in the term. "Total" is how many significant terms the library had; at most the top ' + CAP + ' by adjusted p are written out per library.',
+            '- Background: Enrichr\'s default background of all annotated genes, NOT the DepMap panel, so a gene set that is over-represented among screened genes can look enriched for that reason alone.',
+            '- These are gene lists chosen inside Correlate (correlates, gate contents, a network), so the enrichment describes the list, not any single cell line, and it does not carry the effect direction of the genes.',
+            '',
+            `## Genes sent (${d.genes.length})`,
+            d.genes.slice().sort().join(', '),
+            ''
+        ];
+        if (focus.length) {
+            lines.push(`## Gene${focus.length > 1 ? 's' : ''} of interest: ${focusLabel}`);
+            const sent = new Set(d.genes.map(g => g.toUpperCase()));
+            const missing = focus.filter(g => !sent.has(g));
+            lines.push(`Sets whose overlap includes ${focus.length > 1 ? (focusAll ? 'every one of these genes' : 'any of these genes') : 'this gene'} are marked [${focusTag}] below and listed first within each library.`);
+            if (missing.length) lines.push(`NOT among the genes sent, so no set can contain them: ${missing.join(', ')}.`);
+            lines.push('');
+        }
+        for (const lib of d.libraries) {
+            const rows = (d.results[lib.key] || []).filter(r => r[6] < 0.05)
+                .map(r => ({ rank: r[0], term: r[1], p: r[2], z: r[3], combined: r[4], genes: Array.isArray(r[5]) ? r[5] : [], adj: r[6] }))
+                .sort((a, b) => a.adj - b.adj);
+            lines.push(`## ${lib.label} (${lib.key})`);
+            if (!rows.length) { lines.push('No term reached adjusted p < 0.05.', ''); continue; }
+            const withFocus = focus.length ? rows.filter(r => this._enrichrRowHasFocus(r, focus, focusAll)) : [];
+            lines.push(`Total significant terms: ${rows.length}${focus.length ? `, of which ${withFocus.length} contain ${focusLabel}` : ''}. Listed: top ${Math.min(CAP, rows.length)} by adjusted p${focus.length ? ', sets containing the genes of interest first' : ''}.`, '');
+            const ordered = focus.length ? [...withFocus, ...rows.filter(r => !this._enrichrRowHasFocus(r, focus, focusAll))] : rows;
+            for (const r of ordered.slice(0, CAP)) {
+                const mark = focus.length && this._enrichrRowHasFocus(r, focus, focusAll) ? ` [${focusTag}]` : '';
+                lines.push(`- **${r.term}**${mark}: adjusted p ${fmt(r.adj)}, p ${fmt(r.p)}, z ${r.z.toFixed(2)}, combined ${r.combined.toFixed(1)}, overlap ${r.genes.length}: ${r.genes.slice().sort().join(', ')}`);
+            }
+            lines.push('');
+        }
+        this.downloadFile(lines.join('\n'), 'correlate_enrichr_for_ai.md', 'text/markdown');
+        this.showCopyNotification?.('Enrichment exported. Paste the file into an LLM to ask about it.');
     }
 
     downloadEnrichrCSV() {
@@ -37216,6 +38128,26 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 label: 'Breast: published and measured calls disagree',
                 category: 'Breast, receptor subtype (measured)',
                 description: '<b>Selects:</b> breast lines the Lehmann panels classified as triple-negative whose own expression or copy number reads HR+ or HER2+ instead. <b>Use for:</b> spotting lines whose receptor status is unsettled, worth checking against the receptor histograms in the Wiki before relying on either call. Elsewhere in the app the published call is the one shown, with the measured reading given alongside it. Neither is the clinical test, which is done on protein.'
+            },
+            y_functional_loss: {
+                label: 'Functional loss of Y (male lines)',
+                category: 'Sex chromosomes',
+                description: '<b>Inclusion:</b> lines annotated male whose six Y-linked marker genes (RPS4Y1, DDX3Y, EIF1AY, KDM5D, UTY, USP9Y) average below 1 log-TPM. <b>Why:</b> loss of the Y chromosome is one of the commonest events in male cancers and in ageing blood, and it removes the Y copies of the X-Y gene pairs (KDM6A/UTY, KDM5C/KDM5D, DDX3X/DDX3Y, ZFX/ZFY and others), which is where the dependency consequences sit. <b>Method:</b> expression only, which is why the filter says <i>functional</i>: a Y that is present but transcriptionally silent would also land here, and DNA copy number for chrY in the DepMap gene-level file is not reliable enough to use instead. <b>Caveat:</b> about a third of annotated male lines qualify; lines with no expression data can never appear here.'
+            },
+            xist_loss: {
+                label: 'XIST silenced (female lines, any X copy number)',
+                category: 'Sex chromosomes',
+                description: '<b>Inclusion:</b> lines annotated female with XIST below 1 log-TPM and no Y-linked expression. <b>Why:</b> XIST is the RNA that keeps the inactive X silent, and its loss in cultured female cells is common. It has two very different causes, split into the two filters below: the inactive X is physically gone (one X left), or the inactive X has eroded and reactivated, or the active X was duplicated (two X copies, both transcribed). <b>Method:</b> XIST from the DepMap all-genes expression file; the X copy number is the median relative CN over chrX genes outside the pseudoautosomal regions. <b>Caveat:</b> expression calls only; lines with no expression data can never appear here.'
+            },
+            xi_lost: {
+                label: 'Inactive X lost (female, XIST off, one X copy)',
+                category: 'Sex chromosomes',
+                description: '<b>Inclusion:</b> the XIST-silenced female lines whose median chrX relative copy number is below 0.75, i.e. about one X copy against a diploid baseline. <b>Why:</b> with the inactive X gone there is nothing to silence, so XIST is off for a trivial reason, and the line carries a single active X: X-linked genes are effectively haploid, the same state as a male line that has lost its Y. <b>Method:</b> XIST expression plus chrX copy number. <b>Caveat:</b> the copy-number median can be pulled toward 1.0 by partial X gains, so a line with a complex X karyotype may land in the neighbouring filter instead.'
+            },
+            xist_silenced: {
+                label: 'XIST silenced, two X copies retained (female)',
+                category: 'Sex chromosomes',
+                description: '<b>Inclusion:</b> the XIST-silenced female lines whose median chrX relative copy number is at or above 0.75, i.e. two X copies are still there. <b>Why:</b> two copies without XIST means both are likely transcribed: either the inactive X eroded and reactivated in culture, or the active X was duplicated after the inactive one was lost. Either way, escape from X inactivation is in play, and X-linked dosage is doubled relative to the group above. <b>Method:</b> XIST expression plus chrX copy number. <b>Caveat:</b> expression cannot separate erosion from duplication; an allele-specific analysis can.'
             },
             ifn_high: {
                 label: 'Interferon-high (type I ISG signature)',
@@ -37804,6 +38736,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             'pdl1_high', 'likely_immunogenic',
             'ifn_high', 'ifn_low',
             'retro_high', 'retro_l1_high', 'retro_hervk_high', 'retro_sva_high',
+            // Sex chromosomes
+            'y_functional_loss', 'xist_loss', 'xi_lost', 'xist_silenced',
             // Key focal copy-number events
             // cdkn2a_del / rb1_del / pten_del removed: the curated deletion panel
             // deliberately excludes CDKN2A, RB1 and PTEN (functional loss already
@@ -38383,6 +39317,19 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Interferon-high and -low lines, from the cell-intrinsic ISG score.
         // Thresholds are on the mean z-score, so they read directly: half a
         // standard deviation above or below the panel, per gene on average.
+        // Sex-chromosome states, precomputed in cellLineMetadata.sexChromosomes
+        // (expression calls: functional loss of Y, XIST off with one or two X).
+        mem.y_functional_loss = new Set();
+        mem.xist_loss = new Set();
+        mem.xi_lost = new Set();
+        mem.xist_silenced = new Set();
+        for (const cl of clLines) {
+            const st = this._getSexChromosomes(cl)?.status;
+            if (st === 'y_loss') mem.y_functional_loss.add(cl);
+            else if (st === 'xi_lost') { mem.xi_lost.add(cl); mem.xist_loss.add(cl); }
+            else if (st === 'xist_silenced') { mem.xist_silenced.add(cl); mem.xist_loss.add(cl); }
+        }
+
         mem.ifn_high = new Set();
         mem.ifn_low = new Set();
         {
@@ -39148,6 +40095,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             // Lehmann TNBC subtypes, all publication-curated
             tnbc_bl1: 'Lehmann publication', tnbc_bl2: 'Lehmann publication',
             tnbc_m:   'Lehmann publication', tnbc_lar: 'Lehmann publication',
+            // Sex chromosomes
+            y_functional_loss: 'expression (Y-linked genes)',
+            xist_loss: 'expression (XIST)',
+            xi_lost: 'expression + copy number',
+            xist_silenced: 'expression + copy number',
             // Immunology
             ifn_high: 'ISG expression score',
             ifn_low: 'ISG expression score',
@@ -39902,12 +40854,28 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (!box) return;
         if (!box._chipsWired) {
             box._chipsWired = true;
-            box.addEventListener('click', (e) => {
-                const drop = e.target.closest('.scatter-chip-x');
-                if (drop) { this.removeHighlight(drop.dataset.cl); return; }
-                const open = e.target.closest('.scatter-chip-name');
-                if (open) this._openScatterChipMenu(open, open.dataset.cl);
+            const act = (target) => {
+                const drop = target.closest('.scatter-chip-x');
+                if (drop) { this.removeHighlight(drop.dataset.cl); return true; }
+                const open = target.closest('.scatter-chip-name');
+                if (open) { this._openScatterChipMenu(open, open.dataset.cl); return true; }
+                return false;
+            };
+            // The tap is taken at touchend, not left to the click iOS
+            // synthesises afterwards: that click is withheld when the tap's
+            // hover pass changes the page, which the help engine does, so the
+            // x could not be pressed. A finger that moved was scrolling.
+            let t0 = null;
+            box.addEventListener('touchstart', (e) => {
+                const t = e.changedTouches[0];
+                t0 = t ? { x: t.clientX, y: t.clientY } : null;
+            }, { passive: true });
+            box.addEventListener('touchend', (e) => {
+                const t = e.changedTouches[0];
+                if (!t0 || !t || Math.hypot(t.clientX - t0.x, t.clientY - t0.y) > 10) return;
+                if (act(e.target) && e.cancelable) e.preventDefault();
             });
+            box.addEventListener('click', (e) => { act(e.target); });
         }
         const list = [...new Set(names || [])];
         // The empty state says what to do, which is the other half of the
@@ -39920,7 +40888,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const e = this.esc(n);
             return `<span class="scatter-chip">`
                 + `<button type="button" class="scatter-chip-name" data-cl="${e}">${e}</button>`
-                + `<button type="button" class="scatter-chip-x" data-cl="${e}" aria-label="Remove the ${e} label" title="Remove the ${e} label">&times;</button>`
+                + `<button type="button" class="scatter-chip-x" data-cl="${e}" aria-label="Remove the ${e} label">&times;</button>`
                 + `</span>`;
         }).join('');
     }
@@ -40626,15 +41594,41 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         };
     }
 
+    // Measured sex-chromosome state: { y, xist, xcn?, status } or null when
+    // the line has no expression data. y = mean log-TPM of six Y-linked
+    // genes, xist = XIST log-TPM, xcn = median relative CN over non-PAR chrX
+    // genes (one X in a diploid line reads ~0.5). All calls are expression
+    // based, so "loss of Y" here is FUNCTIONAL loss, not a DNA result.
+    _getSexChromosomes(cl) {
+        return this.cellLineMetadata?.sexChromosomes?.[cl] || null;
+    }
+
+    _sexChromosomeStatusLabel(status) {
+        return ({
+            y_present: 'Y-linked genes expressed',
+            y_loss: 'Functional loss of Y',
+            xist_present: 'XIST expressed (inactive X present)',
+            xi_lost: 'XIST silenced, inactive X lost (one X copy)',
+            xist_silenced: 'XIST silenced, two X copies retained',
+            both_low: 'No Y-linked expression and no XIST',
+        })[status] || 'Not measured';
+    }
+
+    _sexChromosomeNumbers(rec) {
+        if (!rec) return 'not measured';
+        const parts = [`Y-linked ${rec.y.toFixed(2)}`, `XIST ${rec.xist.toFixed(2)} log-TPM`];
+        if (rec.xcn != null) parts.push(`chrX CN ${rec.xcn.toFixed(2)}`);
+        return parts.join(' \u00b7 ');
+    }
+
     // Expanded, human-readable "Sex (expression)" string combining both axes.
-    // When expression is unknown, infer reason from annotation.
     _getSexExpressionDisplay(cl) {
-        const { annotation, byExpression } = this._getCellLineSex(cl);
-        if (byExpression === 'male') return 'Male';
-        if (byExpression === 'female') return 'Female';
-        if (annotation === 'Male') return 'Unknown (likely Y-chromosome loss)';
-        if (annotation === 'Female') return 'Unknown (likely XIST silencing)';
-        return 'Unknown';
+        const { byExpression } = this._getCellLineSex(cl);
+        const rec = this._getSexChromosomes(cl);
+        if (!rec) return 'Not measured (no expression data)';
+        if (byExpression === 'male') return 'Male (Y-linked genes expressed)';
+        if (byExpression === 'female') return 'Female (XIST expressed)';
+        return this._sexChromosomeStatusLabel(rec.status);
     }
 
     // Single symbol (♂ / ♀ / ?) + color + tooltip for list display.
@@ -40686,6 +41680,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             case 'exp_male':     return byExpression === 'male';
             case 'exp_female':   return byExpression === 'female';
             case 'exp_unknown':  return byExpression === 'unknown' || byExpression === '' || byExpression == null;
+            case 'chr_y_loss':        return this._getSexChromosomes(cl)?.status === 'y_loss';
+            case 'chr_xist_off':      { const st = this._getSexChromosomes(cl)?.status; return st === 'xi_lost' || st === 'xist_silenced'; }
+            case 'chr_xi_lost':       return this._getSexChromosomes(cl)?.status === 'xi_lost';
+            case 'chr_xist_silenced': return this._getSexChromosomes(cl)?.status === 'xist_silenced';
             default: return true;
         }
     }
@@ -40721,6 +41719,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             document.getElementById('optionsOtherMenu')?.style.setProperty('display', 'none');
             this.openAIViewDialog();
         });
+
         document.getElementById('showCorrelationDirect')?.addEventListener('click', () => {
             document.getElementById('inspectModal').classList.add('active');
             // Set default plot size if empty
@@ -41585,7 +42584,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const hotspotLvl = document.getElementById('clbHotspotLevel')?.value || '1+2';
         const fusionLvl = document.getElementById('clbFusionLevel')?.value || '1+2';
         const cnLvl = document.getElementById('clbCnLevel')?.value || 'altered';
-        const hotspotMuts = hotspotGene && (this.mutations?.geneData?.[hotspotGene]?.mutations || this.damagingMutations?.geneData?.[hotspotGene]?.mutations);
+        const hotspotMuts = hotspotGene && this._mutCalls(hotspotGene);
         const collectionStates = this._clbCollectionStates;
         const collectionMem = this._collectionMembership || {};
         const set = new Set();
@@ -41761,6 +42760,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 : `${name} (n=${k})`;
             sel.appendChild(o);
         });
+        // Directly, not only from the phone DOM sweep: the list under this
+        // menu keeps mutating while it renders, so the sweep can wait a while.
+        this._phoneifySelectLabels(sel);
         // Keep the chosen disease even if the other filters exclude it, so the
         // list does not silently widen behind an unchanged-looking control.
         if (current && !counts.has(current)) {
@@ -41798,7 +42800,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const hotspotLvl = document.getElementById('clbHotspotLevel')?.value || '1+2';
         const fusionLvl = document.getElementById('clbFusionLevel')?.value || '1+2';
         const cnLvl = document.getElementById('clbCnLevel')?.value || 'altered';
-        const hotspotMuts = hotspotGene && (this.mutations?.geneData?.[hotspotGene]?.mutations || this.damagingMutations?.geneData?.[hotspotGene]?.mutations);
+        const hotspotMuts = hotspotGene && this._mutCalls(hotspotGene);
         const cnFilterValue = document.getElementById('clbCnFilter')?.value || '';
         const oncotree = opts.skipOncotree ? '' : (document.getElementById('clbOncotreeFilter')?.value || '');
         return this.metadata.cellLines.filter(cl => {
@@ -42046,6 +43048,21 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 if (va === vb) return this.getCellLineName(a).localeCompare(this.getCellLineName(b));
                 return (va - vb) * dir;
             };
+        } else if (mode === 'ychr' || mode === 'xist') {
+            // Y-linked expression or XIST, from the precomputed sex-chromosome
+            // record. Unmeasured lines have no value and go to the end.
+            countMap = new Map();
+            for (const [cl, rec] of Object.entries(this.cellLineMetadata?.sexChromosomes || {})) countMap.set(cl, mode === 'ychr' ? rec.y : rec.xist);
+            geGenesLabel = mode === 'ychr' ? 'six Y-linked genes' : 'XIST';
+            secondaryCmp = (a, b) => {
+                const va = countMap.get(a);
+                const vb = countMap.get(b);
+                if (va == null && vb == null) return this.getCellLineName(a).localeCompare(this.getCellLineName(b));
+                if (va == null) return 1;
+                if (vb == null) return -1;
+                if (va === vb) return this.getCellLineName(a).localeCompare(this.getCellLineName(b));
+                return (va - vb) * dir;
+            };
         } else if (mode === 'retro') {
             // Retroelement signal. Lines without public RNA-seq have no
             // score and go to the end, same as the other measured sorts.
@@ -42122,6 +43139,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                       : mode === 'cn' ? `Copy number of <b>${geGenesLabel || '(no gene picked)'}</b>, DepMap relative scale (1.0 = diploid). Tier shown next to each line: <b>deep del</b> &lt; 0.3, <b>het loss</b> 0.3&ndash;0.7, <b>WT</b> 0.7&ndash;1.3, <b>low gain</b> 1.3&ndash;2.0, <b>gain</b> 2.0&ndash;3.0, <b>amp</b> 3.0&ndash;5.0, <b>strong amp</b> &ge; 5.0. Hybrid source: WGS-derived calls (latest, cleanest) by default; lines tagged <code>wes</code> are filled from DepMap's 24Q4 OmicsCNGene fallback for lines never WGS'd (Jurkat, K562, etc.), slightly noisier for focal events. ${cnScope}; lines without CN data show &ldquo;&mdash;&rdquo;.`
                       : mode === 'drug' ? `Drug-response AUC for <b>${geGenesLabel || '(no compound matched)'}</b>, 0 = all cells killed, 1 = no killing; ascending = most sensitive first`
                       : mode === 'ifn' ? `Interferon score: the average of ${geGenesLabel || '34 ISGs'}, each expressed as how far the line sits from the panel average for that gene (a z-score). 0 is typical, +1 means the line runs a standard deviation high on these genes, &minus;1 a standard deviation low. Lines with no expression data, or measured on under 60% of the genes, are unscored and sit at the end.`
+                      : mode === 'ychr' ? `Y-linked expression: the mean log-TPM of six Y-linked genes (RPS4Y1, DDX3Y, EIF1AY, KDM5D, UTY, USP9Y). Below 1 in an annotated male line is called <b>functional loss of Y</b>; an expression call, not a DNA one. Female lines sit near 0 by nature. Lines with no expression data are unscored and sit at the end.`
+                      : mode === 'xist' ? `XIST expression (log-TPM), the RNA that keeps the inactive X silent. Below 1 in an annotated female line means XIST is silenced, with the inactive X either lost (one X copy) or eroded / duplicated (two copies), see the card. Male lines sit near 0 by nature. Lines with no expression data are unscored and sit at the end.`
                       : mode === 'retro' ? `Retroelement signal, ${retroMeasureLabels[retroMeasure]}: ${retroMeasure === 'a' ? 'how many of the 750 measured full-length elements are switched on (above 0.5 CPM) in each line'
                           : `summed RNA-seq reads (counts per million), unique reads only, over the ${retroMeasure === 't' ? '750 full-length LINE-1, HERV-K and SVA' : 'full-length ' + retroMeasureLabels[retroMeasure]} elements outside genes`}.${retroMeasure === 't' ? ' The panel median is about 40 CPM and the top tenth, about 80 CPM and up, counts as retroelement-high.' : ''} 669 of 1,208 lines have a public alignment to measure; unscored lines sit at the end.`
                       : mode;
@@ -42163,6 +43182,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     : mode === 'cn' ? `Copy number${geGenesLabel ? ` for ${geGenesLabel}` : ''}`
                     : mode === 'drug' ? `Drug response AUC${geGenesLabel ? ` for ${geGenesLabel}` : ''}`
                     : mode === 'ifn' ? 'Interferon score (mean ISG z-score)'
+                    : mode === 'ychr' ? 'Y-linked expression (mean log-TPM, six genes)'
+                    : mode === 'xist' ? 'XIST expression (log-TPM)'
                     : mode === 'retro' ? (retroMeasure === 'a' ? 'Active elements (count)' : `Retroelement signal, ${retroMeasureLabels[retroMeasure]} (CPM)`)
                     : String(mode))
                 : '';
@@ -42210,6 +43231,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                                   : mode === 'cin' ? 'CIN'
                                   : mode === 'cn' ? 'CN'
                                   : mode === 'drug' ? 'AUC'
+                                  : mode === 'ychr' ? 'Y'
+                                  : mode === 'xist' ? 'XIST'
                                   : '';
                     // For drug-response, color AUC by sensitivity at a glance.
                     // Thresholds match the dropdown's v/p categories and the
@@ -42347,6 +43370,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             subSelect.appendChild(opt);
         });
         if (keepClbSub && items.some(s => s.name === keepClbSub)) subSelect.value = keepClbSub;
+        this._phoneifySelectLabels(subSelect);
     }
 
     // Options behind each filter chip. The level select still holds the value
@@ -42361,11 +43385,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     _FILTER_BAR_SPEC() {
         // The words for each alteration state, shared by every context so the
         // same filter never reads two different ways.
-        const HOT = {
-            '1+2': 'Mutated (either copy)', '1': 'One copy mutated',
-            '2': 'Both copies mutated', '0': 'Wild-type',
-            altered: 'Mutated', wt: 'Wild-type',
-        };
+        const HOT = this._MUT_LEVEL_WORDS().hotspot;
         const FUS = { '1+2': 'Fused', altered: 'Fused', '0': 'Not fused', wt: 'Not fused', nocall: 'Not callable' };
         const CN = { altered: 'Event present', wt: 'No event' };
         const opts = (map, vals) => vals.map(v => ({ v, label: map[v] }));
@@ -42384,7 +43404,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 hotspot: { geneId: 'paramHotspotGene', levelId: 'paramHotspotLevel', options: opts(HOT, ['1+2', '1', '2', '0']) },
                 fusion:  { geneId: 'paramTranslocationGene', levelId: 'paramTranslocationLevel', options: opts(FUS, ['1+2', '0']) },
                 cn:      { geneId: 'paramCnFilter', levelId: 'paramCnLevel', options: opts(CN, ['altered', 'wt']) },
-                apply: () => { this._updateLineageFilterCounts?.(); this._refreshParamFilterDependents?.(); },
+                apply: () => { this._updateLineageFilterCounts?.(); this._refreshParamFilterDependents?.(); this._renderAnalysisSubsetChip?.(); },
             },
             scatter: {
                 tissue: 'scatterCancerFilter', subtype: 'scatterSubtypeFilter', oncotree: 'scatterOncotreeFilter', chips: 'scatterActiveFilters',
@@ -42553,6 +43573,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const m = {
                 ann_male: 'Male (annotation)', ann_female: 'Female (annotation)', ann_unknown: 'Sex unknown (annotation)',
                 exp_male: 'Male (by expression)', exp_female: 'Female (by expression)', exp_unknown: 'Sex unclear (by expression)',
+                chr_y_loss: 'Functional loss of Y', chr_xist_off: 'XIST silenced', chr_xi_lost: 'Inactive X lost (one X)', chr_xist_silenced: 'XIST silenced, two X',
             };
             parts.push(chip('sex', m[val(spec.sex)] || val(spec.sex), 'background:#eef2ff;color:#3730a3;', 'Click to change or remove this filter'));
         }
@@ -42562,8 +43583,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (hotGene) {
             const lvl = val(spec.hotspot.levelId) || spec.hotspot.options[0].v;
             const wt = this._filterIsWildType('hotspot', lvl);
-            const word = { '1+2': 'hotspot-mutated', altered: 'hotspot-mutated', '1': 'hotspot-mutated (one copy)', '2': 'hotspot-mutated (both copies)', '0': 'hotspot WT', wt: 'hotspot WT' }[lvl] || 'hotspot-mutated';
-            parts.push(chip('hotspot', `${this.esc(hotGene)} ${word}`, wt ? gray : 'background:#e6efde;color:#5a7d35;', editTitle));
+            const hotWord = { '1+2': 'hotspot-mutated', altered: 'hotspot-mutated', '1': 'hotspot-mutated (one copy)', '2': 'hotspot-mutated (both copies)', '0': 'hotspot WT', wt: 'hotspot WT' }[lvl] || 'hotspot-mutated';
+            parts.push(chip('hotspot', this.esc(this._mutFilterPhrase(hotGene, lvl, hotWord)), wt ? gray : 'background:#e6efde;color:#5a7d35;', editTitle));
         }
         const fusGene = this._stripFusionFilterDecoration(val(spec.fusion?.geneId));
         if (fusGene) {
@@ -42582,8 +43603,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         // Genes picked out of an alteration grid. These are how more than one
         // gene of the same kind is filtered on at once.
+        const hotGenePlain = this._stripMutDecoration(hotGene);
         for (const f of (this._activeOncoprintFilters || [])) {
-            if (f.gene === hotGene || f.gene === fusGene) continue;
+            if (f.gene === hotGenePlain || f.gene === fusGene) continue;
             // A pick can name a copy count, so the chip reads its state rather
             // than testing for one particular value.
             const on = !this._gridStateIsWT(f.state);
@@ -42594,7 +43616,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // The scatter's own grid picks, scoped to that plot alone.
         if (ctxName === 'scatter') {
             for (const f of (this._scatterGridActive || [])) {
-                if (f.gene === hotGene || f.gene === fusGene) continue;
+                if (f.gene === hotGenePlain || f.gene === fusGene) continue;
                 const on = !this._gridStateIsWT(f.state);
                 parts.push(`<span class="clb-chip" data-chip="sgrid" data-grid-gene="${this.esc(f.gene)}" title="Grid pick for this scatter only. Click to change which cell lines are kept, or to remove"`
                     + ` style="background:${on ? '#dcfce7' : '#fef2f2'};color:${on ? '#5d9239' : '#dc2626'};padding:1px 6px;border-radius:10px;cursor:pointer;">`
@@ -42636,6 +43658,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const el = document.getElementById(id);
             if (!el) return;
             el.value = v;
+            // A <select> silently drops a value it has no option for. The
+            // mutated / wild-type sides have two spellings ('altered'/'1+2',
+            // 'wt'/'0'), so fall back to the other one rather than clearing.
+            if (el.value !== v) {
+                const alt = { altered: '1+2', '1+2': 'altered', wt: '0', '0': 'wt' }[v];
+                if (alt) el.value = alt;
+            }
             el.dispatchEvent(new Event('change', { bubbles: true }));
         };
 
@@ -42665,6 +43694,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 { label: 'Female (annotation)', active: cur === 'ann_female', act: () => setVal(spec.sex, 'ann_female') },
                 { label: 'Male (by expression)', active: cur === 'exp_male', act: () => setVal(spec.sex, 'exp_male') },
                 { label: 'Female (by expression)', active: cur === 'exp_female', act: () => setVal(spec.sex, 'exp_female') },
+                { label: 'Functional loss of Y', active: cur === 'chr_y_loss', act: () => setVal(spec.sex, 'chr_y_loss') },
+                { label: 'XIST silenced', active: cur === 'chr_xist_off', act: () => setVal(spec.sex, 'chr_xist_off') },
                 { label: 'Remove this filter', danger: true, act: () => setVal(spec.sex, '') },
             ], after);
         }
@@ -42718,7 +43749,18 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const unit = spec[kind];
         if (!unit) return;
         const cur = document.getElementById(unit.levelId)?.value;
-        const rows = unit.options.map(o => ({
+        let options = unit.options;
+        if (kind === 'hotspot') {
+            // The pick carries its own kind, so the level choices follow it:
+            // functional loss is lost-or-intact, "any mutation" keeps the four
+            // copy-count choices with its own words.
+            const mk = this._parseMutFilter(document.getElementById(unit.geneId)?.value);
+            if (mk.kind !== 'hotspot') {
+                const words = this._MUT_LEVEL_WORDS()[mk.kind];
+                options = unit.options.filter(o => words[o.v]).map(o => ({ v: o.v, label: words[o.v] }));
+            }
+        }
+        const rows = options.map(o => ({
             label: o.label, active: cur === o.v, act: () => setVal(unit.levelId, o.v),
         }));
         rows.push({
@@ -42732,12 +43774,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         return {
             hotspot: {
                 geneId: 'clbHotspotFilter', levelId: 'clbHotspotLevel',
-                options: [
-                    { v: '1+2', label: 'Mutated (either copy)' },
-                    { v: '1', label: 'One copy mutated' },
-                    { v: '2', label: 'Both copies mutated' },
-                    { v: '0', label: 'Wild-type' },
-                ],
+                options: ['1+2', '1', '2', '0'].map(v => ({ v, label: this._MUT_LEVEL_WORDS().hotspot[v] })),
             },
             fusion: {
                 geneId: 'clbTranslocationFilter', levelId: 'clbFusionLevel',
@@ -42806,6 +43843,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const opts = [
                 ['ann_male', 'Male (annotation)'], ['ann_female', 'Female (annotation)'],
                 ['exp_male', 'Male (by expression)'], ['exp_female', 'Female (by expression)'],
+                ['chr_y_loss', 'Functional loss of Y'], ['chr_xist_off', 'XIST silenced'],
             ].map(([v, label]) => ({ label, active: el?.value === v, act: () => { if (el) el.value = v; } }));
             opts.push({ label: 'Remove this filter', danger: true, act: () => { if (el) el.value = ''; } });
             return this._simpleChipMenu(anchorEl, opts);
@@ -42839,13 +43877,21 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
         const spec = this._CLB_CHIP_SPEC()[kind];
         if (!spec) return;
+        let specOptions = spec.options;
+        if (kind === 'hotspot') {
+            const mk = this._parseMutFilter(document.getElementById(spec.geneId)?.value);
+            if (mk.kind !== 'hotspot') {
+                const words = this._MUT_LEVEL_WORDS()[mk.kind];
+                specOptions = spec.options.filter(o => words[o.v]).map(o => ({ v: o.v, label: words[o.v] }));
+            }
+        }
         const level = document.getElementById(spec.levelId);
         const menu = document.createElement('div');
         menu.id = 'clbChipMenu';
         menu.className = 'select-proxy-panel';
         menu.style.cssText = 'position:fixed; z-index:1450; width:210px; padding:4px; background:#fff; border:1px solid #d1d5db; border-radius:6px; box-shadow:0 8px 20px rgba(0,0,0,0.14); font-size:11px;';
         const rowCss = 'display:block; width:100%; text-align:left; padding:5px 8px; border:none; background:none; cursor:pointer; border-radius:4px; font-size:11px;';
-        menu.innerHTML = spec.options.map(o =>
+        menu.innerHTML = specOptions.map(o =>
             `<button type="button" data-lvl="${o.v}" style="${rowCss}${o.v === level?.value ? 'font-weight:700; background:#f0fdf4; color:#4c782e;' : 'color:#374151;'}">${o.label}</button>`
         ).join('')
             + `<div style="border-top:1px solid #e5e7eb; margin:4px 0;"></div>`
@@ -42905,12 +43951,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const sexLabel = {
                 ann_male: 'Male (annotation)', ann_female: 'Female (annotation)', ann_unknown: 'Sex unknown (annotation)',
                 exp_male: 'Male (by expression)', exp_female: 'Female (by expression)', exp_unknown: 'Sex unclear (by expression)',
+                chr_y_loss: 'Functional loss of Y', chr_xist_off: 'XIST silenced', chr_xi_lost: 'Inactive X lost (one X)', chr_xist_silenced: 'XIST silenced, two X',
             }[sexVal] || sexVal;
             parts.push(`<span class="clb-chip" data-chip="sex" title="Click to change or remove this filter" style="background:#eef2ff;color:#3730a3;padding:1px 6px;border-radius:10px;">${sexLabel} &#9662;</span>`);
         }
         const hotLvl = document.getElementById('clbHotspotLevel')?.value || '1+2';
         const hotWord = { '1+2': 'mutated', '1': 'one copy mutated', '2': 'both copies mutated', '0': 'WT' }[hotLvl] || 'mutated';
-        if (hotspot) parts.push(`<span class="clb-chip" data-chip="hotspot" title="Click to change which cell lines are kept, or to remove this filter" style="${wtHot ? grayChip : 'background:#e6efde;color:#5a7d35;'}padding:1px 6px;border-radius:10px;">${this.esc(hotspot)} ${hotWord} &#9662;</span>`);
+        if (hotspot) parts.push(`<span class="clb-chip" data-chip="hotspot" title="Click to change which cell lines are kept, or to remove this filter" style="${wtHot ? grayChip : 'background:#e6efde;color:#5a7d35;'}padding:1px 6px;border-radius:10px;">${this.esc(this._mutFilterPhrase(hotspot, hotLvl, hotWord))} &#9662;</span>`);
         if (trans) parts.push(`<span class="clb-chip" data-chip="fusion" title="Click to change which cell lines are kept, or to remove this filter" style="${wtFus ? grayChip : 'background:#efe7ec;color:#7d5a66;'}padding:1px 6px;border-radius:10px;">${this.esc(trans)} ${wtFus ? 'not fused' : 'fused'} &#9662;</span>`);
         if (cn) {
             const label = this._stripCnFilterDecoration(cn).replace(/_(amp|del)$/, (_, k) => k === 'amp' ? ' amp' : ' del');
@@ -42927,7 +43974,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 + ` <a href="#" data-clear-collection="${id}" style="color:${color}; text-decoration:none; margin-left:2px; font-weight:700;" title="Remove this filter">×</a></span>`);
         }
         if (this._activeOncoprintFilters) {
-            const shown = new Set([hotspot, trans].filter(Boolean));
+            const shown = new Set([this._stripMutDecoration(hotspot), trans].filter(Boolean));
             for (const f of this._activeOncoprintFilters) {
                 if (!shown.has(f.gene)) {
                     const bg = !this._gridStateIsWT(f.state) ? '#dcfce7' : '#fef2f2';
@@ -42976,7 +44023,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const hotspotGene = document.getElementById('clbHotspotFilter').value;
         const transGene = document.getElementById('clbTranslocationFilter').value;
 
-        const hotspotMuts = hotspotGene && (this.mutations?.geneData?.[hotspotGene]?.mutations || this.damagingMutations?.geneData?.[hotspotGene]?.mutations);
+        const hotspotMuts = hotspotGene && this._mutCalls(hotspotGene);
         const cnFilterValue = document.getElementById('clbCnFilter')?.value || '';
         const hotspotLvl = document.getElementById('clbHotspotLevel')?.value || '1+2';
         const fusionLvl = document.getElementById('clbFusionLevel')?.value || '1+2';
@@ -43022,7 +44069,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // by expression. Having "Unknown" for each axis separately makes
         // that gap explicit.
         const sexBase = getBaseSet('sex');
-        const sexCounts = { ann_male: 0, ann_female: 0, ann_unknown: 0, exp_male: 0, exp_female: 0, exp_unknown: 0 };
+        const sexCounts = { ann_male: 0, ann_female: 0, ann_unknown: 0, exp_male: 0, exp_female: 0, exp_unknown: 0,
+            chr_y_loss: 0, chr_xist_off: 0, chr_xi_lost: 0, chr_xist_silenced: 0 };
         for (const cl of sexBase) {
             for (const key of Object.keys(sexCounts)) {
                 if (this._cellLineMatchesSexFilter(cl, key)) sexCounts[key]++;
@@ -43042,6 +44090,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     `<option value="exp_male">Male (n=${sexCounts.exp_male})</option>` +
                     `<option value="exp_female">Female (n=${sexCounts.exp_female})</option>` +
                     `<option value="exp_unknown">Unknown (n=${sexCounts.exp_unknown})</option>` +
+                `</optgroup>` +
+                `<optgroup label="Sex chromosomes (measured)">` +
+                    `<option value="chr_y_loss">Functional loss of Y (n=${sexCounts.chr_y_loss})</option>` +
+                    `<option value="chr_xist_off">XIST silenced, any (n=${sexCounts.chr_xist_off})</option>` +
+                    `<option value="chr_xi_lost">Inactive X lost, one X (n=${sexCounts.chr_xi_lost})</option>` +
+                    `<option value="chr_xist_silenced">XIST silenced, two X (n=${sexCounts.chr_xist_silenced})</option>` +
                 `</optgroup>`;
             sexSelect.value = prev;
         }
@@ -43097,6 +44151,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 if (sub === subVal) opt.selected = true;
                 subSelect.appendChild(opt);
             });
+            this._phoneifySelectLabels(subSelect);
             // Kept in place and disabled rather than hidden: showing it only
             // once a tissue was chosen made the toolbar jump sideways.
             subSelect.disabled = Object.keys(subCounts).length === 0;
@@ -43462,6 +44517,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         top += `<div class="clb-stat-row"><span class="clb-stat-label">Subtype</span><span class="clb-stat-value">${sublineage || '-'}${lehmannChip}</span></div>`;
         top += `<div class="clb-stat-row"><span class="clb-stat-label">Sex (annotation)</span><span class="clb-stat-value">${sexAnn}</span></div>`;
         top += `<div class="clb-stat-row"><span class="clb-stat-label">Sex (expression)</span><span class="clb-stat-value"${expStyle}>${expDisplay}</span></div>`;
+        {
+            const rec = this._getSexChromosomes(cellLineId);
+            if (rec) {
+                top += `<div class="clb-stat-row"><span class="clb-stat-label">Sex chromosomes</span><span class="clb-stat-value" style="color:#6b7280;" title="Mean log-TPM of six Y-linked genes (RPS4Y1, DDX3Y, EIF1AY, KDM5D, UTY, USP9Y), XIST log-TPM, and the median relative copy number over chrX genes outside the pseudoautosomal regions (one X in a diploid line reads about 0.5). Expression calls, not DNA sequencing.">${this._sexChromosomeNumbers(rec)}</span></div>`;
+            }
+        }
         // Genome-wide signatures (PureCN ploidy + WGD, Ben-David aneuploidy,
         // chromosomal instability). Rendered as one row per metric with a
         // plain-English descriptor (near-diploid / high / etc.) so the user
@@ -43850,10 +44911,10 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             const transVal = this._stripFusionFilterDecoration(document.getElementById('clbTranslocationFilter').value);
             if (tissueVal) filterParts.push(tissueVal);
             if (subtypeVal) filterParts.push(subtypeVal);
-            if (hotspotVal) filterParts.push(hotspotVal + ' Mut');
+            if (hotspotVal) filterParts.push(this._mutFilterPhrase(hotspotVal, document.getElementById('clbHotspotLevel')?.value, 'Mut'));
             if (transVal) filterParts.push(transVal + ' Fused');
             if (this._activeOncoprintFilters) {
-                const shown = new Set([hotspotVal, transVal].filter(Boolean));
+                const shown = new Set([this._stripMutDecoration(hotspotVal), transVal].filter(Boolean));
                 for (const f of this._activeOncoprintFilters) {
                     if (!shown.has(f.gene)) filterParts.push(`${f.gene} ${this._gridStateWord(f.state)}`);
                 }
@@ -44487,7 +45548,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 lookFor: ['TP53', 'ATM', 'NOTCH1', 'SF3B1']
             },
             'Burkitt Lymphoma': {
-                expected: 'Defining translocation: MYC-IGH t(8;14), or variants t(2;8) IGK-MYC / t(8;22) MYC-IGL. Often germline-like TP53, ID3, TCF3, CCND3 mutations. EBV+ in endemic form. Should NOT have BCL2/BCL6 rearrangements (that would be "high-grade B-cell lymphoma with MYC+BCL2/BCL6").',
+                expected: 'Defining translocation: MYC-IGH t(8;14), or variants t(2;8) IGK-MYC / t(8;22) MYC-IGL. Often TP53, ID3, TCF3 and CCND3 mutations. EBV+ in endemic form. Should NOT have BCL2/BCL6 rearrangements (that would be "high-grade B-cell lymphoma with MYC+BCL2/BCL6").',
                 lookFor: ['MYC', 'TP53', 'ID3', 'TCF3', 'CCND3']
             },
             'Diffuse Large B-Cell Lymphoma, NOS': {
@@ -44736,11 +45797,11 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             },
             'E2F / S-phase replication': {
                 genes: ['MCM2', 'MCM3', 'MCM4', 'MCM5', 'MCM6', 'MCM7', 'PCNA', 'TOP2A', 'TYMS', 'CDK2', 'RRM1', 'RRM2'],
-                note: 'Replication-fork licensing and DNA-synthesis machinery. High signature ≈ rapidly cycling line with active E2F.'
+                note: 'Replication-fork licensing and DNA-synthesis machinery. High signature ≈ rapidly cycling cell line with active E2F.'
             },
             'G2/M mitotic progression': {
                 genes: ['CDK1', 'CCNB1', 'CCNB2', 'AURKA', 'AURKB', 'PLK1', 'BIRC5', 'CENPF', 'TPX2', 'KIF20A'],
-                note: 'Mitotic kinases and spindle proteins. High signature ≈ actively dividing line (often co-elevated with E2F signature).'
+                note: 'Mitotic kinases and spindle proteins. High signature ≈ actively dividing cell line (often co-elevated with E2F signature).'
             },
             'IFN response (α/γ)': {
                 genes: ['ISG15', 'IFIT1', 'IFIT3', 'MX1', 'OAS1', 'STAT1', 'IRF7', 'IFI6', 'IFITM1', 'IFI44'],
@@ -45002,7 +46063,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 // the reader is better served knowing they part company here.
                 const conflictHtml = (_lehName && _measured && _measured !== 'triple-negative')
                     ? `<div style="margin:0 0 10px; padding:7px 10px; background:#fffbeb; border:1px solid #fcd34d; border-left:3px solid #d97706; border-radius:5px; font-size:11px; line-height:1.5; color:#92400e;">
-                        <b>The published call and this line's own data disagree.</b> The Lehmann panel classifies it as triple-negative, subtype <b>${this.esc(_lehName)}</b>, and that is the call shown above. Its own measurements read <b>${this.esc(_measured)}</b> instead${_measured === 'HER2+' ? ', from a focal ERBB2 amplification' : ', from the transcript levels below'}. Neither is IHC, so treat this line as unresolved rather than as either call.
+                        <b>The published call and this cell line's own data disagree.</b> The Lehmann panel classifies it as triple-negative, subtype <b>${this.esc(_lehName)}</b>, and that is the call shown above. Its own measurements read <b>${this.esc(_measured)}</b> instead${_measured === 'HER2+' ? ', from a focal ERBB2 amplification' : ', from the transcript levels below'}. Neither is the clinical test, so treat this cell line's receptor status as unresolved.
                        </div>`
                     : '';
                 const targets = [
@@ -45013,7 +46074,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 const panels = targets.map(t => {
                     const pc = (t.d.mine != null) ? pct(t.d.arr, t.d.mine) : null;
                     const sub = pc == null ? 'not measured'
-                        : `<b style="color:${callColor};">${t.d.mine.toFixed(1)}</b> log₂-TPM &nbsp;<span style="color:#9ca3af;">(${pc}th pct of breast lines)</span>`;
+                        : `<b style="color:${callColor};">${t.d.mine.toFixed(1)}</b> log₂-TPM &nbsp;<span style="color:#9ca3af;">(${pc}th pct of breast cell lines)</span>`;
                     return `<div style="flex:1; min-width:150px;">
                         <div style="font-size:11px; font-weight:600; color:#374151; margin-bottom:2px;">${t.label}</div>
                         <div style="font-size:10px; color:#6b7280; margin-bottom:2px;">${sub}</div>
@@ -45021,11 +46082,11 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                     </div>`;
                 }).join('');
                 receptorHtml = `
-                    <p style="margin:0 0 8px; font-size:11px; color:#6b7280;">Transcript levels of <b>ESR1</b> (ER), <b>PGR</b> (PR) and <b>ERBB2</b> (HER2) are a surrogate for clinical receptor status. Each histogram shows the distribution across all breast lines in the cohort; the <span style="color:#dc2626;">red line</span> marks this cell line. A published classification, where one exists, is the leading call; otherwise the measurement stands in, and where the two disagree both are shown. The measured rule: <b>HER2+</b> on focal <i>ERBB2</i> amplification, otherwise <b>HR+</b> at ESR1 &ge; 3.0 or PGR &ge; 1.0 log&#8322;-TPM, otherwise <b>triple-negative</b>. The ER and PR cutoffs are fixed levels, placed in the gap between the expressing and non-expressing groups visible in these histograms. <b>None of this is the clinical test.</b> Clinically, ER and PR are scored by immunohistochemistry on protein, and HER2 by immunohistochemistry with in-situ hybridization (FISH) counting <i>ERBB2</i> gene copies where the staining is equivocal. Transcript level and copy number stand in for those, and a cell line can read differently from the tumor it came from.</p>
+                    <p style="margin:0 0 8px; font-size:11px; color:#6b7280;">Transcript levels of <b>ESR1</b> (ER), <b>PGR</b> (PR) and <b>ERBB2</b> (HER2) are a surrogate for clinical receptor status. Each histogram shows the distribution across all breast cell lines; the <span style="color:#dc2626;">red line</span> marks this cell line. A published classification, where one exists, is the leading call; otherwise the measurement stands in, and where the two disagree both are shown. The rule used here: <b>HER2+</b> on focal <i>ERBB2</i> amplification, otherwise <b>HR+</b> at ESR1 &ge; 3.0 or PGR &ge; 1.0 log&#8322;-TPM, otherwise <b>triple-negative</b>. The ER and PR cutoffs are fixed levels, placed in the gap between the expressing and non-expressing groups visible in these histograms. <b>None of this is the clinical test.</b> Clinically, ER and PR are scored by immunohistochemistry on protein, and HER2 by immunohistochemistry with in-situ hybridization (FISH) counting <i>ERBB2</i> gene copies where the staining is equivocal. Transcript level and copy number stand in for those, and a cell line can read differently from the tumor it came from.</p>
                     ${conflictHtml}
                     <div style="margin:0 0 10px; display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
                         <span>Expression-surrogate call: <span style="display:inline-block; padding:1px 8px; border-radius:10px; background:${callColor}22; color:${callColor}; font-weight:600; font-size:11px;">${call}</span>${callBasis ? `<span style="color:#6b7280; font-size:10px; margin-left:6px;">${callBasis}</span>` : ''}</span>
-                        <button onclick="window.app.exportWikiBreastExpressionCSV()" class="btn btn-outline btn-sm" style="font-size:10px; padding:2px 8px; color:var(--earth-700); border-color:var(--earth-300);" title="Export ESR1 / PGR / ERBB2 expression for every breast line (this line flagged) as a CSV, so you can make your own plot">Export .csv</button>
+                        <button onclick="window.app.exportWikiBreastExpressionCSV()" class="btn btn-outline btn-sm" style="font-size:10px; padding:2px 8px; color:var(--earth-700); border-color:var(--earth-300);" title="Export ESR1 / PGR / ERBB2 expression for every breast cell line (this cell line flagged) as a CSV, so you can make your own plot">Export .csv</button>
                     </div>
                     <div style="display:flex; gap:14px; flex-wrap:wrap;">${panels}</div>`;
                 this._receptorHistPending = {
@@ -45048,7 +46109,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const _vHits = this._virusAgents(cellLineId);
         const virusRow = _vHits
             ? _vHits.map(h => `<b>${this.esc(h.name)}</b> (${this.esc(h.agent)})${h.note ? ` <span style="font-size:10px; color:#9ca3af;">, ${this.esc(h.note)}</span>` : ''}`).join('<br>')
-                + `<div style="font-size:10px; color:#9ca3af; margin-top:3px;">Curated by Cellosaurus. Viral oncoproteins can override the pathways they hit: an HPV-transformed line behaves as p53- and RB-deficient whatever its <i>TP53</i> and <i>RB1</i> sequence says, and an EBV-immortalised lymphoblastoid line is not a tumor line at all. Cell lines without this row have no such record, which is not the same as being free of the virus.</div>`
+                + `<div style="font-size:10px; color:#9ca3af; margin-top:3px;">From Cellosaurus. A virus can switch off a pathway without any mutation: an HPV-transformed cell line behaves as if it had lost p53 and RB whatever its <i>TP53</i> and <i>RB1</i> sequence says, and an EBV-immortalised lymphoblastoid cell line is not a tumor cell line at all. A cell line without this row has no record on file, which is not the same as being virus-free.</div>`
             : '';
         const originHtml = `
             <p style="margin:0 0 8px; font-size:11px; color:#6b7280;">Clinical information about the patient the cell line was derived from, plus how it grows in the lab.</p>
@@ -45067,32 +46128,35 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         // --- Sex analysis ---
         const sexInfo = this._getCellLineSex(cellLineId);
         const sexExpDisplay = this._getSexExpressionDisplay(cellLineId);
+        const sexRec = this._getSexChromosomes(cellLineId);
         let sexNarrative = '';
-        if (sexInfo.annotation === 'Male' && sexInfo.byExpression === 'male') {
-            sexNarrative = 'Annotated male, and the cell line still expresses Y-chromosome genes normally. Everything consistent.';
-        } else if (sexInfo.annotation === 'Female' && sexInfo.byExpression === 'female') {
-            sexNarrative = 'Annotated female, and the cell line expresses XIST (the gene that silences the extra X chromosome in females). Everything consistent.';
-        } else if (sexInfo.annotation === 'Male' && sexInfo.byExpression === 'unknown') {
-            sexNarrative = this._hasWikiExpression(cellLineId)
-                ? 'Annotated male, but the Y-chromosome marker genes are not clearly expressed here. The usual explanation is <b>loss of the Y chromosome</b>, common in cancer and especially in older male donors, though low expression alone does not prove the chromosome is gone.'
-                : 'Annotated male. This cell line has no expression data, so the expression-based check could not be run, this is missing information rather than a finding.';
-        } else if (sexInfo.annotation === 'Female' && sexInfo.byExpression === 'unknown') {
-            sexNarrative = this._hasWikiExpression(cellLineId)
-                ? 'Annotated female, and neither the Y markers nor XIST reach the expression threshold here. <b>XIST silencing</b> is well documented in many cancers (breast, blood, some epithelial) and is thought to re-activate genes on the silent X chromosome, but the call is not certain from expression alone.'
-                : 'Annotated female. This cell line has no expression data, so the expression-based check could not be run, this is missing information rather than a finding.';
-        } else if (sexInfo.annotation !== 'Unknown' && sexInfo.annotation.toLowerCase() !== sexInfo.byExpression) {
+        const st = sexRec?.status;
+        if (!sexRec) {
+            sexNarrative = sexInfo.annotation === 'Unknown'
+                ? 'Sex is not annotated and this cell line has no expression data, so neither check could be run.'
+                : `Annotated ${sexInfo.annotation.toLowerCase()}. This cell line has no expression data, so the expression check could not be run and nothing can be said either way.`;
+        } else if (sexInfo.annotation === 'Male' && st === 'y_present') {
+            sexNarrative = `Annotated male, and the cell line still expresses Y-linked genes. Everything consistent.`;
+        } else if (sexInfo.annotation === 'Female' && st === 'xist_present') {
+            sexNarrative = `Annotated female, and the cell line expresses XIST, the RNA that keeps the second X chromosome silent. Everything consistent.`;
+        } else if (st === 'y_loss') {
+            sexNarrative = `Annotated male, but the six Y-linked marker genes are essentially silent. This is <b>functional loss of Y</b>: the call comes from expression, not from DNA sequencing, so it cannot separate a Y chromosome that is physically gone (common in cancer, and in the blood of older men) from one that is present but not transcribed. About a third of the annotated male lines in the panel look like this.`;
+        } else if (st === 'xi_lost') {
+            sexNarrative = `Annotated female with XIST switched off, and the X chromosome sits at half the autosomal copy number (one X per diploid genome set; in a whole-genome-doubled line that is two identical copies). The simplest reading is that the <b>inactive X was lost</b>: there is nothing left to silence, so XIST is no longer needed. This is the more common of the two XIST-negative patterns in the panel and it leaves the line with a single, active X, so X-linked genes are effectively haploid here.`;
+        } else if (st === 'xist_silenced') {
+            sexNarrative = `Annotated female with XIST switched off, yet the X chromosome still sits at the autosomal copy number, so two X per diploid genome set. Either the silent X has eroded and reactivated (documented in cultured female cells, breast and blood lines especially), or the active X was duplicated after the inactive one was lost. Both leave two transcribed X copies. Expression alone cannot tell them apart; an allele-specific analysis would.`;
+        } else if (sexInfo.annotation !== 'Unknown' && sexInfo.byExpression !== 'unknown' && sexInfo.annotation.toLowerCase() !== sexInfo.byExpression) {
             sexNarrative = `<span style="color:#b45309;"><b>Disagreement.</b> The annotation does not match what the cell-line expression pattern suggests. This can happen with cell-line mix-ups or contamination, re-authentication (see Authentication section below) is recommended.</span>`;
         } else if (sexInfo.annotation === 'Unknown' && sexInfo.byExpression !== 'unknown') {
             sexNarrative = `Sex is not annotated, but the expression pattern points to <b>${sexInfo.byExpression === 'male' ? 'male' : 'female'}</b> origin.`;
         } else {
-            sexNarrative = this._hasWikiExpression(cellLineId)
-                ? 'Neither the annotation nor the expression pattern gives a confident call. Usually means both the Y markers and XIST are below threshold, which happens in aggressive tumors.'
-                : 'Sex is not annotated and this cell line has no expression data, so neither check could be run.';
+            sexNarrative = `Neither the Y-linked genes nor XIST reach the expression threshold, and the annotation does not say which side the line started from. With no annotation the two explanations, functional loss of Y in a male line and loss of the inactive X in a female line, cannot be told apart from expression.`;
         }
         const sexHtml = `
             <p style="margin:0 0 8px; font-size:11px; color:#6b7280;">Two independent views: the sex <b>annotation</b> supplied with the cell line (usually traced back to the donor's clinical record), and what the cell line's own <b>gene expression pattern</b> suggests. Disagreements can indicate chromosomal loss, epigenetic silencing, or cell-line misidentification.</p>
             ${row('From annotation', sexInfo.annotation)}
             ${row('From gene expression', sexExpDisplay)}
+            ${row('Measured values', this._sexChromosomeNumbers(sexRec))}
             <div style="margin-top:6px; padding:8px 10px; background:#f9fafb; border-left:3px solid #10b981; font-size:11px;">${sexNarrative}</div>`;
 
         // --- Mutation profile + pathway scan ---
@@ -45136,7 +46200,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const polePoldHits = ['POLE', 'POLD1'].filter(damHit);
         if (polePoldHits.length > 0 && damagingCount > 200) flagCards.push({
             title: `${polePoldHits.join(' / ')} proofreading-deficient (ultramutator)`,
-            body: `Damaging mutation in ${polePoldHits.join(', ')}, the DNA-polymerase exonuclease (proofreading) domain is broken. Replication errors are not corrected, producing an ultramutated point-mutation burden (often > 100 mut/Mb) with a structurally calm, near-diploid genome (low CIN, low aneuploidy, no WGD, MSS). Distinct from MMR-deficiency, the other major hypermutator route. Caveat: at this burden many individual damaging-mutation calls are passenger noise, not drivers.`,
+            body: `Damaging mutation in ${polePoldHits.join(', ')}, the proofreading part of the DNA polymerase. Copying errors go uncorrected, so these cell lines carry very many point mutations (often more than 100 per megabase) while the chromosomes themselves stay largely intact: near-diploid, little chromosomal instability, no whole-genome doubling, microsatellite-stable. This is the second main route to a very high mutation count, separate from mismatch-repair loss. With this many mutations, most individual damaging mutations are passengers rather than drivers.`,
             color: '#dc2626'
         });
         // POLE/POLD1 damaging mutation WITHOUT an elevated burden, surface it
@@ -45144,17 +46208,17 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         // but make clear it is NOT a functional ultramutator.
         else if (polePoldHits.length > 0) flagCards.push({
             title: `${polePoldHits.join(' / ')} damaging mutation`,
-            body: `Damaging mutation in ${polePoldHits.join(', ')} (DNA-polymerase proofreading gene). The mutation burden here is NOT elevated (${damagingCount.toLocaleString()} damaging mutations), so this is unlikely to be a functional proofreading-deficient ultramutator, the variant may not hit the exonuclease domain, or may be a passenger. Shown because it is a recurrently-noted DNA-repair gene.`,
+            body: `Damaging mutation in ${polePoldHits.join(', ')}, a DNA polymerase proofreading gene. The mutation count is not raised (${damagingCount.toLocaleString()} damaging mutations), so proofreading is probably still working: the variant may lie outside the proofreading domain, or be a passenger. Listed because the gene is a well-known DNA-repair gene.`,
             color: '#6b7280'
         });
         if (damagingCount > 1000) flagCards.push({
-            title: 'Very high mutation burden (passenger noise warning)',
-            body: `${damagingCount.toLocaleString()} damaging mutations, an exceptionally high count, usually from loss of DNA-repair machinery (mismatch repair, polymerase proofreading, AID/APOBEC, UV / smoking exposure background). <b>Caveat:</b> at this burden, many individual damaging mutations are passenger events accumulated against the hypermutator background, not biological drivers. Driver flags below (HRD, TP53, CDKN2A, …) should be interpreted with this caveat in mind.`,
+            title: 'Very high mutation burden',
+            body: `${damagingCount.toLocaleString()} damaging mutations, an exceptionally high count. This usually means the cell has lost part of its DNA-repair machinery (mismatch repair, polymerase proofreading, AID/APOBEC activity) or carries a heavy UV or smoking signature. With this many mutations, most individual damaging mutations are passengers rather than drivers, and the driver flags below (HRD, TP53, CDKN2A and others) should be read with that in mind.`,
             color: '#dc2626'
         });
         else if (damagingCount > 500) flagCards.push({
             title: 'High mutation burden',
-            body: `${damagingCount.toLocaleString()} damaging mutations, well above a typical cell line. At this burden some downstream damaging-mutation flags may be passenger noise; cross-check against the integrated functional-loss view.`,
+            body: `${damagingCount.toLocaleString()} damaging mutations, well above a typical cell line. Some of the damaging-mutation flags below may be passengers; the functional-loss calls, which also use copy number and expression, are the safer guide.`,
             color: '#d97706'
         });
         const hrGenes = ['BRCA1', 'BRCA2', 'PALB2', 'RAD51C', 'RAD51D'];
@@ -45304,7 +46368,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 synthesis = '<b>CDK4/6 dependent</b> by gene-effect, with no obvious mutation driving it.';
                 color = '#059669';
             } else if (cdkGE !== null && cdkGE > -0.1) {
-                synthesis = '<b>Cell cycle not CDK4/6-driven</b> in this line.';
+                synthesis = '<b>Cell cycle not CDK4/6-driven</b> in this cell line.';
                 color = '#6b7280';
             } else {
                 synthesis = 'Mixed / insufficient signal.';
@@ -45343,7 +46407,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                     ? `BRAF knockout <b>strongly reduces growth</b> (${fmtGE(brafGE)}), cell line is <b>BRAF-addicted</b>.`
                     : brafGE < -0.2
                         ? `BRAF knockout <b>moderately reduces growth</b> (${fmtGE(brafGE)}), partial BRAF dependency.`
-                        : `BRAF knockout has limited effect (${fmtGE(brafGE)}), bypass mechanism may be present.`);
+                        : `BRAF knockout has limited effect (${fmtGE(brafGE)}), so another route may be driving growth.`);
             }
             if (mekGE !== null && mekGE < -0.5) {
                 lines.push(`MEK1 (MAP2K1) knockout <b>strongly reduces growth</b> (${fmtGE(mekGE)}), MAPK signaling is essential here.`);
@@ -45361,7 +46425,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 synthesis = 'No evidence of RAS/MAPK pathway activation.';
                 color = '#6b7280';
             } else {
-                synthesis = 'Mixed signal, mutation present but limited functional dependency.';
+                synthesis = 'Mixed picture: the mutation is present, but the cell does not depend much on it.';
                 color = '#d97706';
             }
             pathwayStatuses.push({ name: 'RAS / MAPK signaling', lines, synthesis, color });
@@ -45391,7 +46455,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 } else if (pi3kGE < -0.2) {
                     lines.push(`PIK3CA knockout <b>moderately reduces growth</b> (${fmtGE(pi3kGE)}), partial PI3K dependency, not a strong addiction.`);
                 } else {
-                    lines.push(`PIK3CA knockout is neutral (${fmtGE(pi3kGE)}), PI3K not the limiting node here.`);
+                    lines.push(`PIK3CA knockout is neutral (${fmtGE(pi3kGE)}), so PI3K is not what limits growth here.`);
                 }
             }
             if (aktcombGE !== null) {
@@ -45403,7 +46467,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             }
             let synthesis, color;
             if ((pikMut || ptenLoss) && (pi3kGE !== null && pi3kGE < -0.5 || aktcombGE !== null && aktcombGE < -0.5)) {
-                synthesis = '<b>Pathway active with strong functional dependency</b> (driver lesion present and the cell depends on PI3K/AKT by gene-effect).';
+                synthesis = '<b>Pathway active with strong functional dependency</b> (a driver mutation is present and the cell depends on PI3K/AKT in the CRISPR screen).';
                 color = '#059669';
             } else if ((pikMut || ptenLoss) && (pi3kGE !== null && pi3kGE < -0.2 || aktcombGE !== null && aktcombGE < -0.2)) {
                 synthesis = '<b>Pathway active with partial dependency.</b>';
@@ -45412,7 +46476,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 synthesis = 'No evidence of PI3K/AKT pathway dependency.';
                 color = '#6b7280';
             } else {
-                synthesis = 'Mixed signal between mutation status and dependency.';
+                synthesis = 'Mixed picture: mutation status and dependency do not agree.';
                 color = '#d97706';
             }
             pathwayStatuses.push({ name: 'PI3K / AKT survival pathway', lines, synthesis, color });
@@ -45441,14 +46505,14 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 pathwayStatuses.push({
                     name: 'BCR-ABL fusion',
                     lines,
-                    synthesis: ablGE !== null && ablGE < -0.5 ? '<b>BCR-ABL-addicted</b> by gene-effect.' : 'Fusion present but functional dependency limited.',
+                    synthesis: ablGE !== null && ablGE < -0.5 ? '<b>Depends on BCR-ABL</b> in the CRISPR screen.' : 'Fusion present, but the cell does not depend much on it.',
                     color: ablGE !== null && ablGE < -0.5 ? '#059669' : '#d97706'
                 });
             } else if (rawPartner) {
                 pathwayStatuses.push({
                     name: 'BCR / ABL1 rearrangement',
                     lines: ['<b>BCR or ABL1 appears in the raw fusion-caller output</b>',
-                            'This is not a BCR-ABL1 call. In rearranged genomes most raw fusion calls are passenger events, and the curated BCR-ABL1 check did not validate this one. See the Fusions section for the raw partners.'],
+                            'Not counted as a BCR-ABL1 fusion: the check that validates driver fusions did not confirm it, and in rearranged genomes most raw fusion calls are passengers. The raw partners are listed in the Fusions section.'],
                     synthesis: 'Not treated as a driver fusion.',
                     color: '#6b7280'
                 });
@@ -45469,10 +46533,10 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 }
                 let synthesis, color;
                 if (egfrMut && egfrGE !== null && egfrGE < -0.5) {
-                    synthesis = '<b>EGFR-addicted</b> (mutated and strongly depended on by gene-effect).';
+                    synthesis = '<b>Depends on EGFR</b> (mutated, and strongly required in the CRISPR screen).';
                     color = '#059669';
                 } else if (egfrMut) {
-                    synthesis = 'EGFR mutation present but cell may have escaped dependency.';
+                    synthesis = 'EGFR is mutated, but the cell no longer seems to depend on it.';
                     color = '#d97706';
                 } else {
                     synthesis = 'EGFR-dependent without an obvious activating mutation, possible amplification, autocrine ligand loop, or wild-type-driven dependency.';
@@ -45578,7 +46642,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             return `<div class="wiki-pw" style="border-left-color:${c.tone};">`
                 + `<div class="wiki-pw-head"><span class="wiki-pw-name">${c.name}</span>`
                 + `<span class="wiki-pw-verdict" style="color:${c.tone};">${c.verdict}</span></div>`
-                + `<div class="wiki-pw-why" title="${this.esc(c.note)}">${detail ? this.esc(detail) : 'No mutation, copy-number event or fusion found in this panel. The CRISPR read-out below still says something about how the pathway behaves.'}</div>`
+                + `<div class="wiki-pw-why" title="${this.esc(c.note)}">${detail ? this.esc(detail) : 'No mutation, copy-number event or fusion found in this pathway. The CRISPR result below still shows how the pathway behaves.'}</div>`
                 + `<div class="wiki-pw-chips">${chips}</div>`
                 + richLines
                 + `</div>`;
@@ -45588,7 +46652,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const pathwayStatusHtml =
             (hitCards.length
                 ? hitCards.map(pwCard).join('')
-                : `<div class="wiki-muted">No alteration found in any of the ${pathwayCards.length} curated pathways. That is unusual, and worth checking against the mutation counts above before trusting it.</div>`)
+                : `<div class="wiki-muted">No alteration found in any of the ${pathwayCards.length} pathways. That is unusual; compare it with the mutation counts above.</div>`)
             + (quietCards.length
                 ? `<div class="wiki-pw-quiet"><a href="#" onclick="this.parentElement.querySelector('.wiki-pw-quiet-list').style.display='block'; this.style.display='none'; return false;">Nothing detected in ${quietCards.length} further pathway${quietCards.length === 1 ? '' : 's'}, show them</a>`
                   + `<div class="wiki-pw-quiet-list" style="display:none;">${quietCards.map(c => `<span class="wiki-pw-quiet-item">${c.name}</span>`).join('')}</div></div>`
@@ -45614,7 +46678,13 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             .map(h => {
                 const variant = geneVariant[h.gene];
                 const variantSuffix = variant ? ` <span style="color:#5d9239; font-weight:500;">(${variant})</span>` : '';
-                return `<span class="gene-hover clb-gene-link" data-gene="${h.gene}" style="cursor:help; ${h.level >= 2 ? 'color:#dc2626; font-weight:600;' : ''}">${h.gene}${h.level >= 2 ? ` (${h.level})` : ''}</span>${variantSuffix}`;
+                // A gene card, not the gene-effect popout: the line is
+                // about the mutation, so a press explains it, and the card
+                // itself offers the gene-effect view.
+                const why = h.level >= 2
+                    ? 'Hotspot mutation on both copies in this cell line'
+                    : 'Hotspot mutation on one copy in this cell line';
+                return `<span class="gene-hover" data-gene="${h.gene}" data-why="${why}" style="cursor:help; ${h.level >= 2 ? 'color:#dc2626; font-weight:600;' : ''}">${h.gene}${h.level >= 2 ? ' <span style="font-weight:400; font-size:10px;">(both copies)</span>' : ''}</span>${variantSuffix}`;
             }).join(', ');
         // Compact counts line, three values in one row instead of three
         // separate label/value rows. Top hits are bumped to their own line
@@ -45658,7 +46728,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 <div style="font-weight:600; color:#3730a3; margin-bottom:4px;">Typical alteration pattern for <i>${subKey}</i></div>
                 <div style="font-size:11px;">${kb.expected}</div>
                </div>`
-            : `<div style="padding:8px 12px; background:#f9fafb; border-left:3px solid #9ca3af; margin-bottom:8px; font-size:11px; color:#6b7280;">No curated knowledge base for "${subKey}" yet (covers ~40 common Oncotree subtypes). The "Other alterations in this cell line" block below lists what was found in the integrated DepMap data.</div>`;
+            : `<div style="padding:8px 12px; background:#f9fafb; border-left:3px solid #9ca3af; margin-bottom:8px; font-size:11px; color:#6b7280;">Typical alteration patterns are on file for about 40 common subtypes, not yet for &ldquo;${subKey}&rdquo;. The block below lists what was found in this cell line.</div>`;
 
         // Block 2, Hallmark gene checklist (✓ / ✗ per expected gene).
         let checklistHtml = '';
@@ -45681,7 +46751,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             const headerColor = nHit > 0 ? '#4c782e' : '#991b1b';
             const headerBg = nHit > 0 ? '#f0fdf4' : '#fef2f2';
             const summaryNote = nHit === 0
-                ? ` <span style="font-weight:400; color:#991b1b; font-size:10px;">, none of the canonical hallmark genes are altered; consider an atypical driver, a CN event the panel doesn't catch, or STR re-authentication</span>`
+                ? ` <span style="font-weight:400; color:#991b1b; font-size:10px;">, none of the usual hallmark genes are altered. The driver may be an unusual one, a copy-number change outside the panel, or the cell line may not be what its label says (see Authentication below)</span>`
                 : '';
             checklistHtml = `
                 <div style="padding:8px 12px; background:${headerBg}; border-left:3px solid ${headerColor}; margin-bottom:8px;">
@@ -45740,7 +46810,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             }
         }
         const fusionCaveat = fusionCount > 30
-            ? `<div style="margin-top:6px; padding:8px 10px; background:#fef3c7; border-left:3px solid #d97706; font-size:11px; color:#92400e;"><b>⚠ High fusion count (${fusionCount}), which is typical here: most lines in this panel exceed this threshold.</b> When a cancer has a chaotic, highly rearranged genome, fusion-detection software tends to produce many false positives. Some of these calls are real driver fusions; many are technical artifacts or bystander events. Treat individual calls with caution, cross-reference with karyotype or targeted sequencing before acting on any single fusion.</div>`
+            ? `<div style="margin-top:6px; padding:8px 10px; background:#f9fafb; border-left:3px solid #9ca3af; font-size:11px; color:#6b7280;"><b>About this list.</b> Cancer cell lines have rearranged genomes, and fusion-detection software reports many fusions from them that are technical artifacts or bystanders, alongside any real driver. A list of this length is normal. Confirm a single fusion by karyotype or targeted sequencing before relying on it.</div>`
             : '';
         // Clinically relevant fusions block, curated calls (BCR-ABL1, etc.)
         // surfaced first, with tier chips. The full noisy raw partner list
@@ -45755,7 +46825,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             ? sortedClinicalFusions.map(c => {
                 const color = tierColor[c.tier] || '#6b7280';
                 const atypical = c.atypicalLineage
-                    ? ` <span style="color:#b45309; font-size:10px;" title="Atypical lineage for this fusion, kept by orthogonal evidence (partner expression and/or dependency)">⚠ atypical</span>`
+                    ? ` <span style="color:#b45309; font-size:10px;" title="Unusual tissue for this fusion; kept because the partner gene's expression or dependency supports it">⚠ atypical</span>`
                     : '';
                 return `<div style="margin:3px 0;"><b>${c.fusion}</b>`
                     + ` <span style="color:${color}; border:1px solid ${color}; border-radius:8px; padding:0 5px; font-size:10px; margin-left:4px;">${tierLabel[c.tier] || c.tier}</span>`
@@ -45763,7 +46833,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             }).join('')
             : '';
         const fusionHtml = `
-            <p style="margin:0 0 8px; font-size:11px; color:#6b7280;">A gene fusion joins parts of two genes into one, usually after a chromosomal rearrangement such as a translocation, and the resulting chimeric gene can drive the cancer. <b>Curated driver fusions</b> (green box) are the small list of ~50 well-known driver fusions (BCR-ABL1, EWSR1-FLI1, EML4-ALK, PML-RARA, …) called in this cell line, graded by how much independent evidence backs the call: <b>high</b> = the partner gene's expression <i>and</i> its CRISPR dependency both agree, <b>medium</b> = one of those two, or a matching tissue, <b>low</b> = the fusion name only, in a tissue where it is not expected, with neither signal supporting it. The <b>raw partner list</b> below is the unfiltered DepMap fusion-caller output: in rearranged genomes most of those are passenger events or technical artifacts, not drivers.</p>
+            <p style="margin:0 0 8px; font-size:11px; color:#6b7280;">A gene fusion joins parts of two genes into one, usually after a chromosomal rearrangement such as a translocation, and the fused gene can drive the cancer. <b>Curated driver fusions</b> (green box) come from a list of about 50 well-known driver fusions (BCR-ABL1, EWSR1-FLI1, EML4-ALK, PML-RARA and others), graded by how much independent evidence supports the call in this cell line: <b>high</b>, the partner gene's expression and its CRISPR dependency both agree; <b>medium</b>, one of the two, or a matching tissue; <b>low</b>, the fusion name alone, in a tissue where it is not expected. The <b>raw partner list</b> below is the unfiltered DepMap fusion-caller output; in rearranged genomes most of those are passengers or technical artifacts.</p>
             ${clinicalFusionHtml ? `<div style="margin-bottom:10px; padding:8px 10px; background:#f0fdf4; border-left:3px solid #5d9239;"><b style="color:#4c782e;">Curated driver fusions</b> <span style="font-size:10px; color:#6b7280;">(graded high / medium / low by how much independent evidence supports the call, see above)</span>${clinicalFusionHtml}</div>` : ''}
             ${row('Fusion partners (total, raw)', fusionCount > 0 ? fusionCount : '<span style="color:#9ca3af;">none called. The fusion table lists calls only, so this means no fusion was reported for this cell line, not that it was checked and found clean.</span>')}
             ${fusionPartners.length ? row('Raw partner genes', fusionPartners.slice(0, 20).map(g => `<span class="gene-hover clb-gene-link" data-gene="${g}" style="cursor:help;">${g}</span>`).join(', ') + (fusionPartners.length > 20 ? ` <span style="color:#9ca3af;">… +${fusionPartners.length - 20} more</span>` : '')) : ''}
@@ -45780,7 +46850,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             // missing value must NOT render as "No", that wrongly implies the
             // line was tested and came back negative.
             const wgdLabel = gs.WGD === true
-                ? '<span style="color:#dc2626; font-weight:600;">Yes</span> <span style="font-size:10px; color:#6b7280;">, the full chromosome set was duplicated at some point in this line\'s evolution, so gains and losses are read against a roughly doubled genome. Common in cancer: about 73% of the lines with a call. Called by PureCN from sequencing coverage and allele ratios.</span>'
+                ? '<span style="color:#dc2626; font-weight:600;">Yes</span> <span style="font-size:10px; color:#6b7280;">, the full chromosome set was duplicated at some point in this cell line\'s evolution, so gains and losses are read against a roughly doubled genome. Common in cancer: about 73% of the cell lines with a call. Called by PureCN from sequencing coverage and allele ratios.</span>'
                 : gs.WGD === false
                     ? 'No <span style="font-size:10px; color:#6b7280;">, no whole-genome doubling detected: this genome was never duplicated wholesale, and its ploidy reflects individual chromosome gains and losses only.</span>'
                     : '';
@@ -45804,12 +46874,12 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             const aneupLabel = gs.Aneuploidy != null ? (() => {
                 const desc = gs.Aneuploidy < 15 ? 'low' :
                              gs.Aneuploidy < 25 ? 'medium' : 'high';
-                return `${gs.Aneuploidy} / 39 <span style="font-size:10px; color:#6b7280;">(<b>${desc}</b>; how many of the 39 chromosome arms are gained or lost as a whole, relative to this line's own overall ploidy. 0 means every arm is balanced, 39 means every arm is off. Whole-arm events only, so it complements the fine-scale instability measured by CIN below. Ben-David <i>et al.</i> 2021 scoring; high tier is 25 and up.)</span>`;
+                return `${gs.Aneuploidy} / 39 <span style="font-size:10px; color:#6b7280;">(<b>${desc}</b>; how many of the 39 chromosome arms are gained or lost as a whole, relative to this cell line's own overall ploidy. 0 means every arm is balanced, 39 means every arm is off. Whole-arm events only, so it complements the fine-scale instability measured by CIN below. Ben-David <i>et al.</i> 2021 scoring; high tier is 25 and up.)</span>`;
             })() : '';
             const cinLabel = gs.CIN != null ? (() => {
                 const desc = gs.CIN < 0.45 ? 'low' :
                              gs.CIN < 0.72 ? 'medium' : 'high';
-                return `${gs.CIN.toFixed(2)} <span style="font-size:10px; color:#6b7280;">(<b>${desc}</b>; chromosomal instability: the fraction of the genome whose copy number deviates from this line's own baseline, capturing focal fragment-scale gains and losses rather than whole arms. A genome can look even at arm level and still be high here. High tier is 0.72 and up.)</span>`;
+                return `${gs.CIN.toFixed(2)} <span style="font-size:10px; color:#6b7280;">(<b>${desc}</b>; chromosomal instability: the fraction of the genome whose copy number deviates from this cell line's own baseline, capturing focal fragment-scale gains and losses rather than whole arms. A genome can look even at arm level and still be high here. High tier is 0.72 and up.)</span>`;
             })() : '';
             const lohLabel = gs.LoHFraction != null ? (() => {
                 // Loss-of-heterozygosity fraction. Typical diploid genome runs
@@ -45817,7 +46887,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 // (e.g. BRCAness signatures, often co-occurring with WGD).
                 const desc = gs.LoHFraction < 0.15 ? 'low' :
                              gs.LoHFraction < 0.3 ? 'medium' : 'high';
-                return `${gs.LoHFraction.toFixed(2)} <span style="font-size:10px; color:#6b7280;">(<b>${desc}</b>; fraction of the genome where one parental copy has been lost; high tier &ge; 0.3, often seen in WGD-positive or HRD lines)</span>`;
+                return `${gs.LoHFraction.toFixed(2)} <span style="font-size:10px; color:#6b7280;">(<b>${desc}</b>; fraction of the genome where one parental copy has been lost; high tier is 0.3 and up, often seen in whole-genome-doubled cell lines and in cell lines with defective recombination repair)</span>`;
             })() : '';
             // Whether PureCN produced any structural call for this line. Some
             // lines have only an MSI score (PureCN ploidy / WGD / CIN / LoH /
@@ -45827,9 +46897,9 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             const hasStructural = gs.WGD != null || gs.Ploidy != null || gs.Aneuploidy != null
                 || gs.CIN != null || gs.LoHFraction != null;
             const structuralNote = hasStructural ? '' :
-                `<div style="margin:6px 0; padding:6px 10px; background:#fffbeb; border-left:3px solid #f59e0b; font-size:11px; color:#92400e;"><b>Structural genome metrics not available</b> for this cell line (PureCN ploidy / WGD / aneuploidy / CIN / LoH did not produce a call). Only the MSI score below is available, the absence of a WGD or ploidy value here does <i>not</i> mean the genome is normal.</div>`;
+                `<div style="margin:6px 0; padding:6px 10px; background:#fffbeb; border-left:3px solid #f59e0b; font-size:11px; color:#92400e;"><b>Structural genome metrics not available</b> for this cell line: ploidy, whole-genome doubling, aneuploidy, chromosomal instability and loss of heterozygosity were not called. Only the MSI score below is available. A missing value does not mean the genome is normal.</div>`;
             genomeSigHtml = `
-                <p style="margin:0 0 8px; font-size:11px; color:#6b7280;">Genome-wide <b>structural / chromosomal</b> metrics, whole-genome doubling, arm-level aneuploidy, fine-scale chromosomal instability, loss of heterozygosity, microsatellite stability. Useful interpretive context: WGD-positive and MSI-high lines behave systematically differently in many comparisons. <b>Note:</b> these are <i>not</i> point-mutation burden, a cell line can be mutationally noisy (e.g. <b>POLE / POLD1 ultramutator</b> or <b>MSI-high</b>) while remaining chromosomally calm here. See the <i>Driver mutations</i> section above for the point-mutation view.</p>
+                <p style="margin:0 0 8px; font-size:11px; color:#6b7280;">Genome-wide <b>chromosomal</b> metrics: whole-genome doubling, arm-level aneuploidy, fine-scale chromosomal instability, loss of heterozygosity and microsatellite stability. Lines with a doubled genome or high microsatellite instability behave differently in many comparisons, so these are worth knowing before comparing lines. They describe chromosomes, not point mutations: a cell line can carry very many point mutations (<b>POLE / POLD1</b> or <b>MSI-high</b>) and still look calm here. The point-mutation view is in the <i>Driver mutations</i> section above.</p>
                 ${structuralNote}
                 ${row('Whole-genome doubling (WGD)', wgdLabel)}
                 ${row('Ploidy', ploidyLabel)}
@@ -45840,11 +46910,11 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 ${hasStructural ? `
                 <div style="margin-top:16px; padding-top:12px; border-top:1px dashed #e5e7eb;">
                     <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
-                        <div style="font-weight:600; color:#374151; font-size:12px;">Where this line sits in the cohort</div>
-                        <button onclick="app._downloadGenomeMetricsCSV('${cellLineId}')" style="font-size:10px; padding:3px 8px; background:#fff; color:#4c782e; border:1px solid #d1d5db; border-radius:4px; cursor:pointer;" title="Download cohort values for Ploidy, WGD, Aneuploidy, CIN as CSV (with this line flagged)">⤓ CSV</button>
+                        <div style="font-weight:600; color:#374151; font-size:12px;">Where this cell line sits in the cohort</div>
+                        <button onclick="app._downloadGenomeMetricsCSV('${cellLineId}')" style="font-size:10px; padding:3px 8px; background:#fff; color:#4c782e; border:1px solid #d1d5db; border-radius:4px; cursor:pointer;" title="Download cohort values for Ploidy, WGD, Aneuploidy, CIN as CSV (with this cell line flagged)">⤓ CSV</button>
                     </div>
-                    <p style="margin:0 0 8px; font-size:10px; color:#6b7280;">Distribution of each metric across all cell lines with the value available. The dashed red line marks <b>this</b> cell line's position; for WGD (binary) the red bar is this line's category. Hover the Plotly toolbar (top-right of each plot) for PNG / SVG download per panel.</p>
-                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                    <p style="margin:0 0 8px; font-size:10px; color:#6b7280;">Distribution of each metric across all cell lines with the value available. The dashed red line marks <b>this</b> cell line's position; for WGD (binary) the red bar is this cell line's category. Hover the Plotly toolbar (top-right of each plot) for PNG / SVG download per panel.</p>
+                    <div class="wiki-hist-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
                         <div id="clbWikiHistPloidy" style="height:170px;"></div>
                         <div id="clbWikiHistAneup" style="height:170px;"></div>
                         <div id="clbWikiHistCin" style="height:170px;"></div>
@@ -45871,7 +46941,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 const pctRank = allVals.length ? Math.round((nBelow / allVals.length) * 100) : null;
                 const isHigh = cut != null && re.t >= cut;
                 retroWikiHtml = `
-                <p style="margin:0 0 8px; font-size:11px; color:#6b7280;">The transcriptional output of 750 retroelements, measured from this line's public CCLE RNA-seq alignment. The panel covers full-length <b>LINE-1</b>, <b>HERV-K</b> and <b>SVA</b> copies that lie outside genes, so reads reflect the elements' own promoter activity rather than a host gene's transcript. Only uniquely mapped reads are counted, summed per element and expressed as counts per million of the library; an element is called active above 0.5 CPM. 669 of the 1,208 lines have a public alignment to measure; the panel median total is about 40 CPM, and the top tenth (about 80 CPM and up) is called retroelement-high.</p>
+                <p style="margin:0 0 8px; font-size:11px; color:#6b7280;">How much RNA 750 retroelements produce, measured from this cell line's public CCLE RNA-seq data. The panel covers full-length <b>LINE-1</b>, <b>HERV-K</b> and <b>SVA</b> copies that lie outside genes, so the reads reflect the elements' own promoter activity rather than a host gene's transcript. Only uniquely mapped reads are counted, summed per element and given as counts per million reads (CPM); an element counts as active above 0.5 CPM. 669 of the 1,208 cell lines have public data; the median total is about 40 CPM, and the top tenth (about 80 CPM and up) is called retroelement-high.</p>
                 ${row('Total signal', `${re.t.toFixed(1)} CPM <span style="font-size:10px; color:#6b7280;">(panel percentile ${pctRank}${pctRank !== null ? 'th' : ''}, panel median is about 40 CPM)</span>`)}
                 ${row('LINE-1 (L1)', `${re.l1.toFixed(1)} CPM`)}
                 ${row('HERV-K', `${re.hk.toFixed(1)} CPM`)}
@@ -45879,9 +46949,9 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 ${row('Active elements', `${re.a} / 750`)}
                 ${isHigh ? `<div style="margin-top:8px; padding:8px 10px; background:#fef3c7; border-left:3px solid #d97706; font-size:11px; color:#92400e;"><b>Retroelement-high:</b> top tenth of the measured panel.</div>` : ''}
                 <div style="margin-top:16px; padding-top:12px; border-top:1px dashed #e5e7eb;">
-                    <div style="font-weight:600; color:#374151; font-size:12px; margin-bottom:6px;">Where this line sits among the 669 measured lines</div>
-                    <p style="margin:0 0 8px; font-size:10px; color:#6b7280;">Distribution of each measure across the measured lines; the dashed red line marks this cell line. The CPM axes are on a log2 scale because the signal is strongly skewed.</p>
-                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                    <div style="font-weight:600; color:#374151; font-size:12px; margin-bottom:6px;">Where this cell line sits among the 669 measured cell lines</div>
+                    <p style="margin:0 0 8px; font-size:10px; color:#6b7280;">Distribution of each measure across the measured cell lines; the dashed red line marks this cell line. The CPM axes are on a log2 scale because the signal is strongly skewed.</p>
+                    <div class="wiki-hist-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
                         <div id="clbWikiHistRetroTotal" style="height:170px;"></div>
                         <div id="clbWikiHistRetroL1" style="height:170px;"></div>
                         <div id="clbWikiHistRetroHervk" style="height:170px;"></div>
@@ -45890,7 +46960,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                     </div>
                 </div>`;
             } else {
-                retroWikiHtml = `<p style="margin:0; font-size:11px; color:#6b7280;">Not measured: this line has no public hg19 RNA-seq alignment in the CCLE collection, so no retroelement signal can be computed. 669 of 1,208 lines are covered.</p>`;
+                retroWikiHtml = `<p style="margin:0; font-size:11px; color:#6b7280;">Not measured: this cell line has no public hg19 RNA-seq alignment in the CCLE collection, so no retroelement signal can be computed. 669 of 1,208 cell lines are covered.</p>`;
             }
         }
 
@@ -45906,7 +46976,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const typFor = subKey || pd || 'this subtype';
         const typTag = (isTypical) => isTypical
             ? ` <span style="color:#4c782e; font-size:10px; font-weight:600;" title="One of the canonical / recurrent drivers of ${typFor}">✓ typical ${typFor} driver</span>`
-            : (kb ? ` <span style="color:#9ca3af; font-size:10px;" title="Not among the handful of canonical ${typFor} hallmark genes. This is a short curated list, so 'not listed' does not necessarily mean rare, it may still be a real, even common, driver in this line.">not a canonical ${typFor} hallmark</span>` : '');
+            : (kb ? ` <span style="color:#9ca3af; font-size:10px;" title="Not among the handful of canonical ${typFor} hallmark genes. This is a short curated list, so 'not listed' does not necessarily mean rare, it may still be a real, even common, driver in this cell line.">not a canonical ${typFor} hallmark</span>` : '');
 
         // Merge hotspot + functional-loss + CN on the same gene into one row.
         const altByGene = new Map();
@@ -45950,7 +47020,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const fusionAltRows = clinicalFusionCalls.map(c => {
             const partners = c.fusion.split(/--?/);
             const isTyp = partners.some(g => lookForSet.has(g));
-            const atyp = c.atypicalLineage ? ` <span style="color:#a16207; font-size:10px;" title="Atypical tissue for this fusion (kept on orthogonal evidence)">⚠ atypical lineage</span>` : '';
+            const atyp = c.atypicalLineage ? ` <span style="color:#a16207; font-size:10px;" title="Unusual tissue for this fusion; kept because the partner gene's expression or dependency supports it">⚠ atypical lineage</span>` : '';
             return `<div style="margin:3px 0; font-size:12px;">`
                 + `<span style="font-weight:700; color:#1e3a8a;">${c.fusion}</span> `
                 + `<span style="color:#4b5563;">driver fusion <span style="font-size:9px; color:#9ca3af;">[${c.tier}]</span></span>${typTag(isTyp)}${atyp}</div>`;
@@ -45973,7 +47043,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
 
         const keyAltBody = allAltRows.length > 0
             ? `<div style="line-height:1.5;">${allAltRows.join('')}</div>`
-            : `<div style="color:#6b7280; font-size:11px;">No driver-level alteration detected in the curated layers (oncogene hotspots, tumor-suppressor functional loss, curated fusions, focal CN). These layers are deliberately narrow, so this is not the same as a clean genome, check the damaging-mutation count and the copy-number regions below before drawing a conclusion.${kb && !damagingOnlyDrivers.length ? ' None of the canonical ' + typFor + ' drivers show up in them either.' : ''}</div>`;
+            : `<div style="color:#6b7280; font-size:11px;">No driver-level alteration found among oncogene hotspots, tumor-suppressor functional loss, curated fusions and focal copy-number events. These are short, curated lists, so this is not the same as a clean genome: see the damaging-mutation count and the copy-number regions below.${kb && !damagingOnlyDrivers.length ? ' None of the usual ' + typFor + ' drivers appear in them either.' : ''}</div>`;
 
         const typicalContextHtml = kb
             ? `<div style="margin-top:10px; padding:8px 12px; background:#eef2ff; border-left:3px solid #3730a3; font-size:11px;">`
@@ -45982,19 +47052,19 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 + (damagingOnlyDrivers.length ? `<div style="margin-top:5px; color:#374151;"><b>Canonical drivers with a damaging mutation</b> <span style="font-size:10px; color:#9ca3af;">(outside the curated layers above)</span>: ${damagingOnlyDrivers.join(', ')}.</div>` : '')
                 + (notFoundDrivers.length ? `<div style="margin-top:5px; color:#6b7280;"><b>Canonical drivers with nothing detected here:</b> ${notFoundDrivers.join(', ')} <span style="font-size:10px; color:#9ca3af;">(no hotspot, damaging mutation, functional loss, curated fusion or focal CN event)</span>.</div>` : '')
                 + `</div>`
-            : `<div style="margin-top:10px; padding:8px 12px; background:#f9fafb; border-left:3px solid #9ca3af; font-size:11px; color:#6b7280;">No curated driver profile for &ldquo;${typFor}&rdquo; yet (~30 common Oncotree subtypes covered), so the alterations above aren't tagged typical / atypical.</div>`;
+            : `<div style="margin-top:8px; font-size:10px; color:#9ca3af;">Typical / atypical tags are not available for ${typFor} yet.</div>`;
 
         const keyAlterationsHtml = `
-            <p style="margin:0 0 8px; font-size:11px; color:#6b7280;">The alterations most likely <b>central to this cell line's transformation</b>, activating oncogene mutations, tumor-suppressor functional loss, validated driver fusions, and focal copy-number events, each tagged <span style="color:#4c782e; font-weight:600;">✓ typical</span> driver of, or <span style="color:#6b7280;">not a canonical hallmark</span> of, its cancer subtype. Overall mutation / fusion burden and the functional pathway read-out follow.</p>
+            <p style="margin:0 0 8px; font-size:11px; color:#6b7280;">The alterations most likely to be <b>central to this cell line's cancer</b>: activating oncogene mutations, loss of tumor-suppressor function, validated driver fusions and focal copy-number events. Each is tagged <span style="color:#4c782e; font-weight:600;">✓ typical</span> when it is a known driver of this cancer subtype, or <span style="color:#6b7280;">not a canonical hallmark</span> when it is not. The overall mutation and fusion counts and the pathway read-out follow.</p>
             ${countsLine}
             ${flagsHtml}
             ${keyAltBody}
             ${typicalContextHtml}
             <div style="margin-top:12px; padding-top:10px; border-top:1px solid #e5e7eb;">
                 <div class="wiki-sub-h">Pathways that may have contributed to transformation</div>
-                <p class="wiki-sub-p">Alterations in this cell line that fall inside 25 pathways commonly subverted in cancer. <b>These are hypotheses, not conclusions</b>: an alteration in a pathway does not establish that it drove transformation, and the pathway that mattered may not be listed here at all.
-                <br><br><b>What the labels mean.</b> <b>Driver active</b>, a gene that normally promotes growth carries an activating hotspot mutation, a focal amplification, or sits in a curated fusion. <b>Brake lost</b>, a tumor suppressor in the pathway carries a damaging mutation, an inferred functional loss, or a focal deletion. <b>Regulation lost, TP53 intact</b>, the p53 panel's only loss is CDKN2A/B: the p14ARF product of that locus restrains MDM2, so p53 is deregulated upstream while TP53 itself is unaltered, and such lines usually still have working p53 (the CRISPR readout below typically shows TP53 knockout helping and MDM2 knockout hurting). All labels describe the <i>alteration</i> found, not a measurement of pathway activity.
-                <br><br><b>What was checked.</b> Damaging mutations across ~8,900 genes, inferred functional loss, the curated focal copy-number panel, and curated driver fusions. Activating hotspots are called from a 49-gene panel, so an activating point mutation in a gene outside that panel will not appear. Where a CRISPR knockout read-out exists it is shown underneath, and that <i>is</i> a functional measurement: 0 = no effect, &minus;0.5 = selectively essential, &minus;1 &asymp; a typical strongly-essential gene.</p>
+                <p class="wiki-sub-p">Alterations in this cell line that fall in 25 pathways often altered in cancer. <b>These are hypotheses, not conclusions</b>: an alteration in a pathway does not prove that the pathway drove the cancer, and the pathway that mattered may not be listed here at all.
+                <br><br><b>What the labels mean.</b> <b>Driver active</b>: a growth-promoting gene carries an activating hotspot mutation or a focal amplification, or is part of a curated fusion. <b>Brake lost</b>: a tumor suppressor in the pathway carries a damaging mutation, an inferred loss of function, or a focal deletion. <b>Regulation lost, TP53 intact</b>: the only loss in the p53 pathway is CDKN2A/B. Its p14ARF product normally restrains MDM2, so p53 is held back upstream while TP53 itself is unaltered. Such cell lines usually still have working p53, and the CRISPR result below typically shows TP53 knockout helping growth and MDM2 knockout hurting it. All labels describe the <i>alteration</i> found, not a measurement of pathway activity.
+                <br><br><b>What was checked.</b> Damaging mutations across about 8,900 genes, inferred loss of function, the curated focal copy-number panel, and curated driver fusions. Activating hotspots come from a 49-gene panel, so an activating point mutation in a gene outside that panel will not appear. Where a CRISPR knockout result exists it is shown underneath; that is a functional measurement: 0 = no effect, &minus;0.5 = selectively essential, &minus;1 &asymp; a typical strongly essential gene.</p>
                 ${pathwayStatusHtml}
             </div>`;
 
@@ -46101,7 +47171,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             if (hasFamily) {
                 const topFamily = familyZ.sort((a, b) => a.z - b.z).slice(0, 8);
                 familyDepHtml = topFamily.length > 0
-                    ? row(`Top essential vs same-lineage lines only <span style="color:#9ca3af; font-weight:400;">(${lin} cancer family, n=${familyIdx.length})</span>`, topFamily.map(g => renderEssRow(g, { familyScope: true })).join(', '))
+                    ? row(`Top essential vs same-lineage cell lines only <span style="color:#9ca3af; font-weight:400;">(${lin} cancer family, n=${familyIdx.length})</span>`, topFamily.map(g => renderEssRow(g, { familyScope: true })).join(', '))
                     : '';
             } else if (lin) {
                 familyDepHtml = `<div style="padding:6px 10px; background:#f9fafb; border-left:3px solid #9ca3af; font-size:11px; color:#6b7280; margin-top:4px;">Too few ${lin} cell lines (${familyIdx.length}) for a same-lineage &ldquo;cancer family&rdquo; comparison, only the whole-cohort view above is shown.</div>`;
@@ -46114,7 +47184,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
 
             const interpLines = [];
             if (essentialDrugTargets.length > 0) {
-                interpLines.push(`<div style="padding:6px 10px; background:#f0fdf4; border-left:3px solid #4c782e; font-size:11px;"><b style="color:#4c782e;">Druggable dependencies unique to this line</b>, genes this cell line depends on more than typical AND for which approved or clinical-stage drugs exist: ${essentialDrugTargets.map(g => `<span class="gene-hover clb-gene-link" data-gene="${g.gene}" style="cursor:help;">${g.gene}</span> <span style="color:#9ca3af; font-size:10px;">(z ${fmtZ(g.z)})</span>`).join(', ')}.</div>`);
+                interpLines.push(`<div style="padding:6px 10px; background:#f0fdf4; border-left:3px solid #4c782e; font-size:11px;"><b style="color:#4c782e;">Druggable dependencies unique to this cell line</b>, genes this cell line depends on more than typical AND for which approved or clinical-stage drugs exist: ${essentialDrugTargets.map(g => `<span class="gene-hover clb-gene-link" data-gene="${g.gene}" style="cursor:help;">${g.gene}</span> <span style="color:#9ca3af; font-size:10px;">(z ${fmtZ(g.z)})</span>`).join(', ')}.</div>`);
             }
             if (essentialPathwayHits.length > 0) {
                 const hitsByPathway = {};
@@ -46129,7 +47199,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 }
                 if (Object.keys(hitsByPathway).length > 0) {
                     const items = Object.entries(hitsByPathway).map(([pw, gs]) => `<li><b>${pw}</b>: ${gs.join(', ')}</li>`).join('');
-                    interpLines.push(`<div style="padding:6px 10px; background:#f0fdf4; border-left:3px solid #5d9239; font-size:11px;"><b style="color:#4c782e;">Pathway dependencies unique to this line</b>, cancer-pathway genes this cell line depends on more than typical (z &lt; &minus;1.5):<ul style="margin:2px 0 0 18px; padding:0;">${items}</ul></div>`);
+                    interpLines.push(`<div style="padding:6px 10px; background:#f0fdf4; border-left:3px solid #5d9239; font-size:11px;"><b style="color:#4c782e;">Pathway dependencies unique to this cell line</b>, cancer-pathway genes this cell line depends on more than typical (z &lt; &minus;1.5):<ul style="margin:2px 0 0 18px; padding:0;">${items}</ul></div>`);
                 }
             }
 
@@ -46148,7 +47218,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 ? `<div style="padding:6px 10px; background:#fef2f2; border-left:3px solid #dc2626; font-size:11px; margin-top:4px;"><b style="color:#991b1b;">Tumor suppressors whose knockout boosts growth</b> (red above): ${tsHits.map(g => g.gene).join(', ')}. Removing these helps the cell grow, so they are <em>still functional</em> here and have <em>not</em> been inactivated in this cell line.</div>`
                 : '';
 
-            const introPara = `<p style="margin:0 0 8px; font-size:11px; color:#6b7280;">A CRISPR knockout screen asks: which genes, when deleted, kill this cell line? The interesting dependencies are <b>selective to this line</b>, genes it needs more than usual, often downstream of its active oncogene or driver. <b>"More than usual" means compared to every cell line in the CRISPR panel</b> (all ${this.nCellLines.toLocaleString()} screened lines, across every lineage, <i>not</i> only same-tissue lines), so a gene flagged here is one this line depends on more than the average cancer cell line of any type. <b>Pan-essentials</b> (ribosomal, RNA polymerase, etc., needed by every cell) are removed; they say nothing line-specific. Rankings use <b>z-score vs that whole cohort</b>: z &lt; &minus;2 = much more essential than typical, z &gt; +2 = knockout helps growth much more than typical. A second list scores the same way but <b>only against same-lineage lines (the cancer family)</b>, these are dependencies specific to <i>this</i> line beyond what its tissue siblings share. <span style="display:inline-block; margin-left:6px;">💊 = approved or clinical-stage drug targets this gene.</span></p>`;
+            const introPara = `<p style="margin:0 0 8px; font-size:11px; color:#6b7280;">A CRISPR knockout screen asks which genes this cell line cannot grow without. The interesting ones are <b>selective to this cell line</b>: genes it needs more than most cell lines, often downstream of its driver. <b>"More than most" is judged against all ${this.nCellLines.toLocaleString()} screened cell lines</b>, across every lineage, not only same-tissue lines. Genes every cell needs (ribosomal, RNA polymerase and the like) are left out, since they say nothing about this line. Rankings use the z-score against that whole set: below &minus;2, much more essential than typical; above +2, knockout helps growth much more than typical. A second list scores the same way <b>against same-lineage lines only</b>, so it shows what this cell line depends on beyond what its cancer family shares. <span style="display:inline-block; margin-left:6px;">💊 = an approved or clinical-stage drug targets this gene.</span></p>`;
             if (zScored.length === 0) {
                 // The cell line index is valid (we're in the clIdx >= 0
                 // branch) but no gene-effect values survived the per-gene
@@ -46156,7 +47226,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 // the metadata index but its CRISPR row is all-NaN in the
                 // current release. Surface that explicitly instead of leaving
                 // a silent void between the intro paragraph and the Source.
-                geSigHtml = `${introPara}<div style="padding:10px 12px; background:#fef2f2; border-left:3px solid #991b1b; font-size:11px;"><b style="color:#991b1b;">No usable CRISPR gene-effect data for this cell line.</b> The cell line is indexed in the cohort but its CRISPR row contains no measurable values (NaN-only across the matrix), so the z-scored dependency view cannot be built. This happens for a handful of lines per DepMap release, usually those screened too recently to be in this quarter&rsquo;s CRISPRGeneEffect file, or dropped during QC. Other Wiki sections (Mutations, CN, Fusions, Expression, Drug response) still show available data for this line.</div>`;
+                geSigHtml = `${introPara}<div style="padding:10px 12px; background:#fef2f2; border-left:3px solid #991b1b; font-size:11px;"><b style="color:#991b1b;">No usable CRISPR gene-effect data for this cell line.</b> The cell line is in the panel but has no measurable values in this release. That happens for a few cell lines each release, usually those screened too recently or removed during quality control. The other sections (mutations, copy number, fusions, expression, drug response) still show what is available.</div>`;
             } else {
                 geSigHtml = `${introPara}
                     ${row('Top essential vs whole cohort <span style="color:#9ca3af; font-weight:400;">(all lineages)</span>', topUniqueHtml)}
@@ -46256,7 +47326,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                     .slice(0, 8);
                 const topUniqueHtml = topUniqueExpr.length > 0
                     ? topUniqueExpr.map(g => renderExprRow(g, { tagLineage: true })).join(', ')
-                    : '<em style="color:#9ca3af;">No genes with sufficient cohort variance to rank.</em>';
+                    : '<em style="color:#9ca3af;">No genes vary enough across cell lines to rank.</em>';
                 // Uniquely LOW. A gene silenced here but expressed across the
                 // cohort is as informative as one over-expressed: lost lineage
                 // markers, deleted tumor suppressors, immune-evasion losses.
@@ -46275,8 +47345,8 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 const topFamilyExpr = exprFamilyZ.sort((a, b) => b.z - a.z).slice(0, 8);
                 const topFamilyLow = [...exprFamilyZ].sort((a, b) => a.z - b.z).filter(g => g.z <= -1).slice(0, 8);
                 const exprFamilyHtml = hasFamilyE
-                    ? ((topFamilyExpr.length ? row(`Top uniquely high vs same-lineage lines only <span style="color:#9ca3af; font-weight:400;">(${lin} cancer family, n=${familyIdxE.length})</span>`, topFamilyExpr.map(g => renderExprRow(g, { familyScope: true })).join(', ')) : '')
-                       + (topFamilyLow.length ? row(`Top uniquely low vs same-lineage lines only <span style="color:#9ca3af; font-weight:400;">(${lin} cancer family)</span>`, topFamilyLow.map(g => renderExprRow(g, { familyScope: true })).join(', ')) : ''))
+                    ? ((topFamilyExpr.length ? row(`Top uniquely high vs same-lineage cell lines only <span style="color:#9ca3af; font-weight:400;">(${lin} cancer family, n=${familyIdxE.length})</span>`, topFamilyExpr.map(g => renderExprRow(g, { familyScope: true })).join(', ')) : '')
+                       + (topFamilyLow.length ? row(`Top uniquely low vs same-lineage cell lines only <span style="color:#9ca3af; font-weight:400;">(${lin} cancer family)</span>`, topFamilyLow.map(g => renderExprRow(g, { familyScope: true })).join(', ')) : ''))
                     : (lin ? `<div style="padding:6px 10px; background:#f9fafb; border-left:3px solid #9ca3af; font-size:11px; color:#6b7280; margin-top:4px;">Too few ${lin} cell lines (${familyIdxE.length}) for a same-lineage comparison.</div>` : '');
 
                 // 2) Pathway-activity signatures.
@@ -46297,7 +47367,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 const activeSig = sigResults.filter(s => s.meanZ > 0.75);
                 const sigHtml = activeSig.length > 0
                     ? `<div style="margin-top:8px; padding:6px 10px; background:#eef2ff; border-left:3px solid #3730a3; font-size:11px;">`
-                        + `<b style="color:#3730a3;">Gene programs expressed above average</b> <span style="color:#9ca3af; font-size:10px;">(each program is a curated gene panel, e.g. MYC targets or interferon response. The score is the <b>mean z-score of that panel's mRNA levels</b> against every cell line in the expression table, and a program is listed when that mean exceeds +0.75, i.e. its genes are coordinately higher than in the average line. This is mRNA abundance, not a measurement of pathway activity: transcripts can be high without the pathway running, and a pathway can run while its transcripts look ordinary)</span>`
+                        + `<b style="color:#3730a3;">Gene programs expressed above average</b> <span style="color:#9ca3af; font-size:10px;">(each program is a curated gene panel, for example MYC targets or the interferon response. Its score is the <b>mean z-score of the panel's mRNA levels</b> against every cell line in the expression table; a program is listed when that mean exceeds +0.75, meaning its genes are consistently higher than in the average line. This is mRNA abundance, not a measurement of pathway activity: transcripts can be high without the pathway running, and a pathway can run while its transcripts look ordinary)</span>`
                         + activeSig.map(s => `<div style="margin:3px 0 3px 4px;">`
                             + `<span style="font-weight:600; color:#3730a3;" title="${s.info.note.replace(/"/g, '&quot;')}">${s.name}</span> `
                             + `<span style="color:#9ca3af; font-size:10px;">, mean z = ${fmtZ(s.meanZ)} across ${s.n}/${s.total} panel genes</span>`
@@ -46309,7 +47379,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 const inactiveSig = sigResults.filter(s => s.meanZ < -0.75);
                 const inactiveSigHtml = inactiveSig.length > 0
                     ? `<div style="margin-top:6px; padding:6px 10px; background:#f9fafb; border-left:3px solid #6b7280; font-size:11px;">`
-                        + `<b style="color:#374151;">Gene programs expressed below average</b> <span style="color:#9ca3af; font-size:10px;">(same measure, mean panel z &lt; &minus;0.75: the program's mRNA is coordinately lower than in the average cell line)</span>`
+                        + `<b style="color:#374151;">Gene programs expressed below average</b> <span style="color:#9ca3af; font-size:10px;">(same measure, mean z below &minus;0.75: the program's genes are consistently lower than in the average cell line)</span>`
                         + inactiveSig.map(s => `<div style="margin:3px 0 3px 4px;">`
                             + `<span style="font-weight:600; color:#4b5563;" title="${s.info.note.replace(/"/g, '&quot;')}">${s.name}</span> `
                             + `<span style="color:#9ca3af; font-size:10px;">, mean z = ${fmtZ(s.meanZ)} across ${s.n}/${s.total} panel genes</span>`
@@ -46370,9 +47440,9 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                     : '';
 
                 exprSigHtml = `
-                    <p style="margin:0 0 8px; font-size:11px; color:#6b7280;">The biologically interesting question is <b>what's uniquely on or off in this cell line</b>, not which genes have the highest raw expression, that list is always dominated by mitochondrial and ribosomal genes that are high in every line. "Uniquely" here is judged <b>against every cell line in the expression table</b> (${(this.expressionMetadata?.cellLines?.length || 0).toLocaleString()} lines across every lineage, <i>not</i> just same-tissue lines). Values are log₂(TPM+1) (≈ mRNA on a log scale, &gt; 1 = clearly expressed) <i>plus</i> the z-score vs that whole cohort for the gene (&gt; +2 = much more expressed than the typical cell line, &lt; &minus;2 = strongly silenced). Whole-cohort hits carry a <span style="color:#4c782e; font-weight:600;">✓ lineage-typical</span> flag when the whole cancer family also over-expresses them (i.e. common for this cancer type rather than specific to this line); a second list ranks genes uniquely high <b>vs same-lineage lines only</b>.</p>
+                    <p style="margin:0 0 8px; font-size:11px; color:#6b7280;">What matters is <b>which genes are unusually on or off in this cell line</b>, not which have the highest expression; that list is always led by mitochondrial and ribosomal genes that are high in every line. "Unusual" is judged <b>against every cell line in the expression table</b> (${(this.expressionMetadata?.cellLines?.length || 0).toLocaleString()} lines across every lineage, not only same-tissue lines). Values are log₂(TPM+1), mRNA on a log scale where above 1 is clearly expressed, plus the gene's z-score against that whole set (above +2, much higher than in the typical cell line; below &minus;2, strongly silenced). Hits carry a <span style="color:#4c782e; font-weight:600;">✓ lineage-typical</span> flag when the whole cancer family also over-expresses them, common for the cancer type rather than specific to this line. A second list ranks genes unusually high <b>against same-lineage lines only</b>.</p>
                     ${row('Top uniquely high vs whole cohort <span style="color:#9ca3af; font-weight:400;">(all lineages)</span>', topUniqueHtml)}
-                    ${row('Top uniquely low vs whole cohort <span style="color:#9ca3af; font-weight:400;">(all lineages, genes the cohort expresses but this line does not)</span>', topLowHtml)}
+                    ${row('Top uniquely low vs whole cohort <span style="color:#9ca3af; font-weight:400;">(all lineages, genes the cohort expresses but this cell line does not)</span>', topLowHtml)}
                     ${exprFamilyHtml}
                     ${xist !== undefined
                         ? row('XIST', xist.toFixed(2) + (xist > 1.0 ? ', active (the normal silencing of the extra X chromosome is working)' : ', silenced (unusual; can re-activate X-linked genes)'))
@@ -46465,7 +47535,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                     const survivalLabel = c.v < 0.3 ? 'kills most cells' : c.v < 0.6 ? 'kills many cells' : c.v < 0.85 ? 'modest killing' : 'little effect';
                     const sc = c._sensCounts;
                     const cohortStr = sc
-                        ? `<div style="padding-left:170px; font-size:10px; color:#6b7280;">PRISM cohort: <b style="color:#4c782e;">${sc.very}</b> very-sensitive (AUC&nbsp;&lt;&nbsp;0.3) · <b style="color:#a16207;">${sc.part}</b> partly-sensitive (AUC&nbsp;0.3&ndash;0.6) of ${sc.total} tested.</div>`
+                        ? `<div class="wiki-drug-indent" style="padding-left:170px; font-size:10px; color:#6b7280;">PRISM cohort: <b style="color:#4c782e;">${sc.very}</b> very-sensitive (AUC&nbsp;&lt;&nbsp;0.3) · <b style="color:#a16207;">${sc.part}</b> partly-sensitive (AUC&nbsp;0.3&ndash;0.6) of ${sc.total} tested.</div>`
                         : '';
                     // c.indication is the clinical disease(s) the drug is
                     // approved for; "Used in" makes the bare labels (CRC,
@@ -46476,11 +47546,11 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                     const slug = slugify(c.name);
                     drugHistTargets.push({ slug, name: c.name, currentVal: c.v });
                     const histId = `clbWikiHistDrug_${slug}`;
-                    return `<li style="padding:3px 0;"><span style="display:inline-block; min-width:170px; font-weight:600; color:${color};">${c.name}</span>
+                    return `<li style="padding:3px 0;"><span class="wiki-drug-name" style="display:inline-block; min-width:170px; font-weight:600; color:${color};">${c.name}</span>
                         <span style="font-size:10px; color:#6b7280;">${c.target} &middot; ${c.moa}</span><br>
-                        <span style="padding-left:170px; font-size:10px;">Viability score <b title="AUC = area under the dose-response curve. 0 = all cells killed across the tested dose range; 1 = no killing at any dose.">${c.v.toFixed(2)}</b> (${survivalLabel}), <span style="background:${bg}; color:${color}; padding:1px 5px; border-radius:3px;"><b>${zStr}σ</b> ${word}</span></span>
+                        <span class="wiki-drug-indent" style="padding-left:170px; font-size:10px;">Viability score <b title="AUC = area under the dose-response curve. 0 = all cells killed across the tested dose range; 1 = no killing at any dose.">${c.v.toFixed(2)}</b> (${survivalLabel}), <span style="background:${bg}; color:${color}; padding:1px 5px; border-radius:3px;"><b>${zStr}σ</b> ${word}</span></span>
                         ${cohortStr}
-                        <div id="${histId}" style="margin: 4px 0 0 170px; height: 84px;"></div></li>`;
+                        <div id="${histId}" class="wiki-drug-indent" style="margin: 4px 0 0 170px; height: 84px;"></div></li>`;
                 };
 
                 // No therapy matching here on purpose: this is a cell-line
@@ -46488,8 +47558,8 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
 
                 drugHtml = `
                     <div style="margin:0 0 8px;"><button onclick="window.app.exportWikiDrugResponseCSV()" class="btn btn-outline btn-sm" style="font-size:10px; padding:2px 8px; color:var(--earth-700); border-color:var(--earth-300);" title="Export every PRISM compound with this cell line's AUC, the cohort mean/SD and z-score, plus target / mechanism / indication, as a CSV so you can make your own plot">Export drug responses (.csv)</button></div>
-                    <p style="margin:0 0 8px; font-size:11px; color:#6b7280;">Results from the DepMap PRISM Repurposing screen (${dr.panelSize} clinically-relevant compounds). The <b>AUC viability score</b> goes from 0 to 1: <b>0 = all cells killed</b>, <b>1 = no killing</b>. AUC alone doesn't tell you whether this cell line is unusually responsive, for that, compare it to how every <i>other</i> tested cell line behaved with the same drug.<br><br>The <b>z-score</b> (shown as <b>&minus;1.4σ below average</b> etc.) does exactly that. <b>σ (sigma)</b> = the standard deviation of this drug's AUC across all PRISM cell lines. The z-score is computed across every cell line PRISM tested; the &ldquo;of N tested&rdquo; count beside it covers the lines that also have a CRISPR screen here. <b>&minus;1.4σ below average</b> means this cell line's AUC sits 1.4 standard deviations below the cohort mean for that drug, it is killing about 1.4σ harder than typical. Rough guide: <b>|z| &gt; 1σ</b> = noteworthy, <b>|z| &gt; 2σ</b> = strong outlier worth following up. Below: &ldquo;standout sensitive&rdquo; lists compounds with z &lt; &minus;1σ; &ldquo;standout resistant&rdquo; lists z &gt; +1σ. The mini-histogram under each compound shows the full AUC distribution across all PRISM-tested cell lines (red line = this cell line's value), mirroring the per-metric histograms in the Genome section.<br><br>Each compound row shows: <b>name</b>, molecular <b>target &middot; mechanism of action</b>, and the viability score and z-score for <i>this</i> cell line. The compound's approved clinical indications are in the CSV export; they describe the drug and say nothing about this cell line's cancer type.</p>
-                    <div style="margin:0 0 10px; padding:8px 12px; background:var(--earth-50); border-left:3px solid var(--earth-700); border-radius:0 4px 4px 0; font-size:11px; color:#5b4a2c;"><b>&ldquo;Standout sensitive&rdquo; means selective, not necessarily strong.</b> A line can be more sensitive than most others to a drug (low z-score) while still not being very sensitive in absolute terms (high AUC, few cells killed). Always read both: the <b>AUC</b> says how much the drug kills <i>this</i> line; the <b>z-score</b> says whether that is unusual versus other lines.</div>
+                    <p style="margin:0 0 8px; font-size:11px; color:#6b7280;">Results from the DepMap PRISM Repurposing screen (${dr.panelSize} clinically relevant compounds). The <b>AUC viability score</b> runs from 0 to 1: <b>0 = all cells killed</b>, <b>1 = no killing</b>. On its own it does not say whether this cell line is unusually responsive; for that it is compared with every other cell line tested with the same drug.<br><br>The <b>z-score</b> does that. <b>σ</b> is the standard deviation of the drug's AUC across all PRISM cell lines, so <b>&minus;1.4σ below average</b> means this line's AUC sits 1.4 standard deviations below the mean for that drug: the drug kills it clearly harder than it kills a typical line. Rough guide: beyond <b>1σ</b> is noteworthy, beyond <b>2σ</b> is a strong outlier. The &ldquo;of N tested&rdquo; count covers the lines that also have a CRISPR screen here. &ldquo;Standout sensitive&rdquo; lists compounds below &minus;1σ; &ldquo;standout resistant&rdquo; lists those above +1σ. The histogram under each compound shows the AUC across all tested cell lines, with the red line marking this cell line.<br><br>Each row gives the compound <b>name</b>, its <b>target &middot; mechanism of action</b>, and this line's viability score and z-score. The compound's approved clinical uses are in the CSV export; they describe the drug, not this cell line's cancer type.</p>
+                    <div style="margin:0 0 10px; padding:8px 12px; background:var(--earth-50); border-left:3px solid var(--earth-700); border-radius:0 4px 4px 0; font-size:11px; color:#5b4a2c;"><b>&ldquo;Standout sensitive&rdquo; means selective, not necessarily strong.</b> A cell line can be more sensitive than most others to a drug (low z-score) and still not very sensitive in absolute terms (high AUC, few cells killed). Read both: the <b>AUC</b> says how much the drug kills <i>this</i> cell line; the <b>z-score</b> says whether that is unusual.</div>
                     ${sensitive.length ? `<div><b style="color:#4c782e;">Standout sensitive:</b><ul style="margin:4px 0 10px 18px; padding:0;">${sensitive.map(c => fmtCompound(c, 'sens')).join('')}</ul></div>` : '<div style="color:#6b7280; font-size:11px; margin-bottom:6px;">Nothing stands out as unusually sensitive.</div>'}
                     ${resistant.length ? `<div><b style="color:#991b1b;">Standout resistant:</b><ul style="margin:4px 0 10px 18px; padding:0;">${resistant.map(c => fmtCompound(c, 'res')).join('')}</ul></div>` : ''}`;
                 // Stash for the post-render histogram draw.
@@ -46555,7 +47625,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         </div>`;
         const authHtml = `
             <p style="margin:0 0 8px;">Before using a cell line you should confirm it really is what the label says. The standard method is <b>Short Tandem Repeat (STR) profiling</b>, a small panel of highly variable DNA regions (microsatellites) that act like a fingerprint. An authenticated cell line matches the reference profile at every marker.</p>
-            <p style="margin:0 0 8px;"><b>How to use this:</b> send your cells to a commercial authentication service (ATCC, DSMZ, and other vendors offer this), then compare their report to the table below. A perfect or one-marker mismatch is considered an authentic match; two or more mismatches typically means the line is misidentified or contaminated and should not be trusted for downstream experiments.</p>
+            <p style="margin:0 0 8px;"><b>How to use this:</b> send your cells to a commercial authentication service (ATCC, DSMZ, and other vendors offer this), then compare their report to the table below. A perfect or one-marker mismatch is considered an authentic match; two or more mismatches typically means the cell line is misidentified or contaminated and should not be trusted for downstream experiments.</p>
             ${_strLinksHtml}
             <p style="margin:0 0 6px;"><b>Reference profile for ${name}:</b></p>
             ${strTableHtml}`;
@@ -46592,7 +47662,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         body.innerHTML = summaryHtml + [
             // ── Identity ──────────────────────────────────────────────────
             this._wikiHistoryHtml(cellLineId, { rrid, name })
-                ? section('History and provenance <span style="font-size:11px; color:#6b7280;">, where this line came from and what it is a version of</span>',
+                ? section('History and provenance <span style="font-size:11px; color:#6b7280;">, where this cell line came from and what it is a version of</span>',
                     this._wikiHistoryHtml(cellLineId, { rrid, name }),
                     'Cellosaurus (SIB / ExPASy) for provenance, derivative relationships and misidentification history; DepMap Model table for the panel name.')
                 : '',
@@ -46607,7 +47677,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 'DepMap 26Q1 Model table, donor demographics and tissue collection metadata.'),
             section('Sex (annotation vs expression)',
                 sexHtml,
-                'Annotation: DepMap Model. Expression: Correlate V2 classifier on Y-markers (RPS4Y1, DDX3Y, EIF1AY, KDM5D, UTY, USP9Y) and XIST, thresholds 1.0 log-TPM+1. XIST is used when the classifier is built, but it is a non-coding RNA and so is not in the protein-coding expression table this page reads from.'),
+                'Annotation: DepMap Model table. Expression check: Y-chromosome marker genes (RPS4Y1, DDX3Y, EIF1AY, KDM5D, UTY, USP9Y) and XIST, expressed above 1.0 log-TPM+1. XIST is a non-coding RNA, so it is not in the protein-coding expression table shown elsewhere on this page. chrX copy number: median relative CN over chrX genes outside the pseudoautosomal regions, 1.0 = the line\'s own modal baseline, so one X per diploid genome set reads about 0.5 and 0.75 is the cut between one and two. All three are expression or copy-number readings, not a karyotype.'),
 
             // ── Genome state ──────────────────────────────────────────────
             section('Genome signatures',
@@ -46615,26 +47685,26 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 'DepMap 26Q1 OmicsGlobalSignatures, PureCN ploidy / WGD / CIN / LoH, MSIsensor2, Ben-David 2021 aneuploidy.'),
             section('Retroelement signal <span style="font-size:11px; color:#6b7280;">, LINE-1 / HERV-K / SVA transcription and ADAR1 dependency</span>',
                 retroWikiHtml,
-                'scripts/te_aws pipeline on public CCLE hg19 RNA-seq alignments; 750 full-length intergenic LINE-1 / HERV-K / SVA loci, unique (MAPQ&ge;20) reads, counts per million.'),
+                'Computed for Correlate from public CCLE hg19 RNA-seq alignments: 750 full-length intergenic LINE-1 / HERV-K / SVA loci, uniquely mapped reads (MAPQ &ge; 20), counts per million.'),
 
             // ── Driver landscape ──────────────────────────────────────────
             section(`Key genetic alterations <span style="font-size:11px; color:#6b7280;">, what likely drives this cell line${subKey ? ' (' + subKey + ')' : ''}</span>`,
                 keyAlterationsHtml,
-                'Alterations from DepMap 26Q1 OmicsInferredMolecularSubtypes (hotspot variants + integrated functional loss: copy number &lt; 0.3, likely-LoF mutation with AF &gt; 0.5, or expression &lt; 0.1 log-TPM), curated validated fusions (this app), and the curated focal copy-number panel. "Typical / atypical" is judged against a curated driver knowledge base (WHO 2022, COSMIC Cancer Gene Census, OncoKB, NCCN; ~30 Oncotree subtypes). Pathway status combines mutation calls with CRISPRGeneEffect (Chronos).'),
+                'Alterations from DepMap 26Q1 OmicsInferredMolecularSubtypes (hotspot variants + integrated functional loss: copy number &lt; 0.3, likely-LoF mutation with AF &gt; 0.5, or expression &lt; 0.1 log-TPM), curated driver fusions validated in Correlate, and the curated focal copy-number panel. "Typical / atypical" is judged against a driver reference compiled from WHO 2022, COSMIC Cancer Gene Census, OncoKB and NCCN, covering about 30 Oncotree subtypes. Pathway status combines mutation calls with CRISPRGeneEffect (Chronos).'),
             section('Fusion landscape',
                 fusionHtml,
-                'Clinically relevant fusions: curated 51-driver list validated per cell line on lineage match + partner expression z-score + partner CRISPR dependency z-score (this app). Raw partner list: DepMap 26Q1 OmicsFusionFiltered, fusion callers on hypermutated / highly rearranged cancers produce many technical and passenger calls (counts &gt;30 are flagged).'),
+                'Curated driver fusions: a list of 51 known drivers, each call checked in Correlate against the expected tissue, the partner gene\'s expression and its CRISPR dependency. Raw partner list: DepMap 26Q1 OmicsFusionFiltered.'),
 
             // ── Functional behavior ──────────────────────────────────────
             section('CRISPR dependencies <span style="font-size:11px; color:#6b7280;">, which genes this cell line needs, and which ones hold it back</span>',
                 geSigHtml,
-                'DepMap 26Q1 CRISPRGeneEffect (Chronos). Per-gene mean and SD computed across the full cohort; z-score = (this line\'s GE − cohort mean) / cohort SD. Pan-essentials filtered against the DepMap common-essentials list. Druggable dependencies cross-referenced against a curated ~60-gene panel with approved or clinical-stage inhibitors.'),
+                'DepMap 26Q1 CRISPRGeneEffect (Chronos). Each gene\'s mean and SD are computed across all screened lines; z-score = (this line\'s gene effect − mean) / SD. Genes every cell needs are removed using the DepMap common-essentials list. Druggable dependencies are matched against a curated panel of about 60 genes with approved or clinical-stage inhibitors.'),
             section('Expression profile <span style="font-size:11px; color:#6b7280;">, what is uniquely highly expressed in this cell line</span>',
                 exprSigHtml,
-                'DepMap 26Q1 OmicsExpressionTPMLogp1HumanProteinCodingGenes (log₂-TPM+1). Per-gene mean and SD computed across the full cohort; z-score = (this line\'s expression − cohort mean) / cohort SD. Gene programs: ~9 curated panels (MYC targets, E2F / S-phase, G2/M, IFN response, EMT, TGF-β, hypoxia, NRF2, stem), scored as the mean mRNA z of the panel; listed when |mean z| &gt; 0.75. Lineage-marker panels: ~15 markers per Oncotree lineage. Druggable targets: ~60-gene panel with approved or clinical-stage inhibitors. Potential FACS markers: curated ~100-gene panel of well-known cell-surface antigens (CD molecules, RTKs, immune checkpoints, ADC / bispecific targets, adhesion molecules); TPM &gt; 4 cutoff for inclusion.'),
+                'DepMap 26Q1 OmicsExpressionTPMLogp1HumanProteinCodingGenes (log₂-TPM+1). Each gene\'s mean and SD are computed across all lines; z-score = (this line\'s expression − mean) / SD. Gene programs: about 9 curated panels (MYC targets, E2F / S-phase, G2/M, interferon response, EMT, TGF-β, hypoxia, NRF2, stem), each scored as the mean z of its genes and listed when that exceeds 0.75 in either direction. Lineage markers: about 15 per Oncotree lineage. Druggable targets: about 60 genes with approved or clinical-stage inhibitors. Potential FACS markers: about 100 well-known cell-surface antigens (CD molecules, receptor tyrosine kinases, immune checkpoints, antibody-drug and bispecific targets, adhesion molecules), listed above 4 log-TPM.'),
             section('Drug response <span style="font-size:11px; color:#6b7280;">, PRISM Repurposing</span>',
                 drugHtml,
-                (this.drugResponse?.dataSource || 'DepMap PRISM Repurposing Secondary.') + ' Note this screen is from a different DepMap release than the rest of this page. Curated panel of ' + (this.drugResponse?.panelSize || '~100') + ' compounds. Z-scores computed per compound across the full PRISM panel. <b>Caveat:</b> in vitro viability ≠ clinical response, validate any clinically weighty hit with orthogonal 2D/3D assays.'),
+                (this.drugResponse?.dataSource || 'DepMap PRISM Repurposing Secondary.') + ' This screen comes from a different DepMap release than the rest of this page. Curated panel of ' + (this.drugResponse?.panelSize || '~100') + ' compounds; z-scores are computed per compound across all PRISM lines. Viability in a dish is not clinical response: confirm any hit that matters in your own assays.'),
 
             // ── Lab use ───────────────────────────────────────────────────
             section('STR authentication',
@@ -46642,7 +47712,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 'Panel definitions: ANSI/ATCC ASN-0002-2011, Promega PowerPlex, Eurofins Genomics. Reference profiles: Cellosaurus.'),
             section('External resources',
                 extHtml,
-                'Outbound links only, no data is fetched live from this app.'),
+                'Links to external databases. Nothing is fetched from them by this page.'),
         ].join('');
 
         const wikiModal = document.getElementById('clbWikiModal');
@@ -47421,14 +48491,17 @@ ${clone.innerHTML}
         // level however long the notes run; without subgrid support the
         // columns still sit side by side, just without row alignment.
         const col = (side, title, note) => `
-            <div style="display:grid; grid-template-rows:subgrid; grid-row:span 5; min-width:0;">
+            <div style="display:grid; grid-template-rows:subgrid; grid-row:span 6; min-width:0;">
                 <div style="font-weight:700; color:#4c782e; font-size:13px;">${title}</div>
                 <div style="font-size:10px; color:#9ca3af; margin:2px 0 5px;">${note}</div>
                 <div id="ge${side}Volcano" style="width:100%; max-width:330px; aspect-ratio:1/1; border:1px solid #e5e7eb; border-radius:4px; margin:0 auto 6px;"></div>
+                <div id="ge${side}Labeled" style="width:100%; max-width:330px; margin:0 auto 6px; min-height:22px;"></div>
                 <div id="ge${side}Hint" style="font-size:10px; color:#9ca3af; margin-bottom:5px;"></div>
                 <div id="ge${side}Body" style="max-height:40vh; overflow-y:auto; border:1px solid #e5e7eb; border-radius:4px; align-self:start; width:100%;"></div>
             </div>`;
 
+        // A fresh inspect starts with clean charts: no clicked names, nothing hidden.
+        this._geVolcanoLabels = null;
         document.getElementById('selectionInspectBody').innerHTML = `
             <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); column-gap:16px;">
                 ${col('Left', 'CRISPR gene effect',
@@ -47477,9 +48550,18 @@ ${clone.innerHTML}
         document.getElementById('geInspectHideThin')?.addEventListener('change', () => renderSides());
         const searchEl = document.getElementById('geInspectSearch');
         if (searchEl) {
+            // Redrawn after a short pause, not on every keystroke: each redraw
+            // is two volcanoes over the whole genome.
+            let searchTimer = null;
             searchEl.addEventListener('input', () => {
                 const clr = document.getElementById('geInspectSearchClear');
                 if (clr) clr.style.display = searchEl.value.trim() ? '' : 'none';
+                clearTimeout(searchTimer);
+                searchTimer = setTimeout(renderSides, 300);
+            });
+            searchEl.addEventListener('keydown', (e) => {
+                if (e.key !== 'Enter') return;
+                clearTimeout(searchTimer);
                 renderSides();
             });
             document.getElementById('geInspectSearchClear')?.addEventListener('click', () => {
@@ -49089,67 +50171,154 @@ ${clone.innerHTML}
     // data-to-pixel mapping is only known after Plotly resolves its axis
     // ranges, so this runs on the render's promise. Each moved label keeps a
     // thin leader line back to its dot.
-    _spreadVolcanoLabels(el, lab) {
+    _spreadVolcanoLabels(el) {
         const fl = el && el._fullLayout;
         if (!fl || !fl.xaxis || !Array.isArray(fl.annotations) || !fl.annotations.length) return;
         const xa = fl.xaxis, ya = fl.yaxis;
         if (typeof xa.d2p !== 'function' || typeof ya.d2p !== 'function') return;
-
-        const FONT = 8, LH = 11;
-        // Start from the offsets the annotations were built with, in pixels
-        // relative to the dot, then move only in y: moving in x would carry a
-        // label across the zero line and read as the wrong side.
-        const items = lab.map((r, i) => {
-            const left = r.delta < 0;
-            return {
-                i, left,
-                px: xa.d2p(r.delta), py: ya.d2p(el.layout.annotations[i].y),
-                w: String(r.gene).length * FONT * 0.62 + 4,
-                ax: left ? -14 : 14,
-                ay: -10
-            };
-        }).filter(it => isFinite(it.px) && isFinite(it.py));
-        if (items.length < 2) { return; }
-
+        const pw = fl.width - fl.margin.l - fl.margin.r;
+        const ph = fl.height - fl.margin.t - fl.margin.b;
+        // Every gene label on the chart, automatic or clicked on, measured at
+        // the size it is actually drawn in (Settings can change it), so
+        // labels made bigger there are spread by their real height.
+        const anns = el.layout?.annotations || [];
+        const items = [];
+        anns.forEach((a, i) => {
+            if (!a._dotLabel) return;
+            const px = xa.d2p(a.x), py = ya.d2p(a.y);
+            if (!isFinite(px) || !isFinite(py)) return;
+            const fs = a.font?.size || 8;
+            const text = String(a.text || '').replace(/<[^>]+>/g, '');
+            items.push({ i, left: a.x < 0, px, py, fs,
+                w: text.length * fs * 0.7 + 6, h: fs * 1.35,
+                ax: a.x < 0 ? -14 : 14, ay: -10 });
+        });
+        if (!items.length) return;
+        // A label that would run out past the plot's edge is put on the other
+        // side of its dot instead. It still sits on the same side of zero, so
+        // it cannot read as the wrong direction.
+        for (const it of items) {
+            if (it.left && it.px + it.ax - it.w < 2) { it.left = false; it.ax = 14; }
+            else if (!it.left && it.px + it.ax + it.w > pw - 2) { it.left = true; it.ax = -14; }
+        }
         const overlaps = (a, b) => {
             const ax1 = a.px + a.ax - (a.left ? a.w : 0), ax2 = ax1 + a.w;
             const bx1 = b.px + b.ax - (b.left ? b.w : 0), bx2 = bx1 + b.w;
             if (ax2 < bx1 - 2 || bx2 < ax1 - 2) return false;
-            return Math.abs((a.py + a.ay) - (b.py + b.ay)) < LH;
+            return Math.abs((a.py + a.ay) - (b.py + b.ay)) < (a.h + b.h) / 2;
         };
         // A few passes of "if these two collide, move them apart" settles a
-        // handful of labels; there are at most eight.
-        for (let pass = 0; pass < 24; pass++) {
+        // handful of labels. Only y moves, so a label never crosses zero.
+        // Clamping is part of every pass: two labels pushed against the top
+        // edge would otherwise be clamped back onto each other after the
+        // spreading had finished. With the upper one stuck at the edge, the
+        // lower one keeps stepping down until they clear.
+        const clamp = (it) => {
+            const y = it.py + it.ay;
+            if (y < it.h / 2 + 2) it.ay += it.h / 2 + 2 - y;
+            if (y > ph - it.h / 2 - 2) it.ay -= y - (ph - it.h / 2 - 2);
+        };
+        items.forEach(clamp);
+        for (let pass = 0; pass < 60; pass++) {
             let moved = false;
             for (let a = 0; a < items.length; a++) {
                 for (let b = a + 1; b < items.length; b++) {
                     if (!overlaps(items[a], items[b])) continue;
                     const up = (items[a].py + items[a].ay) <= (items[b].py + items[b].ay) ? items[a] : items[b];
                     const dn = up === items[a] ? items[b] : items[a];
-                    up.ay -= LH / 2; dn.ay += LH / 2;
+                    const step = Math.max(up.h, dn.h) / 2;
+                    up.ay -= step; dn.ay += step;
+                    clamp(up); clamp(dn);
                     moved = true;
                 }
             }
             if (!moved) break;
         }
-        // Keep every label inside the plot area, then let the leader lines do
-        // the rest of the work.
-        const h = fl.height - fl.margin.t - fl.margin.b;
         const upd = {};
         for (const it of items) {
-            const y = it.py + it.ay;
-            if (y < 6) it.ay += 6 - y;
-            if (y > h - 6) it.ay -= y - (h - 6);
             upd[`annotations[${it.i}].ax`] = it.ax;
             upd[`annotations[${it.i}].ay`] = it.ay;
+            upd[`annotations[${it.i}].xanchor`] = it.left ? 'right' : 'left';
         }
         Plotly.relayout(el, upd).catch(() => {});
+    }
+
+    // Per-side label curation on the inspect volcanos: names clicked on or
+    // off, genes hidden from the chart, and how many are labelled
+    // automatically in each direction. Survives cutoff redraws; reset when
+    // the inspect is opened afresh.
+    _geVolcanoState(side) {
+        const all = (this._geVolcanoLabels ||= {});
+        return all[side] ||= { added: new Set(), removed: new Set(), hidden: new Set(), autoN: 4 };
+    }
+
+    _redrawGEVolcano(side) {
+        const el = document.getElementById(`ge${side}Volcano`);
+        if (el?._lastDrawArgs) this._drawGEVolcano(...el._lastDrawArgs);
+    }
+
+    _toggleGEVolcanoLabel(side, gene) {
+        const st = this._geVolcanoState(side);
+        const el = document.getElementById(`ge${side}Volcano`);
+        const has = (el?.layout?.annotations || []).some(a => a._dotLabel === gene);
+        if (has) { st.added.delete(gene); st.removed.add(gene); }
+        else { st.removed.delete(gene); st.added.add(gene); }
+        this._redrawGEVolcano(side);
+    }
+
+    // The names on each volcano, listed under it so they can be read, removed
+    // one by one or copied; the hidden genes beside them so they can be put
+    // back. Always rendered, so the row never appears and shoves the table.
+    _renderGEVolcanoChips(side) {
+        const host = document.getElementById(`ge${side}Labeled`);
+        if (!host) return;
+        const st = this._geVolcanoState(side);
+        const el = document.getElementById(`ge${side}Volcano`);
+        const labelled = (el?.layout?.annotations || []).filter(a => a._dotLabel && a._dotLabel !== true).map(a => a._dotLabel);
+        const hidden = [...st.hidden];
+        const chip = (g, kind) => `<span class="clb-chip" data-${kind}="${this.esc(g)}" title="${kind === 'lbl' ? 'Click to remove this label' : 'Click to show this gene again'}" `
+            + `style="background:${kind === 'lbl' ? '#eef2ff' : '#f3f4f6'}; color:${kind === 'lbl' ? '#3730a3' : '#6b7280'}; border:1px solid ${kind === 'lbl' ? '#c7d2fe' : '#e5e7eb'}; padding:1px 7px; border-radius:10px; font-size:10px; font-weight:600; cursor:pointer;${kind === 'hid' ? ' text-decoration:line-through;' : ''}">`
+            + `${this.esc(g)} &times;</span>`;
+        host.innerHTML = `
+            <div style="display:flex; gap:4px; flex-wrap:wrap; align-items:center; font-size:10px; color:#6b7280;">
+                <span style="font-weight:600;">Labels (${labelled.length}):</span>
+                ${labelled.map(g => chip(g, 'lbl')).join(' ')}
+                <label style="display:inline-flex; align-items:center; gap:3px; margin-left:auto; white-space:nowrap;" title="How many genes are named automatically in each direction, the strongest first. Click any dot to name it whatever this says.">auto per side
+                    <input type="number" class="js-auto-n" min="0" max="12" value="${st.autoN}" style="width:38px; font-size:10px; padding:1px 3px; border:1px solid #d1d5db; border-radius:3px;"></label>
+                <button type="button" class="btn btn-outline btn-sm js-clear" style="font-size:9px; padding:1px 6px;" title="Remove every label from this chart">Clear</button>
+                <button type="button" class="btn btn-outline btn-sm js-copy" style="font-size:9px; padding:1px 6px;" title="Copy the labelled gene names, one per line"${labelled.length ? '' : ' disabled'}>Copy</button>
+            </div>
+            ${hidden.length ? `<div style="display:flex; gap:4px; flex-wrap:wrap; align-items:center; font-size:10px; color:#6b7280; margin-top:3px;">
+                <span style="font-weight:600;">Hidden (${hidden.length}):</span> ${hidden.map(g => chip(g, 'hid')).join(' ')}
+                <button type="button" class="btn btn-outline btn-sm js-unhide" style="font-size:9px; padding:1px 6px;" title="Show every hidden gene again">Show all</button>
+            </div>` : ''}`;
+        host.querySelectorAll('[data-lbl]').forEach(c => c.addEventListener('click', () => this._toggleGEVolcanoLabel(side, c.dataset.lbl)));
+        host.querySelectorAll('[data-hid]').forEach(c => c.addEventListener('click', () => { st.hidden.delete(c.dataset.hid); this._redrawGEVolcano(side); }));
+        host.querySelector('.js-unhide')?.addEventListener('click', () => { st.hidden.clear(); this._redrawGEVolcano(side); });
+        host.querySelector('.js-clear')?.addEventListener('click', () => {
+            st.added.clear(); for (const g of labelled) st.removed.add(g); this._redrawGEVolcano(side);
+        });
+        host.querySelector('.js-copy')?.addEventListener('click', () => {
+            navigator.clipboard?.writeText(labelled.join('\n'));
+            this.showCopyNotification?.(`Copied ${labelled.length} gene name${labelled.length === 1 ? '' : 's'}`);
+        });
+        host.querySelector('.js-auto-n')?.addEventListener('change', (e) => {
+            st.autoN = Math.max(0, Math.min(12, parseInt(e.target.value, 10) || 0));
+            this._redrawGEVolcano(side);
+        });
     }
 
     _drawGEVolcano(side, allRows, shownRows, cut, qCut, anyQ, measure, xTitle, searchRows) {
         const el = document.getElementById(`ge${side}Volcano`);
         if (!el || typeof Plotly === 'undefined') return;
+        el._lastDrawArgs = [side, allRows, shownRows, cut, qCut, anyQ, measure, xTitle, searchRows];
         if (!allRows || !allRows.length) { el.innerHTML = ''; return; }
+        const st = this._geVolcanoState(side);
+        if (st.hidden.size) {
+            allRows = allRows.filter(r => !st.hidden.has(r.gene));
+            shownRows = shownRows.filter(r => !st.hidden.has(r.gene));
+            searchRows = (searchRows || []).filter(r => !st.hidden.has(r.gene));
+        }
         // Gene effect gets its own palette: orange for a negative
         // delta, purple for positive, so it never reuses the red/blue this
         // same function draws for the expression volcano on the other side.
@@ -49184,12 +50353,23 @@ ${clone.innerHTML}
             found.t.push(`${r.gene}<br>Δ ${r.delta.toFixed(2)}${anyQ && r.q != null ? `<br>q ${r.q < 0.001 ? r.q.toExponential(1) : r.q.toFixed(3)}` : ''}`);
             foundLab.push(r);
         }
-        const labelable = shownRows.filter(r => isFinite(r.delta) && yOf(r) != null);
-        const lab = [...labelable.filter(r => r.delta < 0).slice(0, 4),
-                     ...labelable.filter(r => r.delta > 0).slice(0, 4)];
+        // The automatic labels, the strongest few each way minus any the
+        // user took off, plus every gene the user clicked a name onto.
+        const labelable = shownRows.filter(r => isFinite(r.delta) && yOf(r) != null && !st.removed.has(r.gene));
+        const lab = [...labelable.filter(r => r.delta < 0).slice(0, st.autoN),
+                     ...labelable.filter(r => r.delta > 0).slice(0, st.autoN)];
         // Searched genes are always labelled, and never twice.
         const labNames = new Set(lab.map(r => r.gene));
         for (const r of foundLab) if (!labNames.has(r.gene)) { lab.push(r); labNames.add(r.gene); }
+        if (st.added.size) {
+            const byGene = new Map(allRows.map(r => [r.gene, r]));
+            for (const g of st.added) {
+                const r = byGene.get(g);
+                if (r && !labNames.has(g) && isFinite(r.delta) && yOf(r) != null) { lab.push(r); labNames.add(g); }
+            }
+        }
+        // A size set in Settings survives a cutoff redraw.
+        const prevLabelSize = (el.layout?.annotations || []).find(a => a._dotLabel && !a._found)?.font?.size;
         const traces = [
             { x: bg.x, y: bg.y, text: bg.t, type: 'scattergl', mode: 'markers', name: 'below cutoff',
               hoverinfo: 'text', marker: { size: 4, color: '#d1d5db', opacity: 0.55 } },
@@ -49278,26 +50458,40 @@ ${clone.innerHTML}
             // The gene labels come first so their indices line up with `lab`
             // in _spreadVolcanoLabels; the heading annotations sit after them.
             // _dotLabel is what gives them a size control in Settings.
-            annotations: lab.map((r) => ({
-                x: r.delta, y: yOf(r), text: r.gene,
-                font: { size: foundLab.some(f => f.gene === r.gene) ? 10 : 8,
-                        color: foundLab.some(f => f.gene === r.gene) ? '#b45309' : '#374151' },
-                showarrow: true, arrowhead: 0, arrowwidth: 0.7, arrowcolor: '#b8bec9',
-                standoff: 3,
-                ax: r.delta < 0 ? -14 : 14, ay: -10,
-                xanchor: r.delta < 0 ? 'right' : 'left', yanchor: 'middle',
-                _dotLabel: true
-            })).concat(headerAnns),
+            annotations: lab.map((r) => {
+                const isFound = foundLab.some(f => f.gene === r.gene);
+                return {
+                    x: r.delta, y: yOf(r), text: r.gene,
+                    font: { size: isFound ? Math.max(10, prevLabelSize || 0) : (prevLabelSize || 8),
+                            color: isFound ? '#b45309' : '#374151' },
+                    showarrow: true, arrowhead: 0, arrowwidth: 0.7, arrowcolor: '#b8bec9',
+                    standoff: 3,
+                    ax: r.delta < 0 ? -14 : 14, ay: -10,
+                    xanchor: r.delta < 0 ? 'right' : 'left', yanchor: 'middle',
+                    captureevents: true, hovertext: 'Click to remove this label',
+                    _dotLabel: r.gene, _found: isFound || undefined
+                };
+            }).concat(headerAnns),
             paper_bgcolor: '#fff', plot_bgcolor: '#fff'
         };
         Plotly.react(el, traces, layout, { displayModeBar: false, responsive: true })
-            .then(() => this._spreadVolcanoLabels(el, lab));
+            .then(() => { this._spreadVolcanoLabels(el); this._renderGEVolcanoChips(side); });
         if (!el.dataset.wired) {
             el.dataset.wired = '1';
+            // Click names a gene, as on the correlation scatter; Shift+click
+            // opens it; Alt+click takes it off the chart (the table keeps it).
             el.on('plotly_click', (ev) => {
                 const t = ev.points?.[0]?.text || '';
                 const gene = t.split('<br>')[0];
-                if (gene) this._openGeneFromInspect?.(gene, side === 'Right');
+                if (!gene) return;
+                const e = ev.event || {};
+                if (e.shiftKey || e.metaKey || e.ctrlKey) return this._openGeneFromInspect?.(gene, side === 'Right');
+                if (e.altKey) { this._geVolcanoState(side).hidden.add(gene); this._redrawGEVolcano(side); return; }
+                this._toggleGEVolcanoLabel(side, gene);
+            });
+            el.on('plotly_clickannotation', (ev) => {
+                const g = ev.annotation?._dotLabel;
+                if (g && g !== true) { ev.event?.preventDefault?.(); this._toggleGEVolcanoLabel(side, g); }
             });
         }
         // The layout gives the plot a fixed pixel size, so a window resize
@@ -49663,15 +50857,28 @@ ${clone.innerHTML}
         const terms = (document.getElementById('geInspectSearch')?.value || '')
             .split(/[\s,;]+/).map(t => t.trim().toUpperCase()).filter(Boolean);
         const matches = (r) => terms.some(t => r.gene.toUpperCase().includes(t));
+        // A single typed letter matches most of the genome. The gene asked
+        // for by name comes first, then names starting with the text, then
+        // the rest, so the table's top is the answer while the user is still
+        // typing.
+        const rank = (r) => {
+            const g = r.gene.toUpperCase();
+            return terms.some(t => g === t) ? 0 : terms.some(t => g.startsWith(t)) ? 1 : 2;
+        };
+        const searchSort = (list, sort) => {
+            const byRank = [[], [], []];
+            list.forEach(r => byRank[rank(r)].push(r));
+            return byRank.flatMap(b => applySort(b, sort));
+        };
 
         const leftRows = terms.length
-            ? applySort(rows.filter(matches), this._geInspectSort.left).slice(0, leftN)
+            ? searchSort(rows.filter(matches), this._geInspectSort.left).slice(0, leftN)
             : applySort(
                 rows.filter(r => Math.abs(r.delta) >= leftCut && passQ(r, leftQ) && passCov(r, 'left')),
                 this._geInspectSort.left
             ).slice(0, leftN);
         const rightRows = terms.length
-            ? applySort(exprRows.filter(matches), this._geInspectSort.right).slice(0, rightN)
+            ? searchSort(exprRows.filter(matches), this._geInspectSort.right).slice(0, rightN)
             : applySort(
                 exprRows.filter(r => Math.abs(r.delta) >= rightCut && passQ(r, rightQ) && passCov(r, 'right')),
                 this._geInspectSort.right
@@ -49687,8 +50894,12 @@ ${clone.innerHTML}
         // up adds it to the picture instead of emptying the picture.
         const cutLeft = applySort(rows.filter(r => Math.abs(r.delta) >= leftCut && passQ(r, leftQ) && passCov(r, 'left')), this._geInspectSort.left).slice(0, leftN);
         const cutRight = applySort(exprRows.filter(r => Math.abs(r.delta) >= rightCut && passQ(r, rightQ) && passCov(r, 'right')), this._geInspectSort.right).slice(0, rightN);
-        const foundLeft = terms.length ? rows.filter(matches) : [];
-        const foundRight = terms.length ? exprRows.filter(matches) : [];
+        // Marked on the volcano: the rows the table shows, capped. Marking
+        // and labelling every match froze the tab for a minute on a
+        // one-letter search (thousands of labels to spread).
+        const MARK_CAP = 12;
+        const foundLeft = terms.length ? leftRows.slice(0, MARK_CAP) : [];
+        const foundRight = terms.length ? rightRows.slice(0, MARK_CAP) : [];
         // "selection - comparison" ordinarily; "A - B" for Inspect A vs B,
         // so the axis title names the two sides actually charted.
         const deltaSuffix = this._geInspectSideWords().deltaSuffix;
@@ -49742,8 +50953,9 @@ ${clone.innerHTML}
         // table looked like an answer rather than a cutoff to loosen.
         const leftMsg = hint(leftRows.length, leftCut, leftQ, rows, 'left');
         const rightMsg = hint(rightRows.length, rightCut, rightQ, exprRows, 'right');
-        document.getElementById('geLeftHint').textContent = leftRows.length ? leftMsg : '';
-        document.getElementById('geRightHint').textContent = rightRows.length ? rightMsg : '';
+        const clickHint = ' Click a dot to name it, Shift+click to open the gene, Alt+click to hide it.';
+        document.getElementById('geLeftHint').textContent = leftRows.length ? leftMsg + clickHint : '';
+        document.getElementById('geRightHint').textContent = rightRows.length ? rightMsg + clickHint : '';
         document.getElementById('geLeftBody').innerHTML = this._buildGEInspectTable(leftRows, 'left', leftMsg);
         document.getElementById('geRightBody').innerHTML = this._buildGEInspectTable(rightRows, 'right', rightMsg);
 
@@ -50226,7 +51438,7 @@ ${clone.innerHTML}
             const transVal = this._stripFusionFilterDecoration(document.getElementById('clbTranslocationFilter').value);
             if (tissueVal) filterParts.push(tissueVal);
             if (subtypeVal) filterParts.push(subtypeVal);
-            if (hotspotVal) filterParts.push(hotspotVal + ' mut');
+            if (hotspotVal) filterParts.push(this._mutFilterPhrase(hotspotVal, document.getElementById('clbHotspotLevel')?.value, 'mut'));
             if (transVal) filterParts.push(transVal + ' fus');
             const filterLabel = filterParts.length > 0 ? filterParts.join(' / ') : `all (n=${filteredIndices.length})`;
 
@@ -50575,7 +51787,7 @@ ${clone.innerHTML}
         const subtype = document.getElementById('geSubtypeFilter')?.value;
         if (subtype) lines.push(`Subtype filter: ${subtype}`);
         const hotspot = document.getElementById('geHotspotFilter')?.value;
-        if (hotspot) lines.push(`Additional hotspot filter: ${hotspot}`);
+        if (hotspot) lines.push(`Additional mutation filter: ${this._mutFilterPhrase(hotspot, document.getElementById('geHotspotLevel')?.value, 'mutated')}`);
         if (this._geGateA) lines.push(`Gate A: ${this._geGateA.length} cells`);
         if (this._geGateB) lines.push(`Gate B: ${this._geGateB.length} cells`);
         return lines;
@@ -51557,7 +52769,7 @@ ${clone.innerHTML}
         const fmtP = (p) => this.formatPValue(p);
 
         if (type === 'mutation') {
-            let mutData = this.mutations?.geneData?.[gene]?.mutations || this.damagingMutations?.geneData?.[gene]?.mutations;
+            let mutData = this._mutCalls(gene);
             if (!mutData) { plotDiv.innerHTML = `<div style="padding:10px;text-align:center;color:#6b7280;font-size:11px;">No mutation data for ${gene}</div>`; return; }
             const mutA = this._umapGateA.filter(cl => (mutData[cl] || 0) > 0).length;
             const mutB = this._umapGateB.filter(cl => (mutData[cl] || 0) > 0).length;
@@ -53545,7 +54757,7 @@ ${clone.innerHTML}
             <div style="border-top:1px solid #e5e7eb;margin:6px 0;"></div>
             <div style="font-weight:600;margin-bottom:4px;color:#1f2937;font-size:11px;">Cell line dots</div>
             ${sizeRow('Size', 'ts_marker', markerSize, 1, 40, null, true)}
-            ${nDotLabels ? `<div style="font-weight:600;margin:8px 0 4px;color:#1f2937;font-size:11px;">Cell line names <span style="font-weight:400;color:#6b7280;">, the ${nDotLabels} you clicked onto the plot</span></div>`
+            ${nDotLabels ? `<div style="font-weight:600;margin:8px 0 4px;color:#1f2937;font-size:11px;">${/Volcano$/.test(plotDivId || '') ? 'Gene names' : 'Cell line names'} <span style="font-weight:400;color:#6b7280;">, the ${nDotLabels} on the plot</span></div>`
                 + sizeRow('Size', 'ts_dotLabel', dotLabelSize, 5, 30, null, true) : ''}
             ${plotDivId === 'scatterPlot' ? `
             <div style="display:flex;align-items:center;margin-bottom:5px;gap:4px;">
@@ -54193,7 +55405,11 @@ ${clone.innerHTML}
             (plotEl.layout?.annotations || []).forEach((ann, i) => {
                 if (ann._dotLabel) dotUpdates[`annotations[${i}].font.size`] = dotLabelSize;
             });
-            if (Object.keys(dotUpdates).length) Plotly.relayout(plotEl, dotUpdates);
+            if (Object.keys(dotUpdates).length) {
+                const p = Plotly.relayout(plotEl, dotUpdates);
+                // Bigger names on a volcano need spreading again.
+                if (/Volcano$/.test(plotEl.id || '')) p.then(() => this._spreadVolcanoLabels(plotEl));
+            }
         }
 
         const markerSize = getVal('ts_marker');
@@ -55540,7 +56756,7 @@ ${clone.innerHTML}
         const hot = document.getElementById('hmHotspotFilter')?.value;
         if (hot) {
             const lvl = document.getElementById('hmHotspotLevel')?.value || '1+2';
-            parts.push(`${hot} ${this._filterIsWildType('hotspot', lvl) ? 'wild-type' : 'hotspot-mutated'}`);
+            parts.push(this._mutFilterPhrase(hot, lvl, this._filterIsWildType('hotspot', lvl) ? 'wild-type' : 'hotspot-mutated'));
         }
         const fus = this._stripFusionFilterDecoration(document.getElementById('hmFusionFilter')?.value || '');
         if (fus) {
@@ -55572,7 +56788,7 @@ ${clone.innerHTML}
         if (!hot && !fus && !cn) return cohort;
         return cohort.filter(cl => {
             if (hot) {
-                const mm = this.mutations?.geneData?.[hot]?.mutations || this.damagingMutations?.geneData?.[hot]?.mutations;
+                const mm = this._mutCalls(hot);
                 if (!this._mutLevelPasses(hotLvl, mm ? (mm[cl] || 0) : 0)) return false;
             }
             if (fus) { const has = this._geFusionPasses(cl, fus); if (fusLvl === '0' ? has : !has) return false; }
@@ -55607,7 +56823,7 @@ ${clone.innerHTML}
             if (subtype && this.getCellLineSublineage(cl) !== subtype) continue;
             if (disease && (this.cellLineMetadata?.oncotreeSubtype?.[cl] || '') !== disease) continue;
             if (kind !== 'hotspot' && hot) {
-                const mm = this.mutations?.geneData?.[hot]?.mutations || this.damagingMutations?.geneData?.[hot]?.mutations;
+                const mm = this._mutCalls(hot);
                 if (!this._mutLevelPasses(hotLvl, mm ? (mm[cl] || 0) : 0)) continue;
             }
             if (kind !== 'fusion' && fus) { const has = this._geFusionPasses(cl, fus); if (fusLvl === '0' ? has : !has) continue; }
@@ -55665,8 +56881,12 @@ ${clone.innerHTML}
             let raw = (row.gene || '').trim().toUpperCase();
             if (!raw) return;
             if (row.mode === 'hotspot') {
-                if (!(this.mutations?.geneData?.[raw] || this.damagingMutations?.geneData?.[raw])) {
-                    note += `${raw} has no hotspot or damaging mutation data, that annotation row is not drawn. `;
+                // The gene box is the hotspot filter widget, so its pick can
+                // carry an "(any mutation)" / "(functional loss)" kind. The
+                // decoration is matched case-insensitively, so the uppercased
+                // value above still resolves.
+                if (!this._mutCalls(raw)) {
+                    note += `${this._stripMutDecoration(raw)} has no hotspot or damaging mutation data, that annotation row is not drawn. `;
                     return;
                 }
                 resolved.push({ mode: 'hotspot', gene: raw, sortDir, sortKey, idx });
@@ -55718,7 +56938,7 @@ ${clone.innerHTML}
     // hotspot-then-damaging fallback as the group-by gene box, so a tumour
     // suppressor scored only by loss-of-function still shows something.
     _hmAnn2HotspotLevel(cl, gene) {
-        const mm = this.mutations?.geneData?.[gene]?.mutations || this.damagingMutations?.geneData?.[gene]?.mutations;
+        const mm = this._mutCalls(gene);
         return mm ? (mm[cl] || 0) : 0;
     }
 
@@ -56421,6 +57641,9 @@ ${clone.innerHTML}
         if (mode === 'disease') return (cl) => this.cellLineMetadata?.oncotreeSubtype?.[cl] || 'Not recorded';
         if (mode === 'hotspot') return (cl) => {
             const lvl = this._hmAnn2HotspotLevel(cl, gene);
+            const mk = this._parseMutFilter(gene).kind;
+            if (mk === 'lof') return lvl >= 1 ? 'Lost' : 'Intact';
+            if (mk === 'any') return lvl >= 2 ? 'Both copies' : lvl >= 1 ? 'Mutated' : 'No call';
             return lvl >= 2 ? 'Both copies' : lvl >= 1 ? 'One copy' : 'Wild-type';
         };
         if (mode === 'fusion') return (cl) => this._geFusionPasses(cl, gene) ? 'Fused' : 'No fusion';
@@ -56545,7 +57768,9 @@ ${clone.innerHTML}
     // the summary text and on its own strip can never drift apart.
     _hmAnnRowLabel(mode, gene) {
         return mode === 'lineage' ? 'Lineage' : mode === 'subtype' ? 'Subtype' : mode === 'disease' ? 'Disease'
-            : mode === 'hotspot' ? `${gene} mutation` : mode === 'fusion' ? `${gene} fusion`
+            : mode === 'hotspot' ? (this._parseMutFilter(gene).kind === 'lof' ? `${this._stripMutDecoration(gene)} functional loss`
+                : this._parseMutFilter(gene).kind === 'any' ? `${this._stripMutDecoration(gene)} mutation (any)` : `${gene} mutation`)
+            : mode === 'fusion' ? `${gene} fusion`
             : mode === 'ge' ? `${gene} gene effect` : mode === 'expr' ? `${gene} expression`
             : mode === 'cluster' ? 'Cell-line clusters' : mode === 'gates' ? 'Gates' : `${gene} CN`;
     }
@@ -57808,6 +59033,18 @@ ${clone.innerHTML}
             }
         }
 
+        // Heading over the grid: what is drawn and which cell lines, the
+        // same words the exported picture carries.
+        {
+            const head = document.getElementById('hmHeading');
+            const cap = this._hmCaptionLines();
+            if (head && cap) {
+                document.getElementById('hmHeadingTitle').textContent = cap.line1 || cap.autoLine1;
+                document.getElementById('hmHeadingCohort').textContent = this._hmCohortPhrase(nCL);
+                head.style.display = 'block';
+            }
+        }
+
         // Hint line: what's drawn, plus anything that didn't resolve.
         const hint = document.getElementById('hmHint');
         if (hint) {
@@ -58500,6 +59737,8 @@ ${clone.innerHTML}
         if (el) el.style.display = 'none';
     }
     _hmClearCanvases() {
+        const head = document.getElementById('hmHeading');
+        if (head) head.style.display = 'none';
         ['hmLabelCanvas', 'hmGridCanvas', 'hmLegendCanvas', 'hmGroupLegendCanvas', 'hmAnn2LegendCanvas', 'hmDendroTopCanvas'].forEach(id => {
             const cv = document.getElementById(id);
             // Attributes AND CSS size: sizeCanvas sets both, and a leftover
@@ -59521,7 +60760,8 @@ ${clone.innerHTML}
         const mg = v('mutationFilterGene');
         if (mg) {
             const lvl = v('mutationFilterLevel') || '1+2';
-            bits.push(`${mg} ${lvl === '0' ? 'hotspot wild-type' : lvl === '1' ? 'hotspot mutated, one copy' : lvl === '2' ? 'hotspot mutated, both copies' : 'hotspot mutated'}`);
+            bits.push(this._mutFilterPhrase(mg, lvl,
+                lvl === '0' ? 'hotspot wild-type' : lvl === '1' ? 'hotspot mutated, one copy' : lvl === '2' ? 'hotspot mutated, both copies' : 'hotspot mutated'));
         }
         const fg = v('translocationFilterGene');
         if (fg) bits.push(`${fg} ${(v('translocationFilterLevel') || '1+2') === '0' ? 'not fused' : 'fused'}`);
@@ -59634,7 +60874,7 @@ ${clone.innerHTML}
         if (v('geSubtypeFilter')) cohortBits.push(`subtype ${v('geSubtypeFilter')}`);
         if (v('geOncotreeFilter') && v('geOncotreeFilter') !== '__mr_multi__') cohortBits.push(`disease ${v('geOncotreeFilter')}`);
         else if (v('geOncotreeFilter') === '__mr_multi__' && mr?.oncotreeFilterMulti?.length) cohortBits.push(`diseases ${mr.oncotreeFilterMulti.join(' + ')}`);
-        if (v('geHotspotFilter')) cohortBits.push(`${v('geHotspotFilter')} hotspot level ${v('geHotspotLevel') || '1+2'}`);
+        if (v('geHotspotFilter')) cohortBits.push(this._mutFilterPhrase(v('geHotspotFilter'), v('geHotspotLevel') || '1+2', `hotspot level ${v('geHotspotLevel') || '1+2'}`));
         if (v('geFusionFilter')) cohortBits.push(`${v('geFusionFilter')} fusion level ${v('geFusionLevel') || '1+2'}`);
         if (v('geCnFilter')) cohortBits.push(`${v('geCnFilter')} copy number ${v('geCnLevel') || 'altered'}`);
         if (this._customCellLineFilterGE?.size) cohortBits.push(`a hand-picked list of ${this._mNum(this._customCellLineFilterGE.size)} cell lines`);
@@ -59859,7 +61099,7 @@ ${clone.innerHTML}
         if (mr.tissueGroups?.length) cohortBits.push(`the tissue split ${this._tissueGroupsLabel(mr.tissueGroups)}`);
         else if (mr.oncotreeFilter) cohortBits.push(`disease ${mr.oncotreeFilter}`);
         if (mr.excludedTissues?.size) cohortBits.push(`${mr.excludedTissues.size} tissue${mr.excludedTissues.size === 1 ? '' : 's'} excluded (${[...mr.excludedTissues].join(', ')})`);
-        if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') cohortBits.push(`${mr.additionalHotspot} hotspot level ${mr.additionalHotspotLevel}`);
+        if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') cohortBits.push(this._mutFilterPhrase(mr.additionalHotspot, mr.additionalHotspotLevel, `hotspot level ${mr.additionalHotspotLevel}`));
         if (mr.additionalTransGene && mr.additionalTransLevel !== 'all') cohortBits.push(`${mr.additionalTransGene} fusion level ${mr.additionalTransLevel}`);
         for (const f of (this._activeOncoprintFilters || [])) cohortBits.push(`${f.gene} ${this._gridStateWord(f.state)}`);
         if (this._analysisCellLineSubset?.size) cohortBits.push(`a cell-line subset of ${this._mNum(this._analysisCellLineSubset.size)} lines carried over from another view${this._analysisSubsetLabel ? ` (${this._analysisSubsetLabel})` : ''}`);
