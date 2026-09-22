@@ -55945,7 +55945,12 @@ ${clone.innerHTML}
     _hmResetControls() {
         const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
         const presetSel = document.getElementById('hmPreset');
-        if (presetSel && presetSel.options.length) presetSel.selectedIndex = 0;
+        // Opens on the TP53 pathway set: a familiar axis that reads well on
+        // gene effect, so the first picture means something without setup.
+        if (presetSel && presetSel.options.length) {
+            presetSel.value = 'tp53_members';
+            if (presetSel.value !== 'tp53_members') presetSel.selectedIndex = 0;
+        }
         const genesBox = document.getElementById('hmGenes');
         if (genesBox) genesBox.value = '';
         set('hmDataType', 'ge');
@@ -56696,7 +56701,7 @@ ${clone.innerHTML}
         // know about the string case.
         const clusterKAuto = clusterKRaw === 'auto';
         let clusterK = clusterKAuto ? 0 : (parseInt(clusterKRaw, 10) || 0);
-        const presetKey = document.getElementById('hmPreset')?.value || Object.keys(this._GENE_SET_LIBRARY())[0];
+        const presetKey = document.getElementById('hmPreset')?.value || (this._GENE_SET_LIBRARY().tp53_members ? 'tp53_members' : Object.keys(this._GENE_SET_LIBRARY())[0]);
         let minGroupSize = Math.max(1, parseInt(document.getElementById('hmMinGroupSize')?.value) || 1);
 
         // An mRNA expression annotation row needs the expression matrix even
@@ -58687,13 +58692,19 @@ ${clone.innerHTML}
         // expression's blue/red, so the two data types never disagree on what
         // a colour means. The normalized position is negated here rather
         // than duplicating the diverging ramp with a mirrored copy.
+        // Most gene effects sit between -1 and +0.3, so a straight ramp to
+        // the anchors leaves the grid pale. A gamma below 1 lifts the middle
+        // of the range without moving the anchors themselves.
+        const boost = (t) => Math.sign(t) * Math.pow(Math.abs(t), 0.6);
         if (scaleMode === 'med') {
-            return this._hmDivergingColorRel(Math.max(-1, Math.min(1, v / (domain.hi || 1.5))));
+            return this._hmDivergingColorRel(boost(Math.max(-1, Math.min(1, v / (domain.hi || 1.5)))));
         }
         // As measured: each side of zero saturates at its own bound (-2 / +1).
-        const pos = (scaleMode === 'z' || scaleMode === 'zall') ? v / 2.5
-            : (v < 0 ? v / Math.abs(domain.lo || 2) : v / (domain.hi || 1));
-        return this._hmDivergingColorGE(Math.max(-1, Math.min(1, -pos)));
+        if (scaleMode === 'z' || scaleMode === 'zall') {
+            return this._hmDivergingColorGE(Math.max(-1, Math.min(1, -v / 2.5)));
+        }
+        const pos = v < 0 ? v / Math.abs(domain.lo || 2) : v / (domain.hi || 1);
+        return this._hmDivergingColorGE(boost(Math.max(-1, Math.min(1, -pos))));
     }
 
     // t in [-1,1]: -1 teal (#01665e), 0 white, 1 brown (#8c510a). ColorBrewer
