@@ -56105,7 +56105,9 @@ ${clone.innerHTML}
             // the canonical direction.
             opts = [['', 'Sort: off'], ['size-desc', 'Largest group first'], ['size-asc', 'Smallest group first'],
                     ['name-desc', 'A to Z'], ['name-asc', 'Z to A'],
-                    ['score-desc', 'Median gene score, high first'], ['score-asc', 'Median gene score, low first']];
+                    ...((document.getElementById('hmDataType')?.value || 'ge') === 'expr'
+                        ? [['score-desc', 'Median expression, high first'], ['score-asc', 'Median expression, low first']]
+                        : [['score-desc', 'Strongest dependency first'], ['score-asc', 'Weakest dependency first']])];
         } else {
             // Alteration rows: hotspot 0/1/2, fusion, copy number. No score
             // options here: with two or three fixed categories, ordering by
@@ -57249,7 +57251,10 @@ ${clone.innerHTML}
             // The chosen sort key names its own order; without one
             // the historic per-kind default order applies.
             if (row.sortKey === 'name') return row.dir === 'asc' ? 'Z to A' : 'A to Z';
-            if (row.sortKey === 'score') return row.dir === 'asc' ? 'lowest median score first' : 'highest median score first';
+            if (row.sortKey === 'score') {
+                if (d.dataType === 'expr') return row.dir === 'asc' ? 'lowest median expression first' : 'highest median expression first';
+                return row.dir === 'asc' ? 'weakest dependency first (highest median gene effect)' : 'strongest dependency first (lowest median gene effect)';
+            }
             const kind = this._hmAnnRowKind(row.mode);
             if (kind === 'continuous') return row.dir === 'asc' ? 'lowest first' : 'highest first';
             if (kind === 'meta') return row.dir === 'asc' ? 'smallest block first' : 'biggest block first';
@@ -57391,7 +57396,9 @@ ${clone.innerHTML}
             if (na && nb) return this.getCellLineName(a).localeCompare(this.getCellLineName(b));
             if (na) return 1;
             if (nb) return -1;
-            return vb - va;
+            // Same rule as the block order: deepest dependency first on gene
+            // effect, highest first on expression.
+            return dataType === 'expr' ? vb - va : va - vb;
         };
         const sortByScore = (list) => list.slice().sort(scoreCompare);
 
@@ -57995,7 +58002,11 @@ ${clone.innerHTML}
                     if (na && nb) return String(a).localeCompare(String(b));
                     if (na) return 1;
                     if (nb) return -1;
-                    return mb - ma || String(a).localeCompare(String(b));
+                    // Canonical order is "strongest phenotype first": on gene
+                    // effect the most negative median (deepest dependency),
+                    // on expression the highest.
+                    const geFirst = (document.getElementById('hmDataType')?.value || 'ge') !== 'expr';
+                    return (geFirst ? ma - mb : mb - ma) || String(a).localeCompare(String(b));
                 });
             }
             order.forEach((label, i) => rankMap.set(label, i));
