@@ -5397,10 +5397,12 @@ class CorrelationExplorer {
 
     // One phrase for a mutation filter, e.g. "TP53 functionally lost". Plain
     // hotspot values fall back to the caller's own word for the level.
-    _mutFilterPhrase(raw, level, hotspotWord) {
+    // html=true italicises the gene symbol; the state word stays upright.
+    // Left false for the plain-text callers (exports, title="", filenames).
+    _mutFilterPhrase(raw, level, hotspotWord, html = false) {
         const { gene, kind } = this._parseMutFilter(raw);
         const w = this._mutLevelWord(kind, level);
-        return `${gene} ${w || hotspotWord || 'hotspot-mutated'}`;
+        return `${html ? this.gi(gene) : gene} ${w || hotspotWord || 'hotspot-mutated'}`;
     }
 
     // Apply the CN filter to a single cell line. Decoded value is e.g.
@@ -6225,12 +6227,15 @@ class CorrelationExplorer {
     /**
      * Get axis label for a gene and type.
      */
+    // Plotly axis titles render <i>, so the gene symbol comes back italic.
+    // Growth rate and a gene-set score are not gene symbols and stay upright.
     getAxisLabel(gene, type) {
         if (type === 'geneset') return this._geneSetLabel ? `${this._geneSetLabel}` : 'Gene Set Score';
         if (type === 'growth') return 'Growth Rate';
-        if (type === 'expr') return `${gene} Expression (log2 TPM+1)`;
-        if (type === 'cn') return `${gene} Copy Number (relative, 1.0 = baseline)`;
-        return `${gene} Gene Effect`;
+        const g = this.gi(gene);
+        if (type === 'expr') return `${g} Expression (log2 TPM+1)`;
+        if (type === 'cn') return `${g} Copy Number (relative, 1.0 = baseline)`;
+        return `${g} Gene Effect`;
     }
 
     /**
@@ -7923,13 +7928,13 @@ class CorrelationExplorer {
         // gray frame, green links, and the standard circled ? that explains a
         // section on hover.
         const qi = (text) => ` <span style="color:#9ca3af; font-size:10px; font-weight:400; cursor:help; border:1px solid #d1d5db; border-radius:50%; padding:0 5px;" title="${this.esc(text)}">?</span>`;
-        const geneLink = (bad, good, bold) => `<a href="#" style="color:#4c782e; ${bold ? 'font-weight:600; ' : ''}text-decoration:underline; text-decoration-color:#c3dbb0; text-underline-offset:2px;" data-bad="${this.esc(bad)}" data-good="${this.esc(good)}" onclick="app.replaceGeneInTextarea(this.dataset.bad, this.dataset.good); return false;">${this.esc(good)}</a>`;
+        const geneLink = (bad, good, bold) => `<a href="#" style="color:#4c782e; ${bold ? 'font-weight:600; ' : ''}text-decoration:underline; text-decoration-color:#c3dbb0; text-underline-offset:2px;" data-bad="${this.esc(bad)}" data-good="${this.esc(good)}" onclick="app.replaceGeneInTextarea(this.dataset.bad, this.dataset.good); return false;">${this.gi(good)}</a>`;
         const gridStyle = 'display:grid; grid-template-columns:max-content max-content minmax(0,1fr); gap:2px 7px; align-items:baseline;';
 
         let synHtml = '';
         if (synHits.length) {
             const rows = synHits.map(h =>
-                `<div style="text-align:right;"><b style="color:#374151;">${this.esc(h.original)}</b></div>`
+                `<div style="text-align:right;"><b style="color:#374151;">${this.gi(h.original)}</b></div>`
                 + `<div style="color:#9ca3af;">&rarr;</div>`
                 + `<div>${geneLink(h.original, h.replacement, true)} <span style="color:#9ca3af; font-size:10px;">${this.esc(h.source)}</span></div>`
             ).join('');
@@ -7952,7 +7957,7 @@ class CorrelationExplorer {
                 else noSugg.push(g);
             });
             const rows = withSugg.map(({ g, sugg }) =>
-                `<div style="text-align:right; color:#374151;">${this.esc(g)}</div>`
+                `<div style="text-align:right; color:#374151;">${this.gi(g)}</div>`
                 + `<div style="color:#9ca3af;">&rarr;</div>`
                 + `<div>${sugg.map(s => geneLink(g, s, false)).join(', ')}</div>`
             ).join('');
@@ -7961,7 +7966,7 @@ class CorrelationExplorer {
             remHtml = `<div style="background:#fff; border:1px solid #e5e7eb; border-radius:6px; padding:8px 10px; margin-top:6px;">
                 <div style="font-weight:600; font-size:12px; color:#374151; margin-bottom:5px;">No match found${qi('No synonym or ortholog is known for these names. The names beside a gene are the closest spellings in the data: click one to use it instead. Names left unresolved are left out of the analysis.')}</div>
                 ${rows ? `<div style="${gridStyle}">${rows}</div>` : ''}
-                ${noSugg.length ? `<div style="color:#6b7280; ${rows ? 'margin-top:5px;' : ''}">${rows ? 'Nothing close: ' : ''}${noSugg.map(g => this.esc(g)).join(', ')}</div>` : ''}
+                ${noSugg.length ? `<div style="color:#6b7280; ${rows ? 'margin-top:5px;' : ''}">${rows ? 'Nothing close: ' : ''}${noSugg.map(g => this.gi(g)).join(', ')}</div>` : ''}
                 ${overflow}
                 ${canSearchOnline ? `<div style="margin-top:8px;"><button type="button" class="btn btn-outline btn-sm" id="synOnlineBtn" style="font-size:11px; padding:3px 10px;">Search online (MyGene.info)</button></div>` : ''}
             </div>`;
@@ -8080,12 +8085,12 @@ class CorrelationExplorer {
         box.id = 'geneNotFoundNotice';
         box.style.cssText = 'position:fixed; z-index:11500; left:50%; top:16vh; transform:translateX(-50%); width:380px; max-width:92vw; background:#fff; border:1px solid #d1d5db; border-left:4px solid #b45309; border-radius:8px; box-shadow:0 18px 40px rgba(0,0,0,0.22); padding:14px 16px; font-size:12px; color:#374151;';
         box.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-                <b style="color:#b45309;">"${this.esc(gene)}" not found${where ? ' in ' + this.esc(where) : ''}</b>
+                <b style="color:#b45309;">"${this.gi(gene)}" not found${where ? ' in ' + this.esc(where) : ''}</b>
                 <button style="background:none;border:none;font-size:18px;line-height:1;cursor:pointer;color:#9ca3af;">&times;</button>
             </div>`
             + (sugg.length
                 ? `<div style="color:#6b7280; margin-bottom:6px;">Did you mean:</div><div style="max-height:150px; overflow-y:auto;">${sugg.map(g =>
-                    `<button data-g="${this.esc(g)}" style="border:1px solid #d1d5db; background:#f9fafb; color:#4c782e; font-weight:600; border-radius:10px; padding:2px 10px; margin:0 6px 6px 0; cursor:pointer; font-size:11px;">${this.esc(g)}</button>`).join('')}</div>
+                    `<button data-g="${this.esc(g)}" style="border:1px solid #d1d5db; background:#f9fafb; color:#4c782e; font-weight:600; border-radius:10px; padding:2px 10px; margin:0 6px 6px 0; cursor:pointer; font-size:11px;">${this.gi(g)}</button>`).join('')}</div>
                    <div style="color:#9ca3af; font-size:10px; margin-top:4px;">Click one to use it.${all.length > sugg.length ? ` Showing ${sugg.length} of ${all.length} names; type more letters to narrow.` : sugg.length > 8 ? ' Every name starting with what you typed is listed.' : ''}</div>`
                 : `<div style="color:#6b7280;">No similar gene symbol in this dataset. Check the spelling, or use Find synonyms for an alternative name.</div>`);
         document.body.appendChild(box);
@@ -10338,8 +10343,9 @@ class CorrelationExplorer {
         const isT = mr.isTranslocation;
         const isD = mr.isDamaging;
         const _Lh = this._mutAxisLabels(mr);
-        const wtLabel = isT ? `No ${hg} Fusion` : isD ? `${hg} ${_Lh.ref}` : `${hg} WT`;
-        const mutLbl = isT ? `${hg} Fused` : isD ? `${hg} ${_Lh.carrier}` : `${hg} Mut`;
+        const hgi = this.gi(hg);
+        const wtLabel = isT ? `No ${hgi} Fusion` : isD ? `${hgi} ${_Lh.ref}` : `${hgi} WT`;
+        const mutLbl = isT ? `${hgi} Fused` : isD ? `${hgi} ${_Lh.carrier}` : `${hgi} Mut`;
         const thead = document.querySelector('#mutationTable thead');
         const thStyle = 'cursor: pointer;';
         const sortClick = 'onclick="app.sortMutationTable(this, event)"';
@@ -10409,7 +10415,7 @@ class CorrelationExplorer {
             const star = lowN ? `<span style="color:#b45309; cursor:help;" title="${lowNTitle}">*</span>` : '';
             let html = `
                 <td><a href="#" class="inspect-link" onclick="app.showGeneEffectDistribution('${r.gene}'); return false;">Inspect</a></td>
-                <td class="gene-hover" data-gene="${r.gene}"><a href="#" style="color: var(--green-700); text-decoration: none; cursor: pointer;" onclick="app.openGeneEffectModal('${r.gene}', 'tissue', {dataType:'${this._mutAnalysisMetric === 'expr' ? 'expr' : 'ge'}'}); return false;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">${r.gene}</a>${polymorphicMark}</td>
+                <td class="gene-hover" data-gene="${r.gene}"><a href="#" style="color: var(--green-700); text-decoration: none; cursor: pointer;" onclick="app.openGeneEffectModal('${r.gene}', 'tissue', {dataType:'${this._mutAnalysisMetric === 'expr' ? 'expr' : 'ge'}'}); return false;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">${this.gi(r.gene)}</a>${polymorphicMark}</td>
                 <td style="border-left: 2px solid #2563eb;">${r.n_wt}${star}</td>
                 <td>${r.mean_wt.toFixed(2)}</td>
                 <td style="border-left: 2px solid #f97316;">${r.n_mut}${star}</td>
@@ -10480,7 +10486,7 @@ class CorrelationExplorer {
         const exprKnown = mr.nWTExpr != null && mr.nMutExpr != null;
         const shownWT = (onExpr && exprKnown) ? mr.nWTExpr : mr.nWT;
         const shownMut = (onExpr && exprKnown) ? mr.nMutExpr : mr.nMut;
-        let settingsText = `${typeLabel}: ${mr.hotspotGene} | `;
+        let settingsText = `${typeLabel}: ${this.gi(mr.hotspotGene)} | `;
         settingsText += `${mr.isTranslocation ? 'Not fused' : 'WT'}: ${shownWT} cells | ${mutLabel}: ${shownMut} cells`;
         if (exprKnown && (mr.nWTExpr !== mr.nWT || mr.nMutExpr !== mr.nMut)) {
             settingsText += onExpr
@@ -11273,21 +11279,21 @@ class CorrelationExplorer {
             const shown = new Set([mr.hotspotGene, this._stripMutDecoration(mr.additionalHotspot), mr.additionalTransGene].filter(Boolean));
             for (const f of this._activeOncoprintFilters) {
                 if (!shown.has(f.gene)) {
-                    filterInfo.push(`${f.gene} ${this._gridStateWord(f.state)}`);
+                    filterInfo.push(`${this.gi(f.gene)} ${this._gridStateWord(f.state)}`);
                 }
             }
         }
         if (inspectHotspot) {
             const mk = this._parseMutFilter(inspectHotspot);
-            filterInfo.push(mk.kind === 'lof' ? `Also ${mk.gene} functionally lost`
-                : mk.kind === 'any' ? `Also ${mk.gene}-mutated (any call)`
-                : `Also ${mk.gene}-mutated`);
+            filterInfo.push(mk.kind === 'lof' ? `Also ${this.gi(mk.gene)} functionally lost`
+                : mk.kind === 'any' ? `Also ${this.gi(mk.gene)}-mutated (any call)`
+                : `Also ${this.gi(mk.gene)}-mutated`);
         }
         if (inspectFusion) {
-            filterInfo.push(`Also ${this._stripFusionFilterDecoration(inspectFusion)}-fused`);
+            filterInfo.push(`Also ${this.giFusion(this._stripFusionFilterDecoration(inspectFusion))}-fused`);
         }
         if (inspectCn) {
-            filterInfo.push(this._stripCnFilterDecoration(inspectCn).replace(/_(amp|del)$/, (_, k) => k === 'amp' ? ' amp' : ' del'));
+            filterInfo.push(this.giCn(inspectCn));
         }
         const lineageText = filterInfo.length > 0 ? filterInfo.join(' | ') : 'All lineages';
 
@@ -11307,7 +11313,7 @@ class CorrelationExplorer {
         const subtitle = `${lineageText}<br>${statsLineWT}<br>${statsLineMut}<br>${statsLineP}`;
 
         const statusLabel = L.status;
-        const yAxisTitle = `${hotspotGene} ${L.yaxis}`;
+        const yAxisTitle = `${this.gi(hotspotGene)} ${L.yaxis}`;
         // Functional loss, CN events and validated fusions are binary (carrier vs
         // not), so they only get two rows; hotspot mutations keep the 0/1/2 levels.
         const isBinaryAxis = isTranslocation || isDamaging;
@@ -11316,9 +11322,9 @@ class CorrelationExplorer {
         const tick2Label = '2';
 
         const measureLabel = useExpr ? 'mRNA expression' : 'Gene Effect';
-        const titleText = `${gene} ${measureLabel} by ${hotspotGene} ${statusLabel}`;
+        const titleText = `${this.gi(gene)} ${measureLabel} by ${this.gi(hotspotGene)} ${statusLabel}`;
         const subtitleText = subtitle;
-        const xLabelText = useExpr ? `${gene} mRNA, log2(TPM+1)` : `${gene} Gene Effect`;
+        const xLabelText = useExpr ? `${this.gi(gene)} mRNA, log2(TPM+1)` : `${this.gi(gene)} Gene Effect`;
 
         // Compute the y-axis layout first: its dynamic left margin (room reserved
         // for the rotated y-label + tick labels) determines how much horizontal
@@ -11464,7 +11470,8 @@ class CorrelationExplorer {
             height: Math.round(400 * (this.geChartHeightRatio || 1))
         };
 
-        this._setGeneEffectTitle(gene, ` ${useExpr ? 'mRNA expression' : 'Gene Effect'} by ${hotspotGene} ${L.noun}`);
+        this._setGeneEffectTitle(gene, null,
+            ` ${useExpr ? 'mRNA expression' : 'Gene Effect'} by ${this.gi(hotspotGene)} ${this.esc(L.noun)}`);
 
         // Populate tissue filter dropdown with ALL lineages (inspect can override analysis filters)
         const tissueFilterEl = document.getElementById('geTissueFilter');
@@ -11674,7 +11681,7 @@ class CorrelationExplorer {
         // setting this back to ''.
         document.getElementById('toggleExprCorrelatesBtn').style.display = 'none';
         // Update target gene label in the expression correlates panel
-        document.getElementById('exprCorrelatesTargetGene').textContent = gene.toUpperCase();
+        document.getElementById('exprCorrelatesTargetGene').innerHTML = this.gi(gene.toUpperCase());
 
         // (Chart container width is set above, before the y-axis label is measured.)
 
@@ -12187,7 +12194,9 @@ class CorrelationExplorer {
         const avail = Math.max(240, host.parentElement?.clientWidth || host.clientWidth || 360);
         const probe = document.createElement('canvas').getContext('2d');
         const lf = phone ? 10 : 11;
-        probe.font = `${lf}px ${FONT}`;
+        // Canvas draws no markup, so gene labels are italicised through the font.
+        const labelFont = `${spec.italicLabels ? 'italic ' : ''}${lf}px ${FONT}`;
+        probe.font = labelFont;
         const left = Math.ceil(Math.max.apply(null, rows.map(r => probe.measureText(r).width))) + 12;
         const showCols = spec.showColLabels !== false;
         const colLabelW = showCols ? Math.ceil(Math.max.apply(null, cols.map(c => probe.measureText(c).width))) : 0;
@@ -12230,7 +12239,7 @@ class CorrelationExplorer {
                 }
             }
         }
-        ctx.fillStyle = '#374151'; ctx.font = `${lf}px ${FONT}`;
+        ctx.fillStyle = '#374151'; ctx.font = labelFont;
         ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
         rows.forEach((r, i) => ctx.fillText(r, left - 6, top + i * cell + cell / 2));
         const gridBottom = top + nR * cell;
@@ -12307,11 +12316,11 @@ class CorrelationExplorer {
         const avail = document.getElementById('matrixScroll')?.clientWidth || 600;
         const cell = phone ? 24 : Math.max(24, Math.min(44, Math.floor((avail - 130) / n)));
         this._drawCorrelationGrid(host, {
-            rowLabels: data.genes, colLabels: data.genes, z, zmin: -1, zmax: 1,
+            rowLabels: data.genes, colLabels: data.genes, z, zmin: -1, zmax: 1, italicLabels: true,
             colorscale: [[0, '#2166ac'], [0.5, '#f7f7f7'], [1, '#b2182b']],
             showValues, cell, colorbarTitle: 'r',
-            hover: (i, j) => i === j ? data.genes[i]
-                : `${data.genes[i]} vs ${data.genes[j]}<br>r = ${data.r[i][j] == null ? 'n/a' : data.r[i][j].toFixed(3)}, n = ${data.n[i][j]}`,
+            hover: (i, j) => i === j ? this.gi(data.genes[i])
+                : `${this.gi(data.genes[i])} vs ${this.gi(data.genes[j])}<br>r = ${data.r[i][j] == null ? 'n/a' : data.r[i][j].toFixed(3)}, n = ${data.n[i][j]}`,
             onClick: (i, j) => { if (i !== j) this.openInspectByGenes(data.genes[i], data.genes[j]); }
         });
     }
@@ -13447,9 +13456,7 @@ class CorrelationExplorer {
                         });
                     }
                     this.updateSelectedNodesList();
-                    // Update gene textarea with only selected genes
-                    document.getElementById('geneTextarea').value = Array.from(this.selectedNodes).join('\n');
-                    this.updateGeneCount();
+                    this._applySelectionToInput();
                     return;
                 }
 
@@ -14306,8 +14313,8 @@ class CorrelationExplorer {
             const corrClass = c.correlation > 0 ? 'corr-positive' : 'corr-negative';
             if (muted) tr.style.opacity = '0.55';
             tr.innerHTML = `
-                <td class="gene-hover" data-gene="${c.gene1}">${c.gene1}${listMark(c.gene1)}</td>
-                <td class="gene-hover" data-gene="${c.gene2}">${c.gene2}${listMark(c.gene2)}</td>
+                <td class="gene-hover" data-gene="${c.gene1}">${this.gi(c.gene1)}${listMark(c.gene1)}</td>
+                <td class="gene-hover" data-gene="${c.gene2}">${this.gi(c.gene2)}${listMark(c.gene2)}</td>
                 <td class="${muted ? '' : corrClass}" ${muted ? 'style="color:#6b7280;"' : ''}>${c.correlation.toFixed(3)}</td>
                 <td>${c.slope.toFixed(3)}</td>
                 <td>${c.n}</td>
@@ -14491,7 +14498,7 @@ class CorrelationExplorer {
                 const geneStat = this.geneStats?.get(c.gene);
 
                 let rowHtml = `
-                    <td class="gene-hover" data-gene="${c.gene}">${c.gene}${!c.inGeneList && this.results.mode === 'design' ? '*' : ''}</td>
+                    <td class="gene-hover" data-gene="${c.gene}">${this.gi(c.gene)}${!c.inGeneList && this.results.mode === 'design' ? '*' : ''}</td>
                     <td>${c.cluster}</td>
                 `;
                 if (hasCorrCol) {
@@ -14560,7 +14567,7 @@ class CorrelationExplorer {
                     }
                     const tr = document.createElement('tr');
                     tr.style.opacity = '0.55';
-                    let rowHtml = `<td class="gene-hover" data-gene="${gene}">${gene}${this.results.mode === 'design' && this.results.geneList && !this.results.geneList.includes(gene) ? '*' : ''}</td><td>&ndash;</td>`;
+                    let rowHtml = `<td class="gene-hover" data-gene="${gene}">${this.gi(gene)}${this.results.mode === 'design' && this.results.geneList && !this.results.geneList.includes(gene) ? '*' : ''}</td><td>&ndash;</td>`;
                     rowHtml += `<td style="text-align: center; color: #b45309; font-weight: 600;">Below cutoff</td>`;
                     rowHtml += `<td>${meanTxt}</td><td>${sdTxt}</td>`;
                     if (isFiltered) rowHtml += `<td>&ndash;</td><td>&ndash;</td>`;
@@ -14599,7 +14606,7 @@ class CorrelationExplorer {
         if (this.synonymsUsed && this.synonymsUsed.length > 0) {
             synonymsSection = `
 Synonyms/Orthologs Used:
-${this.synonymsUsed.map(s => `  ${s.original} → ${s.replacement} (${s.source})`).join('\n')}
+${this.synonymsUsed.map(s => `  ${this.gi(s.original)} → ${this.gi(s.replacement)} (${this.esc(s.source)})`).join('\n')}
 `;
         }
 
@@ -14608,7 +14615,7 @@ ${this.synonymsUsed.map(s => `  ${s.original} → ${s.replacement} (${s.source})
         if (this.genesNotFound && this.genesNotFound.length > 0) {
             unrecognizedSection = `
 Unrecognized Gene Names (${this.genesNotFound.length}):
-${this.genesNotFound.join(', ')}
+${this.genesNotFound.map(g => this.gi(g)).join(', ')}
 `;
         }
 
@@ -14647,33 +14654,33 @@ ${this.genesNotFound.join(', ')}
         if (paramHotspotGene) {
             const mk = this._parseMutFilter(paramHotspotGene);
             const kindWord = this._mutKindWord(mk.kind);
-            hotspotFilterText = `\nMutation Filter: ${mk.gene}${kindWord ? `, ${kindWord}` : ''} (${paramHotspotLevel || 'all'})`;
+            hotspotFilterText = `\nMutation Filter: ${this.gi(mk.gene)}${kindWord ? `, ${kindWord}` : ''} (${this.esc(paramHotspotLevel || 'all')})`;
         }
         const paramTranslocGene = document.getElementById('paramTranslocationGene')?.value;
         const paramTranslocLevel = document.getElementById('paramTranslocationLevel')?.value;
         if (paramTranslocGene) {
-            hotspotFilterText += `\nTranslocation Filter: ${paramTranslocGene} (${paramTranslocLevel || 'all'})`;
+            hotspotFilterText += `\nTranslocation Filter: ${this.giFusion(this._stripFusionFilterDecoration(paramTranslocGene))} (${this.esc(paramTranslocLevel || 'all')})`;
         }
 
         // P-value threshold (for mutation mode)
         let pValueText = '';
         if (this.results.mode === 'mutation') {
-            pValueText = `\nP-value Threshold: ${document.getElementById('pValueThreshold')?.value || '0.001'}`;
+            pValueText = `\nP-value Threshold: ${this.esc(document.getElementById('pValueThreshold')?.value || '0.001')}`;
         }
 
-        text.textContent = `Gene Correlation Analysis Summary
+        text.innerHTML = `Gene Correlation Analysis Summary
 ================================
-Run: ${dateTimeStr}
+Run: ${this.esc(dateTimeStr)}
 
-Analysis Mode: ${this.results.mode === 'analysis' ? 'Correlate genes within my set' : this.results.mode === 'design' ? 'Expand my set to find correlated genes' : this.results.mode === 'mutation' ? 'Mutation Analysis' : this.results.mode}
-Correlation Cutoff: ${this.results.cutoff}
-Minimum Cell Lines: ${document.getElementById('minCellLines').value}
-Minimum Slope: ${document.getElementById('minSlope').value}
-Lineage Filter: ${lineageText}
-Excluded Tissues: ${excludedTissuesText}${hotspotFilterText}${pValueText}
+Analysis Mode: ${this.esc(this.results.mode === 'analysis' ? 'Correlate genes within my set' : this.results.mode === 'design' ? 'Expand my set to find correlated genes' : this.results.mode === 'mutation' ? 'Mutation Analysis' : this.results.mode)}
+Correlation Cutoff: ${this.esc(this.results.cutoff)}
+Minimum Cell Lines: ${this.esc(document.getElementById('minCellLines').value)}
+Minimum Slope: ${this.esc(document.getElementById('minSlope').value)}
+Lineage Filter: ${this.esc(lineageText)}
+Excluded Tissues: ${this.esc(excludedTissuesText)}${hotspotFilterText}${pValueText}
 
 Input Genes: ${this.results.geneList.length}
-${this.results.geneList.join(', ')}
+${this.results.geneList.map(g => this.gi(g)).join(', ')}
 ${synonymsSection}${unrecognizedSection}
 Results:
 - Total correlations found: ${this.results.correlations.length}
@@ -16526,7 +16533,7 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
         const names = String(this._netHighlightText || '').split(/[\s,;]+/).filter(Boolean);
         if (!names.length) { box.style.display = 'none'; txt.innerHTML = ''; return; }
         txt.innerHTML = names.map(n =>
-            `<span data-hl-gene="${this._escapeAttr(n)}" title="Click to remove this highlight" style="cursor:pointer; text-decoration:underline; margin-right:4px;">${this.esc(n)}</span>`
+            `<span data-hl-gene="${this._escapeAttr(n)}" title="Click to remove this highlight" style="cursor:pointer; text-decoration:underline; margin-right:4px;">${this.gi(n)}</span>`
         ).join('');
         box.style.display = '';
     }
@@ -17306,12 +17313,16 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
             btn.style.backgroundColor = '#2563eb';
             btn.style.borderColor = '#2563eb';
             btn.style.color = 'white';
-            if (helpText) helpText.textContent = 'Click nodes to select them for the gene list';
+            if (helpText) helpText.textContent = 'Click genes to keep a subset: the gene box narrows to them, and Run repeats the analysis on that subset';
         } else {
             // Restore original node colors for any selected nodes
             this.restoreSelectedNodeColors();
             this.selectedNodes.clear();
             this.updateSelectedNodesList();
+            // Leaving the mode with the gene box still narrowed would make the
+            // next Run silently use the subset, so the full list comes back
+            // with it.
+            this._restoreSelectionInput();
             btn.classList.remove('btn-active');
             btn.style.backgroundColor = '';
             btn.style.borderColor = '';
@@ -17340,8 +17351,10 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
         const textEl = document.getElementById('selectedNodesText');
         if (!listEl || !textEl) return;
 
-        if (this.selectedNodes.size > 0) {
-            textEl.textContent = Array.from(this.selectedNodes).join(', ');
+        const sel = Array.from(this.selectedNodes);
+        if (sel.length > 0) {
+            textEl.innerHTML = sel.map(g => this.gi(g)).join(', ')
+                + `<span style="display:block; color:#1e40af; margin-top:2px;">The gene box now holds only these ${sel.length}, so Run repeats the analysis on them. Clear puts the full list back.</span>`;
             listEl.style.display = 'block';
         } else {
             listEl.style.display = 'none';
@@ -17351,12 +17364,44 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
     clearSelectedNodes() {
         this.restoreSelectedNodeColors();
         this.selectedNodes.clear();
+        this._restoreSelectionInput();
         this.updateSelectedNodesList();
-        // Restore the original gene list in textarea
-        if (this.results?.geneList) {
-            document.getElementById('geneTextarea').value = this.results.geneList.join('\n');
-            this.updateGeneCount();
+    }
+
+    // The selection narrows the gene input so the next Run repeats the
+    // analysis on that subset. Which box holds the genes depends on the
+    // input tab: the plain list, or the With Stats table, where each kept
+    // gene keeps its own LFC / FDR row. The full contents of both boxes are
+    // kept aside once, and put back by Clear.
+    _applySelectionToInput() {
+        const paste = document.getElementById('geneTextarea');
+        const stats = document.getElementById('manualStatsTextarea');
+        if (!this._selectBackup) this._selectBackup = { paste: paste?.value || '', stats: stats?.value || '' };
+        const sel = Array.from(this.selectedNodes);
+        if (!sel.length) { this._restoreSelectionInput(); return; }
+        const want = new Set(sel.map(g => String(g).toUpperCase()));
+        if (paste) paste.value = sel.join('\n');
+        if (stats && this._selectBackup.stats.trim()) {
+            const lines = this._selectBackup.stats.split('\n');
+            const headerKeywords = ['gene', 'symbol', 'lfc', 'logfc', 'log2fc', 'fdr', 'padj', 'pvalue', 'p-value'];
+            const first = (lines[0] || '').toLowerCase();
+            const hasHeader = headerKeywords.some(kw => first.includes(kw));
+            const kept = lines.filter((l, i) => (hasHeader && i === 0)
+                || want.has(l.split(/[\t,;]/)[0].trim().toUpperCase()));
+            stats.value = kept.join('\n');
         }
+        this.updateGeneCount();
+    }
+
+    _restoreSelectionInput() {
+        const b = this._selectBackup;
+        if (!b) return;
+        const paste = document.getElementById('geneTextarea');
+        const stats = document.getElementById('manualStatsTextarea');
+        if (paste) paste.value = b.paste;
+        if (stats) stats.value = b.stats;
+        this._selectBackup = null;
+        this.updateGeneCount();
     }
 
     updateRemovedNodesList() {
@@ -18438,7 +18483,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // The cohort filters active on the scatter, as short phrases. One list
     // serves the plot title, the chip strip's summary and Find correlates,
     // so they can never describe different cohorts.
-    _scatterFilterParts() {
+    // html=true italicises the gene symbols; the plain form is what the
+    // alert() and the stored state need.
+    _scatterFilterParts(html = false) {
+        const g = (x) => html ? this.gi(x) : x;
         const parts = [];
         const cancerFilter = document.getElementById('scatterCancerFilter')?.value || '';
         const subtypeFilter = document.getElementById('scatterSubtypeFilter')?.value || '';
@@ -18451,24 +18499,26 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const mk = this._parseMutFilter(mutFilterGene);
             const levelText = this._mutLevelWord(mk.kind, lvl)
                 || (lvl === '0' ? 'hotspot WT' : lvl === '1' ? 'hotspot mut (1 copy)' : lvl === '2' ? 'hotspot mut (2 copies)' : 'hotspot mut (1+2)');
-            parts.push(`${mk.gene}: ${levelText}`);
+            parts.push(`${g(mk.gene)}: ${levelText}`);
         }
         const transFilterGene = document.getElementById('translocationFilterGene')?.value || '';
         if (transFilterGene) {
             const lvl = document.getElementById('translocationFilterLevel')?.value || '1+2';
-            parts.push(`${this._stripFusionFilterDecoration(transFilterGene)}: ${lvl === '0' ? 'no fusion' : 'fused'}`);
+            const fus = this._stripFusionFilterDecoration(transFilterGene);
+            parts.push(`${html ? this.giFusion(fus) : fus}: ${lvl === '0' ? 'no fusion' : 'fused'}`);
         }
         const cnFilterVal = document.getElementById('scatterCnFilter')?.value || '';
         if (cnFilterVal) {
             const cnLvl = document.getElementById('scatterCnLevel')?.value || 'altered';
-            const cnLabel = this._stripCnFilterDecoration(cnFilterVal).replace(/_(amp|del)$/, (_, k) => k === 'amp' ? ' amp' : ' deep-del');
+            const cnLabel = html ? this.giCn(cnFilterVal, 'amp', 'deep-del')
+                : this._stripCnFilterDecoration(cnFilterVal).replace(/_(amp|del)$/, (_, k) => k === 'amp' ? ' amp' : ' deep-del');
             parts.push(`${cnLabel}${cnLvl === 'wt' ? ' (WT)' : ''}`);
         }
         // A grid pick inherited from the analysis usually arrives together
         // with the same gene in the scatter's own hotspot / fusion / CN
         // selector, so a gene already named above is not named twice.
         const named = new Set([this._stripMutDecoration(mutFilterGene), this._stripFusionFilterDecoration(transFilterGene), this._stripCnFilterDecoration(cnFilterVal).replace(/_(amp|del)$/, '')].filter(Boolean).map(g => g.toUpperCase()));
-        const gridWord = (f) => `${f.gene} ${this._gridStateWord(f.state)}`;
+        const gridWord = (f) => `${g(f.gene)} ${this._gridStateWord(f.state)}`;
         (this._activeOncoprintFilters || []).forEach(f => { if (!named.has(String(f.gene).toUpperCase())) { parts.push(gridWord(f)); named.add(String(f.gene).toUpperCase()); } });
         (this._scatterGridActive || []).forEach(f => { if (!named.has(String(f.gene).toUpperCase())) { parts.push(gridWord(f)); named.add(String(f.gene).toUpperCase()); } });
         if (this._gateFilter) parts.push(`Gate ${this._gateFilter.gate} (${this._gateFilter.n} cell lines)`);
@@ -19036,7 +19086,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // `menu` names a filter kind whose chip opens the shared level menu
         // (mutated / one copy / wild-type ...) the other panels' chips have,
         // so the state can be changed here without hunting for the selector.
-        const add = (label, clear, title, menu) => chips.push({ label, clear, title, menu });
+        const add = (label, clear, title, menu, labelHtml) => chips.push({ label, clear, title, menu, labelHtml });
 
         // Tissue, subtype and disease are one nested choice, not three. Three
         // chips reading "Lung", "Non-Small Cell Lung Cancer" and "Lung
@@ -19061,16 +19111,19 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const word = { '0': 'WT', '1': 'mutated (one copy)', '2': 'mutated (both copies)' }[lvl] || 'mutated';
             add(this._mutFilterPhrase(hs, lvl, word),
                 () => { const e = document.getElementById('paramHotspotGene'); e.value = ''; fire('paramHotspotGene'); },
-                'Mutation. Click to change which cell lines are kept, or to remove this filter', 'hotspot');
+                'Mutation. Click to change which cell lines are kept, or to remove this filter', 'hotspot',
+                this._mutFilterPhrase(hs, lvl, word, true));
         }
         const tg = val('paramTranslocationGene');
         if (tg) add(`${this._stripFusionFilterDecoration(tg)} ${val('paramTranslocationLevel') === '0' ? 'not fused' : 'fused'}`,
             () => { const e = document.getElementById('paramTranslocationGene'); e.value = ''; fire('paramTranslocationGene'); },
-            'Fusion. Click to change which cell lines are kept, or to remove this filter', 'fusion');
+            'Fusion. Click to change which cell lines are kept, or to remove this filter', 'fusion',
+            `${this.giFusion(this._stripFusionFilterDecoration(tg))} ${val('paramTranslocationLevel') === '0' ? 'not fused' : 'fused'}`);
         const cn = val('paramCnFilter');
         if (cn) add(`${this._stripCnFilterDecoration(cn).replace(/_(amp|del)$/, (_, k) => k === 'amp' ? ' amp' : ' del')} ${(val('paramCnLevel') || 'altered') === 'wt' ? 'absent' : 'present'}`,
             () => { const e = document.getElementById('paramCnFilter'); e.value = ''; fire('paramCnFilter'); },
-            'Copy number. Click to change which cell lines are kept, or to remove this filter', 'cn');
+            'Copy number. Click to change which cell lines are kept, or to remove this filter', 'cn',
+            `${this.giCn(cn)} ${(val('paramCnLevel') || 'altered') === 'wt' ? 'absent' : 'present'}`);
         if (this.excludedTissues?.size) add(`${this.excludedTissues.size} tissue${this.excludedTissues.size > 1 ? 's' : ''} excluded`,
             () => { this.excludedTissues = new Set(); document.querySelectorAll('#tissueExcludeList input[type="checkbox"]').forEach(cb => { cb.checked = false; }); this._markMutationRunStale?.(); }, 'Excluded');
         // Picks made from an alteration grid, when they apply to the analysis.
@@ -19078,7 +19131,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             for (const f of (this._activeOncoprintFilters || [])) {
                 add(`${f.gene} ${this._gridStateWord(f.state)}`,
                     () => { delete this._oncoprintFilters[f.gene]; this._oncoprintSyncFilters?.(); },
-                    'Picked from the alteration grid');
+                    'Picked from the alteration grid', undefined,
+                    `${this.gi(f.gene)} ${this._gridStateWord(f.state)}`);
             }
         }
         if (this._customCellLineFilter?.size) add(`${this._customCellLineFilter.size} pasted cell line${this._customCellLineFilter.size === 1 ? '' : 's'}`,
@@ -19095,8 +19149,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             + `<div style="display:flex; align-items:center; gap:5px; flex-wrap:wrap;">`
             + chips.map((c, i) => `<span title="${this.esc(c.title)}" style="display:inline-flex; align-items:center; gap:5px; font-size:11px; background:#f0fdf4; border:1px solid #86c26f; color:#4c782e; border-radius:12px; padding:2px 4px 2px 10px;">`
                 + (c.menu
-                    ? `<span data-chip-menu="${c.menu}" style="cursor:pointer;">${this.esc(c.label)} &#9662;</span>`
-                    : `${this.esc(c.label)}`)
+                    ? `<span data-chip-menu="${c.menu}" style="cursor:pointer;">${c.labelHtml || this.esc(c.label)} &#9662;</span>`
+                    : `${c.labelHtml || this.esc(c.label)}`)
                 + `<button type="button" data-chip="${i}" title="Remove" style="border:none; background:#dcfce7; color:#4c782e; border-radius:50%; width:16px; height:16px; line-height:1; cursor:pointer; font-size:12px; padding:0;">&times;</button>`
                 + `</span>`).join('')
             + `</div>`;
@@ -19533,7 +19587,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             translocationPartners: translocationPartnersMap.get(d.cellLineId) || []
         }));
 
-        const filterParts = this._scatterFilterParts();
+        const filterParts = this._scatterFilterParts(true);
         const filterDesc = filterParts.length > 0 ? filterParts.join(' | ') : '';
 
         // Show/hide plot and table based on mode
@@ -19932,9 +19986,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // block spaced for the title so its two lines cannot collide.
         const _fitsOneLine = _plainLen * titleFontSize * 0.58 < _plotW;
         const _brk = _fitsOneLine ? ' ' : '<br>';
+        // Growth rate / gene-set score are not gene symbols, so only real genes
+        // get the italics.
+        const _gTitle = (g, t) => (t === 'growth' || t === 'geneset') ? this.esc(g) : this.gi(g);
+        const _g1t = _gTitle(gene1, _xType), _g2t = _gTitle(gene2, _yType);
         const _pairLabel = (_xType === _yType)
-            ? `${gene1} vs ${gene2}${_brk}<span style="font-weight:400;">(${_axisWord(_xType)})</span>`
-            : `${gene1} <span style="font-weight:400;">(${_axisWord(_xType)})</span>${_brk}vs ${gene2} <span style="font-weight:400;">(${_axisWord(_yType)})</span>`;
+            ? `${_g1t} vs ${_g2t}${_brk}<span style="font-weight:400;">(${_axisWord(_xType)})</span>`
+            : `${_g1t} <span style="font-weight:400;">(${_axisWord(_xType)})</span>${_brk}vs ${_g2t} <span style="font-weight:400;">(${_axisWord(_yType)})</span>`;
         let titleLines = [`<span style="font-size:${titleFontSize}px"><b>${_pairLabel}</b></span>`];
         if (filterDesc) {
             titleLines.push(`<span style="font-size:${subSize}px;color:#666;">${filterDesc}</span>`);
@@ -19985,7 +20043,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (hotspotMode === 'color' && hotspotGene) {
             const ow = this._mutOverlayWords(hotspotGene);
             const segs = [
-                `<b>${ow.gene}${ow.kind === 'hotspot' ? '' : ` (${this._mutKindWord(ow.kind)})`}:</b> ${ow.legend[0]} n=${wt.length} r=${this.formatNum(wtStats.correlation)}`,
+                `<b>${this.gi(ow.gene)}${ow.kind === 'hotspot' ? '' : ` (${this._mutKindWord(ow.kind)})`}:</b> ${ow.legend[0]} n=${wt.length} r=${this.formatNum(wtStats.correlation)}`,
                 `${ow.legend[1]} n=${mut1.length} r=${this.formatNum(mut1Stats.correlation)}`,
             ];
             if (ow.hasTwo) segs.push(`${ow.legend[2]} n=${mut2.length} r=${this.formatNum(mut2Stats.correlation)}`);
@@ -19998,7 +20056,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const tWTStats = this.pearsonWithSlope(tWT.map(d => d.x), tWT.map(d => d.y));
             const tFusedStats = this.pearsonWithSlope(tFused.map(d => d.x), tFused.map(d => d.y));
             const fsegs = [
-                `<b>${transOverlayGene}:</b> No fusion n=${tWT.length} r=${this.formatNum(tWTStats.correlation)}`,
+                `<b>${this.gi(transOverlayGene)}:</b> No fusion n=${tWT.length} r=${this.formatNum(tWTStats.correlation)}`,
                 `Fused n=${tFused.length} r=${this.formatNum(tFusedStats.correlation)}`,
             ];
             for (const ln of _wrapStatLine(fsegs)) {
@@ -20063,7 +20121,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // so break before the unit when it will not fit.
         const _wrapAxisLabel = (text, availablePx, fontPx) => {
             if (!text) return text;
-            if (text.length * fontPx * 0.55 <= availablePx) return text;
+            // Italic markup around the gene is not drawn, so it must not count
+            // toward the width the label needs.
+            const plainLen = text.replace(/<[^>]+>/g, '').length;
+            if (plainLen * fontPx * 0.55 <= availablePx) return text;
             const i = text.lastIndexOf(' (');
             return i > 0 ? text.slice(0, i) + '<br>' + text.slice(i + 1) : text;
         };
@@ -20183,7 +20244,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 bgcolor: 'white',
                 bordercolor: '#ddd',
                 borderwidth: 1,
-                title: { text: (transOverlayMode === 'color' && transOverlayGene) ? `${transOverlayGene} (fusion)` : hotspotGene, font: { size: 11 }, side: 'left' },
+                title: { text: (transOverlayMode === 'color' && transOverlayGene) ? `${this.gi(transOverlayGene)} (fusion)` : this.gi(hotspotGene), font: { size: 11 }, side: 'left' },
                 font: { size: 11 }
             } : (() => {
                 // Auto-placed unless the user has dragged it somewhere.
@@ -20198,7 +20259,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     bgcolor: 'white',
                     bordercolor: '#ddd',
                     borderwidth: 1,
-                    title: { text: (transOverlayMode === 'color' && transOverlayGene) ? `${transOverlayGene} (fusion)` : hotspotGene, font: { size: 14 } },
+                    title: { text: (transOverlayMode === 'color' && transOverlayGene) ? `${this.gi(transOverlayGene)} (fusion)` : this.gi(hotspotGene), font: { size: 14 } },
                     font: { size: 14 }
                 };
             })(),
@@ -20571,7 +20632,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             : _ow3.kind === 'lof' ? 'functional-loss stratification'
             : _ow3.kind === 'any' ? 'mutation stratification (any call)'
             : 'hotspot mutation stratification';
-        let titleText = `<b>${gene1} vs ${gene2} - ${isFusion ? hotspotGene : _ow3.gene} ${stratLabel}</b>`;
+        let titleText = `<b>${this.gi(gene1)} vs ${this.gi(gene2)} - ${this.gi(isFusion ? hotspotGene : _ow3.gene)} ${stratLabel}</b>`;
         if (filterDesc) {
             titleText += `<br><span style="font-size: 11px; color: #666;">Filter: ${filterDesc}</span>`;
         }
@@ -20960,7 +21021,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const wtDesc = isFusion ? `no ${hotspotGene} fusions` : ow.refDesc;
         const mutDesc = isFusion ? `${hotspotGene} fused (1+)` : ow.altDesc;
         let html = `
-            <h4 style="margin-bottom: 8px;">Effect of <span style="color: #0066cc;">${geneLabel}</span> ${typeLabel} on ${gene1} vs ${gene2} Correlation</h4>
+            <h4 style="margin-bottom: 8px;">Effect of <span style="color: #0066cc;">${this.gi(geneLabel)}</span> ${typeLabel} on ${this.gi(gene1)} vs ${this.gi(gene2)} Correlation</h4>
             ${filterInfo}
             <p style="font-size: 11px; color: #666; margin-bottom: 8px;">
                 Comparing correlation between ${wtLabel} (${wtDesc}) vs ${mutLabel} (${mutDesc}) cells, stratified by cancer type.${exclusionNote}
@@ -21126,7 +21187,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const levelText = mutFilterLevel === '0' ? 'hotspot WT' :
                               mutFilterLevel === '1' ? 'hotspot mut (1 copy)' :
                               mutFilterLevel === '2' ? 'hotspot mut (2 copies)' : 'hotspot mut (1+2)';
-            filterParts.push(`${mutFilterGene}: ${levelText}`);
+            filterParts.push(`${this.gi(mutFilterGene)}: ${levelText}`);
         }
         if (this._customCellLineFilter) {
             filterParts.push(`Custom: ${this._customCellLineFilter.size} CLs`);
@@ -21199,7 +21260,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const filterInfo = filterDesc ? `<p style="font-size: 11px; color: #333; margin-bottom: 8px; background: #f0f9ff; padding: 4px 8px; border-radius: 4px;"><b>Filter:</b> ${filterDesc}</p>` : '';
         let html = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                <h4 style="margin: 0;">Mutations affecting ${gene1} vs ${gene2}</h4>
+                <h4 style="margin: 0;">Mutations affecting ${this.gi(gene1)} vs ${this.gi(gene2)}</h4>
                 <div>
                     <button class="btn btn-primary btn-sm" id="backToGraphBtn" style="margin-right: 8px;">← Back to Graph</button>
                     <button class="btn btn-success btn-sm" id="downloadMutCompareCSV">Download CSV</button>
@@ -21235,7 +21296,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
             html += `
                 <tr class="clickable-mut-row" data-mut-gene="${row.mutGene}" style="${pHighlight} cursor: pointer;">
-                    <td><b>${row.mutGene}</b></td>
+                    <td><b>${this.gi(row.mutGene)}</b></td>
                     <td style="text-align: center; border-left: 2px solid #2563eb;">${row.nWT}</td>
                     <td style="text-align: center;">${row.rWT.toFixed(3)}</td>
                     <td style="text-align: center; border-left: 2px solid #dc2626;">${row.nMut}</td>
@@ -21329,11 +21390,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (oncVal) parts.push(`Disease: ${oncVal === '__mr_multi__' ? (this.mutationResults?.oncotreeFilterMulti || []).join(' + ') : oncVal}`);
         if (mutFilterGene && mutFilterLevel !== 'all') {
             const mk = this._parseMutFilter(mutFilterGene);
-            parts.push(`${mk.gene}: ${this._mutLevelWord(mk.kind, mutFilterLevel) || mutFilterLevel}`);
+            parts.push(`${this.gi(mk.gene)}: ${this._mutLevelWord(mk.kind, mutFilterLevel) || mutFilterLevel}`);
         }
-        if (transFilterGene) parts.push(`Fusion: ${this._stripFusionFilterDecoration(transFilterGene)}`);
-        if (cnFilterVal) parts.push(`CN: ${this._stripCnFilterDecoration(cnFilterVal)}`);
-        (this._scatterGridActive || []).forEach(f => parts.push(`${f.gene} ${this._gridStateWord(f.state)}`));
+        if (transFilterGene) parts.push(`Fusion: ${this.giFusion(this._stripFusionFilterDecoration(transFilterGene))}`);
+        if (cnFilterVal) parts.push(`CN: ${this.giCn(cnFilterVal)}`);
+        (this._scatterGridActive || []).forEach(f => parts.push(`${this.gi(f.gene)} ${this._gridStateWord(f.state)}`));
         if (this._customCellLineFilter) parts.push(`Custom: ${this._customCellLineFilter.size} CLs`);
         return { filteredData: fd, filterDesc: parts.join(' | ') };
     }
@@ -21345,7 +21406,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (this.clinicalFusions?.fusionData) {
             for (const [fname, fd] of Object.entries(this.clinicalFusions.fusionData)) {
                 const cells = fd.cellLines || {};
-                subsets.push({ label: `★ ${fname}`, isCarrier: (cl) => cl in cells, colorGene: '', filterKind: 'fusion', filterValue: fname });
+                subsets.push({ label: `★ ${fname}`, labelHtml: `★ ${this.giFusion(fname)}`, isCarrier: (cl) => cl in cells, colorGene: '', filterKind: 'fusion', filterValue: fname });
             }
         }
         const vf = this.validatedFusions;
@@ -21353,7 +21414,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             for (const g of vf.genes) {
                 const td = vf.geneData?.[g]?.translocations || this.translocations?.geneData?.[g]?.translocations;
                 if (!td) continue;
-                subsets.push({ label: g, isCarrier: (cl) => (td[cl] || 0) >= 1, colorGene: g, filterKind: 'fusion', filterValue: g });
+                subsets.push({ label: g, labelHtml: this.gi(g), isCarrier: (cl) => (td[cl] || 0) >= 1, colorGene: g, filterKind: 'fusion', filterValue: g });
             }
         }
         return subsets;
@@ -21364,6 +21425,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const items = this._ensureGlobalFilterItems().cn || [];
         return items.map(it => ({
             label: `${it.kind === 'amp' ? '▲' : '▼'} ${it.gene} ${it.kind === 'amp' ? 'amp' : 'del'}`,
+            labelHtml: `${it.kind === 'amp' ? '▲' : '▼'} ${this.gi(it.gene)} ${it.kind === 'amp' ? 'amp' : 'del'}`,
             isCarrier: (cl) => this._cellLinePassesCnFilter(cl, it.value),
             colorGene: '', filterKind: 'cn', filterValue: it.value
         }));
@@ -21390,16 +21452,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 const z2 = 0.5 * Math.log((1 + _rz2) / (1 - _rz2));
             const se = Math.sqrt(1 / (wt.length - 3) + 1 / (carr.length - 3));
             const pR = 2 * this.normalUpperTail(Math.abs((z2 - z1) / se));
-            rows.push({ label: sub.label, colorGene: sub.colorGene || '', filterKind: sub.filterKind || '', filterValue: sub.filterValue || '', nWT: wt.length, rWT: wtS.correlation, slopeWT: wtS.slope, nC: carr.length, rC: cS.correlation, slopeC: cS.slope, deltaR: cS.correlation - wtS.correlation, deltaSlope: cS.slope - wtS.slope, pR });
+            rows.push({ label: sub.label, labelHtml: sub.labelHtml || '', colorGene: sub.colorGene || '', filterKind: sub.filterKind || '', filterValue: sub.filterValue || '', nWT: wt.length, rWT: wtS.correlation, slopeWT: wtS.slope, nC: carr.length, rC: cS.correlation, slopeC: cS.slope, deltaR: cS.correlation - wtS.correlation, deltaSlope: cS.slope - wtS.slope, pR });
         }
         rows.sort((a, b) => a.pR - b.pR);
         const filterInfo = filterDesc ? `<p style="font-size:11px;color:#333;margin-bottom:8px;background:#f0f9ff;padding:4px 8px;border-radius:4px;"><b>Filter:</b> ${filterDesc}</p>` : '';
-        let html = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;"><h4 style="margin:0;">${o.heading || `${carrierWord} affecting ${gene1} vs ${gene2}`}</h4><div><button class="btn btn-primary btn-sm" id="backToGraphBtnSubset" style="margin-right:8px;">← Back to Graph</button><button class="btn btn-success btn-sm" id="downloadSubsetCSV">Download CSV</button></div></div>${filterInfo}<p style="font-size:11px;color:#666;margin-bottom:6px;">Comparing WT vs ${carrierWord}. Sorted by p-value.</p>${o.clickNote ? `<p style="font-size:11px;color:#059669;margin-bottom:8px;">${o.clickNote}</p>` : ''}<div class="table-container" style="max-height:380px;overflow-y:auto;"><table id="${tableId}" class="data-table" style="width:100%;font-size:11px;"><thead><tr><th data-sort="label" data-type="string" style="cursor:pointer;">${o.subsetCol || carrierWord} ↕</th><th data-sort="nWT" data-type="number" style="cursor:pointer;border-left:2px solid #2563eb;">N(WT) ↕</th><th data-sort="rWT" data-type="number" style="cursor:pointer;">r(WT) ↕</th><th data-sort="nC" data-type="number" style="cursor:pointer;border-left:2px solid #dc2626;">N(${carrierWord}) ↕</th><th data-sort="rC" data-type="number" style="cursor:pointer;">r(${carrierWord}) ↕</th><th data-sort="deltaR" data-type="number" style="cursor:pointer;border-left:2px solid #6b7280;">Δr ↕</th><th data-sort="pR" data-type="number" style="cursor:pointer;">p(Δr) ↕</th></tr></thead><tbody>`;
+        let html = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;"><h4 style="margin:0;">${o.heading || `${carrierWord} affecting ${this.gi(gene1)} vs ${this.gi(gene2)}`}</h4><div><button class="btn btn-primary btn-sm" id="backToGraphBtnSubset" style="margin-right:8px;">← Back to Graph</button><button class="btn btn-success btn-sm" id="downloadSubsetCSV">Download CSV</button></div></div>${filterInfo}<p style="font-size:11px;color:#666;margin-bottom:6px;">Comparing WT vs ${carrierWord}. Sorted by p-value.</p>${o.clickNote ? `<p style="font-size:11px;color:#059669;margin-bottom:8px;">${o.clickNote}</p>` : ''}<div class="table-container" style="max-height:380px;overflow-y:auto;"><table id="${tableId}" class="data-table" style="width:100%;font-size:11px;"><thead><tr><th data-sort="label" data-type="string" style="cursor:pointer;">${o.subsetCol || carrierWord} ↕</th><th data-sort="nWT" data-type="number" style="cursor:pointer;border-left:2px solid #2563eb;">N(WT) ↕</th><th data-sort="rWT" data-type="number" style="cursor:pointer;">r(WT) ↕</th><th data-sort="nC" data-type="number" style="cursor:pointer;border-left:2px solid #dc2626;">N(${carrierWord}) ↕</th><th data-sort="rC" data-type="number" style="cursor:pointer;">r(${carrierWord}) ↕</th><th data-sort="deltaR" data-type="number" style="cursor:pointer;border-left:2px solid #6b7280;">Δr ↕</th><th data-sort="pR" data-type="number" style="cursor:pointer;">p(Δr) ↕</th></tr></thead><tbody>`;
         rows.forEach(row => {
             const dc = row.deltaR < 0 ? '#dc2626' : '#6ba544';
             const hl = row.pR < 0.05 ? 'background:#fef3c7;' : '';
             const fv = String(row.filterValue || '').replace(/"/g, '&quot;');
-            html += `<tr class="clickable-subset-row" data-filter-kind="${row.filterKind}" data-filter-value="${fv}" style="${hl}cursor:pointer;"><td><b>${row.label}</b></td><td style="text-align:center;border-left:2px solid #2563eb;">${row.nWT}</td><td style="text-align:center;">${row.rWT.toFixed(3)}</td><td style="text-align:center;border-left:2px solid #dc2626;">${row.nC}</td><td style="text-align:center;">${row.rC.toFixed(3)}</td><td style="text-align:center;border-left:2px solid #6b7280;color:${dc};font-weight:600;">${row.deltaR.toFixed(3)}</td><td style="text-align:center;">${this.formatPValue(row.pR)}</td></tr>`;
+            html += `<tr class="clickable-subset-row" data-filter-kind="${row.filterKind}" data-filter-value="${fv}" style="${hl}cursor:pointer;"><td><b>${row.labelHtml || this.esc(row.label)}</b></td><td style="text-align:center;border-left:2px solid #2563eb;">${row.nWT}</td><td style="text-align:center;">${row.rWT.toFixed(3)}</td><td style="text-align:center;border-left:2px solid #dc2626;">${row.nC}</td><td style="text-align:center;">${row.rC.toFixed(3)}</td><td style="text-align:center;border-left:2px solid #6b7280;color:${dc};font-weight:600;">${row.deltaR.toFixed(3)}</td><td style="text-align:center;">${this.formatPValue(row.pR)}</td></tr>`;
         });
         html += `</tbody></table></div><p style="font-size:11px;color:#666;margin-top:8px;">Yellow = p &lt; 0.05. ${o.biasNote || 'This analysis may be biased as these events select for cancer types.'}</p>`;
         document.getElementById('compareTable').innerHTML = html;
@@ -21443,7 +21505,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         document.getElementById('compareTable').style.display = 'block';
         this._renderSubsetCorrComparison(filteredData, gene1, gene2, filterDesc, this._curatedFusionSubsets(), {
             carrierWord: 'Fused', tableId: 'compareTranslocationsTable', subsetCol: 'Fusion',
-            heading: `Fusions affecting ${gene1} vs ${gene2}`, csvStem: 'fusion_comparison',
+            heading: `Fusions affecting ${this.gi(gene1)} vs ${this.gi(gene2)}`, csvStem: 'fusion_comparison',
             clickNote: 'Click any row to filter the scatter to that curated fusion',
             biasNote: 'This analysis may be biased as fusions select for cancer types.'
         });
@@ -21458,7 +21520,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         document.getElementById('compareTable').style.display = 'block';
         this._renderSubsetCorrComparison(filteredData, gene1, gene2, filterDesc, this._cnSubsets(), {
             carrierWord: 'CN+', tableId: 'compareCnTable', subsetCol: 'Focal CN event',
-            heading: `Focal amp / deep-del affecting ${gene1} vs ${gene2}`, csvStem: 'cn_comparison',
+            heading: `Focal amp / deep-del affecting ${this.gi(gene1)} vs ${this.gi(gene2)}`, csvStem: 'cn_comparison',
             clickNote: 'Click any row to filter the scatter to that CN event',
             biasNote: 'This analysis may be biased as CN events select for cancer types.'
         });
@@ -21526,7 +21588,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const filterInfo = filterDesc ? `<p style="font-size: 11px; color: #333; margin-bottom: 8px; background: #f0f9ff; padding: 4px 8px; border-radius: 4px;"><b>Filter:</b> ${filterDesc}</p>` : '';
         let html = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                <h4 style="margin: 0;">Fusions affecting ${gene1} vs ${gene2}</h4>
+                <h4 style="margin: 0;">Fusions affecting ${this.gi(gene1)} vs ${this.gi(gene2)}</h4>
                 <div>
                     <button class="btn btn-primary btn-sm" id="backToGraphBtnTrans" style="margin-right: 8px;">← Back to Graph</button>
                     <button class="btn btn-success btn-sm" id="downloadTransCompareCSV">Download CSV</button>
@@ -21562,7 +21624,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
             html += `
                 <tr class="clickable-trans-row" data-trans-gene="${row.tGene}" style="${pHighlight} cursor: pointer;">
-                    <td><b>${row.tGene}</b></td>
+                    <td><b>${this.gi(row.tGene)}</b></td>
                     <td style="text-align: center; border-left: 2px solid #2563eb;">${row.nWT}</td>
                     <td style="text-align: center;">${row.rWT.toFixed(3)}</td>
                     <td style="text-align: center; border-left: 2px solid #dc2626;">${row.nFused}</td>
@@ -21733,7 +21795,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         this._inspectCorrelatesState = { geHits, exprHits, xGene, xType, xN, filterParts, expressionLoaded: this.expressionLoaded };
 
         const panelN = (this.metadata?.cellLines || []).length;
-        document.getElementById('inspectCorrelatesTitle').textContent = `Correlates of ${xGene} (${xType === 'ge' ? 'GE' : 'Expression'})${filterParts.length ? ', filtered cohort' : ''}`;
+        document.getElementById('inspectCorrelatesTitle').innerHTML = `Correlates of ${this.gi(xGene)} (${xType === 'ge' ? 'GE' : 'Expression'})${filterParts.length ? ', filtered cohort' : ''}`;
         document.getElementById('inspectCorrelatesSubtitle').textContent = filterParts.length
             ? `n = ${xN} of ${panelN.toLocaleString()} cell lines, the scatter's filters applied (listed below). Click a gene to put it on the Y axis, or send the list to Enrichr.`
             : `n = ${xN} cell lines, the whole panel, no filters. Click a gene to put it on the Y axis, or send the list to Enrichr.`;
@@ -21742,7 +21804,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // the same chips the scatter shows, rather than left to a sentence.
         const filterBanner = filterParts.length
             ? `<div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; padding:7px 10px; background:#fffbeb; border:1px solid #fcd34d; border-radius:6px; margin-bottom:10px; font-size:11px; color:#92400e;">
-                <b>Filtered cohort:</b> ${filterParts.map(t => `<span style="background:#fff; border:1px solid #fcd34d; color:#92400e; padding:1px 7px; border-radius:10px; font-weight:600;">${this.esc(t)}</span>`).join(' ')}
+                <b>Filtered cohort:</b> ${this._scatterFilterParts(true).map(t => `<span style="background:#fff; border:1px solid #fcd34d; color:#92400e; padding:1px 7px; border-radius:10px; font-weight:600;">${t}</span>`).join(' ')}
                 <span style="color:#b45309;">Correlations computed on these ${xN} cell lines only. Change the filters on the scatter and press Find correlates again to redo the scan.</span>
               </div>`
             : '';
@@ -21820,7 +21882,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         const rowHtml = (r, kind) => `
             <tr class="ic-row" data-gene="${r.gene}" data-kind="${kind}" style="cursor:pointer;">
-                <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; font-weight:600; color:#4c782e;">${r.gene}</td>
+                <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; font-weight:600; color:#4c782e;">${this.gi(r.gene)}</td>
                 <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; text-align:center; font-weight:600; color:${r.r < 0 ? '#dc2626' : '#2563eb'};">${r.r.toFixed(3)}</td>
                 <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; text-align:center; color:${r.n < 10 ? '#dc2626' : '#6b7280'};">${r.n}</td>
             </tr>`;
@@ -22140,8 +22202,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // description, the same as gene names anywhere else in the app.
     // A gene name in a popout heading: hover previews the gene card the
     // network shows, click pins it (click again closes it).
-    _geneChipHtml(gene) {
-        return `<span class="gene-hover gene-title-chip" data-gene="${this.esc(gene)}" style="text-decoration:underline dotted; text-underline-offset:2px; cursor:pointer;">${this.esc(gene)}</span>`;
+    // italic=false for the pseudo-genes that can sit on an axis (growth rate,
+    // a gene-set score): those are not gene symbols.
+    _geneChipHtml(gene, italic = true) {
+        const label = italic ? this.gi(gene) : this.esc(gene);
+        return `<span class="gene-hover gene-title-chip" data-gene="${this.esc(gene)}" style="text-decoration:underline dotted; text-underline-offset:2px; cursor:pointer;">${label}</span>`;
     }
 
     _wireGeneTitleChips(root) {
@@ -22160,11 +22225,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
 
     // Gene Effect heading with the gene name as a chip; the rest stays text.
-    _setGeneEffectTitle(gene, rest) {
+    // restHtml is for the shapes whose trailing text names a second gene.
+    _setGeneEffectTitle(gene, rest, restHtml) {
         const t = document.getElementById('geneEffectTitle');
         if (!t) return;
         const known = gene && (this.geneIndex?.has(String(gene).toUpperCase()) || this.expressionGeneIndex?.has(String(gene).toUpperCase()));
-        t.innerHTML = (known ? this._geneChipHtml(String(gene).toUpperCase()) : this.esc(gene || '')) + this.esc(rest || '');
+        t.innerHTML = (known ? this._geneChipHtml(String(gene).toUpperCase()) : this.gi(gene || ''))
+            + (restHtml != null ? restHtml : this.esc(rest || ''));
         if (known) this._wireGeneTitleChips(t);
     }
 
@@ -22188,7 +22255,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             b.style.display = ok ? '' : 'none';
             if (ok) {
                 anyShown = true;
-                b.textContent = `${gene} ${word(type)}`;
+                b.innerHTML = `${this.gi(gene)} ${this.esc(word(type))}`;
                 // Hovering describes the gene, the same as a gene name in the
                 // network or a results table. The native title would fight the
                 // custom tooltip, so it carries no title of its own.
@@ -22207,7 +22274,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Gene names in the heading, hoverable.
         const t = document.getElementById('inspectTitle');
         if (t && ci.gene1 && ci.gene2) {
-            const chip = (g) => this._geneChipHtml(g);
+            const real = (t) => t !== 'growth' && t !== 'geneset';
+            const chip = (g, t) => this._geneChipHtml(g, real(t));
             // Only the two gene names become chips; everything else in the
             // heading (the r, the n, the filter note) is left exactly as it
             // was. The heading comes in a few shapes, so match the pair
@@ -22217,7 +22285,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const at = plain.indexOf(marker);
             if (at >= 0) {
                 t.innerHTML = this.esc(plain.slice(0, at))
-                    + `${chip(ci.gene1)} vs ${chip(ci.gene2)}`
+                    + `${chip(ci.gene1, ci.xType || 'ge')} vs ${chip(ci.gene2, ci.yType || 'ge')}`
                     + this.esc(plain.slice(at + marker.length));
                 this._wireGeneTitleChips(t);
             }
@@ -22260,7 +22328,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const levelText = mutFilterLevel === '0' ? 'hotspot WT' :
                               mutFilterLevel === '1' ? 'hotspot mut (1 copy)' :
                               mutFilterLevel === '2' ? 'hotspot mut (2 copies)' : 'hotspot mut (1+2)';
-            filterParts.push(`${mutFilterGene}: ${levelText}`);
+            filterParts.push(`${this.gi(mutFilterGene)}: ${levelText}`);
         }
         if (this._customCellLineFilter) {
             filterParts.push(`Custom: ${this._customCellLineFilter.size} CLs`);
@@ -22312,7 +22380,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Build HTML table
         let html = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                <h4 style="margin: 0;">${gene1} vs ${gene2} - By Cancer Type</h4>
+                <h4 style="margin: 0;">${this.gi(gene1)} vs ${this.gi(gene2)} - By Cancer Type</h4>
                 <div>
                     <button class="btn btn-primary btn-sm" id="backToGraphBtn2" style="margin-right: 8px;">← Back to Graph</button>
                     <button class="btn btn-success btn-sm" id="downloadCancerCompareCSV">Download CSV</button>
@@ -22328,8 +22396,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                         <th data-sort="n" data-type="number" style="cursor: pointer;">N ↕</th>
                         <th data-sort="correlation" data-type="number" style="cursor: pointer;">Correlation ↕</th>
                         <th data-sort="slope" data-type="number" style="cursor: pointer;">Slope ↕</th>
-                        <th data-sort="meanX" data-type="number" style="cursor: pointer;">${gene1} Mean ↕</th>
-                        <th data-sort="meanY" data-type="number" style="cursor: pointer;">${gene2} Mean ↕</th>
+                        <th data-sort="meanX" data-type="number" style="cursor: pointer;">${this.gi(gene1)} Mean ↕</th>
+                        <th data-sort="meanY" data-type="number" style="cursor: pointer;">${this.gi(gene2)} Mean ↕</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -26032,11 +26100,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         };
 
         // UI
-        document.getElementById('corrAnalysisTitle').textContent = `${g1} vs ${g2}, correlation by group`;
+        document.getElementById('corrAnalysisTitle').innerHTML = `${this.gi(g1)} vs ${this.gi(g2)}, correlation by group`;
         document.getElementById('corrAnalysisGenes').textContent = '';
         document.getElementById('caGene1Search').value = g1;
         document.getElementById('caGene2Search').value = g2;
-        document.getElementById('caSummaryGenes').textContent = `${g1} / ${g2}`;
+        document.getElementById('caSummaryGenes').innerHTML = `${this.gi(g1)} / ${this.gi(g2)}`;
         document.getElementById('caSummaryCorr').textContent = c.correlation.toFixed(3);
         document.getElementById('caSummarySlope').textContent = c.slope.toFixed(3);
         document.getElementById('caSummaryN').textContent = plotData.length;
@@ -26608,9 +26676,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 hovertemplate: '<b>%{text}</b><br>%{x:.3f}, %{y:.3f}<extra></extra>'
             }];
             layout = {
-                title: { text: `${d.gene1} vs ${d.gene2}, ${group} (n=${pts.length}, r=${s.correlation.toFixed(3)})`, font: { size: 13 } },
-                xaxis: { title: `${d.gene1} (${this.currentInspect?.xType === 'geneset' ? 'Gene Set Score' : this.currentInspect?.xType === 'growth' ? 'Growth Rate' : this.currentInspect?.xType === 'expr' ? 'Expression, log2 TPM+1' : 'Gene Effect'})` },
-                yaxis: { title: `${d.gene2} (${this.currentInspect?.yType === 'geneset' ? 'Gene Set Score' : this.currentInspect?.yType === 'growth' ? 'Growth Rate' : this.currentInspect?.yType === 'expr' ? 'Expression, log2 TPM+1' : 'Gene Effect'})` },
+                title: { text: `${this.gi(d.gene1)} vs ${this.gi(d.gene2)}, ${group} (n=${pts.length}, r=${s.correlation.toFixed(3)})`, font: { size: 13 } },
+                xaxis: { title: `${this.gi(d.gene1)} (${this.currentInspect?.xType === 'geneset' ? 'Gene Set Score' : this.currentInspect?.xType === 'growth' ? 'Growth Rate' : this.currentInspect?.xType === 'expr' ? 'Expression, log2 TPM+1' : 'Gene Effect'})` },
+                yaxis: { title: `${this.gi(d.gene2)} (${this.currentInspect?.yType === 'geneset' ? 'Gene Set Score' : this.currentInspect?.yType === 'growth' ? 'Growth Rate' : this.currentInspect?.yType === 'expr' ? 'Expression, log2 TPM+1' : 'Gene Effect'})` },
                 margin: { t: 50, b: 50, l: 60, r: 30 },
                 showlegend: false,
                 paper_bgcolor: 'white',
@@ -26647,9 +26715,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 }
             ];
             layout = {
-                title: { text: `${d.gene1} vs ${d.gene2}, ${group}<br><span style="font-size:11px">WT r=${isNaN(wtR.correlation) ? '-' : wtR.correlation.toFixed(3)}, Mut r=${isNaN(mutR.correlation) ? '-' : mutR.correlation.toFixed(3)}</span>`, font: { size: 13 } },
-                xaxis: { title: `${d.gene1} (${this.currentInspect?.xType === 'geneset' ? 'Gene Set Score' : this.currentInspect?.xType === 'growth' ? 'Growth Rate' : this.currentInspect?.xType === 'expr' ? 'Expression, log2 TPM+1' : 'Gene Effect'})` },
-                yaxis: { title: `${d.gene2} (${this.currentInspect?.yType === 'geneset' ? 'Gene Set Score' : this.currentInspect?.yType === 'growth' ? 'Growth Rate' : this.currentInspect?.yType === 'expr' ? 'Expression, log2 TPM+1' : 'Gene Effect'})` },
+                title: { text: `${this.gi(d.gene1)} vs ${this.gi(d.gene2)}, ${group}<br><span style="font-size:11px">WT r=${isNaN(wtR.correlation) ? '-' : wtR.correlation.toFixed(3)}, Mut r=${isNaN(mutR.correlation) ? '-' : mutR.correlation.toFixed(3)}</span>`, font: { size: 13 } },
+                xaxis: { title: `${this.gi(d.gene1)} (${this.currentInspect?.xType === 'geneset' ? 'Gene Set Score' : this.currentInspect?.xType === 'growth' ? 'Growth Rate' : this.currentInspect?.xType === 'expr' ? 'Expression, log2 TPM+1' : 'Gene Effect'})` },
+                yaxis: { title: `${this.gi(d.gene2)} (${this.currentInspect?.yType === 'geneset' ? 'Gene Set Score' : this.currentInspect?.yType === 'growth' ? 'Growth Rate' : this.currentInspect?.yType === 'expr' ? 'Expression, log2 TPM+1' : 'Gene Effect'})` },
                 margin: { t: 60, b: 50, l: 60, r: 30 },
                 showlegend: true,
                 legend: (() => {
@@ -27731,7 +27799,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const SAFETY = 1.25;
         const measure = (text, sizePx) => {
             ctx.font = `bold ${sizePx}px Arial, Helvetica, sans-serif`;
-            return ctx.measureText(text).width * SAFETY;
+            // Markup (the italics around a gene symbol) is not drawn, so it
+            // must not count toward the measured width.
+            return ctx.measureText(String(text).replace(/<[^>]+>/g, '')).width * SAFETY;
         };
 
         // The subtitle size is fixed, so the title may wrap-and-shrink only
@@ -28339,8 +28409,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // "DUSP4 Expression" left the reader to guess the scale, while the
         // correlation plot beside it has always said log2 TPM+1.
         const axisMetricLabel = isExpr ? 'Expression (log2 TPM+1)' : 'Gene Effect';
-        const dataLabel = isGrowth ? 'Growth Rate' : isGeneSet ? `${gene}` : `${gene} ${axisMetricLabel}`;
-        const geTissueTitle = isGrowth ? 'Growth Rate' : isGeneSet ? gene : `${gene} ${metricLabel}`;
+        const dataLabel = isGrowth ? 'Growth Rate' : isGeneSet ? `${this.esc(gene)}` : `${this.gi(gene)} ${axisMetricLabel}`;
+        const geTissueTitle = isGrowth ? 'Growth Rate' : isGeneSet ? this.esc(gene) : `${this.gi(gene)} ${metricLabel}`;
         const filterDesc = this._getGEFilterDescription();
         const subtitleParts = [`n=${data.length}`];
         // A gene can be measured in far fewer cell lines than the panel holds,
@@ -28659,7 +28729,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         let showWtLegend = true, showAltLegend = true;
 
         topStats.forEach((s, idx) => {
-            yCategories.push(`${s.group}`);
+            yCategories.push(this._geScanGroupHtml(s));
             yTickVals.push(idx);
             const wt = s.cellData0;
             const alt = [...s.cellData1, ...s.cellData2];
@@ -28716,8 +28786,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         const layout = {
             annotations: [
-                { text: `<b>${gene} ${isGrowthHS ? 'Growth Rate' : isGeneSetHS ? 'Score' : this._geMetric().full} by genetic change</b><br><span style="font-size:11px;color:#6b7280;">n=${data.length}${this._getGEFilterDescription() ? ' | ' + this._getGEFilterDescription() : ''}${pFilter ? ' | p<0.05' : ''}</span>`, xref: 'paper', yref: 'paper', x: 0.5, y: titleY, xanchor: 'center', yanchor: 'bottom', showarrow: false, font: { size: 15 }, _tsRole: 'title' },
-                { text: `${isGrowthHS ? 'Growth Rate' : isGeneSetHS ? `${gene} Score` : `${gene} ${this._geMetric().axis}`}`, xref: 'paper', yref: 'paper', x: 0.5, y: xlabelY, xanchor: 'center', yanchor: 'top', showarrow: false, font: { size: 15 }, _tsRole: 'xlabel' }
+                { text: `<b>${this.gi(gene)} ${isGrowthHS ? 'Growth Rate' : isGeneSetHS ? 'Score' : this._geMetric().full} by genetic change</b><br><span style="font-size:11px;color:#6b7280;">n=${data.length}${this._getGEFilterDescription() ? ' | ' + this._getGEFilterDescription() : ''}${pFilter ? ' | p<0.05' : ''}</span>`, xref: 'paper', yref: 'paper', x: 0.5, y: titleY, xanchor: 'center', yanchor: 'bottom', showarrow: false, font: { size: 15 }, _tsRole: 'title' },
+                { text: `${isGrowthHS ? 'Growth Rate' : isGeneSetHS ? `${this.esc(gene)} Score` : `${this.gi(gene)} ${this._geMetric().axis}`}`, xref: 'paper', yref: 'paper', x: 0.5, y: xlabelY, xanchor: 'center', yanchor: 'top', showarrow: false, font: { size: 15 }, _tsRole: 'xlabel' }
             ],
             xaxis: {
                 zeroline: true,
@@ -28892,7 +28962,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     ? '<span style="background:#ccfbf1;color:#0f766e;padding:0 5px;border-radius:8px;font-size:9px;font-weight:600;">amp/del</span>'
                     : '<span style="background:#f3f4f6;color:#374151;padding:0 5px;border-radius:8px;font-size:9px;font-weight:600;">hotspot</span>';
                 tbody.innerHTML += `<tr class="clickable-row" data-group="${s.group}" data-ftype="${s.type || 'hotspot'}" data-clickval="${(s.clickVal || s.group).replace(/"/g, '&quot;')}" style="cursor: pointer;">
-                    <td style="line-height:1.35;">${tChip}<br>${s.group}</td>
+                    <td style="line-height:1.35;">${tChip}<br>${this._geScanGroupHtml(s)}</td>
                     <td style="text-align: center; color: #2563eb; border-left: 2px solid #2563eb;">${s.n0}</td>
                     <td style="text-align: center; color: #2563eb;">${s.mean0.toFixed(2)}</td>
                     <td style="text-align: center; color: #f97316; border-left: 2px solid #f97316;">${s.n1 || '-'}</td>
@@ -29081,13 +29151,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const filterDesc = this._getGEFilterDescription() || 'All tissues';
             const layout = {
                 annotations: [
-                    { text: `<b>${gene} ${valLabel} by ${group} Mutation</b>`,
+                    { text: `<b>${this.gi(gene)} ${valLabel} by ${this.gi(group)} Mutation</b>`,
                       xref: 'paper', yref: 'paper', x: 0.5, y: 1.15, xanchor: 'center', yanchor: 'bottom', showarrow: false, font: { size: 15 }, _tsRole: 'title' },
                     { text: `<span style="color:#6b7280;">${filterDesc}</span>`,
                       xref: 'paper', yref: 'paper', x: 0.5, y: 1.07, xanchor: 'center', yanchor: 'bottom', showarrow: false, font: { size: 10 } },
                     { text: `<span style="color:#9ca3af;">${statsText}</span>`,
                       xref: 'paper', yref: 'paper', x: 0.5, y: 1.01, xanchor: 'center', yanchor: 'bottom', showarrow: false, font: { size: 9 } },
-                    { text: `${gene} ${valLabel}`, xref: 'paper', yref: 'paper', x: 0.5, y: -0.15, xanchor: 'center', yanchor: 'top', showarrow: false, font: { size: 14 }, _tsRole: 'xlabel' }
+                    { text: `${this.gi(gene)} ${valLabel}`, xref: 'paper', yref: 'paper', x: 0.5, y: -0.15, xanchor: 'center', yanchor: 'top', showarrow: false, font: { size: 14 }, _tsRole: 'xlabel' }
                 ],
                 yaxis: { automargin: true, tickfont: { size: 12 }, title: '' },
                 xaxis: { automargin: true, tickfont: { size: 12 }, title: '' },
@@ -29182,7 +29252,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const chartHeight = Math.round(baseSize * heightRatio);
 
         const layout = {
-            title: { text: `${gene} gene effect in ${group}`, font: { size: 14 } },
+            title: { text: `${this.gi(gene)} gene effect in ${this.esc(group)}`, font: { size: 14 } },
             yaxis: { title: 'Gene Effect', zeroline: true, zerolinecolor: '#374151', zerolinewidth: 2 },
             showlegend: false,
             height: chartHeight,
@@ -34653,7 +34723,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // (e.g. the edge-width legend). Pinned tooltips stay interactive for the
         // links / close button.
         tooltip.style.pointerEvents = pinned ? 'auto' : 'none';
-        tooltip.innerHTML = `<div style="margin-bottom:4px;"><b style="color:#5d9239; font-size:13px;">${gene}</b></div>${prefixHtml || ''}<div style="color: #6b7280; margin-top:2px;">Loading info…</div>`;
+        tooltip.innerHTML = `<div style="margin-bottom:4px;"><b style="color:#5d9239; font-size:13px;">${this.gi(gene)}</b></div>${prefixHtml || ''}<div style="color: #6b7280; margin-top:2px;">Loading info…</div>`;
 
         // Clamped on all four sides. It only ever guarded the right and bottom,
         // so on a narrow screen innerWidth - maxW - 20 goes NEGATIVE and the
@@ -34729,7 +34799,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 : '';
 
             let html = closeBtn;
-            html += `<div style="margin-bottom: 4px; padding-right:${el.dataset.pinned === '1' ? '18px' : '0'};"><b style="color: #5d9239; font-size: 13px;">${info ? info.symbol : gene}</b>`;
+            html += `<div style="margin-bottom: 4px; padding-right:${el.dataset.pinned === '1' ? '18px' : '0'};"><b style="color: #5d9239; font-size: 13px;">${this.gi(info ? info.symbol : gene)}</b>`;
             if (info && info.name) html += ` <span style="color: #374151;">${this.esc(info.name)}</span>`;
             html += `</div>`;
             // Keep the gene-effect line (from the quick hover) at the top.
@@ -36194,7 +36264,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const chip = (d, isAmp) => {
             const known = d.known ? 'border:1px solid #1e40af; color:#1e3a8a; background:#dbeafe;' : 'border:1px solid #d1d5db; color:#374151; background:#f9fafb;';
             const cop = isAmp ? (d.copies === '>20' ? ' >20c' : ` ~${d.copies}c`) : '';
-            return `<span class="gene-hover" data-gene="${d.gene}" style="cursor:help; font-size:10px; font-weight:600; border-radius:8px; padding:1px 7px; margin:0 4px 4px 0; display:inline-block; ${known}" data-why="relative CN ${d.cn.toFixed(2)}${d.known ? ' · curated cancer gene' : ''}">${d.gene}${cop}</span>`;
+            return `<span class="gene-hover" data-gene="${d.gene}" style="cursor:help; font-size:10px; font-weight:600; border-radius:8px; padding:1px 7px; margin:0 4px 4px 0; display:inline-block; ${known}" data-why="relative CN ${d.cn.toFixed(2)}${d.known ? ' · curated cancer gene' : ''}">${this.gi(d.gene)}${cop}</span>`;
         };
         const ampRow = (a) => `<div style="margin-bottom:6px;"><b style="color:#1e3a8a;">${a.band} amplification</b> <span style="font-size:10px; color:#6b7280;">(up to ${a.maxCopies} copies; ${a.nAmp} amplified gene${a.nAmp === 1 ? '' : 's'} in the band)</span><br>${a.drivers.map(d => chip(d, true)).join('')}</div>`;
         const delRow = (a) => `<div style="margin-bottom:6px;"><b style="color:#991b1b;">${a.band} loss</b> <span style="font-size:10px; color:#6b7280;">(min rel-CN ${a.minCN.toFixed(2)}, i.e. relative to this line's own baseline rather than to two copies; ${a.nDel} gene${a.nDel === 1 ? '' : 's'} in the band)</span><br>${a.drivers.map(d => chip(d, false)).join('')}</div>`;
@@ -36337,7 +36407,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             panel.style.display = 'block';
             // Update target gene label
             if (this.currentGeneEffectGene) {
-                document.getElementById('exprCorrelatesTargetGene').textContent = this.currentGeneEffectGene.toUpperCase();
+                document.getElementById('exprCorrelatesTargetGene').innerHTML = this.gi(this.currentGeneEffectGene.toUpperCase());
             }
             this._relabelExprSubgroups();
         } else {
@@ -36584,7 +36654,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         tbody.innerHTML = data.map(r => {
             const rColor = r.r > 0 ? '#059669' : '#dc2626';
             return `<tr class="clickable-row" onclick="app.showExpressionCorrelateScatter('${r.gene}')" style="cursor: pointer;">
-                <td class="gene-hover" data-gene="${r.gene}" style="text-align: left; font-weight: 500;">${r.gene}</td>
+                <td class="gene-hover" data-gene="${r.gene}" style="text-align: left; font-weight: 500;">${this.gi(r.gene)}</td>
                 <td style="color: ${rColor}; font-weight: 600;">${this.formatNum(r.r)}</td>
                 <td>${this.formatNum(r.slope)}</td>
                 <td>${r.n}</td>
@@ -36844,11 +36914,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         const layout = {
             title: {
-                text: `${ctx.targetGene} GE vs ${expressionGene} Expression<br><sub style="font-size:11px;color:#666">r=${this.formatNum(corrStats.correlation)}, slope=${this.formatNum(corrStats.slope)}, n=${corrStats.n}${additionalText} | ${ctx.hotspotGene} ${subgroupLabels[ctx.subgroup]}</sub>`,
+                text: `${this.gi(ctx.targetGene)} GE vs ${this.gi(expressionGene)} Expression<br><sub style="font-size:11px;color:#666">r=${this.formatNum(corrStats.correlation)}, slope=${this.formatNum(corrStats.slope)}, n=${corrStats.n}${additionalText} | ${this.gi(ctx.hotspotGene)} ${subgroupLabels[ctx.subgroup]}</sub>`,
                 font: { size: 15 }
             },
-            xaxis: { title: `${ctx.targetGene} Gene Effect` },
-            yaxis: { title: `${expressionGene} Expression (log2 TPM+1)` },
+            xaxis: { title: `${this.gi(ctx.targetGene)} Gene Effect` },
+            yaxis: { title: `${this.gi(expressionGene)} Expression (log2 TPM+1)` },
             showlegend: true,
             legend: (() => {
                 // Same corner-avoidance as the other scatters: pinned top-left,
@@ -37588,9 +37658,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
 
     // The genes of interest as a phrase: "TP53", "TP53 or MDM2", "TP53 and MDM2".
-    _enrichrFocusLabel() {
+    // html=true italicises each symbol; left false for the export copies.
+    _enrichrFocusLabel(html = false) {
         const f = this._enrichrFocus || {};
-        const g = f.genes || [];
+        const g = (f.genes || []).map(x => html ? this.gi(x) : x);
         if (!g.length) return '';
         return g.length === 1 ? g[0] : g.slice(0, -1).join(', ') + (f.all ? ' and ' : ' or ') + g[g.length - 1];
     }
@@ -37604,7 +37675,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const focusGenes = (this._enrichrFocus?.genes || []).map(g => String(g).toUpperCase());
         const focus = focusGenes.length ? focusGenes : null;
         const focusAll = !!this._enrichrFocus?.all && focusGenes.length > 1;
-        const focusLabel = this._enrichrFocusLabel();
+        const focusLabel = this._enrichrFocusLabel(true);
         const onlyFocus = !!this._enrichrFocus?.only;
         tabsEl.innerHTML = libraries.map(lib => {
             const active = lib.key === activeLibrary;
@@ -37615,7 +37686,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             // significant sets contain that gene, so the right library can
             // be picked without opening each one.
             const withFocus = focus ? sigRows.filter(r => this._enrichrRowHasFocus(r, focus, focusAll)).length : 0;
-            const focusNote = focus ? ` <span style="opacity:0.85;">· ${withFocus} with ${this.esc(focusLabel)}</span>` : '';
+            const focusNote = focus ? ` <span style="opacity:0.85;">· ${withFocus} with ${focusLabel}</span>` : '';
             return `<button data-lib="${lib.key}" style="padding:5px 12px; font-size:12px; border:1px solid ${active ? '#6ba544' : 'var(--gray-200)'}; background:${active ? '#6ba544' : '#fff'}; color:${active ? '#fff' : '#374151'}; border-radius:4px; cursor:pointer;">${lib.label} (${sig}/${total})${focusNote}</button>`;
         }).join('');
 
@@ -37674,7 +37745,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
         const ranked = [...perGene.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
         const chosen = new Set(focusGenes);
-        const geneChip = (g) => `<span class="clb-chip" data-focus-rm="${this.esc(g)}" title="Click to remove ${this.esc(g)} from the genes of interest" style="background:#eef2ff; color:#3730a3; border:1px solid #c7d2fe; padding:1px 7px; border-radius:10px; font-size:10px; font-weight:600; cursor:pointer;">${this.esc(g)} <span style="font-weight:400; color:#6b7280;">${perGene.get(g) ?? 0}</span> &times;</span>`;
+        const geneChip = (g) => `<span class="clb-chip" data-focus-rm="${this.esc(g)}" title="Click to remove ${this.esc(g)} from the genes of interest" style="background:#eef2ff; color:#3730a3; border:1px solid #c7d2fe; padding:1px 7px; border-radius:10px; font-size:10px; font-weight:600; cursor:pointer;">${this.gi(g)} <span style="font-weight:400; color:#6b7280;">${perGene.get(g) ?? 0}</span> &times;</span>`;
         const focusRow = `<div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:0 0 8px; padding:6px 10px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:6px; font-size:11px; color:#374151;">
             <span style="font-weight:600;" title="Sets that contain a gene of interest are listed first, in the current sort order. The number on each chip is how many significant sets in this library contain that gene.">Genes of interest</span>
             ${focusGenes.map(geneChip).join(' ')}
@@ -37690,12 +37761,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 <input type="checkbox" id="enrichrFocusOnly"${onlyFocus ? ' checked' : ''}${focus ? '' : ' disabled'} style="margin:0;"> only those sets
             </label>
             <span style="color:#6b7280; flex-basis:100%;">${focus
-                ? (nWithFocus ? `<b style="color:#4c782e;">${nWithFocus}</b> of ${nSigAll} significant sets in this library contain ${this.esc(focusLabel)}${onlyFocus ? '' : ', listed first and tinted'}.`
-                    : `No significant set in this library contains ${this.esc(focusLabel)}${focusGenes.every(g => perGene.has(g)) ? '' : ' (a gene typed here was not among the genes sent)'}.`)
+                ? (nWithFocus ? `<b style="color:#4c782e;">${nWithFocus}</b> of ${nSigAll} significant sets in this library contain ${focusLabel}${onlyFocus ? '' : ', listed first and tinted'}.`
+                    : `No significant set in this library contains ${focusLabel}${focusGenes.every(g => perGene.has(g)) ? '' : ' (a gene typed here was not among the genes sent)'}.`)
                 : 'Pick or type genes to bring the sets that contain them to the top.'}</span>
         </div>`;
         if (focus && onlyFocus && !parsed.length) {
-            contentEl.innerHTML = focusRow + `<div style="text-align:center; padding:40px; color:#aaa;">No significant set in this library contains ${this.esc(focusLabel)}.</div>`;
+            contentEl.innerHTML = focusRow + `<div style="text-align:center; padding:40px; color:#aaa;">No significant set in this library contains ${focusLabel}.</div>`;
             this._wireEnrichrFocus(activeLibrary);
             return;
         }
@@ -37733,16 +37804,18 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             // Each gene as its own item, so the column flow breaks between
             // genes instead of wherever the text happens to reach the edge.
             const geneHtml = _genes.length
-                ? _genes.map(g => `<span class="eg"${focus && focus.includes(String(g).toUpperCase()) ? ' style="font-weight:700; color:#4c782e;"' : ''}>${this.esc(g)}</span>`).join('')
-                : this.esc(String(row.genes));
+                ? _genes.map(g => `<span class="eg"${focus && focus.includes(String(g).toUpperCase()) ? ' style="font-weight:700; color:#4c782e;"' : ''}>${this.gi(g)}</span>`).join('')
+                : this.gi(String(row.genes));
             const geneCount = _genes.length;
             // The cell is wider than it was, so more rows fit whole; and cut at
             // a comma rather than mid-symbol, which produced "TP5...".
             const CUT = 130;
             const isLong = geneList.length > CUT;
-            const truncatedGenes = isLong
-                ? geneList.slice(0, geneList.lastIndexOf(', ', CUT) + 1 || CUT) + '\u2026'
-                : geneList;
+            const truncatedGenes = (isLong
+                ? geneList.slice(0, geneList.lastIndexOf(', ', CUT) + 1 || CUT)
+                : geneList)
+                .split(',').map(g => g.trim()).filter(Boolean)
+                .map(g => this.gi(g)).join(', ') + (isLong ? ',\u2026' : '');
 
             const _clickable = this._enrichrFromNetwork;
             const _gsAttr = _clickable
@@ -43584,21 +43657,20 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const lvl = val(spec.hotspot.levelId) || spec.hotspot.options[0].v;
             const wt = this._filterIsWildType('hotspot', lvl);
             const hotWord = { '1+2': 'hotspot-mutated', altered: 'hotspot-mutated', '1': 'hotspot-mutated (one copy)', '2': 'hotspot-mutated (both copies)', '0': 'hotspot WT', wt: 'hotspot WT' }[lvl] || 'hotspot-mutated';
-            parts.push(chip('hotspot', this.esc(this._mutFilterPhrase(hotGene, lvl, hotWord)), wt ? gray : 'background:#e6efde;color:#5a7d35;', editTitle));
+            parts.push(chip('hotspot', this._mutFilterPhrase(hotGene, lvl, hotWord, true), wt ? gray : 'background:#e6efde;color:#5a7d35;', editTitle));
         }
         const fusGene = this._stripFusionFilterDecoration(val(spec.fusion?.geneId));
         if (fusGene) {
             const lvl = val(spec.fusion.levelId) || spec.fusion.options[0].v;
             const wt = this._filterIsWildType('fusion', lvl);
             const word = lvl === 'nocall' ? 'not callable' : wt ? 'not fused' : 'fused';
-            parts.push(chip('fusion', `${this.esc(fusGene)} ${word}`, wt ? gray : 'background:#efe7ec;color:#7d5a66;', editTitle));
+            parts.push(chip('fusion', `${this.giFusion(fusGene)} ${word}`, wt ? gray : 'background:#efe7ec;color:#7d5a66;', editTitle));
         }
         const cnGene = val(spec.cn?.geneId);
         if (cnGene) {
             const lvl = val(spec.cn.levelId) || 'altered';
             const wt = this._filterIsWildType('cn', lvl);
-            const label = this._stripCnFilterDecoration(cnGene).replace(/_(amp|del)$/, (_, k) => k === 'amp' ? ' amp' : ' del');
-            parts.push(chip('cn', `${this.esc(label)}${wt ? ' absent' : ' present'}`, wt ? gray : 'background:#fef3c7;color:#92400e;', editTitle));
+            parts.push(chip('cn', `${this.giCn(cnGene)}${wt ? ' absent' : ' present'}`, wt ? gray : 'background:#fef3c7;color:#92400e;', editTitle));
         }
 
         // Genes picked out of an alteration grid. These are how more than one
@@ -43611,7 +43683,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const on = !this._gridStateIsWT(f.state);
             parts.push(`<span class="clb-chip" data-chip="grid" data-grid-gene="${this.esc(f.gene)}" title="Click to change which cell lines are kept, or to remove"`
                 + ` style="background:${on ? '#dcfce7' : '#fef2f2'};color:${on ? '#5d9239' : '#dc2626'};padding:1px 6px;border-radius:10px;cursor:pointer;">`
-                + `${this.esc(f.gene)} ${this._gridStateWord(f.state)} &#9662;</span>`);
+                + `${this.gi(f.gene)} ${this._gridStateWord(f.state)} &#9662;</span>`);
         }
         // The scatter's own grid picks, scoped to that plot alone.
         if (ctxName === 'scatter') {
@@ -43620,7 +43692,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 const on = !this._gridStateIsWT(f.state);
                 parts.push(`<span class="clb-chip" data-chip="sgrid" data-grid-gene="${this.esc(f.gene)}" title="Grid pick for this scatter only. Click to change which cell lines are kept, or to remove"`
                     + ` style="background:${on ? '#dcfce7' : '#fef2f2'};color:${on ? '#5d9239' : '#dc2626'};padding:1px 6px;border-radius:10px;cursor:pointer;">`
-                    + `${this.esc(f.gene)} ${this._gridStateWord(f.state)} &#9662;</span>`);
+                    + `${this.gi(f.gene)} ${this._gridStateWord(f.state)} &#9662;</span>`);
             }
         }
 
@@ -43957,11 +44029,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
         const hotLvl = document.getElementById('clbHotspotLevel')?.value || '1+2';
         const hotWord = { '1+2': 'mutated', '1': 'one copy mutated', '2': 'both copies mutated', '0': 'WT' }[hotLvl] || 'mutated';
-        if (hotspot) parts.push(`<span class="clb-chip" data-chip="hotspot" title="Click to change which cell lines are kept, or to remove this filter" style="${wtHot ? grayChip : 'background:#e6efde;color:#5a7d35;'}padding:1px 6px;border-radius:10px;">${this.esc(this._mutFilterPhrase(hotspot, hotLvl, hotWord))} &#9662;</span>`);
-        if (trans) parts.push(`<span class="clb-chip" data-chip="fusion" title="Click to change which cell lines are kept, or to remove this filter" style="${wtFus ? grayChip : 'background:#efe7ec;color:#7d5a66;'}padding:1px 6px;border-radius:10px;">${this.esc(trans)} ${wtFus ? 'not fused' : 'fused'} &#9662;</span>`);
+        if (hotspot) parts.push(`<span class="clb-chip" data-chip="hotspot" title="Click to change which cell lines are kept, or to remove this filter" style="${wtHot ? grayChip : 'background:#e6efde;color:#5a7d35;'}padding:1px 6px;border-radius:10px;">${this._mutFilterPhrase(hotspot, hotLvl, hotWord, true)} &#9662;</span>`);
+        if (trans) parts.push(`<span class="clb-chip" data-chip="fusion" title="Click to change which cell lines are kept, or to remove this filter" style="${wtFus ? grayChip : 'background:#efe7ec;color:#7d5a66;'}padding:1px 6px;border-radius:10px;">${this.giFusion(trans)} ${wtFus ? 'not fused' : 'fused'} &#9662;</span>`);
         if (cn) {
-            const label = this._stripCnFilterDecoration(cn).replace(/_(amp|del)$/, (_, k) => k === 'amp' ? ' amp' : ' del');
-            parts.push(`<span class="clb-chip" data-chip="cn" title="Click to change which cell lines are kept, or to remove this filter" style="${wtCn ? grayChip : 'background:#fef3c7;color:#92400e;'}padding:1px 6px;border-radius:10px;">${this.esc(label)}${wtCn ? ' absent' : ' present'} &#9662;</span>`);
+            parts.push(`<span class="clb-chip" data-chip="cn" title="Click to change which cell lines are kept, or to remove this filter" style="${wtCn ? grayChip : 'background:#fef3c7;color:#92400e;'}padding:1px 6px;border-radius:10px;">${this.giCn(cn)}${wtCn ? ' absent' : ' present'} &#9662;</span>`);
         }
         // Collection include/exclude chips. Green = "must be in"; red = "must
         // not be in". Each chip has an inline × that clears that one state.
@@ -43979,7 +44050,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 if (!shown.has(f.gene)) {
                     const bg = !this._gridStateIsWT(f.state) ? '#dcfce7' : '#fef2f2';
                     const color = !this._gridStateIsWT(f.state) ? '#5d9239' : '#dc2626';
-                    parts.push(`<span class="clb-chip" data-chip="grid" data-grid-gene="${this.esc(f.gene)}" title="Click to switch side or remove" style="background:${bg};color:${color};padding:1px 6px;border-radius:10px;">${this.esc(f.gene)} ${this._gridStateWord(f.state)} &#9662;</span>`);
+                    parts.push(`<span class="clb-chip" data-chip="grid" data-grid-gene="${this.esc(f.gene)}" title="Click to switch side or remove" style="background:${bg};color:${color};padding:1px 6px;border-radius:10px;">${this.gi(f.gene)} ${this._gridStateWord(f.state)} &#9662;</span>`);
                 }
             }
         }
@@ -44449,7 +44520,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 const caveat = this._isPolymorphicLocus(g)
                     ? ` <span style="color:#b45309; font-size:10px; cursor:help;" title="${polymorphicCaveat.replace(/"/g, '&quot;')}">⚠</span>`
                     : '';
-                return `<span class="gene-hover clb-gene-link" data-gene="${g}"${hl}>${g}</span>${suffix}${caveat}`;
+                return `<span class="gene-hover clb-gene-link" data-gene="${g}"${hl}>${this.gi(g)}</span>${suffix}${caveat}`;
             };
 
             // Relevance-filter mode: when caller passes `relevantPredicate`, the
@@ -44693,7 +44764,7 @@ This catches deep deletions (e.g. CDKN2A, RB1) that the damaging-mutation list a
                     + `data-why="${g} loss inferred by DepMap: combines CN, mutation and expression, catches deletions invisible to mutation matrices alone." `
                     + `style="cursor:help; font-weight:600; color:#991b1b; border:1px solid #d1d5db; `
                     + `background:#fef2f2; border-radius:8px; padding:0 5px; margin-right:4px;">`
-                    + `${g}</span>`
+                    + `${this.gi(g)}</span>`
                 ).join('');
                 top += `</div>`;
             } else {
@@ -44731,7 +44802,7 @@ This is a small curated panel. The full DepMap CN matrix has hundreds of focal c
                     + `data-why="${tooltip.replace(/"/g, '&quot;')}" `
                     + `style="cursor:help; font-weight:600; color:${color}; border:1px solid #d1d5db; background:${bg}; `
                     + `border-radius:8px; padding:0 6px; margin-right:4px; display:inline-block; margin-bottom:3px;">`
-                    + `${e.gene} <span style="color:#6b7280; font-weight:400; font-size:10px;">${kindLabel}</span></span>`;
+                    + `${this.gi(e.gene)} <span style="color:#6b7280; font-weight:400; font-size:10px;">${kindLabel}</span></span>`;
             };
             const totalN = (cnEvents.amplifications?.length || 0) + (cnEvents.deletions?.length || 0);
             top += `<div class="clb-detail-section"><strong>Focal CN events (${totalN})</strong>`
@@ -44871,14 +44942,14 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         let gl = `<div class="clb-detail-section"><strong>Most Depleted (Bottom ${N})</strong> <button class="clb-enrichr-btn" data-list="bottom">Enrichr</button> ${hmBtn('bottom')}`;
         gl += `<div style="font-size:11px;">`;
         bottomN.forEach(({ gene, val }) => {
-            gl += `<div class="clb-stat-row"><span class="clb-stat-label"><a class="clb-gene-link" data-gene="${gene}" href="#">${gene}</a></span><span class="clb-stat-value">${this.formatNum(val)}</span></div>`;
+            gl += `<div class="clb-stat-row"><span class="clb-stat-label"><a class="clb-gene-link" data-gene="${gene}" href="#">${this.gi(gene)}</a></span><span class="clb-stat-value">${this.formatNum(val)}</span></div>`;
         });
         gl += `</div></div>`;
 
         gl += `<div class="clb-detail-section"><strong>Most Enriched (Top ${N})</strong> <button class="clb-enrichr-btn" data-list="top">Enrichr</button> ${hmBtn('top')}`;
         gl += `<div style="font-size:11px;">`;
         topN.forEach(({ gene, val }) => {
-            gl += `<div class="clb-stat-row"><span class="clb-stat-label"><a class="clb-gene-link" data-gene="${gene}" href="#">${gene}</a></span><span class="clb-stat-value">${this.formatNum(val)}</span></div>`;
+            gl += `<div class="clb-stat-row"><span class="clb-stat-label"><a class="clb-gene-link" data-gene="${gene}" href="#">${this.gi(gene)}</a></span><span class="clb-stat-value">${this.formatNum(val)}</span></div>`;
         });
         gl += `</div></div>`;
 
@@ -44934,7 +45005,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             gl += `<div style="font-size:10px; color:var(--gray-500); margin-bottom:3px;">Lowest z-score vs visible cell lines (n=${filteredIndices.length})</div>`;
             gl += `<div style="font-size:11px;">`;
             extremeLow.forEach(({ gene, z, val }) => {
-                gl += `<div class="clb-stat-row"><span class="clb-stat-label"><a class="clb-gene-link" data-gene="${gene}" href="#">${gene}</a></span><span class="clb-stat-value">${this.formatNum(val)} <span style="color:#888;">(z=${this.formatNum(z, 1)})</span></span></div>`;
+                gl += `<div class="clb-stat-row"><span class="clb-stat-label"><a class="clb-gene-link" data-gene="${gene}" href="#">${this.gi(gene)}</a></span><span class="clb-stat-value">${this.formatNum(val)} <span style="color:#888;">(z=${this.formatNum(z, 1)})</span></span></div>`;
             });
             gl += `</div></div>`;
 
@@ -44942,7 +45013,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             gl += `<div style="font-size:10px; color:var(--gray-500); margin-bottom:3px;">Highest z-score vs visible cell lines (n=${filteredIndices.length})</div>`;
             gl += `<div style="font-size:11px;">`;
             extremeHigh.forEach(({ gene, z, val }) => {
-                gl += `<div class="clb-stat-row"><span class="clb-stat-label"><a class="clb-gene-link" data-gene="${gene}" href="#">${gene}</a></span><span class="clb-stat-value">${this.formatNum(val)} <span style="color:#888;">(z=${this.formatNum(z, 1)})</span></span></div>`;
+                gl += `<div class="clb-stat-row"><span class="clb-stat-label"><a class="clb-gene-link" data-gene="${gene}" href="#">${this.gi(gene)}</a></span><span class="clb-stat-value">${this.formatNum(val)} <span style="color:#888;">(z=${this.formatNum(z, 1)})</span></span></div>`;
             });
             gl += `</div></div>`;
         }
@@ -45474,6 +45545,48 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         return String(v == null ? '' : v)
             .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    // Gene symbols are conventionally italic. HTML-only helper: never use it for
+    // CSV, exports, title="" tooltips, <option> text or <input> values.
+    // The pseudo-genes that can stand on an axis (growth rate, a gene-set
+    // score) are not symbols, so they come back upright.
+    gi(g) {
+        const t = String(g == null ? '' : g);
+        if (!t) return '';
+        if (t === '⚡ Growth Rate' || t.startsWith('📊')) return this.esc(t);
+        return `<i>${this.esc(t)}</i>`;
+    }
+
+    // A fusion name is two gene symbols joined by "::"; the join stays upright.
+    giFusion(name) {
+        const t = String(name == null ? '' : name);
+        if (!t) return '';
+        return t.split('::').map(part => this.gi(part)).join('::');
+    }
+
+    // A gene-effect scan row label: a gene symbol, a "★ A::B" fusion, or a
+    // "▲ GENE amp" CN event. Only the symbols turn italic.
+    _geScanGroupHtml(row) {
+        const g = String(row?.group == null ? '' : row.group);
+        if (!g) return '';
+        if (row.type === 'fusion') {
+            const m = g.match(/^(★\s*)(.*)$/);
+            return m ? `${this.esc(m[1])}${this.giFusion(m[2])}` : this.giFusion(g);
+        }
+        if (row.type === 'cn') {
+            const m = g.match(/^([▲▼]\s*)(.*?)(\s(?:amp|del))$/);
+            return m ? `${this.esc(m[1])}${this.gi(m[2])}${this.esc(m[3])}` : this.gi(g);
+        }
+        return this.gi(g);
+    }
+
+    // A CN filter value ("MYC_amp", "CDKN2A_del"): only the symbol is italic.
+    giCn(value, ampWord = 'amp', delWord = 'del') {
+        const t = this._stripCnFilterDecoration(String(value == null ? '' : value));
+        if (!t) return '';
+        const m = t.match(/^(.*)_(amp|del)$/);
+        return m ? `${this.gi(m[1])} ${m[2] === 'amp' ? ampWord : delWord}` : this.gi(t);
     }
 
     _polymorphicCaveatText() {
@@ -46067,9 +46180,9 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                        </div>`
                     : '';
                 const targets = [
-                    { gene: 'ESR1', label: 'ESR1 (ER)', d: esrD },
-                    { gene: 'PGR', label: 'PGR (PR)', d: pgrD },
-                    { gene: 'ERBB2', label: 'ERBB2 (HER2)', d: herD },
+                    { gene: 'ESR1', label: `${this.gi('ESR1')} (ER)`, d: esrD },
+                    { gene: 'PGR', label: `${this.gi('PGR')} (PR)`, d: pgrD },
+                    { gene: 'ERBB2', label: `${this.gi('ERBB2')} (HER2)`, d: herD },
                 ];
                 const panels = targets.map(t => {
                     const pc = (t.d.mine != null) ? pct(t.d.arr, t.d.mine) : null;
@@ -46255,7 +46368,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 const isDam = damHit(g), isHot = hotHit(g);
                 const label = isHot && isDam ? `${g}*` : g;
                 const color = isHot ? '#dc2626' : '#d97706';
-                return `<span class="gene-hover clb-gene-link" data-gene="${g}" style="cursor:help; color:${color}; font-weight:500;">${label}</span>`;
+                return `<span class="gene-hover clb-gene-link" data-gene="${g}" style="cursor:help; color:${color}; font-weight:500;">${this.gi(label)}</span>`;
             }).join(', ');
             const safeNote = info.note.replace(/"/g, '&quot;');
             pathwayRows.push(`<div style="padding:3px 0; font-size:11px;">`
@@ -46631,7 +46744,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         }
         pathwayCards.sort((a, b) => (a.rank - b.rank) || (b.ev.length - a.ev.length) || a.name.localeCompare(b.name));
 
-        const pwChip = (e) => `<span class="gene-hover wiki-chip${e.isTs ? ' wiki-chip-ts' : ' wiki-chip-onc'}" data-gene="${e.gene}" data-why="Flagged in this pathway: ${this.esc(e.bits.join(', '))}">${e.label || e.gene}</span>`;
+        const pwChip = (e) => `<span class="gene-hover wiki-chip${e.isTs ? ' wiki-chip-ts' : ' wiki-chip-onc'}" data-gene="${e.gene}" data-why="Flagged in this pathway: ${this.esc(e.bits.join(', '))}">${this.gi(e.label || e.gene)}</span>`;
         const pwCard = (c) => {
             const chips = c.ev.map(pwChip).join('');
             const detail = c.ev.map(e => `${e.label || e.gene} ${e.bits.join(' + ')}`).join('; ');
@@ -46684,7 +46797,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 const why = h.level >= 2
                     ? 'Hotspot mutation on both copies in this cell line'
                     : 'Hotspot mutation on one copy in this cell line';
-                return `<span class="gene-hover" data-gene="${h.gene}" data-why="${why}" style="cursor:help; ${h.level >= 2 ? 'color:#dc2626; font-weight:600;' : ''}">${h.gene}${h.level >= 2 ? ' <span style="font-weight:400; font-size:10px;">(both copies)</span>' : ''}</span>${variantSuffix}`;
+                return `<span class="gene-hover" data-gene="${h.gene}" data-why="${why}" style="cursor:help; ${h.level >= 2 ? 'color:#dc2626; font-weight:600;' : ''}">${this.gi(h.gene)}${h.level >= 2 ? ' <span style="font-weight:400; font-size:10px;">(both copies)</span>' : ''}</span>${variantSuffix}`;
             }).join(', ');
         // Compact counts line, three values in one row instead of three
         // separate label/value rows. Top hits are bumped to their own line
@@ -46739,13 +46852,13 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 if (r.summary) {
                     return `<div style="margin:2px 0; font-size:11px;">`
                         + `<span style="color:#4c782e; font-weight:700; display:inline-block; width:14px;">✓</span>`
-                        + `<span class="gene-hover clb-gene-link" data-gene="${r.gene}" style="cursor:help; font-weight:600; color:#4c782e;">${r.gene}</span>`
+                        + `<span class="gene-hover clb-gene-link" data-gene="${r.gene}" style="cursor:help; font-weight:600; color:#4c782e;">${this.gi(r.gene)}</span>`
                         + `<span style="color:#6b7280;">, ${r.summary}</span>`
                         + `</div>`;
                 }
                 return `<div style="margin:2px 0; font-size:11px; color:#9ca3af;">`
                     + `<span style="font-weight:700; display:inline-block; width:14px;">✗</span>`
-                    + `<span>${r.gene}</span>`
+                    + `<span>${this.gi(r.gene)}</span>`
                     + `</div>`;
             }).join('');
             const headerColor = nHit > 0 ? '#4c782e' : '#991b1b';
@@ -46767,14 +46880,14 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         for (const c of clinicalFusionCalls) {
             const atyp = c.atypicalLineage ? ' <span style="color:#a16207;" title="Atypical lineage for this fusion">⚠ atypical</span>' : '';
             otherRows.push(`<div style="margin:2px 0; font-size:11px;">`
-                + `<span style="color:#1e3a8a; font-weight:600;">${c.fusion}</span>`
+                + `<span style="color:#1e3a8a; font-weight:600;">${this.giFusion(c.fusion)}</span>`
                 + `<span style="color:#6b7280;">, driver fusion <span style="font-size:9px; color:#9ca3af;">[${c.tier}]</span>${atyp}</span>`
                 + `</div>`);
         }
         const lofExtras = [...observedLoFSet].filter(g => !lookForSet.has(g) && !this._isPolymorphicLocus?.(g)).sort();
         for (const g of lofExtras) {
             otherRows.push(`<div style="margin:2px 0; font-size:11px;">`
-                + `<span class="gene-hover clb-gene-link" data-gene="${g}" style="cursor:help; color:#991b1b; font-weight:600;">${g}</span>`
+                + `<span class="gene-hover clb-gene-link" data-gene="${g}" style="cursor:help; color:#991b1b; font-weight:600;">${this.gi(g)}</span>`
                 + `<span style="color:#6b7280;">, functional loss</span>`
                 + `</div>`);
         }
@@ -46786,7 +46899,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         for (const h of hotspotExtras) {
             const v = geneVariant[h.gene];
             otherRows.push(`<div style="margin:2px 0; font-size:11px;">`
-                + `<span class="gene-hover clb-gene-link" data-gene="${h.gene}" style="cursor:help; font-weight:600; color:#374151;">${h.gene}</span>`
+                + `<span class="gene-hover clb-gene-link" data-gene="${h.gene}" style="cursor:help; font-weight:600; color:#374151;">${this.gi(h.gene)}</span>`
                 + `<span style="color:#6b7280;">, hotspot${v ? ' ' + v : ''}</span>`
                 + `</div>`);
         }
@@ -46827,7 +46940,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 const atypical = c.atypicalLineage
                     ? ` <span style="color:#b45309; font-size:10px;" title="Unusual tissue for this fusion; kept because the partner gene's expression or dependency supports it">⚠ atypical</span>`
                     : '';
-                return `<div style="margin:3px 0;"><b>${c.fusion}</b>`
+                return `<div style="margin:3px 0;"><b>${this.giFusion(c.fusion)}</b>`
                     + ` <span style="color:${color}; border:1px solid ${color}; border-radius:8px; padding:0 5px; font-size:10px; margin-left:4px;">${tierLabel[c.tier] || c.tier}</span>`
                     + atypical + `</div>`;
             }).join('')
@@ -46836,7 +46949,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             <p style="margin:0 0 8px; font-size:11px; color:#6b7280;">A gene fusion joins parts of two genes into one, usually after a chromosomal rearrangement such as a translocation, and the fused gene can drive the cancer. <b>Curated driver fusions</b> (green box) come from a list of about 50 well-known driver fusions (BCR-ABL1, EWSR1-FLI1, EML4-ALK, PML-RARA and others), graded by how much independent evidence supports the call in this cell line: <b>high</b>, the partner gene's expression and its CRISPR dependency both agree; <b>medium</b>, one of the two, or a matching tissue; <b>low</b>, the fusion name alone, in a tissue where it is not expected. The <b>raw partner list</b> below is the unfiltered DepMap fusion-caller output; in rearranged genomes most of those are passengers or technical artifacts.</p>
             ${clinicalFusionHtml ? `<div style="margin-bottom:10px; padding:8px 10px; background:#f0fdf4; border-left:3px solid #5d9239;"><b style="color:#4c782e;">Curated driver fusions</b> <span style="font-size:10px; color:#6b7280;">(graded high / medium / low by how much independent evidence supports the call, see above)</span>${clinicalFusionHtml}</div>` : ''}
             ${row('Fusion partners (total, raw)', fusionCount > 0 ? fusionCount : '<span style="color:#9ca3af;">none called. The fusion table lists calls only, so this means no fusion was reported for this cell line, not that it was checked and found clean.</span>')}
-            ${fusionPartners.length ? row('Raw partner genes', fusionPartners.slice(0, 20).map(g => `<span class="gene-hover clb-gene-link" data-gene="${g}" style="cursor:help;">${g}</span>`).join(', ') + (fusionPartners.length > 20 ? ` <span style="color:#9ca3af;">… +${fusionPartners.length - 20} more</span>` : '')) : ''}
+            ${fusionPartners.length ? row('Raw partner genes', fusionPartners.slice(0, 20).map(g => `<span class="gene-hover clb-gene-link" data-gene="${g}" style="cursor:help;">${this.gi(g)}</span>`).join(', ') + (fusionPartners.length > 20 ? ` <span style="color:#9ca3af;">… +${fusionPartners.length - 20} more</span>` : '')) : ''}
             ${fusionCaveat}`;
 
         // --- Genome signatures (PureCN + MSIsensor2 + Ben-David aneuploidy) ---
@@ -47012,7 +47125,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const geneAltRows = [...altByGene.values()]
             .sort((a, b) => (b.typical - a.typical) || (b.weight - a.weight) || a.gene.localeCompare(b.gene))
             .map(e => `<div style="margin:3px 0; font-size:12px;">`
-                + `<span class="gene-hover clb-gene-link" data-gene="${e.gene}" style="cursor:help; font-weight:700; color:#111827;">${e.gene}</span> `
+                + `<span class="gene-hover clb-gene-link" data-gene="${e.gene}" style="cursor:help; font-weight:700; color:#111827;">${this.gi(e.gene)}</span> `
                 + `<span style="color:#4b5563;">${e.labels.join(' + ')}</span>${typTag(e.typical)}</div>`);
 
         // Validated driver fusions, typical if any partner is a canonical
@@ -47022,7 +47135,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             const isTyp = partners.some(g => lookForSet.has(g));
             const atyp = c.atypicalLineage ? ` <span style="color:#a16207; font-size:10px;" title="Unusual tissue for this fusion; kept because the partner gene's expression or dependency supports it">⚠ atypical lineage</span>` : '';
             return `<div style="margin:3px 0; font-size:12px;">`
-                + `<span style="font-weight:700; color:#1e3a8a;">${c.fusion}</span> `
+                + `<span style="font-weight:700; color:#1e3a8a;">${this.giFusion(c.fusion)}</span> `
                 + `<span style="color:#4b5563;">driver fusion <span style="font-size:9px; color:#9ca3af;">[${c.tier}]</span></span>${typTag(isTyp)}${atyp}</div>`;
         });
         const allAltRows = [...fusionAltRows, ...geneAltRows];
@@ -47159,7 +47272,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 const isTgt = drugTargets.has(g.gene);
                 const tgtStyle = isTgt ? 'color:#4c782e; font-weight:600; background:#f0fdf4; padding:1px 4px; border-radius:3px;' : '';
                 const pill = isTgt ? ' <span title="Approved or clinical-stage drug targets this gene">💊</span>' : '';
-                return `<span class="gene-hover clb-gene-link" data-gene="${g.gene}" data-scope="${opts.familyScope ? 'lineage' : 'all'}" style="cursor:help; ${tgtStyle}">${g.gene}</span> <span style="color:#9ca3af; font-size:10px;" title="GE = CRISPR knockout effect (0 = neutral, −0.5 ≈ selective, −1 = strongly essential). z-score = how unusual this GE is vs the rest of the cohort.">(GE ${g.val.toFixed(2)}, z ${fmtZ(g.z)})</span>${pill}${opts.tagLineage ? lineageTagGE(g.gene) : ''}`;
+                return `<span class="gene-hover clb-gene-link" data-gene="${g.gene}" data-scope="${opts.familyScope ? 'lineage' : 'all'}" style="cursor:help; ${tgtStyle}">${this.gi(g.gene)}</span> <span style="color:#9ca3af; font-size:10px;" title="GE = CRISPR knockout effect (0 = neutral, −0.5 ≈ selective, −1 = strongly essential). z-score = how unusual this GE is vs the rest of the cohort.">(GE ${g.val.toFixed(2)}, z ${fmtZ(g.z)})</span>${pill}${opts.tagLineage ? lineageTagGE(g.gene) : ''}`;
             };
             // Whole-cohort hits, each flagged ✓ <lineage>-typical when the whole
             // cancer family shares the dependency.
@@ -47184,7 +47297,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
 
             const interpLines = [];
             if (essentialDrugTargets.length > 0) {
-                interpLines.push(`<div style="padding:6px 10px; background:#f0fdf4; border-left:3px solid #4c782e; font-size:11px;"><b style="color:#4c782e;">Druggable dependencies unique to this cell line</b>, genes this cell line depends on more than typical AND for which approved or clinical-stage drugs exist: ${essentialDrugTargets.map(g => `<span class="gene-hover clb-gene-link" data-gene="${g.gene}" style="cursor:help;">${g.gene}</span> <span style="color:#9ca3af; font-size:10px;">(z ${fmtZ(g.z)})</span>`).join(', ')}.</div>`);
+                interpLines.push(`<div style="padding:6px 10px; background:#f0fdf4; border-left:3px solid #4c782e; font-size:11px;"><b style="color:#4c782e;">Druggable dependencies unique to this cell line</b>, genes this cell line depends on more than typical AND for which approved or clinical-stage drugs exist: ${essentialDrugTargets.map(g => `<span class="gene-hover clb-gene-link" data-gene="${g.gene}" style="cursor:help;">${this.gi(g.gene)}</span> <span style="color:#9ca3af; font-size:10px;">(z ${fmtZ(g.z)})</span>`).join(', ')}.</div>`);
             }
             if (essentialPathwayHits.length > 0) {
                 const hitsByPathway = {};
@@ -47194,7 +47307,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                     // are the same genes, and a gene named in the wiki opens
                     // its gene-effect popout everywhere else.
                     if (inPw.length > 0) hitsByPathway[pw] = inPw.map(h =>
-                        `<span class="gene-hover clb-gene-link" data-gene="${h.gene}" style="cursor:help;">${h.gene}</span>`
+                        `<span class="gene-hover clb-gene-link" data-gene="${h.gene}" style="cursor:help;">${this.gi(h.gene)}</span>`
                         + ` <span style="color:#9ca3af; font-size:10px;">(z ${fmtZ(h.z)})</span>`);
                 }
                 if (Object.keys(hitsByPathway).length > 0) {
@@ -47212,7 +47325,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             const topGainHtml = topGain.map(g => {
                 const isTSG = tumorSuppressors.has(g.gene);
                 const tsStyle = isTSG ? 'color:#dc2626; font-weight:600;' : '';
-                return `<span class="gene-hover clb-gene-link" data-gene="${g.gene}" style="cursor:help; ${tsStyle}">${g.gene}</span> <span style="color:#9ca3af; font-size:10px;">(GE ${g.val.toFixed(2)}, z ${fmtZ(g.z)})</span>`;
+                return `<span class="gene-hover clb-gene-link" data-gene="${g.gene}" style="cursor:help; ${tsStyle}">${this.gi(g.gene)}</span> <span style="color:#9ca3af; font-size:10px;">(GE ${g.val.toFixed(2)}, z ${fmtZ(g.z)})</span>`;
             }).join(', ');
             const tsInterp = tsHits.length > 0
                 ? `<div style="padding:6px 10px; background:#fef2f2; border-left:3px solid #dc2626; font-size:11px; margin-top:4px;"><b style="color:#991b1b;">Tumor suppressors whose knockout boosts growth</b> (red above): ${tsHits.map(g => g.gene).join(', ')}. Removing these helps the cell grow, so they are <em>still functional</em> here and have <em>not</em> been inactivated in this cell line.</div>`
@@ -47313,7 +47426,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                         ? ` <span style="color:#4c782e; font-size:9px; font-weight:600;" title="The ${lin} lineage as a whole also over-expresses this gene (lineage mean z ${fmtZ(lz)}), common for this cancer type, not specific to this line.">✓ ${lin}-typical</span>`
                         : '';
                 };
-                const renderExprRow = (g, opts = {}) => `<span class="gene-hover clb-gene-link" data-gene="${g.gene}" data-scope="${opts.familyScope ? 'lineage' : 'all'}" style="cursor:help; font-weight:600;">${g.gene}</span> <span style="color:#9ca3af; font-size:10px;" title="TPM = log2(TPM+1) expression value. z-score = how unusual this expression is vs the rest of the cohort.">(TPM ${g.val.toFixed(1)}, z ${fmtZ(g.z)})</span>${opts.tagLineage ? lineageTagExpr(g.gene) : ''}`;
+                const renderExprRow = (g, opts = {}) => `<span class="gene-hover clb-gene-link" data-gene="${g.gene}" data-scope="${opts.familyScope ? 'lineage' : 'all'}" style="cursor:help; font-weight:600;">${this.gi(g.gene)}</span> <span style="color:#9ca3af; font-size:10px;" title="TPM = log2(TPM+1) expression value. z-score = how unusual this expression is vs the rest of the cohort.">(TPM ${g.val.toFixed(1)}, z ${fmtZ(g.z)})</span>${opts.tagLineage ? lineageTagExpr(g.gene) : ''}`;
 
                 // 1) Top uniquely high (most positive z). Filter to genes
                 //    with TPM >= 1 (otherwise "uniquely high" can mean
@@ -47399,7 +47512,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 const markerHtml = markerScores.length > 0
                     ? `<div style="margin-top:8px; padding:6px 10px; background:#eef2ff; border-left:3px solid #3730a3; font-size:11px;"><b style="color:#3730a3;">${lin} lineage markers</b> <span style="color:#9ca3af; font-size:10px;">(TPM &gt; 1 = expressed; z = enrichment vs cohort)</span><br>${markerScores.map(m => {
                         const zStr = m.z != null ? ` <span style="color:#9ca3af; font-size:10px;">[z ${fmtZ(m.z)}]</span>` : '';
-                        return `<span class="gene-hover clb-gene-link" data-gene="${m.gene}" style="cursor:help; ${m.val > 1 ? 'font-weight:600; color:#3730a3;' : 'color:#9ca3af;'}">${m.gene}</span>&nbsp;(${m.val.toFixed(1)})${zStr}`;
+                        return `<span class="gene-hover clb-gene-link" data-gene="${m.gene}" style="cursor:help; ${m.val > 1 ? 'font-weight:600; color:#3730a3;' : 'color:#9ca3af;'}">${this.gi(m.gene)}</span>&nbsp;(${m.val.toFixed(1)})${zStr}`;
                     }).join(', ')}</div>`
                     : '';
 
@@ -47414,7 +47527,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 const drugExprHtml = expressedDrugTargets.length > 0
                     ? `<div style="margin-top:6px; padding:6px 10px; background:#f0fdf4; border-left:3px solid #4c782e; font-size:11px;"><b style="color:#4c782e;">Highly-expressed druggable targets</b> <span style="color:#9ca3af; font-size:10px;">(TPM &gt; 3; sorted by how unusually high vs cohort)</span>: ${expressedDrugTargets.map(e => {
                         const zStr = e.z != null ? ` <span style="color:#9ca3af; font-size:10px;">[z ${fmtZ(e.z)}]</span>` : '';
-                        return `<span class="gene-hover clb-gene-link" data-gene="${e.gene}" style="cursor:help;">${e.gene}</span> (${e.val.toFixed(1)})${zStr}`;
+                        return `<span class="gene-hover clb-gene-link" data-gene="${e.gene}" style="cursor:help;">${this.gi(e.gene)}</span> (${e.val.toFixed(1)})${zStr}`;
                     }).join(', ')}</div>`
                     : '';
 
@@ -47435,7 +47548,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 const facsHtml = facsHits.length > 0
                     ? `<div style="margin-top:6px; padding:6px 10px; background:#f0fdf4; border-left:3px solid #4c782e; font-size:11px;"><b style="color:#4c782e;">Potential FACS markers</b> <span style="color:#9ca3af; font-size:10px;">(highly-expressed cell-surface antigens, CD molecules, receptor tyrosine kinases, immune checkpoints, ADC targets; TPM &gt; 4; sorted by how uniquely high vs cohort)</span>: ${facsHits.map(e => {
                         const zStr = e.z != null ? ` <span style="color:#9ca3af; font-size:10px;">[z ${fmtZ(e.z)}]</span>` : '';
-                        return `<span class="gene-hover clb-gene-link" data-gene="${e.gene}" style="cursor:help;">${e.gene}</span> (${e.val.toFixed(1)})${zStr}`;
+                        return `<span class="gene-hover clb-gene-link" data-gene="${e.gene}" style="cursor:help;">${this.gi(e.gene)}</span> (${e.val.toFixed(1)})${zStr}`;
                     }).join(', ')}</div>`
                     : '';
 
@@ -47445,7 +47558,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                     ${row('Top uniquely low vs whole cohort <span style="color:#9ca3af; font-weight:400;">(all lineages, genes the cohort expresses but this cell line does not)</span>', topLowHtml)}
                     ${exprFamilyHtml}
                     ${xist !== undefined
-                        ? row('XIST', xist.toFixed(2) + (xist > 1.0 ? ', active (the normal silencing of the extra X chromosome is working)' : ', silenced (unusual; can re-activate X-linked genes)'))
+                        ? row(this.gi('XIST'), xist.toFixed(2) + (xist > 1.0 ? ', active (the normal silencing of the extra X chromosome is working)' : ', silenced (unusual; can re-activate X-linked genes)'))
                         : ''}
                     ${yMean !== null && (this._getCellLineSex(cellLineId).annotation !== 'Female' || yMean > 1.0)
                         ? row('Y-chromosome genes (mean)', yMean.toFixed(2) + (yMean > 1.0 ? ', Y chromosome active' : ', Y chromosome silent or lost'))
@@ -49831,7 +49944,7 @@ ${clone.innerHTML}
         shown.forEach(m => {
             const badge = `<span style="background:${BADGE[m.type] || '#6b7280'}; color:#fff; padding:1px 5px; border-radius:3px; font-size:9px; margin-left:5px;">${this.esc(m.word)}</span>`;
             html += `<tr>
-                <td style="padding:3px 6px; border-bottom:1px solid #f3f4f6;"><span style="font-weight:600; color:#4c782e;">${this.esc(m.gene)}</span>${badge}</td>
+                <td style="padding:3px 6px; border-bottom:1px solid #f3f4f6;"><span style="font-weight:600; color:#4c782e;">${this.gi(m.gene)}</span>${badge}</td>
                 <td style="padding:3px 6px; border-bottom:1px solid #f3f4f6; text-align:center; color:#2563eb;">${m.pctA.toFixed(1)}%${thinN(m.nA, w.sel)}<span style="color:${m.nA < 3 ? '#b45309' : '#9ca3af'};"> (${m.mutA}/${m.nA})</span></td>
                 <td style="padding:3px 6px; border-bottom:1px solid #f3f4f6; text-align:center; color:#dc2626;">${m.pctB.toFixed(1)}%${thinN(m.nB, w.cmp)}<span style="color:${m.nB < 3 ? '#b45309' : '#9ca3af'};"> (${m.mutB}/${m.nB})</span></td>
                 <td style="padding:3px 6px; border-bottom:1px solid #f3f4f6; text-align:center; font-weight:600;">${m.diff > 0 ? '+' : ''}${m.diff.toFixed(1)}</td>
@@ -50278,7 +50391,7 @@ ${clone.innerHTML}
         const hidden = [...st.hidden];
         const chip = (g, kind) => `<span class="clb-chip" data-${kind}="${this.esc(g)}" title="${kind === 'lbl' ? 'Click to remove this label' : 'Click to show this gene again'}" `
             + `style="background:${kind === 'lbl' ? '#eef2ff' : '#f3f4f6'}; color:${kind === 'lbl' ? '#3730a3' : '#6b7280'}; border:1px solid ${kind === 'lbl' ? '#c7d2fe' : '#e5e7eb'}; padding:1px 7px; border-radius:10px; font-size:10px; font-weight:600; cursor:pointer;${kind === 'hid' ? ' text-decoration:line-through;' : ''}">`
-            + `${this.esc(g)} &times;</span>`;
+            + `${this.gi(g)} &times;</span>`;
         host.innerHTML = `
             <div style="display:flex; gap:4px; flex-wrap:wrap; align-items:center; font-size:10px; color:#6b7280;">
                 <span style="font-weight:600;">Labels (${labelled.length}):</span>
@@ -50461,7 +50574,7 @@ ${clone.innerHTML}
             annotations: lab.map((r) => {
                 const isFound = foundLab.some(f => f.gene === r.gene);
                 return {
-                    x: r.delta, y: yOf(r), text: r.gene,
+                    x: r.delta, y: yOf(r), text: this.gi(r.gene),
                     font: { size: isFound ? Math.max(10, prevLabelSize || 0) : (prevLabelSize || 8),
                             color: isFound ? '#b45309' : '#374151' },
                     showarrow: true, arrowhead: 0, arrowwidth: 0.7, arrowcolor: '#b8bec9',
@@ -51047,7 +51160,7 @@ ${clone.innerHTML}
         const thin = (r) => this._geInspectThin(r, side);
         const trows = rows.map(r => `
             <tr class="si-row" data-gene="${this.esc(r.gene)}" style="cursor:pointer;">
-                <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; font-weight:600; color:#4c782e;">${r.gene}</td>
+                <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; font-weight:600; color:#4c782e;">${this.gi(r.gene)}</td>
                 <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; text-align:center;">${fmt(r.meanSel)}</td>
                 <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; text-align:center; color:#6b7280;">${fmt(r.meanOther)}</td>
                 <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; text-align:center; font-weight:600; color:${r.delta < 0 ? '#dc2626' : '#2563eb'};">${fmt(r.delta)}</td>
@@ -58486,7 +58599,7 @@ ${clone.innerHTML}
         // Same setting the actual gene-label draw uses below, or the width
         // reserved for the label gutter would mis-measure against what's
         // actually painted into it.
-        probe.font = `${hmS.geneFont}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+        probe.font = `italic ${hmS.geneFont}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
         let textLabelW = 40;
         for (const g of d.orderedGenes) textLabelW = Math.max(textLabelW, Math.ceil(probe.measureText(g).width) + 12);
         textLabelW = Math.min(textLabelW, 160);
@@ -58586,7 +58699,8 @@ ${clone.innerHTML}
                     ctx.stroke();
                 }
             }
-            ctx.font = `${hmS.geneFont}px Arial`;
+            // Canvas draws no markup, so the gene axis italicises by font.
+            ctx.font = `italic ${hmS.geneFont}px Arial`;
             ctx.textAlign = 'right';
             ctx.textBaseline = 'middle';
             ctx.fillStyle = '#374151';

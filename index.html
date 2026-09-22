@@ -3396,9 +3396,9 @@
                             </div>
                             <!-- Gene Statistics options (shown when stats loaded) -->
                             <div id="statsControls" style="display: none; border-top: 1px solid #ddd; padding-top: 6px; margin-top: 4px;">
-                                <label style="font-weight: 600; font-size: 11px; margin-bottom: 4px; display: block;">Gene Statistics:</label>
+                                <label style="font-weight: 600; font-size: 11px; margin-bottom: 4px; display: block;" title="The LFC and FDR columns you pasted with the gene set, as opposed to the gene effect from DepMap above">From your With Stats table:</label>
                                 <div class="checkbox-group" style="margin-bottom: 4px;">
-                                    <label><input type="checkbox" id="showStatsInLabel"> Show statistics in label</label>
+                                    <label title="Write your LFC or FDR after each gene name"><input type="checkbox" id="showStatsInLabel"> Show LFC / FDR in label</label>
                                 </div>
                                 <div id="statsLabelOptions" style="display: none; margin-left: 20px; margin-bottom: 4px;">
                                     <div class="radio-group-inline">
@@ -3407,7 +3407,7 @@
                                     </div>
                                 </div>
                                 <div class="checkbox-group" style="margin-bottom: 4px;">
-                                    <label><input type="checkbox" id="colorByStats"> Color by stats</label>
+                                    <label title="Colour the nodes by your LFC or FDR instead of by gene effect"><input type="checkbox" id="colorByStats"> Color by LFC / FDR</label>
                                 </div>
                                 <div id="colorStatsOptions" style="display: none; margin-left: 20px;">
                                     <div class="radio-group-inline" style="margin-bottom: 4px;">
@@ -3429,7 +3429,7 @@
                             <label class="panel-heading">View controls</label>
                             <div class="button-group-horizontal" style="margin-bottom: 4px;">
                                 <button class="btn btn-secondary" id="fitNetwork" title="Zoom and center so the whole network fits in view. Does not change the analysis.">Fit</button>
-                                <button class="btn btn-secondary" id="toggleSelectMode" title="Click nodes to add them to a selection, then open Gene Effect or Correlation by group for that group. Click again to leave the mode.">Select Mode</button>
+                                <button class="btn btn-secondary" id="toggleSelectMode" title="Click genes to keep a subset: the gene box (plain list or With Stats table) narrows to them, so Run repeats the analysis on that subset. Clear, or leaving the mode, puts the full list back.">Select Mode</button>
                                 <button class="btn btn-secondary" id="toggleRemoveMode" title="Click nodes to hide them from the picture. Removing a gene only changes what is drawn, not the underlying correlations. Restore All brings them back.">Remove Mode</button>
                                 <button class="btn btn-secondary" id="togglePhysics" title="Freeze the layout so nodes stop drifting and stay where you put them. Click again to let them settle freely.">Lock</button>
                             </div>
@@ -5838,7 +5838,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v89_65"></script>
+    <script src="app.js?v=v89_68"></script>
     <script src="tour.js?v=v89_49"></script>
 </body>
 </html>
