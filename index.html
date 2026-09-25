@@ -2188,6 +2188,11 @@
         .resize-bottom { left: 0; right: 0; bottom: -3px; height: 10px; cursor: ns-resize; }
         .resize-bottom::after { left: 50%; transform: translateX(-50%); height: 4px; width: 44px; top: 3px; }
         @media (max-width: 640px) { .resize-grip { display: none; } }
+        /* The results tabs outgrow a phone row; wrap them so Summary stays reachable. */
+        @media (max-width: 640px) {
+            .nav-tabs { flex-wrap: wrap; row-gap: 2px; }
+            .nav-tabs .nav-link { padding: 8px 10px; }
+        }
         /* The correlation cutoff's step buttons and track, sized for a finger. */
         @media (max-width: 640px) {
             #correlationParams button { min-width: 38px; min-height: 38px; font-size: 18px !important; }
@@ -3630,7 +3635,7 @@
                         <strong>Statistics:</strong> <span id="mutStatsBlurb" class="mobile-hide">p-values are calculated using Welch's t-test comparing gene effect scores between wild-type (WT, 0 mutations) and mutated cell lines (1+2 or 2 mutations). Δ GE = Mean(mutated) − Mean(WT).</span>
                     </div>
                     <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom: 10px;">
-                        <span id="mutationResultsCount">0 genes with p < 0.001</span>
+                        <span id="mutationResultsCount">No analysis run yet</span>
                         <span style="display:inline-flex; align-items:center; gap:4px;">
                             <span style="font-size:10px; color:#9ca3af;">Measure:</span>
                             <button type="button" class="btn btn-outline btn-sm" data-mut-metric="ge" onclick="app.setMutAnalysisMetric('ge')" style="font-size:10px; padding:2px 8px; background:#f0fdf4; border-color:#6ba544; color:#4c782e; font-weight:700;" title="Compare CRISPR knockout effect between the mutant and wild-type groups">Gene effect</button>
@@ -4743,7 +4748,7 @@
                                 <option value="ge" selected>CRISPR gene effect</option>
                                 <option value="expr">mRNA expression</option>
                             </select>
-                            <select id="hmScale" style="width:200px;" title="How the colours are computed. As measured: the actual gene effect on one fixed scale (orange saturates at -2, purple at +1), the default for gene effect. Relative to panel median: each cell minus its gene's median across the whole panel, in gene effect units, teal and brown. Z-score: each gene divided by its own spread, which can turn a tiny difference into a large number for a flat gene">
+                            <select id="hmScale" style="width:200px;" title="How the colours are computed. As measured: the actual gene effect on one fixed scale (orange saturates at -2, purple at +1), the default for gene effect. Relative to panel median: each cell minus its gene's median across the whole panel, in the data's own units, blue-green and brown for gene effect. Z-score: each gene divided by its own spread, which can turn a tiny difference into a large number for a flat gene">
                                 <option value="raw" selected>As measured, fixed scale</option>
                                 <option value="med">Relative to panel median</option>
                                 <option value="zall">Z-score, vs all lines</option>
@@ -5840,7 +5845,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v89_78"></script>
+    <script src="app.js?v=v89_79"></script>
     <script src="tour.js?v=v89_49"></script>
 </body>
 </html>

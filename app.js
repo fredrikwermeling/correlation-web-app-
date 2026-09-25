@@ -5925,9 +5925,13 @@ class CorrelationExplorer {
         };
         input.addEventListener('focus', () => open(true));
         input.addEventListener('input', () => { open(false); if (!input.value && input._mutOnChange) input._mutOnChange(); });
-        document.addEventListener('click', (e) => {
+        // Removes itself once its input has left the page, since re-renders
+        // wire a fresh one.
+        const onDocClick = (e) => {
+            if (!input.isConnected) { document.removeEventListener('click', onDocClick); return; }
             if (e.target !== input && !dd.contains(e.target)) dd.style.display = 'none';
-        });
+        };
+        document.addEventListener('click', onDocClick);
     }
 
     // Cells (from the current scatter data) passing all active inspect filters
@@ -7843,6 +7847,9 @@ class CorrelationExplorer {
         if (synonymBtn) synonymBtn.style.display = 'none';
 
         if (notFound.length === 0) {
+            // Invalidate any check still waiting on synonyms.json, or it
+            // lands late and overwrites this with a half-typed name.
+            this._validateToken = (this._validateToken || 0) + 1;
             display.innerHTML = `<div class="status-box status-success">&#10003; All ${found.length} genes found in reference data</div>`;
             this.genesNotFound = [];
             return;
@@ -9261,6 +9268,9 @@ class CorrelationExplorer {
         // A best-filter search still stepping through lineages from the last
         // run must not keep computing under this one.
         this._bestFilterToken = (this._bestFilterToken || 0) + 1;
+        // What is in the gene box now IS the input; a Select Mode copy of an
+        // earlier list would otherwise come back on the next Clear.
+        this._selectBackup = null;
         // Reset network settings to defaults when running new analysis, UNLESS
         // this run is recreating a saved figure: the restore just wrote the
         // saved font/node/edge/color settings into these controls, and the
@@ -9352,7 +9362,7 @@ class CorrelationExplorer {
                 if (this.results.success) {
                     this.displayResults();
                     this.showStatus('success',
-                        `&#10003; Analysis complete: ${this.results.correlations.length} correlations, ${this.results.clusters.length} genes in network`);
+                        `&#10003; Analysis complete: ${this.results.correlations.length} correlations, ${this.networkData?.nodes ? this.networkData.nodes.length : this.results.clusters.length} genes in network`);
                     // Auto-run best filter and show dropdown
                     if (geneList.length >= 2) this.findBestFilter();
                 } else {
@@ -11072,7 +11082,7 @@ class CorrelationExplorer {
             if (this._gridAppliesToAnalysis() && !this._cellLinePassesOncoprintFilters(cellLine)) return;
 
             const ge = useExpr
-                ? (exprGeneIdx === undefined ? NaN : this.expressionData[exprGeneIdx * this.expressionMetadata.nCellLines + (exprCellIdx.get(cellLine) ?? -1)])
+                ? (exprGeneIdx === undefined || !exprCellIdx.has(cellLine) ? NaN : this.expressionData[exprGeneIdx * this.expressionMetadata.nCellLines + exprCellIdx.get(cellLine)])
                 : this.geneEffects[geneIdx * this.nCellLines + idx];
             if (ge === undefined || isNaN(ge)) return;
 
@@ -12405,12 +12415,12 @@ class CorrelationExplorer {
     get _HOVER_DELAY() { return 650; }
 
     _pearsonP(r, n) {
-        if (r === null || r === undefined || isNaN(r) || !(n > 2) || Math.abs(r) >= 0.9999) return null;
-        const t = r * Math.sqrt(n - 2) / Math.sqrt(1 - r * r);
-        const z = Math.abs(t);
-        const tt = 1 / (1 + 0.2316419 * z);
-        const d = 0.3989422804 * Math.exp(-z * z / 2);
-        let p = 2 * (d * tt * (0.31938153 + tt * (-0.356563782 + tt * (1.781477937 + tt * (-1.821255978 + tt * 1.330274429)))));
+        if (r === null || r === undefined || isNaN(r) || !(n > 2)) return null;
+        // Exact t test on n-2 degrees of freedom; a normal approximation to t
+        // was up to 100x too small at the n of a lineage-filtered cohort.
+        const rr = Math.min(Math.abs(r), 1 - 1e-15);
+        const t = rr * Math.sqrt(n - 2) / Math.sqrt(1 - rr * rr);
+        let p = this.tDistributionPValue(t, n - 2);
         if (!Number.isFinite(p) || p < 1e-300) p = 1e-300;
         return parseFloat(p.toExponential(2));
     }
@@ -17273,6 +17283,7 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
             this.restoreSelectedNodeColors();
             this.selectedNodes.clear();
             this.updateSelectedNodesList();
+            this._restoreSelectionInput();
             const selBtn = document.getElementById('toggleSelectMode');
             if (selBtn) { selBtn.classList.remove('btn-active'); selBtn.style.backgroundColor = ''; selBtn.style.borderColor = ''; selBtn.style.color = ''; }
         }
@@ -41839,6 +41850,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (hEl && !hEl.value) hEl.value = 400;
             const plotEl = document.getElementById('scatterPlot');
             if (!this.currentInspect) {
+                // The last scatter's title and genes outlive its close; next to
+                // the empty prompt they described a plot that is not there.
+                const titleEl = document.getElementById('inspectTitle');
+                if (titleEl) titleEl.textContent = 'Correlation';
+                ['inspectGeneX', 'inspectGeneY'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
                 plotEl.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:400px;color:#6b7280;font-size:14px;text-align:center;padding:40px;"><div>Enter two gene names in the <b>Genes (X/Y)</b> fields above<br>and click <b>Update</b>.<br><br><span style="font-size:12px;">Shows the correlation between two genes\' effects across cell lines.<br>Use tissue and mutation filters to explore subgroups.<br><br><span style="color:#9ca3af;">Try: <b>TP53</b> vs <b>MDM2</b>, <b>BRAF</b> vs <b>MAP2K1</b>, <b>BRCA1</b> vs <b>BRCA2</b></span></span></div></div>';
                 // Pre-populate filter dropdowns across all cell lines so the
                 // user can pick a tissue / mutation filter before entering
@@ -42663,11 +42679,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         this._activeOncoprintFilters = null;
         this._oncoprintSyncFilters?.();
         document.getElementById('oncoprintPopup')?.remove();
-        // Switch back to network tab
-        document.querySelectorAll('.nav-link').forEach(t => t.classList.remove('active'));
-        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-        document.querySelector('[data-tab="network"]').classList.add('active');
-        document.getElementById('tab-network').classList.add('active');
+        // Leave the results tab as it was. Only when no visible tab is
+        // active (the mode hides it) fall back to the first visible one;
+        // forcing Network showed a panel Mutation analysis mode hides.
+        const tabs = [...document.querySelectorAll('.nav-link[data-tab]')].filter(t => t.style.display !== 'none' && t.offsetParent !== null);
+        if (tabs.length && !tabs.some(t => t.classList.contains('active'))) {
+            document.querySelectorAll('.nav-link').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            tabs[0].classList.add('active');
+            document.getElementById('tab-' + tabs[0].dataset.tab)?.classList.add('active');
+        }
     }
 
     // Cell lines passing every CLB filter EXCEPT the quick-filter (collection)
@@ -55908,7 +55929,13 @@ ${clone.innerHTML}
     // layering the saved state back on top).
     _hmOpenModal() {
         const modal = document.getElementById('heatmapModal');
-        if (modal) modal.style.display = 'flex';
+        if (modal) {
+            modal.style.display = 'flex';
+            // A fresh open starts at the controls, not wherever the last
+            // session was scrolled to.
+            modal.scrollTop = 0;
+            modal.querySelectorAll('.modal, .modal-body').forEach(el => { el.scrollTop = 0; });
+        }
         this._revealOnTouch('hmGridScroll');
         // Rebuilt on open, not just at startup: mutation data (behind the
         // "Top hotspot-mutated genes" preset) and the cell-line total
@@ -56361,9 +56388,13 @@ ${clone.innerHTML}
         input.addEventListener('input', () => { open(false); if (!input.value.trim()) onChange(); });
         input.addEventListener('change', () => onChange());
         input.addEventListener('keydown', (e) => { if (e.key === 'Escape') { dd.style.display = 'none'; input.blur(); } });
-        document.addEventListener('click', (e) => {
+        // Removes itself once its input has left the page, since re-renders
+        // wire a fresh one.
+        const onDocClick = (e) => {
+            if (!input.isConnected) { document.removeEventListener('click', onDocClick); return; }
             if (e.target !== input && !dd.contains(e.target)) dd.style.display = 'none';
-        });
+        };
+        document.addEventListener('click', onDocClick);
     }
 
     // Renders the "Annotation rows" block from this._hmAnnRows (up to 4 rows
@@ -56536,10 +56567,10 @@ ${clone.innerHTML}
                 if (!v) { r.sortDir = null; r.sortKey = null; }
                 else if (v === 'tree') { r.sortDir = 'desc'; r.sortKey = null; }
                 else {
-                    const m = v.match(/^(size|cat|val|name|score)-(asc|desc)$/);
+                    const m = v.match(/^(size|cat|val|name|score|mag)-(asc|desc)$/);
                     if (m) {
                         r.sortDir = m[2];
-                        r.sortKey = (m[1] === 'name' || m[1] === 'score') ? m[1] : null;
+                        r.sortKey = (m[1] === 'name' || m[1] === 'score' || m[1] === 'mag') ? m[1] : null;
                     }
                 }
                 this._hmRenderAnnRowsBlock();
@@ -57621,9 +57652,18 @@ ${clone.innerHTML}
             // group's legend entry still reads its true size ("n=42,
             // hidden") rather than "n=undefined"; the visible loop below
             // only narrows startCol/endCol/orderedCellLines to what's drawn.
+            // Blocks ordered by absolute value print the median |value| they
+            // were ordered by; a signed median beside that order reads as random.
+            const byMag = outerRow.sortKey === 'mag';
+            const medianMagOf = (list) => {
+                const vals = list.map(cl => clMag.get(cl)).filter(v => !Number.isNaN(v)).sort((a, b) => a - b);
+                if (!vals.length) return NaN;
+                const mid = Math.floor(vals.length / 2);
+                return vals.length % 2 ? vals[mid] : (vals[mid - 1] + vals[mid]) / 2;
+            };
             groups = entries.map(([key, cellLines]) => ({
                 key, cellLines, count: cellLines.length, hidden: hiddenSet.has(key),
-                score: meanScoreOf(cellLines), median: medianScoreOf(cellLines)
+                score: meanScoreOf(cellLines), median: byMag ? medianMagOf(cellLines) : medianScoreOf(cellLines), medianIsMag: byMag
             }));
             // The order is fixed once here, by the row's own convention, and
             // does NOT depend on which entries are hidden: clicking a legend
@@ -58318,18 +58358,23 @@ ${clone.innerHTML}
             w.colour = ge ? 'orange = dependency (negative gene effect), white = no effect, purple = knockout favours growth (positive gene effect)' : 'white is low, dark green is high';
             w.legend = ge ? 'orange = dependency · purple = knockout favours growth' : 'white = low · dark green = high';
         } else if (m === 'med') {
-            w.caption = 'Relative to the panel median (gene effect units)';
-            w.short = `each cell minus the gene's median across all ${nAll} lines, in gene effect units`;
-            w.sentence = `Each value is the measured gene effect minus that gene's median across all ${nAll} cell lines with data, so it says how this line differs from the typical line in gene effect units, not in units of the gene's spread. The colour scale saturates at 1.5 units either way.`;
-            w.colour = 'blue-green = more essential in this line than in the typical line, brown = less essential here than in the typical line';
-            w.legend = 'blue-green = more essential than typical · brown = less essential than typical';
+            const unit = ge ? 'gene effect units' : 'log2 TPM+1 units';
+            w.caption = `Relative to the panel median (${unit})`;
+            w.short = `each cell minus the gene's median across all ${nAll} lines, in ${unit}`;
+            w.sentence = `Each value is the measured ${ge ? 'gene effect' : 'expression (log2 TPM+1)'} minus that gene's median across all ${nAll} cell lines with data, so it says how this line differs from the typical line in ${unit}, not in units of the gene's spread. The colour scale saturates at 1.5 units either way.`;
+            w.colour = ge
+                ? 'blue-green = more essential in this line than in the typical line, brown = less essential here than in the typical line'
+                : 'blue = expressed lower in this line than in the typical line, red = expressed higher';
+            w.legend = ge ? 'blue-green = more essential than typical · brown = less essential than typical' : 'blue = lower than typical · red = higher than typical';
         } else {
             const vs = m === 'z' ? 'vs shown lines' : `vs all ${nAll} lines`;
             w.caption = `Z-score per gene, ${vs}`;
             w.short = `z-scored per gene ${vs}`;
             w.sentence = m === 'z'
                 ? 'Values were z-scored per gene, with the mean and standard deviation taken across only the cell lines shown.'
-                : `Values were z-scored per gene, with the mean and standard deviation taken across all ${nAll} cell lines that have a value in the full matrix rather than only the ones shown, so a value of +2 means high against the whole panel.`;
+                : ge
+                    ? `Values were z-scored per gene, with the mean and standard deviation taken across all ${nAll} cell lines that have a value in the full matrix rather than only the ones shown, so a value of +2 means high against the whole panel.`
+                    : `Values were z-scored per gene, with the mean and standard deviation taken across all ${nAll} CRISPR-screened cell lines that have expression data rather than only the ones shown, so a value of +2 means high against the whole panel.`;
             w.colour = ge
                 ? 'orange = more essential than typical for this gene (below the panel mean), purple = less essential than typical (above the panel mean); this is relative to the gene\'s own spread, not the measured effect'
                 : 'blue is low, red is high';
@@ -58712,9 +58757,12 @@ ${clone.innerHTML}
     }
 
     _hmColorFor(v, scaleMode, dataType, domain) {
-        if (v == null || Number.isNaN(v)) return '#f3f4f6';
+        // Mid gray, not near-white: white means "no effect", so a pale
+        // missing cell made a sparsely screened gene read as a non-dependency.
+        if (v == null || Number.isNaN(v)) return '#c4c8ce';
         if (dataType === 'expr') {
             if (scaleMode === 'z' || scaleMode === 'zall') return this._hmDivergingColor(Math.max(-1, Math.min(1, v / 2.5)));
+            if (scaleMode === 'med') return this._hmDivergingColor(Math.max(-1, Math.min(1, v / (domain.hi || 1.5))));
             const span = (domain.hi - domain.lo) || 1;
             return this._hmSequentialGreen(Math.max(0, Math.min(1, (v - domain.lo) / span)));
         }
@@ -58896,7 +58944,7 @@ ${clone.innerHTML}
         // so "n=42" (never a bare "42") and the optional median read the
         // same everywhere they appear. Computed before the label plan below,
         // which needs it to measure candidate label text.
-        const groupLabelText = (g) => `${g.key} (n=${g.count}${d.showMedian && !Number.isNaN(g.median) ? `, median ${g.median.toFixed(2)}` : ''})`;
+        const groupLabelText = (g) => `${g.key} (n=${g.count}${d.showMedian && !Number.isNaN(g.median) ? `, median ${g.medianIsMag ? '|value| ' : ''}${g.median.toFixed(2)}` : ''})`;
 
         // Which visible groups get a text label under the strip, and which
         // of up to 3 stagger rows each sits on, decided here (the layout
@@ -58921,7 +58969,7 @@ ${clone.innerHTML}
         // legend, tooltip, sorting and blocking as any other, so there is
         // nothing extra to reserve here.
         const gridH = geneAreaH + groupExtra + ann2Extra;
-        const legendW = 300, legendH = 72;
+        const legendW = 300, legendH = 84;
 
         // `plain` skips the light-grey background fill: fine on screen (it
         // reads as the panel's own background there), but on an exported
@@ -59229,7 +59277,15 @@ ${clone.innerHTML}
             ctx.fillText(words.caption, barX, barY + barH + 4 + hmS.legendFont + 3);
             ctx.font = '9px Arial';
             ctx.fillStyle = '#6b7280';
-            ctx.fillText(words.legend, barX, barY + barH + 4 + hmS.legendFont + 3 + 12);
+            // Wrapped at the " · " separators so a long key never runs past
+            // the fixed-width legend canvas.
+            const lines = [];
+            for (const part of [...words.legend.split(' · '), 'gray = no value']) {
+                const last = lines[lines.length - 1];
+                if (last && ctx.measureText(last + ' · ' + part).width <= barW) lines[lines.length - 1] = last + ' · ' + part;
+                else lines.push(part);
+            }
+            lines.slice(0, 3).forEach((line, li) => ctx.fillText(line, barX, barY + barH + 4 + hmS.legendFont + 3 + 12 + li * 11));
         };
 
         // Group legend: name, swatch and n per group (plus every hidden
@@ -61675,9 +61731,7 @@ ${clone.innerHTML}
         const measureWords = this._methodsMeasureWords(measure);
 
         const scaleSentence = this._hmScaleWords(d).sentence;
-        const colourWord = d.dataType === 'expr'
-            ? ((d.scaleMode === 'z' || d.scaleMode === 'zall') ? 'blue is low and red is high' : 'white is low and dark green is high')
-            : 'orange is negative, meaning the cell line depends on the gene, and purple is high, meaning it does not';
+        const colourWord = this._hmScaleWords(d).colour;
 
         // The ordering hierarchy, row by row, as the annotation rows carry it.
         const rows = this._hmAnnRows || [];
@@ -61689,6 +61743,13 @@ ${clone.innerHTML}
         };
         const dirWord = (row, isBlock) => {
             if (!row.sortDir) return '';
+            const asc = row.sortDir === 'asc';
+            if (row.sortKey === 'name') return asc ? ', Z to A' : ', A to Z';
+            if (row.sortKey === 'mag') return asc ? ', lowest mean absolute value first' : ', highest mean absolute value first';
+            if (row.sortKey === 'score') {
+                if (d.dataType === 'expr') return asc ? ', lowest median expression first' : ', highest median expression first';
+                return asc ? ', weakest dependency first' : ', strongest dependency first';
+            }
             const k = this._hmAnnRowKind(row.mode);
             if (k === 'continuous') return row.sortDir === 'asc' ? ', lowest first' : ', highest first';
             if (k === 'meta') return row.sortDir === 'asc' ? ', smallest block first' : ', biggest block first';
@@ -61805,7 +61866,7 @@ ${clone.innerHTML}
                 : '')
             + (d.hasTopDendro ? '\n   The tree drawn above the grid is that same cell-line clustering.' : ''),
             groups
-                ? `THE BLOCKS\n   The coloured strip under the grid marks ${this._mNum(visibleGroups.length)} block${visibleGroups.length === 1 ? '' : 's'}: ${visibleGroups.map(g => `${g.key} (n=${g.count})`).join(', ')}.\n   ${d.showMedian ? 'The number printed on each block is the median score of its cell lines.' : 'No per-block numbers are printed; switch on Show median to add them.'}`
+                ? `THE BLOCKS\n   The coloured strip under the grid marks ${this._mNum(visibleGroups.length)} block${visibleGroups.length === 1 ? '' : 's'}: ${visibleGroups.map(g => `${g.key} (n=${g.count})`).join(', ')}.\n   ${d.showMedian ? (visibleGroups.some(g => g.medianIsMag) ? 'The number printed on each block is the median, over its cell lines, of the mean absolute value across the shown genes; this is what orders the blocks.' : 'The number printed on each block is the median score of its cell lines.') : 'No per-block numbers are printed; switch on Show median to add them.'}`
                 : 'THE BLOCKS\n   No row is marked as the blocks, so there is no group strip and no legend of blocks. Turn on the blocks toggle of a category, alteration or gates row to split the columns into blocks.',
             (gateA || gateB)
                 ? `GATES\n   Gate A holds ${this._mNum(gateA)} cell line${gateA === 1 ? '' : 's'} and gate B holds ${this._mNum(gateB)}. Gates are ranges of columns painted by hand across the grid, kept by cell line identity so re-sorting does not lose them. They are a selection, not a threshold: their bounds are wherever they were dragged to, and no rule produced them. They appear as the Gates annotation row, which colours each column by the gate it is in (A, B, both, or none) and, like any other row, can sort or block the columns; ${gatesRowActive ? 'here that row is doing so, and it is named in the ordering above.' : 'here it is colour only, so the gates change neither the ordering nor any number in the figure.'}`
