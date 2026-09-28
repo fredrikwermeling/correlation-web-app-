@@ -14371,21 +14371,39 @@ class CorrelationExplorer {
 
     attachGeneTooltips(container) {
         container.querySelectorAll('.gene-hover').forEach(el => {
+            // Wired once per element with its own timer. Re-wiring the same
+            // buttons on every scatter update stacked handlers that shared one
+            // timer, so leaving cancelled only the last and the rest opened a
+            // card after the pointer had gone, with nothing left to close it.
+            if (el._geneTipWired) return;
+            el._geneTipWired = true;
+            let timer = null;
             el.addEventListener('mouseenter', (e) => {
-                this._tooltipTimer = setTimeout(() => {
+                clearTimeout(timer);
+                timer = setTimeout(() => {
+                    if (!el.isConnected || !el.matches(':hover')) return;
                     // data-why carries chip-specific context (e.g. "TP53 loss
                     // inferred from CN+mut+expr") that used to live in the
                     // native title attribute. The native tooltip + custom
                     // tooltip both fired on hover and overlapped, now the
                     // why-context is folded into the single custom tooltip.
                     this.showGeneTooltip(e, el.dataset.gene, el.dataset.why || null);
+                    this._tagGeneTooltipSource(el);
                 }, this._HOVER_DELAY);
             });
             el.addEventListener('mouseleave', () => {
-                clearTimeout(this._tooltipTimer);
+                clearTimeout(timer);
                 this.hideGeneTooltip();
             });
         });
+    }
+
+    // Records which element a hover card belongs to, so the card closes as
+    // soon as the pointer is no longer over it (or it left the page), even
+    // when that element's own mouseleave never arrives.
+    _tagGeneTooltipSource(el) {
+        const t = document.getElementById('geneTooltip');
+        if (t && t.dataset.pinned !== '1') t._src = el;
     }
 
     displayClustersTable() {
@@ -34793,6 +34811,23 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 document.removeEventListener('keydown', escDismiss, true);
                 document.removeEventListener('click', dismiss);
             };
+        } else {
+            // A hover card closes on leaving its source, a click anywhere, or
+            // Escape, so a missed mouseleave can never leave it stranded.
+            const onMove = () => {
+                const src = tooltip._src;
+                if (src && (!src.isConnected || !src.matches(':hover'))) this.hideGeneTooltip();
+            };
+            const onDown = (ev) => { if (!tooltip.contains(ev.target)) this.hideGeneTooltip(); };
+            const onEsc = (ev) => { if (ev.key === 'Escape') this.hideGeneTooltip(); };
+            document.addEventListener('mousemove', onMove, { passive: true });
+            document.addEventListener('mousedown', onDown, true);
+            document.addEventListener('keydown', onEsc, true);
+            tooltip._cleanup = () => {
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mousedown', onDown, true);
+                document.removeEventListener('keydown', onEsc, true);
+            };
         }
 
         this.fetchGeneInfo(gene).then(info => {
@@ -34819,12 +34854,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             }
             const links = refs.join(' &nbsp;&middot;&nbsp; ');
 
-            const closeBtn = el.dataset.pinned === '1'
-                ? `<button title="Close (Esc)" style="position:absolute; top:4px; right:6px; background:none; border:none; font-size:18px; line-height:1; color:#9ca3af; cursor:pointer;" onclick="app.hideGeneTooltip(true)">&times;</button>`
-                : '';
+            // On the hover card too: the card itself ignores the pointer, but
+            // this button takes clicks, so there is always a visible way out.
+            const closeBtn = `<button title="Close (Esc)" style="position:absolute; top:4px; right:6px; background:none; border:none; font-size:18px; line-height:1; color:#9ca3af; cursor:pointer; pointer-events:auto;" onclick="app.hideGeneTooltip(true)">&times;</button>`;
 
             let html = closeBtn;
-            html += `<div style="margin-bottom: 4px; padding-right:${el.dataset.pinned === '1' ? '18px' : '0'};"><b style="color: #5d9239; font-size: 13px;">${this.gi(info ? info.symbol : gene)}</b>`;
+            html += `<div style="margin-bottom: 4px; padding-right:18px;"><b style="color: #5d9239; font-size: 13px;">${this.gi(info ? info.symbol : gene)}</b>`;
             if (info && info.name) html += ` <span style="color: #374151;">${this._italicizeGenesInHtml(this.esc(info.name))}</span>`;
             html += `</div>`;
             // Keep the gene-effect line (from the quick hover) at the top.
@@ -42436,6 +42471,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (!link) return;
             this._clbGeneTooltipTimer = setTimeout(() => {
                 this.showGeneTooltip(e, link.dataset.gene, link.dataset.why || null);
+                this._tagGeneTooltipSource(link);
             }, this._HOVER_DELAY);
         }, true);
         geneLists.addEventListener('mouseleave', (e) => {
@@ -42462,6 +42498,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (!link) return;
             this._clbGeneTooltipTimer = setTimeout(() => {
                 this.showGeneTooltip(e, link.dataset.gene, link.dataset.why || null);
+                this._tagGeneTooltipSource(link);
             }, this._HOVER_DELAY);
         }, true);
         detailTop.addEventListener('mouseleave', (e) => {
@@ -51229,6 +51266,7 @@ ${clone.innerHTML}
                         // scoped to that callback, not to the row.
                         this.showGeneTooltip({ clientX: r.right - 60, clientY: r.bottom },
                             tr.dataset.gene, undefined, this._geInspectRowFactsHtml(tr));
+                        this._tagGeneTooltipSource(tr);
                     }, this._HOVER_DELAY);
                 });
                 tr.addEventListener('mouseleave', () => {
