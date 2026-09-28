@@ -818,6 +818,7 @@ class CorrelationExplorer {
                 compareMode: !!this._geCompareMode,
                 scopeLineage: this._geScopeLineage || '',
                 splitByOncotree: !!this._geSplitByOncotree,
+                groupByMedium: !!this._geGroupByMedium,
                 selectionHighlight: this._geSelectionHighlight?.size ? [...this._geSelectionHighlight] : null,
                 customCellLines: this._customCellLineFilterGE?.size ? [...this._customCellLineFilterGE] : null };
         } else if (kind === 'scatter') {
@@ -950,6 +951,8 @@ class CorrelationExplorer {
                 ? popout.compareSides : null;
             this._geScopeLineage = popout.scopeLineage || '';
             this._geSplitByOncotree = !!popout.splitByOncotree;
+            this._geGroupByMedium = !!popout.groupByMedium;
+            const gbm = document.getElementById('geGroupByMedium'); if (gbm) gbm.checked = this._geGroupByMedium;
             if (popout.selectionHighlight?.length) this._geSelectionHighlight = new Set(popout.selectionHighlight);
             if (popout.customCellLines?.length) {
                 this._customCellLineFilterGE = new Set(popout.customCellLines);
@@ -19771,8 +19774,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 marker: { color: '#dc2626', size: 10, opacity: 0.8 },
                 name: `2+ partners (n=${t2.length}, ${t2Pct}%)`
             });
-        } else if (colorByCategory === 'tissue' || colorByCategory === 'subtype' || colorByCategory === 'disease') {
-            // Color by tissue, subtype or disease
+        } else if (colorByCategory === 'tissue' || colorByCategory === 'subtype' || colorByCategory === 'disease' || colorByCategory === 'medium') {
+            // Color by tissue, subtype, disease or culture medium
             const categoryMap = {};
             filteredData.forEach(d => {
                 const cat = this._colorByGroup(d, colorByCategory);
@@ -20511,7 +20514,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         // Build category map for color-by mode (shared across panels)
         let categoryOrder = null;
-        if (colorByCategory === 'tissue' || colorByCategory === 'subtype' || colorByCategory === 'disease') {
+        if (colorByCategory === 'tissue' || colorByCategory === 'subtype' || colorByCategory === 'disease' || colorByCategory === 'medium') {
             const catCounts = {};
             filteredData.forEach(d => {
                 const cat = this._colorByGroup(d, colorByCategory);
@@ -20926,9 +20929,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const mode = document.getElementById('colorByCategory')?.value || 'tissue';
             const md = this.cellLineMetadata || {};
             const names = (this.currentInspect?.filteredData || this.currentInspect?.data || [])
-                .filter(d => want.has(mode === 'subtype'
-                    ? (md.primaryDisease?.[d.cellLineId] || '')
-                    : (d.lineage || md.lineage?.[d.cellLineId] || '')))
+                .filter(d => want.has(this._colorByGroup({ ...d, lineage: d.lineage || md.lineage?.[d.cellLineId] }, mode)))
                 .map(d => d.cellLineName || this.getCellLineName(d.cellLineId));
             this.copyNamesToClipboard(names, 'colored');
         });
@@ -22988,7 +22989,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // numbers are not left to be guessed at.
     _legendTitleText(mode) {
         const stat = document.getElementById('colorByLegendStat')?.value || 'none';
-        const what = mode === 'subtype' ? 'Subtype' : mode === 'disease' ? 'Disease' : 'Tissue';
+        const what = mode === 'subtype' ? 'Subtype' : mode === 'disease' ? 'Disease' : mode === 'medium' ? 'Medium' : 'Tissue';
         if (stat === 'r') return `${what} \u00b7 n \u00b7 r (within group)`;
         if (stat === 'mean') return `${what} \u00b7 n \u00b7 average x, y`;
         if (stat === 'median') return `${what} \u00b7 n \u00b7 median x, y`;
@@ -23009,7 +23010,15 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (mode === 'subtype') {
             return this.cellLineMetadata?.primaryDisease?.[id] || lineage;
         }
+        if (mode === 'medium') return this._mediumFamilyLabel(id);
         return lineage;
+    }
+
+    // The culture-medium family of a line as a group label, with the lines
+    // DepMap records no medium for kept together under one plain name.
+    _mediumFamilyLabel(cl) {
+        const f = this.cellLineMetadata?.culture?.[cl]?.family;
+        return (!f || f === 'unknown') ? 'Medium not recorded' : f === 'other' ? 'Other medium' : f;
     }
 
     // A gate can be used two ways: compared against the other gate (the
@@ -27489,6 +27498,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         return primary || 'Unknown';
     }
 
+    setGeGroupByMedium(on) {
+        this._geGroupByMedium = !!on;
+        if (this.currentGeneEffect) this.renderGeneEffectByTissue();
+    }
+
     setGeSplitByOncotree(on) {
         this._geSplitByOncotree = !!on;
         this._syncGeScopeToggle?.();
@@ -28053,6 +28067,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
 
     _resetGEFilters() {
+        this._geGroupByMedium = false;
+        const gbm = document.getElementById('geGroupByMedium'); if (gbm) gbm.checked = false;
         document.getElementById('geTissueFilter').value = '';
         document.getElementById('geSubtypeFilter').value = '';
         // Stays visible (reading "All subtypes") so the filter row always
@@ -28247,12 +28263,19 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const groupedData = {};
         const cmpSel = (this._geCompareMode && this._geCompareSides)
             ? new Set(this._geCompareSides.selection) : null;
+        // By culture medium replaces the lineage grouping; a tissue filter
+        // still narrows the cohort, which is how medium is tested WITHIN a
+        // tissue rather than across lineages that differ in medium anyway.
+        const byMedium = !cmpSel && !!this._geGroupByMedium;
+        const keyOf = (d) => byMedium
+            ? this._mediumFamilyLabel(d.cellLineId)
+            : groupBySubtype ? this._geGroupOf(d.cellLineId) : (d.lineage || 'Unknown');
+        this._geGroupKeyOf = keyOf;
+        this._geGroupMode = byMedium ? 'medium' : groupBySubtype ? 'subtype' : 'tissue';
         data.forEach(d => {
             const groupKey = cmpSel
                 ? (cmpSel.has(d.cellLineId) ? this._geCompareSides.selLabel : this._geCompareSides.cmpLabel)
-                : groupBySubtype
-                    ? this._geGroupOf(d.cellLineId)
-                    : (d.lineage || 'Unknown');
+                : keyOf(d);
             if (!groupedData[groupKey]) groupedData[groupKey] = [];
             groupedData[groupKey].push({
                 geneEffect: d.geneEffect,
@@ -28273,12 +28296,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 const sd = Math.sqrt(effects.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / effects.length);
 
                 // Calculate p-value comparing this group to all other cells
-                const otherEffects = data.filter(d => {
-                    const key = groupBySubtype
-                        ? this._geGroupOf(d.cellLineId)
-                        : (d.lineage || 'Unknown');
-                    return key !== groupName;
-                }).map(d => d.geneEffect);
+                const otherEffects = data.filter(d => keyOf(d) !== groupName).map(d => d.geneEffect);
                 const tTest = this.welchTTest(effects, otherEffects);
 
                 stats.push({
@@ -28899,7 +28917,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const sortIcon = ' ↕';
 
         if (mode === 'tissue') {
-            const groupLabel = this._geGroupBySubtype ? 'Disease Subtype' : 'Cancer Type';
+            const groupLabel = this._geGroupMode === 'medium' ? 'Culture medium' : this._geGroupBySubtype ? 'Disease Subtype' : 'Cancer Type';
             const gene = this.currentGeneEffect?.gene || '';
             const _isGr = gene === 'Growth Rate';
             const _isGs = !_isGr && !this.geneIndex.has(gene?.toUpperCase?.());
@@ -29209,8 +29227,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         // For tissue mode, show comparison with all cells.
         // Match by primaryDisease when the table is grouped by subtype, else by lineage.
-        const filteredData = this._geGroupBySubtype
-            ? data.filter(d => (this.cellLineMetadata?.primaryDisease?.[d.cellLineId] || 'Unknown') === group)
+        const filteredData = this._geGroupKeyOf
+            ? data.filter(d => this._geGroupKeyOf(d) === group)
             : data.filter(d => (d.lineage || 'Unknown') === group);
         const allEffects = data.map(d => d.geneEffect);
         const groupEffects = filteredData.map(d => d.geneEffect);
@@ -30747,8 +30765,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             'gene: <gene>         (gene-effect) with measure: ge | expr',
             'tissue: <name>       (any view, optional)',
             'disease: <name>      (any view, optional)',
-            'colour-by: tissue | subtype | disease   (scatter, optional)',
-            'sort: drug | expression | gene-effect | copy-number | interferon | retroelement | name   (cell-lines)',
+            'colour-by: tissue | subtype | disease | medium   (scatter, optional)',
+            'sort: drug | expression | gene-effect | copy-number | interferon | retroelement | medium | name   (cell-lines)',
             'sort-gene: <gene or compound>   (cell-lines, for the sorts that need one)',
             'why: <one line saying what the user should look for>'
         ].join('\n');
@@ -30776,6 +30794,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             'copy-number': 'cn', cn: 'cn',
             interferon: 'ifn', ifn: 'ifn', isg: 'ifn',
             retroelement: 'retro', retro: 'retro', 'line-1': 'retro', line1: 'retro',
+            medium: 'medium', culture: 'medium', 'culture-medium': 'medium', media: 'medium',
             name: 'name'
         };
         const MEAS = { ge: 'ge', 'gene-effect': 'ge', dependency: 'ge', expr: 'expr', expression: 'expr', mrna: 'expr', cn: 'cn', 'copy-number': 'cn' };
@@ -30800,7 +30819,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             else if (key === 'measure' || key === 'data-type') { out.opts.measure = MEAS[val.toLowerCase()] || 'ge'; out.applied.push(`measure: ${out.opts.measure}`); }
             else if (key === 'tissue' || key === 'lineage') { out.opts.tissue = val; out.applied.push(`tissue: ${val}`); }
             else if (key === 'disease' || key === 'subtype') { out.opts.disease = val; out.applied.push(`disease: ${val}`); }
-            else if (key === 'colour-by' || key === 'color-by') { out.opts.colorBy = val.toLowerCase(); out.applied.push(`colour by: ${val}`); }
+            else if (key === 'colour-by' || key === 'color-by') {
+                const cb = val.toLowerCase();
+                out.opts.colorBy = /medi|culture/.test(cb) ? 'medium' : cb;
+                out.applied.push(`colour by: ${val}`);
+            }
             else if (key === 'sort' || key === 'sort-by') {
                 const sv = SORTS[val.toLowerCase()];
                 if (sv) { out.opts.sort = sv; out.applied.push(`sort: ${val}`); }
@@ -32646,6 +32669,15 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 if (M.rrid?.[cl]) entry.rrid = M.rrid[cl];
                 const sc = M.sexChromosomes?.[cl];
                 if (sc) entry.sexChromosomes = { status: sc.status, yLinkedExpr: sc.y, xistExpr: sc.xist, ...(sc.xcn != null ? { chrXCn: sc.xcn } : {}) };
+                const cu = M.culture?.[cl];
+                if (cu) {
+                    entry.culture = {
+                        medium: cu.medium || null, mediumFamily: cu.family || 'unknown', base: cu.base || null,
+                        serum: cu.serum || (cu.serumFree ? 'serum-free' : null),
+                        ...(cu.supplements?.length ? { supplements: cu.supplements } : {}),
+                        source: cu.source, ...(cu.why ? { why: cu.why } : {})
+                    };
+                }
             }
             // Proliferation is the standard alternative explanation for a
             // dependency of modest size, so it belongs in the file rather than
@@ -33368,7 +33400,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     if (se <= 0) return null;
                     const tStat = (mx - my) / se;
                     const df = (vx / x.length + vy / y.length) ** 2 / ((vx / x.length) ** 2 / (x.length - 1) + (vy / y.length) ** 2 / (y.length - 1));
-                    let p = 2 * _normCDF(-Math.abs(tStat));
+                    // Exact t on Welch's df: groups of 3 to 10 lines are routine
+                    // here (a medium within one tissue), where the normal tail
+                    // made p several-fold too small.
+                    let p = this.tDistributionPValue(Math.abs(tStat), df);
                     if (!Number.isFinite(p) || p < 1e-300) p = 1e-300;
                     return { t: parseFloat(tStat.toFixed(3)), df: parseFloat(df.toFixed(1)), p, mx: parseFloat(mx.toFixed(3)), my: parseFloat(my.toFixed(3)) };
                 };
@@ -33477,6 +33512,57 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                                 _readMe: `Welch's t on the focal gene's gene effect, MSI-high lines against the rest of this cohort. delta is mean(MSI-high) MINUS mean(rest), so a NEGATIVE delta means the gene is more essential in the MSI-high lines. The "rest" group is every line NOT called MSI-high, which folds "called MSS" together with "never called": the two cannot be separated, so the comparison is slightly conservative rather than inflated. Per-line status is cellLineMetadata[id].inferred.msi, present only on MSI-high lines.`
                             };
                         }
+                    }
+                }
+                // Culture medium. Nutrient-handling dependencies (iron uptake,
+                // purine and one-carbon synthesis, cystine, pyruvate, glutamine)
+                // can track the medium rather than the line, and blood lines are
+                // nearly all in RPMI, so the test is repeated within each tissue
+                // to separate a medium effect from lineage.
+                {
+                    const famOf = (cl) => this.cellLineMetadata?.culture?.[cl]?.family || 'unknown';
+                    const linOf = (cl) => this.cellLineMetadata?.lineage?.[cl] || 'Unknown';
+                    const vals = [];
+                    for (let j = 0; j < cellLines.length; j++) {
+                        const idx = geCLIndices[j];
+                        if (idx === -1) continue;
+                        const v = targetData[idx];
+                        if (isNaN(v)) continue;
+                        const fam = famOf(cellLines[j]);
+                        if (fam === 'unknown') continue;
+                        vals.push({ v, fam, lin: linOf(cellLines[j]) });
+                    }
+                    const testFamilies = (rows) => {
+                        const fams = [...new Set(rows.map(r => r.fam))];
+                        const out = [];
+                        for (const f of fams) {
+                            const inF = rows.filter(r => r.fam === f).map(r => r.v);
+                            const rest = rows.filter(r => r.fam !== f).map(r => r.v);
+                            const w = welch(inF, rest);
+                            if (!w) continue;
+                            out.push({ mediumFamily: f, n: inF.length, mean: w.mx, n_rest: rest.length, mean_rest: w.my,
+                                delta: parseFloat((w.mx - w.my).toFixed(3)), t: w.t, p: parseFloat(w.p.toExponential(3)) });
+                        }
+                        return out.sort((a, b) => a.p - b.p);
+                    };
+                    const byFamily = testFamilies(vals);
+                    const withinTissue = [];
+                    for (const lin of [...new Set(vals.map(r => r.lin))]) {
+                        const rows = vals.filter(r => r.lin === lin);
+                        const big = new Set([...new Set(rows.map(r => r.fam))].filter(f => rows.filter(r => r.fam === f).length >= 3));
+                        if (big.size < 2) continue;
+                        const tests = testFamilies(rows.filter(r => big.has(r.fam)));
+                        if (tests.length) withinTissue.push({ tissue: lin, nLines: rows.filter(r => big.has(r.fam)).length, tests });
+                    }
+                    withinTissue.sort((a, b) => Math.min(...a.tests.map(t => t.p)) - Math.min(...b.tests.map(t => t.p)));
+                    if (byFamily.length) {
+                        const nMissing = cellLines.length - vals.length;
+                        extras = extras || {};
+                        extras.focalGeneMediumSummary = {
+                            byFamily, withinTissue,
+                            nWithMedium: vals.length, nWithoutMedium: nMissing,
+                            _readMe: `Welch's t on the focal gene's gene effect, each culture-medium family against every other line with a known medium; delta is mean(this family) MINUS mean(the rest), so a NEGATIVE delta means the gene is more essential in lines grown in that medium. withinTissue repeats the test inside each tissue that has at least two families with 3 or more lines, which is what separates a medium effect from a lineage effect (blood lines are almost all in RPMI, so a panel-wide RPMI effect can be lineage in disguise). The medium is the one DepMap lists for the model (cellLineMetadata[id].culture, source "model_default"), usually but not provably the medium of the screen. ${nMissing} line(s) with no recorded medium are left out of every test.`
+                        };
                     }
                 }
                 // The same test on curated copy-number events. An amplified
@@ -33666,6 +33752,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             focalGeneTissueSummary: 'Focal-gene gene effect per tissue / subtype / Oncotree subtype: mean, sd, n, zVsOverall. Three stratifications because the disease group alone is too coarse for a question about one disease inside it. Groups under the solid-n threshold are kept and marked lowN rather than dropped. Where the ranking pass ran, each group also carries selectivityZ, focalGeneRankAmongGenes / nGenesRanked and groupZSdAcrossGenes; _groupScoring on the object explains how to read them.',
             groupContrastNull: 'What a RANDOM group of k cell lines does by chance, as percentiles at k = 3, 5, 10, 25, 50. The calibration for judging whether a small group\'s mean is remarkable.',
             focalGeneMutationSummary: "Welch's t comparing mutated vs WT lines on focal-gene gene effect. coreDrivers: canonical drivers, always shown at n_mut>=5 regardless of effect size. topByEffect: top 20 from the extended panel at n_mut>=10, ranked by |t|.",
+            focalGeneMediumSummary: 'Welch\'s t on the focal gene by culture-medium family (RPMI, DMEM, DMEM-F12, ...), against the rest of the panel and again within each tissue, so a medium effect can be told apart from lineage. The check to run before interpreting a dependency on iron uptake or purine, folate / one-carbon, serine-glycine, cystine, pyruvate or glutamine handling.',
             focalGeneMsiSummary: 'Welch\'s t on the focal gene, MSI-high lines against every line not called MSI-high, emitted whenever both sides reach 3 lines in this cohort. The standard test for a mismatch-repair-linked dependency, precomputed so it does not have to be assembled from the per-line flags.',
             inputGenePairs: 'Every pairing among the genes that were typed in, complete and uncapped, each with r, its two-sided p, slope, n, and whether the pair cleared the network cutoff. Use this rather than the below-cutoff list when asking which genes group together: it is the one correlation list in the file where absence of a strong value is a real answer rather than a gap.',
             focalGeneCnSummary: "Welch's t comparing lines with a curated focal amplification / deletion of a driver gene against lines without, on focal-gene gene effect. The copy-number counterpart of focalGeneMutationSummary, and the first alternative explanation to rule out for any lineage dependency.",
@@ -33686,7 +33773,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             nTotal: cellLines.length,
             dataStructure: {
                 cellLineOrder: 'Array of DepMap cell line IDs. Defines column order for geneEffect and expression matrices. Length = nTotal.',
-                cellLineMetadata: 'Object keyed by cell line ID. Per cell line: name, tissue, subtype, mutations (gene → {hotspot: 0|1|2 where 0 = wild type, 1 = one copy carries the hotspot, 2 = both copies or multiple hits; damaging: bool, a likely loss-of-function variant; caveat?: "polymorphic_locus"}. The list per line is every call DepMap makes for it, not a top N, so its length varies by line because mutational burden does; a gene absent from a line was called wild type), clinicalFusions (curated driver fusion calls with tier), inferred (DepMap inferred subtypes, specificVariants like KRAS p.G12D, namedFusions, functionalLoss, msi. Every field in `inferred` is emitted ONLY when it is true or non-empty, so absence means the call was not made and never means it was made negative. functionalLoss covers exactly eight tumour suppressors and no others (TP53, CDKN2A, MTAP, APC, PTEN, NF1, RB1, VHL): a gene outside those eight is never listed here however deleted it is, so absence for any other gene says nothing at all. It is an integrated copy-number + mutation + expression call, so a line can be listed with no damaging coding mutation anywhere, deletion alone being enough), signatures, whose numbers are useless without their scales, so: ploidy (average copies per locus, ~2 is diploid, ~4 after a whole-genome doubling), wgd (boolean, whole-genome doubled), cin (chromosomal instability, 0 to 1, higher is more rearranged), lohFraction (fraction of the genome under loss of heterozygosity, 0 to 1), msiScore (continuous microsatellite-instability score; it is NOT a percentage and has no fixed ceiling. Do not invent a threshold for it: use inferred.msi as the call, and read msiScore only as a severity gradient underneath that call), aneuploidy (count of chromosome arms called aneuploid, out of 39). These are emitted only where DepMap computed them, so a line missing them was not measured rather than measured as normal; the boolean flags among them are emitted only when true, so an absent flag means not called rather than called negative, cnEvents ({ amplifications: [{gene, cn, tier}], deletions: [{gene, cn, tier}] }, curated focal CN events from a clinically actionable panel; amp tier is "amp" (CN ≥ 3.0) or "strong_amp" (≥ 5.0); deletion tier is "del" (CN ≤ 0.5) or "deep_del" (≤ 0.3) on DepMap relative-CN scale where 1.0 = diploid; the 8 TSGs in inferred.functionalLoss are NOT duplicated here), lehmannTnbc ({ tnbcType6, tnbcType4 }, Lehmann TNBC subtype assignments from JCI 2011 / PLOS ONE 2016 for the ~22 panel cell lines that overlap DepMap; six-class: BL1, BL2, IM, M, MSL, LAR; four-class collapses IM/MSL as immune/stromal contamination), class1AntigenPresentation (ABSENT on a line means either not compromised or never assessed, and the two cannot be told apart here; { status: "reduced" | "likely_lost", reasons: [...], evidence: { b2mDamaging?, classOneExprMeanZ?, classOneCn? } }, functional inference combining B2M damaging mutations + HLA-A/B/C expression z-score vs cohort + B2M-normalized HLA copy number; only emitted when class-I presentation looks compromised; NOT allele-specific LOH detection). Also per cell line where available: donor ({ age in years, ageCategory, sex, primaryOrMetastasis, collectionSite } describing the patient the line came from, not how the line behaves in culture), sexChromosomes ({ status, yLinkedExpr, xistExpr, chrXCn? }: the measured sex-chromosome state of the line in culture, as opposed to donor.sex. yLinkedExpr is the mean log-TPM of six Y-linked genes, xistExpr the XIST log-TPM, chrXCn the median relative copy number over non-pseudoautosomal chrX genes where 1.0 is the line\'s own modal baseline so one X in a diploid line reads about 0.5. status is one of y_present, y_loss (annotated male with Y-linked expression below 1: FUNCTIONAL loss of Y, an expression call that cannot separate a missing Y from a silent one), xist_present, xi_lost (annotated female, XIST below 1, chrXCn below 0.75: the inactive X is gone and X-linked genes are haploid), xist_silenced (annotated female, XIST below 1, two X copies retained: the inactive X eroded or the active X was duplicated, both transcribed), both_low (no Y-linked expression and no XIST, annotation cannot split it). Emitted ONLY for lines with expression data, so an absent field means not measured, never a normal result) and rrid (the Cellosaurus accession, the unambiguous identifier to quote when ordering or citing a line), oncotreeSubtype / oncotreeCode (finer than `subtype`, which is the Oncotree disease GROUP and cannot separate CLL from DLBCL or myeloma), retroelements ({ totalCpm, line1Cpm, hervkCpm, svaCpm, activeElements, retroelementHigh }, RNA-seq reads over 750 full-length intergenic LINE-1 / HERV-K / SVA elements, unique reads only, counts per million, from public CCLE hg19 alignments; retroelementHigh marks the top decile of MEASURED lines, a runtime cutoff around 80 CPM. Emitted ONLY for lines with a public alignment: 669 of the 1,208 panel lines are covered, so a line without this field was never measured and that is NOT a value of zero. The distribution is heavily right-skewed (median around 40 CPM, maximum 856), so read it as a percentile rather than a z-score. This is element TRANSCRIPTION, not retrotransposition: new genomic insertions cannot be seen in RNA, and poly-A selected RNA-seq cannot assign reads to individual loci, so treat it as an aggregate signal. If a group in this file was built by sorting on this measure, this is the axis that produced it), interferonScore (mean z-score across a curated interferon-stimulated-gene panel, computed across the whole expression cohort, so 0 is the panel average and +1 is a standard deviation high; emitted only where at least 60 % of the panel genes are measured in that line. Higher retroelement signal is associated with greater ADAR1 dependency (r = -0.18, p = 2.6e-06, n = 669), and that association survives controlling for this score (partial r = -0.15), so the two are related but not interchangeable), growthRate (CRISPR-inferred proliferation, on a relative scale where 1.0 is a typical line in the panel and higher is faster, NOT doublings per day; the standard alternative explanation for a modest dependency, so compare it between your groups before crediting a difference in dependency), meanGeneEffect + meanGeneEffectPercentile (that line\'s mean across the whole gene-effect matrix, and where that mean ranks among EVERY screened cell line in the release, not just the ones in this file; the "is this screen globally sick" control, so a percentile near 0 means the line looks sensitive to almost any knockout and a strong-looking dependency in it deserves less weight) and focalGeneZWithinLine (the focal gene\'s z against that line\'s OWN dependency distribution, the "is this gene unusual for this line" control). The `caveat: "polymorphic_locus"` flag marks HLA / MIC / KIR genes, calls in these highly polymorphic regions typically reflect germline allelic divergence from GRCh38, not somatic events.',
+                cellLineMetadata: 'Object keyed by cell line ID. Per cell line: name, tissue, subtype, mutations (gene → {hotspot: 0|1|2 where 0 = wild type, 1 = one copy carries the hotspot, 2 = both copies or multiple hits; damaging: bool, a likely loss-of-function variant; caveat?: "polymorphic_locus"}. The list per line is every call DepMap makes for it, not a top N, so its length varies by line because mutational burden does; a gene absent from a line was called wild type), clinicalFusions (curated driver fusion calls with tier), inferred (DepMap inferred subtypes, specificVariants like KRAS p.G12D, namedFusions, functionalLoss, msi. Every field in `inferred` is emitted ONLY when it is true or non-empty, so absence means the call was not made and never means it was made negative. functionalLoss covers exactly eight tumour suppressors and no others (TP53, CDKN2A, MTAP, APC, PTEN, NF1, RB1, VHL): a gene outside those eight is never listed here however deleted it is, so absence for any other gene says nothing at all. It is an integrated copy-number + mutation + expression call, so a line can be listed with no damaging coding mutation anywhere, deletion alone being enough), signatures, whose numbers are useless without their scales, so: ploidy (average copies per locus, ~2 is diploid, ~4 after a whole-genome doubling), wgd (boolean, whole-genome doubled), cin (chromosomal instability, 0 to 1, higher is more rearranged), lohFraction (fraction of the genome under loss of heterozygosity, 0 to 1), msiScore (continuous microsatellite-instability score; it is NOT a percentage and has no fixed ceiling. Do not invent a threshold for it: use inferred.msi as the call, and read msiScore only as a severity gradient underneath that call), aneuploidy (count of chromosome arms called aneuploid, out of 39). These are emitted only where DepMap computed them, so a line missing them was not measured rather than measured as normal; the boolean flags among them are emitted only when true, so an absent flag means not called rather than called negative, cnEvents ({ amplifications: [{gene, cn, tier}], deletions: [{gene, cn, tier}] }, curated focal CN events from a clinically actionable panel; amp tier is "amp" (CN ≥ 3.0) or "strong_amp" (≥ 5.0); deletion tier is "del" (CN ≤ 0.5) or "deep_del" (≤ 0.3) on DepMap relative-CN scale where 1.0 = diploid; the 8 TSGs in inferred.functionalLoss are NOT duplicated here), lehmannTnbc ({ tnbcType6, tnbcType4 }, Lehmann TNBC subtype assignments from JCI 2011 / PLOS ONE 2016 for the ~22 panel cell lines that overlap DepMap; six-class: BL1, BL2, IM, M, MSL, LAR; four-class collapses IM/MSL as immune/stromal contamination), class1AntigenPresentation (ABSENT on a line means either not compromised or never assessed, and the two cannot be told apart here; { status: "reduced" | "likely_lost", reasons: [...], evidence: { b2mDamaging?, classOneExprMeanZ?, classOneCn? } }, functional inference combining B2M damaging mutations + HLA-A/B/C expression z-score vs cohort + B2M-normalized HLA copy number; only emitted when class-I presentation looks compromised; NOT allele-specific LOH detection). Also per cell line where available: donor ({ age in years, ageCategory, sex, primaryOrMetastasis, collectionSite } describing the patient the line came from, not how the line behaves in culture), sexChromosomes ({ status, yLinkedExpr, xistExpr, chrXCn? }: the measured sex-chromosome state of the line in culture, as opposed to donor.sex. yLinkedExpr is the mean log-TPM of six Y-linked genes, xistExpr the XIST log-TPM, chrXCn the median relative copy number over non-pseudoautosomal chrX genes where 1.0 is the line\'s own modal baseline so one X in a diploid line reads about 0.5. status is one of y_present, y_loss (annotated male with Y-linked expression below 1: FUNCTIONAL loss of Y, an expression call that cannot separate a missing Y from a silent one), xist_present, xi_lost (annotated female, XIST below 1, chrXCn below 0.75: the inactive X is gone and X-linked genes are haploid), xist_silenced (annotated female, XIST below 1, two X copies retained: the inactive X eroded or the active X was duplicated, both transcribed), both_low (no Y-linked expression and no XIST, annotation cannot split it). Emitted ONLY for lines with expression data, so an absent field means not measured, never a normal result) and rrid (the Cellosaurus accession, the unambiguous identifier to quote when ordering or citing a line), oncotreeSubtype / oncotreeCode (finer than `subtype`, which is the Oncotree disease GROUP and cannot separate CLL from DLBCL or myeloma), culture ({ medium, mediumFamily, base, serum, supplements?, source, why? }: the growth medium. medium is the DepMap formulation string as written (e.g. "RPMI + 10% FBS + 2mM Glutamine"), mediumFamily its base normalised to RPMI | DMEM | DMEM-F12 | F12 | IMDM | MEM | McCoy | L-15 | other | unknown (mixtures other than DMEM:F12 are "other"), serum { type, pct } or "serum-free". source is "model_default" when it is the medium DepMap lists for the model, which is usually but not provably the medium the CRISPR screen ran in, and "missing" (with why) when none is recorded. Media differ in nutrients that some dependencies hinge on: RPMI has no iron salts and no hypoxanthine, DMEM:F12 has both, so a dependency on iron uptake or purine, folate / one-carbon, serine-glycine, cystine, pyruvate or glutamine handling can reflect the medium rather than the line. Blood lines are nearly all in RPMI, so test it WITHIN a tissue before crediting a lineage), retroelements ({ totalCpm, line1Cpm, hervkCpm, svaCpm, activeElements, retroelementHigh }, RNA-seq reads over 750 full-length intergenic LINE-1 / HERV-K / SVA elements, unique reads only, counts per million, from public CCLE hg19 alignments; retroelementHigh marks the top decile of MEASURED lines, a runtime cutoff around 80 CPM. Emitted ONLY for lines with a public alignment: 669 of the 1,208 panel lines are covered, so a line without this field was never measured and that is NOT a value of zero. The distribution is heavily right-skewed (median around 40 CPM, maximum 856), so read it as a percentile rather than a z-score. This is element TRANSCRIPTION, not retrotransposition: new genomic insertions cannot be seen in RNA, and poly-A selected RNA-seq cannot assign reads to individual loci, so treat it as an aggregate signal. If a group in this file was built by sorting on this measure, this is the axis that produced it), interferonScore (mean z-score across a curated interferon-stimulated-gene panel, computed across the whole expression cohort, so 0 is the panel average and +1 is a standard deviation high; emitted only where at least 60 % of the panel genes are measured in that line. Higher retroelement signal is associated with greater ADAR1 dependency (r = -0.18, p = 2.6e-06, n = 669), and that association survives controlling for this score (partial r = -0.15), so the two are related but not interchangeable), growthRate (CRISPR-inferred proliferation, on a relative scale where 1.0 is a typical line in the panel and higher is faster, NOT doublings per day; the standard alternative explanation for a modest dependency, so compare it between your groups before crediting a difference in dependency), meanGeneEffect + meanGeneEffectPercentile (that line\'s mean across the whole gene-effect matrix, and where that mean ranks among EVERY screened cell line in the release, not just the ones in this file; the "is this screen globally sick" control, so a percentile near 0 means the line looks sensitive to almost any knockout and a strong-looking dependency in it deserves less weight) and focalGeneZWithinLine (the focal gene\'s z against that line\'s OWN dependency distribution, the "is this gene unusual for this line" control). The `caveat: "polymorphic_locus"` flag marks HLA / MIC / KIR genes, calls in these highly polymorphic regions typically reflect germline allelic divergence from GRCh38, not somatic events.',
                 geneEffect: 'Object keyed by gene name. Each value is an array of CRISPR gene effect scores aligned to cellLineOrder. Negative = essential. null = missing. READ THIS BEFORE CONCLUDING ANYTHING FROM A GENE YOU CANNOT FIND: this matrix is VARIANCE-FILTERED and carries a fraction of the release, so a gene missing from it was DROPPED FOR LOW VARIANCE ACROSS THE PANEL, which is not the same as scoring near zero and is never evidence that it is not a partner. `matrixCoverage` says how many genes of the release survived the filter here. If your question turns on a specific gene that is absent, say so and ask for it by name in a Custom export (see notIncluded.howToAskForMore); naming genes disables the filter for them. Always included regardless of the variance threshold: the focal gene, every gene named in topCoessentials, and every gene the user typed into a multi-gene view, so any precomputed number about them can be recomputed from this file.',
                 expression: 'Object keyed by gene name. Each value is an array of log2(TPM+1) RNA expression values aligned to cellLineOrder. null = missing. Variance-filtered in the same way as geneEffect, with the same warning: a gene absent from here was dropped for low variance, not measured as flat, and `matrixCoverage` gives the counts. Always included regardless of the variance threshold: the focal gene where there is one, the genes surfaced in topCorrelates, the focal gene\'s pathway / complex partners, and every gene the user typed into a multi-gene view. Partner sources are layered: hand-curated high-value complexes (NEDD8/CRL, Proteasome, Hippo, MYC, TP53, BRCA, mTOR, BCL2, splicing) → CORUM physical protein complexes (~5000 human genes) → wiki cancer pathways (RAS/MAPK, PI3K, RTK family, etc.) → Reactome pathway / signaling-cascade co-members (~10000 human genes; broad parents filtered out, only pathways with 5-100 genes kept). So for SMARCA4 you get the BAF subunits via CORUM; for MCM4 the MCM2-7 helicase; for IL4R the JAK/STAT cascade via Reactome; for arbitrary genes you typically get something useful from at least one of the four layers.',
                 topCorrelates: 'Optional. Top 30 expression-vs-GE correlates of the focal gene: { gene, r (Pearson, focal-gene GE vs partner expression across the cohort), n }. Gated at n >= max(50, 0.6 * cohortSize) to drop partial-coverage genes. Polarity: positive r means high partner expression covaries with weaker focal-gene dependency (less negative GE).',
@@ -33767,6 +33854,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 { when: 'noFocal', text: "Step 1b - If there is NO single focal gene (correlation, cluster and group-comparison views export a gene LIST or two GROUPS, not a focal gene), the focal-gene machinery is absent by design and every step below that names focalGene... does not apply. Work from the view's own precomputed results in extras and from the matrices: for a gene list, the pairwise results plus the near-misses just under the cutoff; for two groups, the differential lists. Do not read the absence of focal-gene fields as missing data, and do not substitute a coarser field for them." },
                 { when: 'always', text: "Step 2 - Confirm scope: If the question names a disease, subtype, or gene-defined subset narrower than the stratification groups available in `extras`, define that subset explicitly by cell line FIRST and test it as a group, using `questionScope` if present. Do not answer a subgroup question from marginal summaries computed at a coarser granularity: a question can read as specific ('is IPO5 interesting in CLL') and still not be self-contained, because the cohort it names is not a group the file defines. Skip this step only when the question's cohort is already the export's cohort. If the question is instead open-ended ('explain the variability', 'what drives X'), present the overview with 2-3 candidate angles and ask which to pursue." },
                 { when: 'scans', text: "Step 2b - Before concluding a subgroup effect is ABSENT, check whether the precomputed scans could have detected it at that scope. topCorrelates / topCoessentials / topExpressionCorrelates are cohort-wide (see `scanScope`); an effect confined to a few lines is invisible in them by construction. Recompute inside the group, and score the group against extras.groupContrastNull for its size and against focalGeneRankAmongGenes, rather than eyeballing per-line percentiles: one line at the 6th percentile is unremarkable, four lines all there is not." },
+                { when: 'always', text: "Step 2d - Check the culture medium before interpreting a metabolic or nutrient-uptake dependency. Genes for iron uptake (TFRC and its pathway), purine and folate / one-carbon synthesis, serine-glycine, cystine (SLC7A11), pyruvate or glutamine handling can look essential because of what the medium lacks rather than anything about the line: RPMI has no iron salts and no hypoxanthine, DMEM:F12 has both. Look at extras.focalGeneMediumSummary where present, or group cellLineMetadata[id].culture.mediumFamily yourself, and always test it WITHIN a tissue, because blood lines are almost all in RPMI and a panel-wide medium effect can be lineage in disguise (and a lineage or co-dependency pattern can be the medium in disguise). The medium recorded is the model's default, usually but not provably the one the screen ran in, so name a medium effect as a likely confounder, not a proven cause." },
                 { when: 'always', text: "Step 2c - Do not enter the data through the raw per-line leaderboard. The lines with the most negative score for any gene are disproportionately lines whose whole screen reads sensitive, so a straight sort surfaces the same tumour-suppressor-loss lines whatever gene you ask about, across unrelated tissues, and it is easy to mistake that for a finding. Enter through the grouped summaries, and check meanGeneEffectPercentile on any line before naming it." },
                 { when: 'groups', text: "Step 3 - Deep analysis: Work data-first. Use the precomputed extras (focalGeneTissueSummary for per-tissue/subtype means, focalGeneMutationSummary for driver-mutation effects) before scanning the matrix gene-by-gene. Characterize unbiased genome-wide hits and annotate by pathway before testing hypothesis-driven candidate gene lists. After finding one explanatory model, actively search for alternative or complementary axes. Report all major signals, not just the first plausible one." },
                 { when: 'always', text: "Step 3b - Name the gaps, then ask ONCE. If answering the question properly would need something in `notIncluded` (drug response, genome-wide copy number, viral transformation status, cell lines outside this cohort), say so plainly and tell the user which export would supply it, and do not treat an absent layer as a negative result. When several open questions each need something, do NOT send the user round the export loop once per question: work out what they need between them and ask for it in ONE request. That means the union of the genes, the widest cohort any of them requires, and the union of the layers. Every round costs the user a dialog, an export and an upload, and costs you the thread; the only reason to split is when the answer to the first question would change what the second one should ask for, and if that is the reason, say so." },
@@ -34164,6 +34252,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                         say(has(m => m?.meanGeneEffect != null), 'the raw mean gene effect behind that percentile, at cellLineMetadata[id].meanGeneEffect'),
                         say(has(m => m?.donor), 'donor age, age category, sex, primary-vs-metastasis and collection site, at cellLineMetadata[id].donor'),
                         say(has(m => m?.sexChromosomes), 'the measured sex-chromosome state of the line in culture (functional loss of Y, XIST silenced with one or two X copies, with the numbers behind the call), at cellLineMetadata[id].sexChromosomes; absent means not measured'),
+                        say(has(m => m?.culture && m.culture.source !== 'missing'), 'the culture medium (raw formulation, normalised family, serum, supplements), at cellLineMetadata[id].culture. source says where it came from: "model_default" is the medium DepMap lists for the model, which is not guaranteed to be the medium of the CRISPR screen itself; "missing" lines say why'),
                         say(has(m => m?.oncotreeCode), 'the Oncotree disease CODE, at cellLineMetadata[id].oncotreeCode'),
                         say(has(m => m?.rrid), 'the Cellosaurus RRID identifier, at cellLineMetadata[id].rrid'),
                         say(has(m => m?.signatures?.wgd != null), 'whole-genome doubling status, at cellLineMetadata[id].signatures.wgd'),
@@ -40896,7 +40985,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         panel.className = 'select-proxy-panel';
         panel.style.width = '270px';
         panel.innerHTML =
-            `<div style="font-size:11px; font-weight:600; color:#374151; padding:2px 4px 6px;">Color only these ${mode === 'subtype' ? 'subtypes' : mode === 'disease' ? 'diseases' : 'tissues'}</div>` +
+            `<div style="font-size:11px; font-weight:600; color:#374151; padding:2px 4px 6px;">Color only these ${mode === 'subtype' ? 'subtypes' : mode === 'disease' ? 'diseases' : mode === 'medium' ? 'media' : 'tissues'}</div>` +
             `<input type="text" class="select-proxy-filter" id="colorByGroupFilter" placeholder="Filter...">` +
             `<div class="select-proxy-list" id="colorByGroupList" style="max-height:250px;">` +
             tree.map(grp => {
@@ -41018,7 +41107,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             tBtn.textContent = on ? 'Colored by tissue' : 'Color by tissue';
         }
         if (!btn) return;
-        const on = mode === 'tissue' || mode === 'subtype' || mode === 'disease';
+        const on = mode === 'tissue' || mode === 'subtype' || mode === 'disease' || mode === 'medium';
         btn.style.display = on ? '' : 'none';
         const statSel = document.getElementById('colorByLegendStat');
         if (statSel) statSel.style.display = on ? '' : 'none';
@@ -41464,9 +41553,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 const mode = document.getElementById('colorByCategory')?.value || 'tissue';
                 const md = this.cellLineMetadata || {};
                 const names = (this.currentInspect?.filteredData || this.currentInspect?.data || [])
-                    .filter(d => want.has(mode === 'subtype'
-                        ? (md.primaryDisease?.[d.cellLineId] || '')
-                        : (d.lineage || md.lineage?.[d.cellLineId] || '')))
+                    .filter(d => want.has(this._colorByGroup({ ...d, lineage: d.lineage || md.lineage?.[d.cellLineId] }, mode)))
                     .map(d => d.cellLineName || this.getCellLineName(d.cellLineId));
                 this.copyNamesToClipboard(names, 'colored');
                 return;
@@ -43283,6 +43370,21 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 if (va === vb) return this.getCellLineName(a).localeCompare(this.getCellLineName(b));
                 return (va - vb) * dir;
             };
+        } else if (mode === 'medium') {
+            // Culture medium, as groups rather than numbers: lines grown in
+            // the same medium sit together, in a fixed order that the arrow
+            // reverses. Lines with no recorded medium always go last.
+            const ORDER = ['RPMI', 'DMEM', 'DMEM-F12', 'F12', 'IMDM', 'MEM', 'McCoy', 'L-15', 'Other medium'];
+            countMap = new Map();
+            for (const cl of filtered) countMap.set(cl, this._mediumFamilyLabel(cl));
+            const rank = (lbl) => { const i = ORDER.indexOf(lbl); return i < 0 ? ORDER.length : i; };
+            secondaryCmp = (a, b) => {
+                const la = countMap.get(a), lb = countMap.get(b);
+                const ua = la === 'Medium not recorded', ub = lb === 'Medium not recorded';
+                if (ua !== ub) return ua ? 1 : -1;
+                const d = (rank(la) - rank(lb)) * dir;
+                return d || this.getCellLineName(a).localeCompare(this.getCellLineName(b));
+            };
         } else if (mode === 'ychr' || mode === 'xist') {
             // Y-linked expression or XIST, from the precomputed sex-chromosome
             // record. Unmeasured lines have no value and go to the end.
@@ -43375,6 +43477,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                       : mode === 'drug' ? `Drug-response AUC for <b>${geGenesLabel || '(no compound matched)'}</b>, 0 = all cells killed, 1 = no killing; ascending = most sensitive first`
                       : mode === 'ifn' ? `Interferon score: the average of ${geGenesLabel || '34 ISGs'}, each expressed as how far the line sits from the panel average for that gene (a z-score). 0 is typical, +1 means the line runs a standard deviation high on these genes, &minus;1 a standard deviation low. Lines with no expression data, or measured on under 60% of the genes, are unscored and sit at the end.`
                       : mode === 'ychr' ? `Y-linked expression: the mean log-TPM of six Y-linked genes (RPS4Y1, DDX3Y, EIF1AY, KDM5D, UTY, USP9Y). Below 1 in an annotated male line is called <b>functional loss of Y</b>; an expression call, not a DNA one. Female lines sit near 0 by nature. Lines with no expression data are unscored and sit at the end.`
+                      : mode === 'medium' ? 'Culture medium: the medium DepMap lists for each line, grouped by its base (RPMI, DMEM, DMEM-F12, ...). RPMI has no iron salts and no hypoxanthine while DMEM-F12 has both, so dependencies on iron uptake or nucleotide synthesis can follow the medium. Hover a value for the full formulation'
                       : mode === 'xist' ? `XIST expression (log-TPM), the RNA that keeps the inactive X silent. Below 1 in an annotated female line means XIST is silenced, with the inactive X either lost (one X copy) or eroded / duplicated (two copies), see the card. Male lines sit near 0 by nature. Lines with no expression data are unscored and sit at the end.`
                       : mode === 'retro' ? `Retroelement signal, ${retroMeasureLabels[retroMeasure]}: ${retroMeasure === 'a' ? 'how many of the 750 measured full-length elements are switched on (above 0.5 CPM) in each line'
                           : `summed RNA-seq reads (counts per million), unique reads only, over the ${retroMeasure === 't' ? '750 full-length LINE-1, HERV-K and SVA' : 'full-length ' + retroMeasureLabels[retroMeasure]} elements outside genes`}.${retroMeasure === 't' ? ' The panel median is about 40 CPM and the top tenth, about 80 CPM and up, counts as retroelement-high.' : ''} 669 of 1,208 lines have a public alignment to measure; unscored lines sit at the end.`
@@ -43419,6 +43522,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     : mode === 'ifn' ? 'Interferon score (mean ISG z-score)'
                     : mode === 'ychr' ? 'Y-linked expression (mean log-TPM, six genes)'
                     : mode === 'xist' ? 'XIST expression (log-TPM)'
+                    : mode === 'medium' ? 'Culture medium'
                     : mode === 'retro' ? (retroMeasure === 'a' ? 'Active elements (count)' : `Retroelement signal, ${retroMeasureLabels[retroMeasure]} (CPM)`)
                     : String(mode))
                 : '';
@@ -43497,6 +43601,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                         else if (raw < 5.0)  { tier = 'amp';        fg = '#1e3a8a'; bg = '#bfdbfe'; }
                         else                 { tier = 'strong amp'; fg = '#1e3a8a'; bg = '#93c5fd'; }
                         sortValStr = `<span style="font-size:10px; color:${fg}; background:${bg}; padding:1px 6px; border-radius:8px; margin-left:auto; flex-shrink:0; font-variant-numeric:tabular-nums;" title="CN ${v} (DepMap relative, 1.0 = diploid)">${tier} <span style="opacity:0.55; font-size:9px;">${v}</span></span>`;
+                    } else if (mode === 'medium') {
+                        const full = this.cellLineMetadata?.culture?.[cl]?.medium || this.cellLineMetadata?.culture?.[cl]?.why || '';
+                        sortValStr = `<span style="font-size:10px; color:${raw === 'Medium not recorded' ? '#9ca3af' : '#374151'}; margin-left:auto; flex-shrink:0;" title="${this.esc(full)}">${this.esc(raw)}</span>`;
                     } else if (mode === 'retro') {
                         const retroTitle = retroMeasure === 'a' ? 'Active elements (count)' : `Retroelement signal, ${retroMeasureLabels[retroMeasure]} (CPM)`;
                         const retroValStr = retroMeasure === 'a' ? `${raw}` : `${Number(raw).toFixed(1)} CPM`;
