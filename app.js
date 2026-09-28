@@ -1360,17 +1360,71 @@ class CorrelationExplorer {
         this.populateTissueExcludeList();
     }
 
+    // Downloads a file reporting how far along it is. On a phone the matrix
+    // takes long enough that a message with no numbers reads as a hang.
+    async _fetchBytes(url, onProgress) {
+        const response = await fetch(url);
+        const total = parseInt(response.headers.get('Content-Length') || '0', 10);
+        if (!response.body || !total || !onProgress) return new Uint8Array(await response.arrayBuffer());
+        const reader = response.body.getReader();
+        const out = new Uint8Array(total);
+        let got = 0;
+        for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (got + value.length > out.length) {
+                // Length header was not the body length (a proxy re-encoded
+                // it): fall back to collecting the chunks as they come.
+                const grown = new Uint8Array(Math.max(out.length * 2, got + value.length));
+                grown.set(out.subarray(0, got));
+                grown.set(value, got);
+                got += value.length;
+                return this._fetchBytesRest(reader, grown, got);
+            }
+            out.set(value, got);
+            got += value.length;
+            onProgress(got, total);
+        }
+        return got === out.length ? out : out.subarray(0, got);
+    }
+
+    async _fetchBytesRest(reader, buf, got) {
+        for (;;) {
+            const { done, value } = await reader.read();
+            if (done) return buf.subarray(0, got);
+            if (got + value.length > buf.length) {
+                const grown = new Uint8Array(Math.max(buf.length * 2, got + value.length));
+                grown.set(buf.subarray(0, got));
+                buf = grown;
+            }
+            buf.set(value, got);
+            got += value.length;
+        }
+    }
+
+    // The int16 values of a matrix file. byteSplit files store every low byte
+    // first, then every high byte, which gzip packs about a quarter smaller
+    // than interleaved pairs; older files are plain little-endian int16.
+    _int16FromMatrix(decompressed, meta) {
+        if (!meta?.byteSplit) return new Int16Array(decompressed.buffer, decompressed.byteOffset, decompressed.byteLength / 2);
+        const n = decompressed.length / 2;
+        const lo = decompressed.subarray(0, n), hi = decompressed.subarray(n);
+        const out = new Int16Array(n);
+        for (let i = 0; i < n; i++) out[i] = (hi[i] << 8) | lo[i];
+        return out;
+    }
+
     async loadGeneEffects() {
-        const response = await fetch(this._dataUrl('web_data/geneEffects.bin.gz'));
-        const compressedData = await response.arrayBuffer();
+        const mb = (b) => (b / 1e6).toFixed(0);
+        const compressedData = await this._fetchBytes(this._dataUrl('web_data/geneEffects.bin.gz'),
+            (got, total) => this.updateLoadingText(`Loading gene effect matrix... ${mb(got)} of ${mb(total)} MB`));
 
         this.updateLoadingText('Decompressing gene effect data...');
 
         // Decompress using pako
-        const decompressed = pako.inflate(new Uint8Array(compressedData));
+        const decompressed = pako.inflate(compressedData);
 
-        // Convert to Int16Array
-        const int16Data = new Int16Array(decompressed.buffer);
+        const int16Data = this._int16FromMatrix(decompressed, this.metadata);
 
         // Convert to Float32Array and scale
         const scaleFactor = this.metadata.scaleFactor;
@@ -36339,7 +36393,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const binRes = await fetch(this._dataUrl('web_data/cn.bin.gz'));
             const buf = await binRes.arrayBuffer();
             const decompressed = pako.inflate(new Uint8Array(buf));
-            const int16Data = new Int16Array(decompressed.buffer);
+            const int16Data = this._int16FromMatrix(decompressed, meta);
             const sf = meta.scaleFactor;
             const na = meta.naValue;
             // Rescale in chunks, yielding to the event loop between them, so the
@@ -36531,15 +36585,15 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             });
 
             // Load binary expression data
-            loadingTextEl.textContent = 'Loading expression data (51 MB)...';
-            const response = await fetch(this._dataUrl('web_data/expression.bin.gz'));
-            const compressedData = await response.arrayBuffer();
+            loadingTextEl.textContent = 'Loading expression data...';
+            const compressedData = await this._fetchBytes(this._dataUrl('web_data/expression.bin.gz'),
+                (got, total) => { loadingTextEl.textContent = `Loading expression data... ${(got / 1e6).toFixed(0)} of ${(total / 1e6).toFixed(0)} MB`; });
 
             loadingTextEl.textContent = 'Decompressing expression data...';
             await new Promise(resolve => setTimeout(resolve, 50)); // let UI update
 
-            const decompressed = pako.inflate(new Uint8Array(compressedData));
-            const int16Data = new Int16Array(decompressed.buffer);
+            const decompressed = pako.inflate(compressedData);
+            const int16Data = this._int16FromMatrix(decompressed, this.expressionMetadata);
 
             const scaleFactor = this.expressionMetadata.scaleFactor;
             const naValue = this.expressionMetadata.naValue;
