@@ -31070,7 +31070,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // block cannot see. Reporting it as applied and then refusing at Export
         // reads as the block being rejected; check it here instead.
         if (settings.cohort === 'view') {
-            const n = (this._getAICellLines(this._aiExportSource || 'ge') || []).length;
+            const live = this._aiLiveSource();
+            const n = live ? (this._getAICellLines(live) || []).length : 0;
             if (!n) {
                 const i = applied.indexOf('cohort: the current view');
                 if (i >= 0) applied.splice(i, 1);
@@ -31087,11 +31088,30 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         return { settings, applied, ignored };
     }
 
+    // The export source that is actually on screen now, or null. The source
+    // remembered from the last AI dialog outlives its popout, so a custom
+    // export opened later from the Options menu read a closed view's filters
+    // and gene as "the current view".
+    _aiLiveSource() {
+        const shown = (id) => { const el = document.getElementById(id); return !!el && (el.classList.contains('active') || (el.style.display && el.style.display !== 'none')); };
+        if (shown('clbWikiModal')) return 'wiki';
+        if (shown('selectionInspectModal')) return 'selection';
+        if (shown('inspectModal') && this.currentInspect) return 'scatter';
+        if (shown('geneEffectModal') && this.currentGeneEffect) return 'ge';
+        if (shown('cellLineBrowserModal')) return 'clb';
+        const tab = document.querySelector('.nav-link.active[data-tab]')?.dataset.tab;
+        if (tab === 'mutation' && this.mutationResults) return 'mutation';
+        if (this.results?.success) return tab === 'correlations' ? 'correlations' : 'clusters';
+        return null;
+    }
+
     openAIViewDialog(prefill) {
         const dlg = document.getElementById('aiViewDialog');
         if (!dlg) return;
         const ta = document.getElementById('aiViewText');
-        if (ta && prefill) ta.value = prefill;
+        // Starts empty each time: a block left from an earlier paste was
+        // opened again by the next press.
+        if (ta) ta.value = prefill || '';
         const note = document.getElementById('aiViewNote');
         if (note) note.textContent = '';
         const why = document.getElementById('aiViewWhy');
@@ -31108,10 +31128,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 // it belongs rather than refusing it on a technicality.
                 if (/CORRELATE-REQUEST/i.test(text)) {
                     dlg.style.display = 'none';
-                    this.openCustomAIExport();
-                    const box = document.getElementById('caiRequest');
-                    if (box) box.value = text;
-                    this._setCaiNote('That is an export request, not a view. Moved here for you; press Apply request.');
+                    this.openCustomAIExport(text);
+                    this._setCaiNote('That is an export request, not a view. Moved here for you; press Apply request, or Export to apply and export in one go.');
                     return;
                 }
                 const parsed = this._parseAIView(text);
@@ -31135,12 +31153,29 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (el) el.textContent = msg || '';
     }
 
-    openCustomAIExport() {
+    // The settings a fresh dialog, and every applied request, start from:
+    // the cohort defaults to the open view only when a view is on screen.
+    _caiFreshSettings() {
+        const d = this._aiCustomDefaults();
+        if (!this._aiLiveSource()) d.cohort = 'all';
+        return d;
+    }
+
+    openCustomAIExport(prefill) {
         this._caiQuestionFromBlock = false;
         const dlg = document.getElementById('customAIDialog');
         if (!dlg) return;
-        this._aiCustom = this._aiCustom || this._aiCustomDefaults();
+        // Every open starts clean: the box, the note and the settings. A
+        // request left from an earlier export was otherwise applied to, or
+        // silently mixed into, the next one.
+        this._aiCustom = this._caiFreshSettings();
+        this._caiAppliedText = '';
         this._syncCustomAIDialog();
+        const box = document.getElementById('caiRequest');
+        if (box) box.value = prefill || '';
+        this._setCaiNote('');
+        const st = document.getElementById('caiStatus');
+        if (st) st.textContent = '';
         dlg.style.display = 'flex';
         if (!dlg.dataset.wired) {
             dlg.dataset.wired = '1';
@@ -31151,44 +31186,15 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 this._syncCustomAIDialog();
                 this._setCaiNote('Back to the standard settings.');
             });
-            document.getElementById('caiApplyRequest')?.addEventListener('click', async () => {
-                const text = document.getElementById('caiRequest')?.value || '';
-                if (!text.trim()) { this._setCaiNote('Nothing to apply, the box is empty.'); return; }
-                // The two block types get confused with each other, so each box
-                // hands the other kind over rather than reporting gibberish.
-                if (/CORRELATE-VIEW/i.test(text)) {
-                    document.getElementById('customAIDialog').style.display = 'none';
-                    this.openAIViewDialog(text);
-                    this._setAiViewNote('That is a view, not an export request. Moved here for you.');
-                    return;
-                }
-                // A band in the request resolves against the location table,
-                // which is otherwise only fetched when copy number is used.
-                if (/\b(?:chr)?(?:\d{1,2}|[XY])[pq]\d*/i.test(text)) {
-                    this._setCaiNote('Looking up the genes in that region\u2026');
-                    try { await this.loadGeneLocations(); } catch (e) { /* falls back to plain symbols */ }
-                }
-                // The synonym table is loaded lazily for the gene box; a pasted
-                // list needs it too, or a renamed symbol reads as a missing one.
-                if (!this.synonymLookup) {
-                    if (!this._synonymLoadPromise) {
-                        this._synonymLoadPromise = fetch(this._dataUrl('web_data/synonyms.json')).then(r => r.json()).catch(() => ({}));
-                    }
-                    try { this.synonymLookup = await this._synonymLoadPromise; } catch (e) { this.synonymLookup = {}; }
-                }
-                const { settings, applied, ignored } = this._parseAIRequest(text, this._readCustomAIDialog());
-                this._aiCustom = settings;
-                // The question in a pasted block was composed by an assistant,
-                // not typed by the user; the export says so (questionProvenance)
-                // so the assistant reading the file keeps the thread.
-                this._caiQuestionFromBlock = !!settings.question;
-                this._syncCustomAIDialog();
-                const bits = [];
-                if (applied.length) bits.push(`Set ${applied.length}: ${applied.join('; ')}.`);
-                if (ignored.length) bits.push(`Could not use: ${ignored.join('; ')}.`);
-                this._setCaiNote(bits.join(' ') || 'Nothing recognised in that block.');
-            });
+            document.getElementById('caiApplyRequest')?.addEventListener('click', () => this._caiApplyRequest());
             document.getElementById('caiExport')?.addEventListener('click', async () => {
+                // A block pasted but never applied was silently ignored and the
+                // file built from the dialog's defaults. Apply it first.
+                const pasted = (document.getElementById('caiRequest')?.value || '').trim();
+                if (pasted && pasted !== this._caiAppliedText) {
+                    const ok = await this._caiApplyRequest();
+                    if (!ok) return;
+                }
                 this._aiCustom = this._readCustomAIDialog();
                 const c = this._aiCustom;
                 // Check the cohort BEFORE closing anything. Closing first and
@@ -31197,7 +31203,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 // that could not work simply produced nothing.
                 const n = c.cohort === 'all' ? (this.metadata?.cellLines?.length || 0)
                     : c.cohort === 'list' ? (c.cohortList || []).length
-                    : this._getAICellLines(this._aiExportSource || 'ge').length;
+                    : (this._aiLiveSource() ? this._getAICellLines(this._aiLiveSource()).length : 0);
                 if (!n) {
                     this._setCaiNote(c.cohort === 'view'
                         ? 'Nothing is open, so "what the current view shows" is empty. Choose "Every cell line", name some, or open a view first.'
@@ -31220,6 +31226,57 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 }
             });
         }
+    }
+
+    // Parses the pasted block into the dialog. Returns false when there was
+    // nothing to apply or the block was handed to the view dialog instead.
+    async _caiApplyRequest() {
+        const text = document.getElementById('caiRequest')?.value || '';
+        if (!text.trim()) { this._setCaiNote('Nothing to apply, the box is empty.'); return false; }
+        // The two block types get confused with each other, so each box
+        // hands the other kind over rather than reporting gibberish.
+        if (/CORRELATE-VIEW/i.test(text)) {
+            document.getElementById('customAIDialog').style.display = 'none';
+            this.openAIViewDialog(text);
+            this._setAiViewNote('That is a view, not an export request. Moved here for you.');
+            return false;
+        }
+        // A band in the request resolves against the location table,
+        // which is otherwise only fetched when copy number is used.
+        if (/\b(?:chr)?(?:\d{1,2}|[XY])[pq]\d*/i.test(text)) {
+            this._setCaiNote('Looking up the genes in that region\u2026');
+            try { await this.loadGeneLocations(); } catch (e) { /* falls back to plain symbols */ }
+        }
+        // The synonym table is loaded lazily for the gene box; a pasted
+        // list needs it too, or a renamed symbol reads as a missing one.
+        if (!this.synonymLookup) {
+            if (!this._synonymLoadPromise) {
+                this._synonymLoadPromise = fetch(this._dataUrl('web_data/synonyms.json')).then(r => r.json()).catch(() => ({}));
+            }
+            try { this.synonymLookup = await this._synonymLoadPromise; } catch (e) { this.synonymLookup = {}; }
+        }
+        // A request fully determines what it names: it starts from the
+        // standard settings, not from whatever the dialog held before.
+        const { settings, applied, ignored } = this._parseAIRequest(text, this._caiFreshSettings());
+        this._caiAppliedText = text.trim();
+        this._aiCustom = settings;
+        // The question in a pasted block was composed by an assistant,
+        // not typed by the user; the export says so (questionProvenance)
+        // so the assistant reading the file keeps the thread.
+        this._caiQuestionFromBlock = !!settings.question;
+        this._syncCustomAIDialog();
+        const bits = [];
+        if (applied.length) bits.push(`Set ${applied.length}: ${applied.join('; ')}.`);
+        if (ignored.length) bits.push(`Could not use: ${ignored.join('; ')}.`);
+        // What Export will now do, in one line, so the request can be
+        // checked against the result before a file is written.
+        const nCl = settings.cohort === 'all' ? (this.metadata?.cellLines?.length || 0)
+            : settings.cohort === 'list' ? (settings.cohortList || []).length
+            : (this._aiLiveSource() ? this._getAICellLines(this._aiLiveSource()).length : 0);
+        const genesWord = settings.genes === 'list' ? `${settings.geneList.length} named genes` : 'genes chosen automatically';
+        bits.push(`Will export: ${nCl.toLocaleString()} cell lines, ${genesWord}, ${settings.question ? 'with the question' : 'no question'}.`);
+        this._setCaiNote(bits.join(' ') || 'Nothing recognised in that block.');
+        return true;
     }
 
     _setCaiNote(text) {
@@ -31367,7 +31424,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         setStatus('Collecting data...');
 
         // Normalize source aliases (Phase 3, one exporter for every source).
-        let source = this._aiExportSource || 'ge';
+        let source = custom ? (this._aiLiveSource() || 'none') : (this._aiExportSource || 'ge');
         if (source === 'mutations') source = 'mutation';
 
         let allCLs = this._getAICellLines(source);
@@ -31485,7 +31542,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 type: 'gene_effect_analysis', gene, plotType: this.currentGEView || 'tissue',
                 stratification: hotspotF || (this.geneEffectViewMode === 'mutation' && mr?.hotspotGene) || 'tissue',
                 stratificationKind: this.geneEffectViewMode === 'mutation' ? this._aiAlterationWord(mr) : null,
-                measure: (this.geneEffectViewMode === 'mutation' && mr?.metric === 'expr') ? 'mRNA expression' : 'gene effect',
+                measure: (this.geneEffectViewMode === 'mutation'
+                    ? mr?.metric === 'expr'
+                    : (this.currentGeneEffect?.dataType === 'expr' || this._geDataType === 'expr')) ? 'mRNA expression' : 'gene effect',
                 tissueFilter: tissueF, subtypeFilter: subtypeF, oncotreeFilter: oncotreeF, hotspotFilter: hotspotF,
                 customCellLineListCount: geCustomCLCount || null,
                 highlightedCellLines: geHighlight?.size ? [...geHighlight] : null
@@ -32981,8 +33040,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             exprMatrix = {};
             for (const c of exprCandidates) exprMatrix[c.gene] = c.vals;
             if (_wantGenes) {
+                // The focal gene(s) stay, as on the gene-effect side: a view of
+                // a gene's expression exported without that gene's expression
+                // could not be redrawn from the file.
                 for (const g of Object.keys(exprMatrix)) {
-                    if (!_wantGenes.has(g.toUpperCase())) delete exprMatrix[g];
+                    const u = g.toUpperCase();
+                    if (!_wantGenes.has(u) && u !== focalGene && u !== focalGene2) delete exprMatrix[g];
                 }
                 // Same add-back on this side: a named gene the expression
                 // variance filter dropped is still a gene that was asked for.
@@ -34270,8 +34333,15 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // user cannot go back to it either. Same stem as the .json.gz so the
         // pair stays together and can be uploaded together. Written BEFORE
         // serialising, or the reference to it would not be inside the file.
-        const _label = analysisGene || context.gene1 || 'analysis';
-        const _stem = `correlate_export_${source}_${_label}_${n}cl`;
+        // One stem for the data file and its picture. A request-driven file
+        // is named for the request, not the view that happened to be open,
+        // and the time keeps two exports of the same state apart.
+        const _reqDriven = exportData.context?.type === 'custom_export';
+        const _label = _reqDriven ? 'request' : `${source}_${analysisGene || context.gene1 || 'analysis'}`;
+        const _now = new Date();
+        const _hhmmss = [_now.getHours(), _now.getMinutes(), _now.getSeconds()].map(x => String(x).padStart(2, '0')).join('');
+        const _stem = `correlate_export_${_label}_${n}cl_${_hhmmss}`;
+        this._aiFileStem = _stem;
         let _pngUrl = null;
         // The dialog offers the image and defaults it on; the custom dialog
         // has no checkbox and keeps its own rule below.
@@ -34408,15 +34478,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (gzSizeEl) gzSizeEl.textContent = ` (~${(compressed.length / (1024 * 1024)).toFixed(1)} MB)`;
         }
 
-        const label = analysisGene || context.gene1 || 'analysis';
         const blob = useCompressed
             ? new Blob([compressed], { type: 'application/gzip' })
             : new Blob([jsonStr], { type: 'application/json' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = useCompressed
-            ? `correlate_export_${source}_${label}_${n}cl.json.gz`
-            : `correlate_export_${source}_${label}_${n}cl.json`;
+        a.download = `${this._aiFileStem}.json${useCompressed ? '.gz' : ''}`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
