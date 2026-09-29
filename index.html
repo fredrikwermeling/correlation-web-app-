@@ -4163,7 +4163,7 @@
                             <input type="number" id="geMinGroupSize" value="1" min="1" max="50" style="width:36px; font-size:11px; padding:2px 4px; border:1px solid #d1d5db; border-radius:4px; text-align:center;" title="Minimum cell lines per tissue to show" onchange="app.switchGeneEffectView(app.currentGEView || 'tissue')">
                             <button onclick="app.adjustNumber('geMinGroupSize', 1)" style="font-size:10px; padding:0 5px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer;">+</button>
                         </span>
-                        <label class="mobile-hide" style="display:inline-flex; align-items:center; gap:3px; font-size:10px; color:#374151; white-space:nowrap; cursor:pointer;" title="Group the box plot by the culture medium each line is grown in (RPMI, DMEM, DMEM-F12, ...) instead of by tissue. Pick a tissue first to compare media within one lineage: blood lines are almost all in RPMI, so across the whole panel a medium difference can be a lineage difference.">
+                        <label class="mobile-hide" style="display:inline-flex; align-items:center; gap:3px; font-size:10px; color:#374151; white-space:nowrap; cursor:pointer;" title="Group by culture medium instead of tissue. Pick a tissue first to compare media within one lineage.">
                             <input type="checkbox" id="geGroupByMedium" onchange="app.setGeGroupByMedium(this.checked)"> By medium
                         </label>
                         <input type="text" id="geCellLineSearch" class="form-control mobile-hide" placeholder="Highlight cell line..." style="width: 140px; font-size: 11px; padding: 3px 6px;" title="Search and highlight a cell line in the plot">
@@ -5398,7 +5398,6 @@
                 <option value="ychr">Sort: Y-linked expression</option>
                 <option value="xist">Sort: XIST expression</option>
                 <option value="medium">Sort: Culture medium</option>
-                <option value="p53">Sort: p53 function (screen + targets)</option>
               </select>
               <button id="clbSortDir" title="Switch the sort direction" class="btn btn-outline btn-sm" style="width:32px;">&#x25B2;</button>
               <div id="clbSortGeneWrap" class="clb-anchor" style="visibility:hidden;">
@@ -5851,7 +5850,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v89_85"></script>
+    <script src="app.js?v=v89_86"></script>
     <script src="tour.js?v=v89_49"></script>
 </body>
 </html>

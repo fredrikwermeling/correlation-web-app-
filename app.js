@@ -30820,7 +30820,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             'tissue: <name>       (any view, optional)',
             'disease: <name>      (any view, optional)',
             'colour-by: tissue | subtype | disease | medium   (scatter, optional)',
-            'sort: drug | expression | gene-effect | copy-number | interferon | retroelement | medium | p53 | name   (cell-lines)',
+            'sort: drug | expression | gene-effect | copy-number | interferon | retroelement | medium | name   (cell-lines)',
             'sort-gene: <gene or compound>   (cell-lines, for the sorts that need one)',
             'why: <one line saying what the user should look for>'
         ].join('\n');
@@ -30849,7 +30849,6 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             interferon: 'ifn', ifn: 'ifn', isg: 'ifn',
             retroelement: 'retro', retro: 'retro', 'line-1': 'retro', line1: 'retro',
             medium: 'medium', culture: 'medium', 'culture-medium': 'medium', media: 'medium',
-            p53: 'p53', 'p53-function': 'p53', 'p53-activity': 'p53',
             name: 'name'
         };
         const MEAS = { ge: 'ge', 'gene-effect': 'ge', dependency: 'ge', expr: 'expr', expression: 'expr', mrna: 'expr', cn: 'cn', 'copy-number': 'cn' };
@@ -35483,10 +35482,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const p53 = this.cellLineMetadata?.p53Function?.[cellLineId];
         let s2b = '';
         if (p53?.verdict === 'active_despite_loss' && tsgLosses.includes('TP53')) {
-            const sign = p53.geneEffect >= 0 ? '+' : '';
-            s2b = `The data disagree on <b>TP53</b>: knocking it out still speeds growth in the screen (gene effect ${sign}${p53.geneEffect.toFixed(2)})`
-                + (p53.targetScore != null ? ' and p53 target genes are expressed' : '')
-                + `, so p53 looks active despite that call.`;
+            s2b = 'TP53 knockout still increases growth, suggesting residual p53 activity.';
         }
         // The reverse verdict (low_without_call) is not stated here: lineages
         // with low basal p53 target expression (plasma cells) land in it
@@ -38602,12 +38598,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             p53_active_despite_loss: {
                 label: 'p53 active despite a TP53 loss call',
                 category: 'Tumor-suppressor functional loss',
-                description: '<b>Inclusion:</b> lines DepMap calls TP53-lost where the data say p53 still works: a model trained on DepMap\'s own calls, using the TP53 knockout effect in the screen and the expression of 18 direct p53 target genes, gives a probability of loss below 0.1. <b>Why:</b> the call is genomic (a mutation at high allele fraction, a deep deletion or no expression) and does not test function. Where knocking TP53 out still speeds growth and its targets are expressed, the mutation is probably partial or the call is wrong, and the line should not sit in a TP53-null group. <b>Caveat:</b> a handful of lines; check the variant before relying on it.'
+                description: '<b>Inclusion:</b> lines DepMap calls TP53-lost where the data say p53 still works: a model trained on DepMap\'s own calls, using the TP53 knockout effect in the screen and the expression of 18 direct p53 target genes, gives a probability of loss below 0.1. <b>Why:</b> the call is genomic (a mutation at high allele fraction, a deep deletion or no expression) and does not test function. Where knocking TP53 out still speeds growth and its targets are expressed, the mutation is probably partial or the call is wrong, and the line should not sit in a TP53-null group. <b>Caveat:</b> few lines qualify; check the TP53 variant before relying on it.'
             },
             p53_low_without_call: {
                 label: 'p53 inactive without a TP53 loss call',
                 category: 'Tumor-suppressor functional loss',
-                description: '<b>Inclusion:</b> lines DepMap calls TP53-intact where the same model gives a probability of loss above 0.9: knocking TP53 out does little and p53 target genes are quiet. <b>Why:</b> p53 can be held down without a TP53 lesion, by MDM2 or MDM4, by viral proteins, or simply by low basal signalling, and such lines behave more like TP53-null than their sequence suggests. <b>Caveat:</b> weaker than the reverse set: this is "the pathway looks quiet", not "TP53 is lost". Several myeloma lines appear here, and at least one (MM.1S) is known to be p53 wild-type.'
+                description: '<b>Inclusion:</b> lines DepMap calls TP53-intact where the same model gives a probability of loss above 0.9: knocking TP53 out does little and p53 target genes are quiet. <b>Why:</b> p53 can be held down without a TP53 lesion, by MDM2 or MDM4, by viral proteins, or simply by low basal signalling, and such lines behave more like TP53-null than their sequence suggests. <b>Caveat:</b> weaker than the reverse set: it means the pathway looks quiet, not that TP53 is lost. Lineages with low basal p53 target expression can appear here without any p53 defect.'
             },
             pten_loss: {
                 label: 'PTEN functional loss',
@@ -43472,19 +43468,6 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 if (va === vb) return this.getCellLineName(a).localeCompare(this.getCellLineName(b));
                 return (va - vb) * dir;
             };
-        } else if (mode === 'p53') {
-            // Probability that p53 is lost, from the screen plus p53 target
-            // expression; ascending puts the lines where p53 works best first.
-            countMap = new Map();
-            for (const [cl, rec] of Object.entries(this.cellLineMetadata?.p53Function || {})) countMap.set(cl, rec.pLoss);
-            secondaryCmp = (a, b) => {
-                const va = countMap.get(a), vb = countMap.get(b);
-                if (va == null && vb == null) return this.getCellLineName(a).localeCompare(this.getCellLineName(b));
-                if (va == null) return 1;
-                if (vb == null) return -1;
-                if (va === vb) return this.getCellLineName(a).localeCompare(this.getCellLineName(b));
-                return (va - vb) * dir;
-            };
         } else if (mode === 'medium') {
             // Culture medium, as groups rather than numbers: lines grown in
             // the same medium sit together, in a fixed order that the arrow
@@ -43592,8 +43575,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                       : mode === 'drug' ? `Drug-response AUC for <b>${geGenesLabel || '(no compound matched)'}</b>, 0 = all cells killed, 1 = no killing; ascending = most sensitive first`
                       : mode === 'ifn' ? `Interferon score: the average of ${geGenesLabel || '34 ISGs'}, each expressed as how far the line sits from the panel average for that gene (a z-score). 0 is typical, +1 means the line runs a standard deviation high on these genes, &minus;1 a standard deviation low. Lines with no expression data, or measured on under 60% of the genes, are unscored and sit at the end.`
                       : mode === 'ychr' ? `Y-linked expression: the mean log-TPM of six Y-linked genes (RPS4Y1, DDX3Y, EIF1AY, KDM5D, UTY, USP9Y). Below 1 in an annotated male line is called <b>functional loss of Y</b>; an expression call, not a DNA one. Female lines sit near 0 by nature. Lines with no expression data are unscored and sit at the end.`
-                      : mode === 'p53' ? 'p53 status from the data: the probability that p53 is lost, from the TP53 knockout effect in the screen and the expression of 18 direct p53 target genes, fitted to DepMap\'s own TP53 calls. Near 0 means p53 works (knocking TP53 out speeds growth, targets expressed), near 1 means it looks lost. A value that disagrees with the line\'s DepMap TP53 call is worth checking'
-                      : mode === 'medium' ? 'Culture medium: the medium each line was screened in (the model default where the screen records none), grouped by its base (RPMI, DMEM, DMEM-F12, ...). RPMI has no iron salts and no hypoxanthine while DMEM-F12 has both, so dependencies on iron uptake or nucleotide synthesis can follow the medium. Hover a value for the full formulation'
+                      : mode === 'medium' ? 'Culture medium of the screen (model default where not recorded). Hover a value for the full formulation'
                       : mode === 'xist' ? `XIST expression (log-TPM), the RNA that keeps the inactive X silent. Below 1 in an annotated female line means XIST is silenced, with the inactive X either lost (one X copy) or eroded / duplicated (two copies), see the card. Male lines sit near 0 by nature. Lines with no expression data are unscored and sit at the end.`
                       : mode === 'retro' ? `Retroelement signal, ${retroMeasureLabels[retroMeasure]}: ${retroMeasure === 'a' ? 'how many of the 750 measured full-length elements are switched on (above 0.5 CPM) in each line'
                           : `summed RNA-seq reads (counts per million), unique reads only, over the ${retroMeasure === 't' ? '750 full-length LINE-1, HERV-K and SVA' : 'full-length ' + retroMeasureLabels[retroMeasure]} elements outside genes`}.${retroMeasure === 't' ? ' The panel median is about 40 CPM and the top tenth, about 80 CPM and up, counts as retroelement-high.' : ''} 669 of 1,208 lines have a public alignment to measure; unscored lines sit at the end.`
@@ -43639,7 +43621,6 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     : mode === 'ychr' ? 'Y-linked expression (mean log-TPM, six genes)'
                     : mode === 'xist' ? 'XIST expression (log-TPM)'
                     : mode === 'medium' ? 'Culture medium'
-                    : mode === 'p53' ? 'p53 loss probability (screen + p53 targets)'
                     : mode === 'retro' ? (retroMeasure === 'a' ? 'Active elements (count)' : `Retroelement signal, ${retroMeasureLabels[retroMeasure]} (CPM)`)
                     : String(mode))
                 : '';
@@ -43689,7 +43670,6 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                                   : mode === 'drug' ? 'AUC'
                                   : mode === 'ychr' ? 'Y'
                                   : mode === 'xist' ? 'XIST'
-                                  : mode === 'p53' ? 'P(loss)'
                                   : '';
                     // For drug-response, color AUC by sensitivity at a glance.
                     // Thresholds match the dropdown's v/p categories and the
