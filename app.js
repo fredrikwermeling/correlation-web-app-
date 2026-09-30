@@ -7993,18 +7993,21 @@ class CorrelationExplorer {
         // section on hover.
         const qi = (text) => ` <span style="color:#9ca3af; font-size:10px; font-weight:400; cursor:help; border:1px solid #d1d5db; border-radius:50%; padding:0 5px;" title="${this.esc(text)}">?</span>`;
         const geneLink = (bad, good, bold) => `<a href="#" style="color:#4c782e; ${bold ? 'font-weight:600; ' : ''}text-decoration:underline; text-decoration-color:#c3dbb0; text-underline-offset:2px;" data-bad="${this.esc(bad)}" data-good="${this.esc(good)}" onclick="app.replaceGeneInTextarea(this.dataset.bad, this.dataset.good); return false;">${this.gi(good)}</a>`;
-        const gridStyle = 'display:grid; grid-template-columns:max-content max-content minmax(0,1fr); gap:2px 7px; align-items:baseline;';
+        // One wrapping row per name. A fixed grid could not wrap a long symbol
+        // and its source tag, which ran past the frame in the narrow column.
+        const rowStyle = 'display:flex; flex-wrap:wrap; align-items:baseline; gap:0 6px; margin-top:3px; min-width:0; overflow-wrap:anywhere;';
+        const cardStyle = 'background:#fff; border:1px solid #e5e7eb; border-radius:6px; padding:8px 10px; margin-top:6px; min-width:0;';
 
         let synHtml = '';
         if (synHits.length) {
             const rows = synHits.map(h =>
-                `<div style="text-align:right;"><b style="color:#374151;">${this.gi(h.original)}</b></div>`
-                + `<div style="color:#9ca3af;">&rarr;</div>`
-                + `<div>${geneLink(h.original, h.replacement, true)} <span style="color:#9ca3af; font-size:10px;">${this.esc(h.source)}</span></div>`
+                `<div style="${rowStyle}"><b style="color:#374151;">${this.gi(h.original)}</b>`
+                + `<span style="color:#9ca3af;">&rarr;</span>`
+                + `${geneLink(h.original, h.replacement, true)}<span style="color:#9ca3af; font-size:10px;">${this.esc(h.source)}</span></div>`
             ).join('');
-            synHtml = `<div style="background:#fff; border:1px solid #e5e7eb; border-radius:6px; padding:8px 10px; margin-top:6px;">
+            synHtml = `<div style="${cardStyle}">
                 <div style="font-weight:600; font-size:12px; color:#374151; margin-bottom:5px;">Suggested replacements${qi('These names are not in the data, but a known synonym or mouse ortholog is. Click a suggestion to replace that one name in your list, or Use all to replace every row. Keep my names leaves the list as typed; unmatched genes are then left out of the analysis.')}</div>
-                <div style="${gridStyle}">${rows}</div>
+                <div>${rows}</div>
                 <div style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap;">
                     <button type="button" class="btn btn-sm" id="synApplyAllBtn" style="background:#4c782e; color:white; font-size:11px; padding:3px 10px;">Use all</button>
                     <button type="button" class="btn btn-outline btn-sm" id="synDismissBtn" style="font-size:11px; padding:3px 10px;">Keep my names</button>
@@ -8021,15 +8024,15 @@ class CorrelationExplorer {
                 else noSugg.push(g);
             });
             const rows = withSugg.map(({ g, sugg }) =>
-                `<div style="text-align:right; color:#374151;">${this.gi(g)}</div>`
-                + `<div style="color:#9ca3af;">&rarr;</div>`
-                + `<div>${sugg.map(s => geneLink(g, s, false)).join(', ')}</div>`
+                `<div style="${rowStyle}"><span style="color:#374151;">${this.gi(g)}</span>`
+                + `<span style="color:#9ca3af;">&rarr;</span>`
+                + `<span>${sugg.map(s => geneLink(g, s, false)).join(', ')}</span></div>`
             ).join('');
             let overflow = remaining.length > 10 ? `<div style="color:#9ca3af; margin-top:4px;">+${remaining.length - 10} more</div>` : '';
             const canSearchOnline = !this._synonymApiTried && remaining.some(g => !this._synonymApiHits?.has(g.toUpperCase()));
-            remHtml = `<div style="background:#fff; border:1px solid #e5e7eb; border-radius:6px; padding:8px 10px; margin-top:6px;">
+            remHtml = `<div style="${cardStyle}">
                 <div style="font-weight:600; font-size:12px; color:#374151; margin-bottom:5px;">No match found${qi('No synonym or ortholog is known for these names. The names beside a gene are the closest spellings in the data: click one to use it instead. Names left unresolved are left out of the analysis.')}</div>
-                ${rows ? `<div style="${gridStyle}">${rows}</div>` : ''}
+                ${rows ? `<div>${rows}</div>` : ''}
                 ${noSugg.length ? `<div style="color:#6b7280; ${rows ? 'margin-top:5px;' : ''}">${rows ? 'Nothing close: ' : ''}${noSugg.map(g => this.gi(g)).join(', ')}</div>` : ''}
                 ${overflow}
                 ${canSearchOnline ? `<div style="margin-top:8px;"><button type="button" class="btn btn-outline btn-sm" id="synOnlineBtn" style="font-size:11px; padding:3px 10px;">Search online (MyGene.info)</button></div>` : ''}
@@ -8110,7 +8113,7 @@ class CorrelationExplorer {
         apiResults.forEach(r => {
             if (r.replacement && this.geneIndex.has(r.replacement.toUpperCase())) {
                 this._synonymApiHits.set(r.original.toUpperCase(),
-                    { replacement: r.replacement.toUpperCase(), source: 'MyGene.info' });
+                    { replacement: r.replacement.toUpperCase(), source: r.source ? `MyGene.info: ${r.source}` : 'MyGene.info' });
                 hits++;
             }
         });
@@ -8593,8 +8596,8 @@ class CorrelationExplorer {
         }
 
         // Check orthologs
-        if (this.orthologs && this.orthologs[upperGene]) {
-            const humanGene = this.orthologs[upperGene];
+        if (this.orthologs?.mouseToHuman?.[upperGene]) {
+            const humanGene = this.orthologs.mouseToHuman[upperGene];
             if (this.geneIndex.has(humanGene.toUpperCase())) {
                 return { gene: humanGene.toUpperCase(), source: 'ortholog' };
             }
@@ -8625,16 +8628,30 @@ class CorrelationExplorer {
                 try {
                     const url = `https://mygene.info/v3/query?q=${encodeURIComponent(gene)}&scopes=symbol,alias&fields=symbol&species=human`;
                     const response = await fetch(url);
-
+                    let symbol = null;
                     if (response.ok) {
                         const data = await response.json();
-                        if (data.hits && data.hits.length > 0) {
-                            // Take the first hit's symbol
-                            const symbol = data.hits[0].symbol;
-                            if (symbol && symbol.toUpperCase() !== gene.toUpperCase()) {
-                                results.push({ original: gene, replacement: symbol });
-                            }
+                        symbol = data.hits?.[0]?.symbol || null;
+                    }
+                    if (symbol && symbol.toUpperCase() !== gene.toUpperCase() && this.geneIndex?.has(symbol.toUpperCase())) {
+                        results.push({ original: gene, replacement: symbol });
+                        return;
+                    }
+                    // A mouse name (often an old placeholder such as a RIKEN
+                    // clone ID) resolves to its current mouse symbol, which
+                    // the ortholog table then maps to the human gene.
+                    const mres = await fetch(`https://mygene.info/v3/query?q=${encodeURIComponent(gene)}&scopes=symbol,alias&fields=symbol&species=mouse`);
+                    if (mres.ok) {
+                        const mdata = await mres.json();
+                        const msym = (mdata.hits?.[0]?.symbol || '').toUpperCase();
+                        const human = msym && this.orthologs?.mouseToHuman?.[msym];
+                        if (human && this.geneIndex?.has(human.toUpperCase())) {
+                            results.push({ original: gene, replacement: human, source: `mouse ${mdata.hits[0].symbol}, ortholog` });
+                            return;
                         }
+                    }
+                    if (symbol && symbol.toUpperCase() !== gene.toUpperCase()) {
+                        results.push({ original: gene, replacement: symbol });
                     }
                 } catch (error) {
                     console.warn(`MyGene.info query failed for ${gene}:`, error);
