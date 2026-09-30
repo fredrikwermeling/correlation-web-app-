@@ -395,12 +395,16 @@ class CorrelationExplorer {
         // &sp=mouse. Handled before lowercasing: the address is a path on a
         // case-sensitive host, and the gene names go back in the spelling
         // they came in.
-        const fromGl = /^genes=([^&]*)&(.*)$/i.exec(raw);
-        if (fromGl) {
-            const params = new URLSearchParams(fromGl[2]);
+        // The return address may also come in the query string
+        // (?gl=...&sp=...#genes=...), which keeps the hash a plain gene list
+        // for builds that do not know about it.
+        const fromGl = /^genes=([^&]*)(?:&(.*))?$/i.exec(raw);
+        const query = new URLSearchParams(window.location.search || '');
+        if (fromGl && (fromGl[2] || query.get('gl'))) {
+            const params = new URLSearchParams(fromGl[2] || '');
             let value = fromGl[1];
             try { value = decodeURIComponent(value); } catch (e) { }
-            this._glLink = this._glLinkFrom(value, params.get('gl'), params.get('sp'));
+            this._glLink = this._glLinkFrom(value, params.get('gl') || query.get('gl'), params.get('sp') || query.get('sp'));
             this._openGenesFromLink(value);
             return;
         }
@@ -434,7 +438,8 @@ class CorrelationExplorer {
             return;
         }
         // A set of genes: #genes=TP53,BRCA1 runs the analysis on them.
-        const geneRoute = /^genes=(.+)$/.exec(h);
+        // Anything after "&" is a parameter, never part of the gene list.
+        const geneRoute = /^genes=([^&]+)/.exec(h);
         if (geneRoute) {
             let value = geneRoute[1];
             try { value = decodeURIComponent(value); } catch (e) { }
