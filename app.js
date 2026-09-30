@@ -410,10 +410,9 @@ class CorrelationExplorer {
             this._openCellLineFromLink(value);
             return;
         }
-        // One gene, seen across the panel: #gene=TP53 opens the Cell Line
-        // Browser with every line ranked by that gene's effect. Green Listed
-        // links here from the genes it marks as essential in nearly every cell
-        // line, where the question is what "nearly every" actually looks like.
+        // One gene, seen across the panel: #gene=TP53 opens the Gene Effect
+        // Analysis for it, by tissue. Green Listed links here from each gene
+        // in its output, where the question is how much the cells depend on it.
         const oneGene = /^gene=(.+)$/.exec(h);
         if (oneGene) {
             let value = oneGene[1];
@@ -430,30 +429,14 @@ class CorrelationExplorer {
         }
     }
 
-    // The cell-line list, ranked by one gene's effect. Always has something to
-    // show, which a correlation search for a pan-essential gene does not: a
-    // gene that behaves the same way everywhere correlates with nothing.
+    // The gene's effect across every line, split by tissue — the same popout
+    // a gene opens from inside the app. It says so itself when the gene is
+    // not in the data.
     _openGeneEffectFromLink(text) {
         const gene = String(text || "").trim().toUpperCase();
         if (!gene) return;
         try {
-            this.openCellLineBrowser();
-            const sortBy = document.getElementById('clbSortBy');
-            const sortGene = document.getElementById('clbSortGene');
-            if (!sortBy || !sortGene) return;
-            sortBy.value = 'ge';
-            sortBy.dispatchEvent(new Event('change', { bubbles: true }));
-            sortGene.value = gene;
-            sortGene.dispatchEvent(new Event('input', { bubbles: true }));
-            setTimeout(() => {
-                try {
-                    // Typing into that box opens its suggestion list, which is
-                    // for someone choosing a gene; this one is already chosen.
-                    const dd = document.getElementById('clbSortDrugDropdown');
-                    if (dd) dd.style.display = 'none';
-                    this.renderCellLineList?.();
-                } catch (e) { }
-            }, 300);
+            this.openGeneEffectModal(gene, 'tissue', { dataType: 'ge' });
         } catch (e) {
             console.warn('Could not open the gene from the link:', e);
         }
