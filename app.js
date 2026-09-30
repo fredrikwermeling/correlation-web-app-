@@ -391,6 +391,19 @@ class CorrelationExplorer {
             this._handleRestoreHash(raw.slice('restore='.length));
             return;
         }
+        // A set of genes from Green Listed: #genes=TSC1,TSC2&gl=<its address>
+        // &sp=mouse. Handled before lowercasing: the address is a path on a
+        // case-sensitive host, and the gene names go back in the spelling
+        // they came in.
+        const fromGl = /^genes=([^&]*)&(.*)$/i.exec(raw);
+        if (fromGl) {
+            const params = new URLSearchParams(fromGl[2]);
+            let value = fromGl[1];
+            try { value = decodeURIComponent(value); } catch (e) { }
+            this._glLink = this._glLinkFrom(value, params.get('gl'), params.get('sp'));
+            this._openGenesFromLink(value);
+            return;
+        }
         const h = raw.toLowerCase();
         const CELL_BROWSER_ROUTES = ['cell', 'cells', 'cellbrowser', 'cellsbrowser', 'cell-line-browser', 'celllinebrowser', 'browser'];
         if (CELL_BROWSER_ROUTES.includes(h)) {
@@ -429,6 +442,25 @@ class CorrelationExplorer {
         }
     }
 
+    // Where a gene list came from, when it came from Green Listed, so the
+    // list can go back there once it has been expanded or thinned out. Only
+    // Green Listed's own addresses are accepted: the button that uses this
+    // sends the list to that address, and a link must not be able to point
+    // it anywhere else.
+    _glLinkFrom(genesText, back, species) {
+        let url = null;
+        try {
+            const u = new URL(back || '');
+            const local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(u.hostname);
+            const known = u.protocol === 'https:' && (u.hostname === 'greenlisted.cmm.se' ||
+                (u.hostname === 'fredrikwermeling.github.io' && /^\/greenlisted/i.test(u.pathname)));
+            if (known || (local && /^https?:$/.test(u.protocol))) url = u.origin + u.pathname;
+        } catch (e) { }
+        if (!url) return null;
+        const input = String(genesText || '').split(/[\s,;]+/).map(g => g.trim()).filter(Boolean);
+        return { url, origin: new URL(url).origin, species: species === 'mouse' ? 'mouse' : 'human', input };
+    }
+
     // The gene's effect across every line, split by tissue — the same popout
     // a gene opens from inside the app. It says so itself when the gene is
     // not in the data.
@@ -464,6 +496,243 @@ class CorrelationExplorer {
         } catch (e) {
             console.warn('Could not run the analysis from the link:', e);
         }
+    }
+
+    // ---- The list going back to Green Listed ----
+    //
+    // A gene set that arrived from Green Listed can be grown by the genes that
+    // correlate with it (Expand my set) and thinned by dropping genes that
+    // tell the same story as one already kept (TSC2 beside TSC1), then sent
+    // back to Green Listed's gene box. Only positive correlations count as
+    // redundant: two genes whose loss hurts the same lines are one signal
+    // twice, whereas an anticorrelated pair is two different ones.
+
+    _glDefaults() {
+        if (!this._glState) this._glState = { prune: false, cutoff: null, priority: 'hub', addOff: new Set(), keep: new Set() };
+        return this._glState;
+    }
+
+    // The list as it stands: the run's genes, plus the discovered genes still
+    // ticked, minus the genes pruning drops and the user did not keep anyway.
+    _glCompute() {
+        const res = this.results, L = this._glLink, st = this._glDefaults();
+        const input = (res.geneList || []).filter(g => this.geneIndex.has(g));
+        const inputSet = new Set(input);
+        const best = new Map();
+        if (res.mode === 'design') {
+            for (const c of res.correlations || []) {
+                for (const [seed, other] of [[c.gene1, c.gene2], [c.gene2, c.gene1]]) {
+                    if (!inputSet.has(seed) || inputSet.has(other) || !this.geneIndex.has(other)) continue;
+                    const b = best.get(other);
+                    if (!b || Math.abs(c.correlation) > Math.abs(b.r)) best.set(other, { seed, r: c.correlation });
+                }
+            }
+        }
+        const added = [...best].map(([gene, v]) => ({ gene, seed: v.seed, r: v.r }))
+            .sort((a, b) => Math.abs(b.r) - Math.abs(a.r));
+        const candidates = input.concat(added.filter(a => !st.addOff.has(a.gene)).map(a => a.gene));
+
+        // Names the link carried that have no gene-effect data. Nothing here
+        // can judge them, so they go back untouched.
+        const passthrough = (L.input || []).filter(o => {
+            const u = o.toUpperCase();
+            return !this.geneIndex.has(u) && !inputSet.has(u);
+        });
+
+        const idx = (this._resultsCellLineIndices && this._resultsCellLineIndices.length)
+            ? this._resultsCellLineIndices : Array.from({ length: this.nCellLines }, (_, i) => i);
+        const sub = (full) => { const v = new Float32Array(idx.length); for (let k = 0; k < idx.length; k++) v[k] = full[idx[k]]; return v; };
+        const meanGE = new Map();
+        for (const g of candidates) {
+            const full = this.getGeneData(this.geneIndex.get(g));
+            let s = 0, n = 0;
+            for (const i of idx) { const x = full[i]; if (!isNaN(x)) { s += x; n++; } }
+            meanGE.set(g, n ? s / n : NaN);
+        }
+
+        const PRUNE_MAX = 600;
+        let dropped = [], degree = new Map(), pruneNote = '';
+        const cutoff = st.cutoff ?? res.cutoff ?? 0.5;
+        if (st.prune && candidates.length > PRUNE_MAX) {
+            pruneNote = `Pruning works on up to ${PRUNE_MAX} genes; this list has ${candidates.length}. Untick some discovered genes or raise the cutoff and run again.`;
+        } else if (st.prune && candidates.length > 1) {
+            this._runBasis = res.basis || this._runBasis || 'ge';
+            const vec = candidates.map(g => { const f = this._analysisVector(g); return f ? sub(f) : null; });
+            const minN = res.minN || 10;
+            const nbr = candidates.map(() => []);
+            for (let a = 0; a < candidates.length; a++) {
+                for (let b = a + 1; b < candidates.length; b++) {
+                    if (!vec[a] || !vec[b]) continue;
+                    const s = this.pearsonWithSlope(vec[a], vec[b]);
+                    if (s.n >= minN && s.correlation >= cutoff) {
+                        nbr[a].push({ j: b, r: s.correlation });
+                        nbr[b].push({ j: a, r: s.correlation });
+                    }
+                }
+            }
+            candidates.forEach((g, i) => degree.set(g, nbr[i].length));
+            const ge = (i) => { const m = meanGE.get(candidates[i]); return isNaN(m) ? 0 : m; };
+            const order = candidates.map((_, i) => i);
+            const cmp = {
+                hub: (a, b) => nbr[b].length - nbr[a].length || a - b,
+                order: (a, b) => a - b,
+                strong: (a, b) => ge(a) - ge(b) || a - b,
+                weak: (a, b) => ge(b) - ge(a) || a - b
+            }[st.priority] || ((a, b) => a - b);
+            order.sort(cmp);
+            const fate = new Array(candidates.length).fill(null);
+            for (const i of order) {
+                if (fate[i]) continue;
+                fate[i] = { kept: true };
+                for (const e of nbr[i]) {
+                    if (!fate[e.j]) fate[e.j] = { kept: false, by: candidates[i], r: e.r };
+                }
+            }
+            dropped = candidates.map((g, i) => ({ gene: g, ...fate[i] })).filter(f => !f.kept);
+        }
+        const out = new Set(dropped.filter(d => !st.keep.has(d.gene)).map(d => d.gene));
+        const finalGenes = candidates.filter(g => !out.has(g));
+        return { input, added, candidates, passthrough, dropped, degree, meanGE, cutoff, pruneNote, finalGenes };
+    }
+
+    // A symbol in the spelling Green Listed sent it in, or, for a gene this
+    // app added to a mouse list, the mouse orthologue.
+    _glOutName(g) {
+        const L = this._glLink;
+        const orig = (L.input || []).find(o => o.toUpperCase() === g);
+        if (orig) return orig;
+        if (L.species === 'mouse' && this.orthologs?.mouseToHuman) {
+            if (!this._humanToMouse) {
+                this._humanToMouse = new Map();
+                for (const [m, h] of Object.entries(this.orthologs.mouseToHuman)) {
+                    const k = String(h).toUpperCase();
+                    if (!this._humanToMouse.has(k)) this._humanToMouse.set(k, m);
+                }
+            }
+            return this._humanToMouse.get(g) || g;
+        }
+        return g;
+    }
+
+    _glSet(key, value) {
+        const st = this._glDefaults();
+        if (key === 'cutoff') {
+            const v = parseFloat(value);
+            st.cutoff = isNaN(v) ? null : Math.max(0.05, Math.min(0.99, v));
+        } else if (key === 'add' || key === 'keep') {
+            const set = key === 'add' ? st.addOff : st.keep;
+            const [gene, on] = value;
+            // addOff holds the genes left out, keep the genes put back.
+            if ((key === 'add') !== on) set.add(gene); else set.delete(gene);
+        } else {
+            st[key] = value;
+        }
+        this._renderGreenListedTab();
+    }
+
+    // Grow the set: the same run in Expand mode, which this tab then lists.
+    _glExpand(on) {
+        const radio = document.querySelector(`input[name="analysisMode"][value="${on ? 'design' : 'analysis'}"]`);
+        if (radio && !radio.checked) { radio.checked = true; radio.dispatchEvent(new Event('change', { bubbles: true })); }
+        this._glShowAfterRun = true;
+        this.runAnalysis();
+    }
+
+    _renderGreenListedTab() {
+        const btn = document.getElementById('glTab');
+        const body = document.getElementById('glTabBody');
+        if (!btn || !body) return;
+        const L = this._glLink, res = this.results;
+        btn.style.display = L ? '' : 'none';
+        if (!L) return;
+        if (!res || !res.success) { body.innerHTML = '<p style="color:#6b7280;">Run the analysis to work on the list.</p>'; return; }
+        if (this._glShowAfterRun) {
+            this._glShowAfterRun = false;
+            setTimeout(() => btn.click(), 0);
+        }
+        const st = this._glDefaults();
+        const c = this._glCompute();
+        this._glFinal = c.finalGenes.map(g => this._glOutName(g)).concat(c.passthrough);
+        const esc = (v) => this.esc(v);
+        const ge = (g) => { const m = c.meanGE.get(g); return isNaN(m) ? '' : ` <span style="color:#9ca3af;">GE ${m.toFixed(2)}</span>`; };
+        const box = 'border:1px solid #e5e7eb; border-radius:6px; padding:10px 12px; margin-bottom:10px;';
+        const cohort = (this._resultsCellLineIndices || []).length || this.nCellLines;
+
+        let expand;
+        if (res.mode === 'design') {
+            const rows = c.added.map(a => `<label style="display:flex; gap:6px; align-items:baseline; font-size:12px;">` +
+                `<input type="checkbox" ${st.addOff.has(a.gene) ? '' : 'checked'} onchange="app._glSet('add', ['${esc(a.gene)}', this.checked])">` +
+                `${this.gi(a.gene)}<span style="color:#6b7280;">r ${a.r.toFixed(2)} with ${this.gi(a.seed)}</span>${ge(a.gene)}</label>`).join('');
+            expand = `<p style="margin:0 0 6px;">${c.added.length} ${c.added.length === 1 ? 'gene correlates' : 'genes correlate'} with your set at |r| &ge; ${res.cutoff}. Untick any you do not want added.` +
+                ` <a href="#" onclick="event.preventDefault(); app._glExpand(false)">Back to my own genes only</a></p>` +
+                (rows ? `<div style="max-height:220px; overflow:auto; display:grid; grid-template-columns:repeat(auto-fill, minmax(230px, 1fr)); gap:2px 12px;">${rows}</div>` : '');
+        } else {
+            expand = `<p style="margin:0 0 6px;">Search all genes for ones whose gene effect correlates with your set at |r| &ge; ${res.cutoff} (the cutoff in box 1), and choose which to add.</p>` +
+                `<button class="btn btn-outline btn-sm" onclick="app._glExpand(true)">Find correlated genes</button>`;
+        }
+
+        const pri = [['hub', 'correlates with the most others'], ['order', 'comes first in my list'],
+            ['strong', 'has the strongest dropout (most negative gene effect)'], ['weak', 'has the weakest dropout (least negative gene effect)']];
+        let prune = `<label style="display:flex; gap:6px; align-items:center;"><input type="checkbox" ${st.prune ? 'checked' : ''} onchange="app._glSet('prune', this.checked)">` +
+            `<span>Drop genes that correlate with a gene already kept at r &ge; ` +
+            `<input type="number" step="0.05" min="0.05" max="0.99" value="${c.cutoff}" style="width:60px;" onchange="app._glSet('cutoff', this.value)"></span></label>` +
+            `<div style="margin:6px 0 0 22px; font-size:12px;">From each correlated group, keep the gene that ` +
+            `<select onchange="app._glSet('priority', this.value)">${pri.map(([v, t]) => `<option value="${v}" ${st.priority === v ? 'selected' : ''}>${t}</option>`).join('')}</select></div>`;
+        if (st.prune) {
+            if (c.pruneNote) prune += `<p style="color:#b45309; margin:6px 0 0;">${esc(c.pruneNote)}</p>`;
+            else if (!c.dropped.length) prune += `<p style="color:#6b7280; margin:6px 0 0;">No two genes correlate that strongly; nothing is dropped.</p>`;
+            else {
+                prune += `<p style="margin:8px 0 4px;">${c.dropped.length} dropped. Tick one to keep it anyway.</p>` +
+                    `<div style="max-height:220px; overflow:auto; font-size:12px;">` +
+                    c.dropped.map(d => `<label style="display:flex; gap:6px; align-items:baseline;">` +
+                        `<input type="checkbox" ${st.keep.has(d.gene) ? 'checked' : ''} onchange="app._glSet('keep', ['${esc(d.gene)}', this.checked])">` +
+                        `${this.gi(d.gene)}${ge(d.gene)}<span style="color:#6b7280;">r ${d.r.toFixed(2)} with ${this.gi(d.by)}${ge(d.by)} (kept)</span></label>`).join('') +
+                    `</div>`;
+            }
+        }
+
+        const pass = c.passthrough.length
+            ? `<p style="color:#6b7280; font-size:12px; margin:6px 0 0;">${c.passthrough.length} ${c.passthrough.length === 1 ? 'name has' : 'names have'} no gene-effect data here and ${c.passthrough.length === 1 ? 'goes' : 'go'} back unchanged: ${c.passthrough.map(g => this.gi(g)).join(', ')}.</p>` : '';
+
+        body.innerHTML =
+            `<p style="margin:0 0 10px; color:#374151;">Your genes came from Green Listed. Grow or thin the list by gene-effect correlation across ${cohort.toLocaleString('en-US')} cell lines, then send it back to Green Listed's gene box.</p>` +
+            `<div style="${box}"><div style="font-weight:600; margin-bottom:6px;">Expand</div>${expand}</div>` +
+            `<div style="${box}"><div style="font-weight:600; margin-bottom:6px;">Prune</div>${prune}</div>` +
+            `<div style="${box}"><div style="font-weight:600; margin-bottom:6px;">List to send: ${this._glFinal.length} ${this._glFinal.length === 1 ? 'gene' : 'genes'}</div>` +
+            `<textarea readonly rows="4" style="width:100%; box-sizing:border-box; font-family:monospace; font-size:12px;">${esc(this._glFinal.join('\n'))}</textarea>${pass}` +
+            `<div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; align-items:center;">` +
+            `<button class="btn btn-primary btn-sm" onclick="app._glSend()" ${this._glFinal.length ? '' : 'disabled'}>Send to Green Listed</button>` +
+            `<button class="btn btn-outline btn-sm" onclick="navigator.clipboard?.writeText(app._glFinal.join('\\n'))">Copy list</button>` +
+            `<span id="glSendStatus" style="font-size:12px; color:#6b7280;"></span></div></div>`;
+    }
+
+    // Back to the Green Listed tab that opened this one, which confirms it
+    // took the list. Without that tab (closed, or this page reached another
+    // way) Green Listed opens fresh with the list in its gene box.
+    _glSend() {
+        const L = this._glLink, genes = this._glFinal || [];
+        if (!L || !genes.length) return;
+        const status = document.getElementById('glSendStatus');
+        const fresh = () => window.open(L.url + '#genes=' + encodeURIComponent(genes.join(',')), '_blank');
+        let opener = null;
+        try { opener = window.opener && !window.opener.closed ? window.opener : null; } catch (e) { }
+        if (!opener) { fresh(); return; }
+        const token = Math.random().toString(36).slice(2);
+        let acked = false;
+        const onMsg = (ev) => {
+            if (ev.origin !== L.origin || ev.data?.type !== 'correlate-gene-list-received' || ev.data.token !== token) return;
+            acked = true;
+            window.removeEventListener('message', onMsg);
+            if (status) status.textContent = `Sent. The ${genes.length} ${genes.length === 1 ? 'gene is' : 'genes are'} in Green Listed's gene box; switch back to its tab.`;
+        };
+        window.addEventListener('message', onMsg);
+        try { opener.postMessage({ type: 'correlate-gene-list', token, genes }, L.origin); } catch (e) { }
+        try { opener.focus(); } catch (e) { }
+        setTimeout(() => {
+            if (acked) return;
+            window.removeEventListener('message', onMsg);
+            fresh();
+        }, 1000);
     }
 
     // A name, a punctuation-stripped name (A375) or a DepMap id, resolved to
@@ -12592,6 +12861,7 @@ class CorrelationExplorer {
         this.displayCorrelationsTable();
         this.displayClustersTable();
         this.displaySummary();
+        this._renderGreenListedTab();
         this._matrixDrawnFor = null;
         const _mp = document.getElementById('matrixPlot');
         if (_mp && document.getElementById('tab-matrix')?.classList.contains('active')) this.displayCorrelationMatrix();

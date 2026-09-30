@@ -3318,6 +3318,7 @@
                     <li><button class="nav-link" data-tab="mutation" style="display: none;" id="mutationTab">Mutation analysis</button></li>
                     <li><button class="nav-link" data-tab="synonyms" style="display: none;" id="synonymsTab">Synonyms/Orthologs</button></li>
                     <li><button class="nav-link" data-tab="summary">Summary</button></li>
+                    <li><button class="nav-link" data-tab="greenlisted" id="glTab" style="display: none;" title="Grow or thin the gene list from Green Listed by correlation, then send it back">Back to Green Listed</button></li>
                     <!-- Reset all lives on the Options row; it keeps the name
                          "Reset all" because the Network tab below has its own
                          Reset for the appearance controls. -->
@@ -3762,6 +3763,9 @@
                 </div>
 
                 <!-- Summary Tab -->
+                <div class="tab-content" id="tab-greenlisted">
+                    <div id="glTabBody" style="font-size:13px;"></div>
+                </div>
                 <div class="tab-content" id="tab-summary">
                     <button class="btn btn-outline btn-sm" id="downloadSummary" style="margin-bottom: 15px;">Download Summary</button>
                     <div class="summary-text" id="summaryText">Run analysis to view summary</div>
@@ -5850,7 +5854,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v89_89"></script>
+    <script src="app.js?v=v89_90"></script>
     <script src="tour.js?v=v89_49"></script>
 </body>
 </html>
