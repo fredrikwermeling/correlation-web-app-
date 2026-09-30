@@ -497,6 +497,18 @@ class CorrelationExplorer {
             const mode = genes.length === 1 ? 'design' : 'analysis';
             const radio = document.querySelector(`input[name="analysisMode"][value="${mode}"]`);
             if (radio && !radio.checked) { radio.checked = true; radio.dispatchEvent(new Event('change', { bubbles: true })); }
+            // A long list from Green Listed starts at a stricter cutoff. At
+            // 0.5 a few hundred genes draw thousands of links, a network no
+            // one can read that also takes a long time to lay out.
+            if (this._glLink) {
+                const r = this._glCutoffFor(genes.length);
+                const el = document.getElementById('correlationCutoff');
+                if (el && r > parseFloat(el.value)) {
+                    el.value = r;
+                    el.dispatchEvent(new Event('input', { bubbles: true }));
+                    this._glLink.cutoffRaised = { r, n: genes.length };
+                }
+            }
             this.runAnalysis();
         } catch (e) {
             console.warn('Could not run the analysis from the link:', e);
@@ -636,7 +648,24 @@ class CorrelationExplorer {
     }
 
     // Grow the set: the same run in Expand mode, which this tab then lists.
+    // The starting cutoff for a list of n genes from Green Listed.
+    _glCutoffFor(n) {
+        return n <= 100 ? 0.5 : n <= 300 ? 0.6 : n <= 600 ? 0.7 : 0.8;
+    }
+
+    // Expand compares every gene in the list with all ~18,000, so its cost
+    // grows with the list: 50 genes take a few seconds, several hundred take
+    // minutes and return more genes than anyone can go through.
+    static get GL_EXPAND_MAX() { return 50; }
+
     _glExpand(on) {
+        // Expanding starts from the list as it stands, pruned if pruning is
+        // on; going back starts from the list Green Listed sent.
+        const box = document.getElementById('geneTextarea');
+        if (box) {
+            const seeds = on ? (this._glSeeds || []) : (this._glLink?.input || []).map(g => g.toUpperCase());
+            if (seeds.length) { box.value = seeds.join('\n'); this.updateGeneCount?.(); }
+        }
         const radio = document.querySelector(`input[name="analysisMode"][value="${on ? 'design' : 'analysis'}"]`);
         if (radio && !radio.checked) { radio.checked = true; radio.dispatchEvent(new Event('change', { bubbles: true })); }
         this._glShowAfterRun = true;
@@ -650,7 +679,22 @@ class CorrelationExplorer {
         const L = this._glLink, res = this.results;
         btn.style.display = L ? '' : 'none';
         if (!L) return;
-        if (!res || !res.success) { body.innerHTML = '<p style="color:#6b7280;">Run the analysis to work on the list.</p>'; return; }
+        if (!res) { body.innerHTML = '<p style="color:#6b7280;">Run the analysis to work on the list.</p>'; return; }
+        if (!res.success) {
+            // Nothing correlated at the cutoff: nothing to prune at it, and
+            // the list can still go back as it came.
+            this._glFinal = (L.input || []).slice();
+            this._glSeeds = this._glFinal.map(g => g.toUpperCase()).filter(g => this.geneIndex.has(g));
+            const expanding = document.querySelector('input[name="analysisMode"][value="design"]')?.checked;
+            body.innerHTML =
+                `<p style="margin:0 0 8px; color:#b45309;">${this.esc(res.error || 'The analysis returned nothing.')}</p>` +
+                `<p style="margin:0 0 8px;">With no pair of genes above the cutoff there is nothing to prune at it. Lower the cutoff in box 1 and press Run, or send the list back unchanged.` +
+                (expanding ? ` <a href="#" onclick="event.preventDefault(); app._glExpand(false)">Back to my own genes only</a>` : '') + `</p>` +
+                `<button class="btn btn-primary btn-sm" onclick="app._glSend()">Send the ${this._glFinal.length} ${this._glFinal.length === 1 ? 'gene' : 'genes'} back unchanged</button> ` +
+                `<span id="glSendStatus" style="font-size:12px; color:#6b7280;"></span>`;
+            setTimeout(() => btn.click(), 0);
+            return;
+        }
         if (this._glShowAfterRun) {
             this._glShowAfterRun = false;
             setTimeout(() => btn.click(), 0);
@@ -658,6 +702,7 @@ class CorrelationExplorer {
         const st = this._glDefaults();
         const c = this._glCompute();
         this._glFinal = c.finalGenes.map(g => this._glOutName(g)).concat(c.passthrough);
+        this._glSeeds = res.mode === 'design' ? [] : c.finalGenes.slice();
         const esc = (v) => this.esc(v);
         const ge = (g) => { const m = c.meanGE.get(g); return isNaN(m) ? '' : ` <span style="color:#9ca3af;">GE ${m.toFixed(2)}</span>`; };
         const box = 'border:1px solid #e5e7eb; border-radius:6px; padding:10px 12px; margin-bottom:10px;';
@@ -672,8 +717,13 @@ class CorrelationExplorer {
                 ` <a href="#" onclick="event.preventDefault(); app._glExpand(false)">Back to my own genes only</a></p>` +
                 (rows ? `<div style="max-height:220px; overflow:auto; display:grid; grid-template-columns:repeat(auto-fill, minmax(230px, 1fr)); gap:2px 12px;">${rows}</div>` : '');
         } else {
-            expand = `<p style="margin:0 0 6px;">Search all genes for ones whose gene effect correlates with your set at |r| &ge; ${res.cutoff} (the cutoff in box 1), and choose which to add.</p>` +
-                `<button class="btn btn-outline btn-sm" onclick="app._glExpand(true)">Find correlated genes</button>`;
+            const max = CorrelationExplorer.GL_EXPAND_MAX, n = this._glSeeds.length;
+            const which = st.prune && c.dropped.length ? `the ${n} genes left after pruning` : `your ${n} ${n === 1 ? 'gene' : 'genes'}`;
+            expand = `<p style="margin:0 0 6px;">Search all genes for ones whose gene effect correlates with ${which} at |r| &ge; ${res.cutoff} (the cutoff in box 1), and choose which to add.</p>` +
+                (n > max
+                    ? `<button class="btn btn-outline btn-sm" disabled>Find correlated genes</button>` +
+                      `<p style="margin:6px 0 0; color:#b45309; font-size:12px;">Expand compares each gene with all ~18,000, so it takes up to ${max} genes; this list has ${n}. Prune it below to bring it under ${max}; a lower pruning cutoff drops more genes.</p>`
+                    : `<button class="btn btn-outline btn-sm" onclick="app._glExpand(true)">Find correlated genes</button>`);
         }
 
         const pri = [['hub', 'correlates with the most others'], ['order', 'comes first in my list'],
@@ -699,7 +749,10 @@ class CorrelationExplorer {
         const pass = c.passthrough.length
             ? `<p style="color:#6b7280; font-size:12px; margin:6px 0 0;">${c.passthrough.length} ${c.passthrough.length === 1 ? 'name has' : 'names have'} no gene-effect data here and ${c.passthrough.length === 1 ? 'goes' : 'go'} back unchanged: ${c.passthrough.map(g => this.gi(g)).join(', ')}.</p>` : '';
 
+        const raised = L.cutoffRaised && Math.abs(res.cutoff - L.cutoffRaised.r) < 1e-9
+            ? `<p style="margin:0 0 10px; color:#b45309; font-size:12px;">The cutoff in box 1 starts at ${L.cutoffRaised.r.toFixed(2)} rather than 0.50 because the list has ${L.cutoffRaised.n} genes; at 0.50 a list this long draws more links than can be read. Lower it and press Run to see weaker correlations.</p>` : '';
         body.innerHTML =
+            raised +
             `<p style="margin:0 0 10px; color:#374151;">Your genes came from Green Listed. Grow or thin the list by gene-effect correlation across ${cohort.toLocaleString('en-US')} cell lines, then send it back to Green Listed's gene box.</p>` +
             `<div style="${box}"><div style="font-weight:600; margin-bottom:6px;">Expand</div>${expand}</div>` +
             `<div style="${box}"><div style="font-weight:600; margin-bottom:6px;">Prune</div>${prune}</div>` +
@@ -9781,6 +9834,9 @@ class CorrelationExplorer {
                     if (geneList.length >= 2) this.findBestFilter();
                 } else {
                     this.showStatus('error', this.results.error);
+                    // A list from Green Listed still needs its way back when
+                    // nothing correlates at the cutoff.
+                    this._renderGreenListedTab();
                 }
             } catch (error) {
                 console.error('Analysis error:', error);
