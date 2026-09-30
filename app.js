@@ -7951,23 +7951,43 @@ class CorrelationExplorer {
             this.synonymLookup = await this._synonymLoadPromise;
             if (token !== this._validateToken) return;
         }
+        // Names from the CRISPR libraries in Green Listed: extra aliases, and
+        // why a library gene has no data. Loaded only once a name is missing.
+        if (!this.libraryGenes) {
+            if (!this._libraryGenesPromise) {
+                this._libraryGenesPromise = fetch(this._dataUrl('web_data/library_genes.json')).then(r => r.json()).catch(() => ({ alias: {}, notScreened: {} }));
+            }
+            this.libraryGenes = await this._libraryGenesPromise;
+            if (token !== this._validateToken) return;
+        }
 
         const dismissed = (this._synonymDismissed = this._synonymDismissed || new Set());
         const synHits = [];
         const remaining = [];
+        const offline = (up) => {
+            if (this.geneIndex.has(up)) return { rep: up, src: 'in the data' };
+            const m = this.synonymLookup?.[up];
+            if (m && this.geneIndex.has((m.d || '').toUpperCase())) return { rep: m.d.toUpperCase(), src: m.r === 'l' ? 'synonym' : 'synonym, verify' };
+            const o = this.orthologs?.mouseToHuman?.[up];
+            if (o && this.geneIndex.has(o.toUpperCase())) return { rep: o.toUpperCase(), src: 'mouse ortholog' };
+            const a = this.libraryGenes?.alias?.[up];
+            if (a && this.geneIndex.has(a)) return { rep: a, src: 'library synonym' };
+            return null;
+        };
         for (const g of notFound) {
             const up = g.toUpperCase();
-            let rep = null, src = '';
-            const m = this.synonymLookup?.[up];
-            const api = this._synonymApiHits?.get(up);
-            if (m && this.geneIndex.has((m.d || '').toUpperCase())) {
-                rep = m.d.toUpperCase(); src = m.r === 'l' ? 'synonym' : 'synonym, verify';
-            } else {
-                const o = this.orthologs?.mouseToHuman?.[up];
-                if (o && this.geneIndex.has(o.toUpperCase())) { rep = o.toUpperCase(); src = 'mouse ortholog'; }
-                else if (api) { rep = api.replacement; src = api.source; }
+            let hit = offline(up);
+            // A library entry for a guide that targets several genes
+            // ("EBP|nan", "Becn1|Cntd1"): use the first part with data.
+            if (!hit && up.includes('|')) {
+                for (const part of up.split('|').filter(p => p && p !== 'NAN')) {
+                    const h = offline(part);
+                    if (h) { hit = { rep: h.rep, src: 'multi-gene entry' }; break; }
+                }
             }
-            if (rep && !dismissed.has(up)) synHits.push({ original: g, replacement: rep, source: src });
+            const api = this._synonymApiHits?.get(up);
+            if (!hit && api) hit = { rep: api.replacement, src: api.source };
+            if (hit && !dismissed.has(up)) synHits.push({ original: g, replacement: hit.rep, source: hit.src });
             else remaining.push(g);
         }
 
@@ -7996,6 +8016,31 @@ class CorrelationExplorer {
                     <button type="button" class="btn btn-outline btn-sm" id="synDismissBtn" style="font-size:11px; padding:3px 10px;">Keep my names</button>
                 </div></div>`;
         }
+
+        // Library genes that exist but have no CRISPR data are said to be so,
+        // grouped by why, rather than sent to the spelling suggestions.
+        const NS = this.libraryGenes?.notScreened || {};
+        const nsCode = (g) => {
+            const up = g.toUpperCase();
+            if (NS[up]) return NS[up];
+            const parts = up.split('|').filter(p => p && p !== 'NAN');
+            return parts.length > 1 && parts.every(p => NS[p]) ? NS[parts[0]] : null;
+        };
+        const noData = { m: [], o: [], g: [], n: [] };
+        const unknown = [];
+        for (const g of remaining) { const c = nsCode(g); if (c && noData[c]) noData[c].push(g); else unknown.push(g); }
+        const NO_DATA_LABEL = { n: 'Not screened by DepMap', m: 'microRNAs, not screened by DepMap', o: 'Olfactory receptors, not screened by DepMap', g: 'Mouse genes without a human ortholog' };
+        const listShort = (arr) => arr.slice(0, 8).map(g => this.gi(g)).join(', ') + (arr.length > 8 ? ` +${arr.length - 8} more` : '');
+        const noDataHtml = Object.keys(NO_DATA_LABEL).filter(k => noData[k].length).map(k =>
+            `<div style="margin-top:4px;"><span style="color:#374151;">${NO_DATA_LABEL[k]} (${noData[k].length}):</span> <span style="color:#6b7280;">${listShort(noData[k])}</span></div>`).join('');
+        let noDataBox = '';
+        if (noDataHtml) {
+            noDataBox = `<div style="${cardStyle}">
+                <div style="font-weight:600; font-size:12px; color:#374151; margin-bottom:2px;">No CRISPR data${qi('These are real genes from CRISPR libraries, but DepMap has no knockout data for them, so they cannot be analysed here. They are left out of the analysis.')}</div>
+                ${noDataHtml}</div>`;
+        }
+        remaining.length = 0;
+        remaining.push(...unknown);
 
         let remHtml = '';
         if (remaining.length) {
@@ -8028,7 +8073,7 @@ class CorrelationExplorer {
 
         display.innerHTML = excelHtml + `<div class="status-box status-warning">
             <strong>${found.length} found</strong>, <strong>${notFound.length} not found</strong>${qi('Genes not found in the DepMap reference data. Below, the app suggests what it can: known synonyms and mouse orthologs first, then the closest spellings.')}${showAgain}
-            ${synHtml}${remHtml}
+            ${synHtml}${noDataBox}${remHtml}
         </div>`;
 
         document.getElementById('synApplyAllBtn')?.addEventListener('click', () => this._applySynonymList(synHits));
@@ -8060,7 +8105,10 @@ class CorrelationExplorer {
             if (!ta || !ta.value.trim()) return;
             let text = ta.value;
             replacements.forEach(r => {
-                text = text.replace(new RegExp(`\\b${r.original}\\b`, 'gi'), r.replacement);
+                // Escaped and matched as a whole token: a library name such as
+                // "EBP|nan" is not a pattern, and "|" is part of the name.
+                const esc = r.original.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                text = text.replace(new RegExp(`(^|[\\s,;])${esc}(?=[\\s,;]|$)`, 'gim'), `$1${r.replacement}`);
             });
             ta.value = text;
         };
