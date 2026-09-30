@@ -8243,16 +8243,43 @@ class CorrelationExplorer {
             if (a && this.geneIndex.has(a)) return { rep: a, src: 'library synonym' };
             return null;
         };
+        // Combined library labels (Jacquere, Julianna), read the way Green
+        // Listed reads them: "nan" is a missing value, a read-through or
+        // pseudogene name beside its gene means that gene, and a guide that
+        // hits two genes with data is not resolved by guessing: both are
+        // offered and the user picks.
+        const pickHits = [];
+        // A label's parts are official symbols of the library's own species,
+        // so they are not sent through the human alias table (CSH1 would
+        // become GH1): only an exact match, a mouse ortholog or a library alias.
+        const labelPart = (up) => {
+            if (this.geneIndex.has(up)) return { rep: up };
+            const o = this.orthologs?.mouseToHuman?.[up];
+            if (o && this.geneIndex.has(o.toUpperCase())) return { rep: o.toUpperCase() };
+            const a = this.libraryGenes?.alias?.[up];
+            if (a && this.geneIndex.has(a)) return { rep: a };
+            return null;
+        };
+        // Strict first (exact, ortholog, library alias); the alias table only
+        // when no part of the label resolves that way.
+        const readLabelWith = (up, resolve) => {
+            const parts = [...new Set(up.split('|').map(p => p.trim()).filter(p => p && p !== 'NAN'))];
+            if (parts.length === 1) { const h = resolve(parts[0]); return h ? { rep: h.rep, src: 'library label' } : null; }
+            const base = parts.filter(p => parts.some(q => q !== p && q.split('-').includes(p)));
+            if (base.length === 1) { const h = resolve(base[0]); if (h) return { rep: h.rep, src: 'library label, read-through' }; }
+            const withData = [...new Set(parts.map(p => resolve(p)?.rep).filter(Boolean))];
+            if (withData.length === 1) return { rep: withData[0], src: 'library label, only gene with data' };
+            if (withData.length > 1) return { pick: withData };
+            return null;
+        };
+        const readLabel = (up) => readLabelWith(up, labelPart) || readLabelWith(up, offline);
         for (const g of notFound) {
             const up = g.toUpperCase();
             let hit = offline(up);
-            // A library entry for a guide that targets several genes
-            // ("EBP|nan", "Becn1|Cntd1"): use the first part with data.
             if (!hit && up.includes('|')) {
-                for (const part of up.split('|').filter(p => p && p !== 'NAN')) {
-                    const h = offline(part);
-                    if (h) { hit = { rep: h.rep, src: 'multi-gene entry' }; break; }
-                }
+                const r = readLabel(up);
+                if (r?.pick) { if (!dismissed.has(up)) { pickHits.push({ original: g, options: r.pick }); continue; } }
+                else if (r) hit = r;
             }
             const api = this._synonymApiHits?.get(up);
             if (!hit && api) hit = { rep: api.replacement, src: api.source };
@@ -8270,18 +8297,25 @@ class CorrelationExplorer {
         const rowStyle = 'display:flex; flex-wrap:wrap; align-items:baseline; gap:0 6px; margin-top:3px; min-width:0; overflow-wrap:anywhere;';
         const cardStyle = 'background:#fff; border:1px solid #e5e7eb; border-radius:6px; padding:8px 10px; margin-top:6px; min-width:0;';
 
+        const pickRows = pickHits.map(p =>
+            `<div style="${rowStyle}"><b style="color:#374151;">${this.gi(p.original)}</b>`
+            + `<span style="color:#9ca3af;">&rarr;</span>`
+            + `<span>${p.options.map(o => geneLink(p.original, o, true)).join(' or ')}</span>`
+            + `<span style="color:#9ca3af; font-size:10px;">guide targets several genes, pick one</span></div>`
+        ).join('');
+
         let synHtml = '';
-        if (synHits.length) {
+        if (synHits.length || pickHits.length) {
             const rows = synHits.map(h =>
                 `<div style="${rowStyle}"><b style="color:#374151;">${this.gi(h.original)}</b>`
                 + `<span style="color:#9ca3af;">&rarr;</span>`
                 + `${geneLink(h.original, h.replacement, true)}<span style="color:#9ca3af; font-size:10px;">${this.esc(h.source)}</span></div>`
             ).join('');
             synHtml = `<div style="${cardStyle}">
-                <div style="font-weight:600; font-size:12px; color:#374151; margin-bottom:5px;">Suggested replacements${qi('These names are not in the data, but a known synonym or mouse ortholog is. Click a suggestion to replace that one name in your list, or Use all to replace every row. Keep my names leaves the list as typed; unmatched genes are then left out of the analysis.')}</div>
-                <div>${rows}</div>
+                <div style="font-weight:600; font-size:12px; color:#374151; margin-bottom:5px;">Suggested replacements${qi('These names are not in the data, but a known synonym, mouse ortholog or library label points to a gene that is. Click a suggestion to replace that one name in your list, or Use all to replace every row with a single suggestion. Where a guide targets several genes, pick one. Keep my names leaves the list as typed; unmatched genes are then left out of the analysis.')}</div>
+                <div>${rows}${pickRows}</div>
                 <div style="margin-top:8px; display:flex; gap:6px; flex-wrap:wrap;">
-                    <button type="button" class="btn btn-sm" id="synApplyAllBtn" style="background:#4c782e; color:white; font-size:11px; padding:3px 10px;">Use all</button>
+                    ${synHits.length ? `<button type="button" class="btn btn-sm" id="synApplyAllBtn" style="background:#4c782e; color:white; font-size:11px; padding:3px 10px;">Use all</button>` : ''}
                     <button type="button" class="btn btn-outline btn-sm" id="synDismissBtn" style="font-size:11px; padding:3px 10px;">Keep my names</button>
                 </div></div>`;
         }
@@ -8293,7 +8327,7 @@ class CorrelationExplorer {
             const up = g.toUpperCase();
             if (NS[up]) return NS[up];
             const parts = up.split('|').filter(p => p && p !== 'NAN');
-            return parts.length > 1 && parts.every(p => NS[p]) ? NS[parts[0]] : null;
+            return up.includes('|') && parts.length && parts.every(p => NS[p]) ? NS[parts[0]] : null;
         };
         const noData = { m: [], o: [], g: [], n: [] };
         const unknown = [];
@@ -8348,6 +8382,7 @@ class CorrelationExplorer {
         document.getElementById('synApplyAllBtn')?.addEventListener('click', () => this._applySynonymList(synHits));
         document.getElementById('synDismissBtn')?.addEventListener('click', () => {
             synHits.forEach(h => dismissed.add(h.original.toUpperCase()));
+            pickHits.forEach(p => dismissed.add(p.original.toUpperCase()));
             this.updateGeneCount();
         });
         document.getElementById('synShowAgainLink')?.addEventListener('click', (e) => {
