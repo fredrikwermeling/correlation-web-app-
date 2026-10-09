@@ -21231,7 +21231,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         };
         const _hdrWrap = !(_hdrFits(annotLabels[0], wt, wtStats) && _hdrFits(annotLabels[1], mut1, mut1Stats) && _hdrFits(annotLabels[2], mut2, mut2Stats));
         const yHeader = 1 + 10 / panelPx3;
-        const yTitle = 1 + (_hdrWrap ? 58 : 40) / panelPx3;
+        // Clear of the headers above the panels, which run two or three lines
+        // and grow with a superscript in the p-value.
+        const yTitle = 1 + (_hdrWrap ? 70 : 50) / panelPx3;
 
         titleAnnotation.y = this._userTitlePosition ? this._userTitlePosition.y : yTitle;
         titleAnnotation._tsRole = 'title';
@@ -21291,12 +21293,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                   text: yLabelText3, showarrow: false, font: { size: 13 }, textangle: -90, _tsRole: 'ylabel' },
                 ...threePanelHighlightAnnotations
             ],
-            margin: { t: _hdrWrap ? 96 : 76, r: 30, b: categoryOrder ? 110 : 66, l: 76 },
+            margin: { t: _hdrWrap ? 108 : 86, r: 30, b: categoryOrder ? 110 : 66, l: 76 },
             showlegend: !!categoryOrder,
             legend: {
                 orientation: 'h',
                 x: 0.5,
-                y: -0.15,
+                y: -0.15,  // replaced below once the drawn height is known
                 xanchor: 'center',
                 yanchor: 'top',
                 bgcolor: 'white',
@@ -21335,8 +21337,20 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // view, so a panel a third as wide came out several times taller than
         // it was wide and had to be shrunk by hand every time.
         const plotAreaH3 = Math.round(plotAreaW3 * COL_W);
+        // Room for the colour legend is reserved here rather than left to
+        // Plotly, which otherwise grows the bottom margin out of the plot area:
+        // the panels stop being square and every offset above, set in units of
+        // that area, lands short (the title ran into the panel headers).
+        if (categoryOrder) {
+            const cols = Math.max(1, Math.floor((plotAreaW3 + m3.l + m3.r) / 210));
+            m3.b = 66 + 24 + Math.ceil((categoryOrder.length + 1) / cols) * 19;
+        }
+        m3.autoexpand = false;
         layout.width = plotAreaW3 + m3.l + m3.r;
         layout.height = plotAreaH3 + m3.t + m3.b;
+        // The legend sits below the 13px x label at -0.13 of the plot area;
+        // paper units scale with that area, which here is set by the width.
+        if (layout.legend && !this._userLegendPosition) layout.legend.y = -(0.13 + 38 / Math.max(120, plotAreaH3));
         plotContainer3.style.width = layout.width + 'px';
         plotContainer3.style.height = layout.height + 'px';
 
