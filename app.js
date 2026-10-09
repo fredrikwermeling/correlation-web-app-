@@ -22235,15 +22235,18 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // Find top GE and Expression correlates of the current X-axis gene
     // across the cell lines that pass the inspect modal's filters. Two
     // lists. Click a row to put that gene on the Y axis.
-    async findInspectCorrelates() {
-        const xGene = (document.getElementById('inspectGeneX')?.value || '').trim().toUpperCase();
+    // opts (all optional) lets another view reuse the scan: xGene / xType in
+    // place of the scatter's X controls, buttonId for the busy state, and
+    // onPick(gene, kind) instead of putting the pick on the scatter's Y axis.
+    async findInspectCorrelates(opts = {}) {
+        const xGene = (opts.xGene ?? (document.getElementById('inspectGeneX')?.value || '')).trim().toUpperCase();
         if (!xGene) { alert('Enter an X-axis gene first.'); return; }
         // Two whole-matrix scans; on the full panel this runs for tens of
         // seconds with nothing on screen to say so.
-        const busy = this.startBusy({ button: 'inspectFindCorrelatesBtn', label: 'Scanning' });
+        const busy = this.startBusy({ button: opts.buttonId || 'inspectFindCorrelatesBtn', label: 'Scanning' });
         try {
         await new Promise(r => setTimeout(r, 0));
-        const xType = document.getElementById('xAxisDataType')?.value || 'ge';
+        const xType = opts.xType || document.getElementById('xAxisDataType')?.value || 'ge';
         // Load expression up front so the "Top Expression correlates" panel always
         // populates. Without this it came out empty whenever expression had never
         // been loaded (e.g. X is a gene-effect gene), which read as "0 outputs".
@@ -22503,6 +22506,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             document.querySelectorAll('#icGeBody .ic-row, #icExprBody .ic-row').forEach(tr => {
                 tr.addEventListener('click', async () => {
                     document.getElementById('inspectCorrelatesModal').style.display = 'none';
+                    if (opts.onPick) { opts.onPick(tr.dataset.gene, tr.dataset.kind); return; }
                     // Snapshot the inspect-modal-local filter state so it can
                     // be restored after openInspect rebuilds the modal (which
                     // otherwise reverts to the main parameter filters and
@@ -22659,12 +22663,20 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
             modal.querySelectorAll('.comp-n').forEach(b => b.onclick = () => { this._compReadEditor(); st.n = +b.dataset.n; this._compRenderEditor(); this.drawCompilation(); });
             modal.querySelector('#compDraw').onclick = () => { this._compReadEditor(); this.drawCompilation(); };
-            modal.querySelector('#compCopy').onclick = () => this.copyPlotToClipboard('compilationPlot', 'Compilation');
-            modal.querySelector('#compExportImg').onclick = () => {
-                const el = document.getElementById('compilationPlot');
-                if (!el?.data) return;
-                this._exportPlotly(el, { w: el._fullLayout?.width || el.offsetWidth, h: el._fullLayout?.height || el.offsetHeight,
-                    format: 'png', filename: `correlate_compilation_${st.n}x${st.n}`, popout: { elId: 'compilationModalInner', fileStem: 'correlate_compilation' } });
+            // Copy and export use a packed copy without the empty panels.
+            const noPanels = () => { const s2 = document.getElementById('compStatus'); if (s2) s2.textContent = 'Draw at least one panel first.'; };
+            modal.querySelector('#compCopy').onclick = async () => {
+                const el = await this._compPackedFigure();
+                if (!el) return noPanels();
+                try { await this.copyPlotToClipboard(el, 'Compilation'); } finally { el.remove(); }
+            };
+            modal.querySelector('#compExportImg').onclick = async () => {
+                const el = await this._compPackedFigure();
+                if (!el) return noPanels();
+                try {
+                    await this._exportPlotly(el, { w: el._fullLayout?.width || el.offsetWidth, h: el._fullLayout?.height || el.offsetHeight,
+                        format: 'png', filename: `correlate_compilation_${st.n}x${st.n}` });
+                } finally { el.remove(); }
             };
             modal.querySelector('#compExportAI').onclick = () => this._compExportAI();
         }
@@ -22684,17 +22696,33 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const typeSel = (cls, v) => `<select class="${cls}" style="font-size:11px; padding:1px 2px; border:1px solid #d1d5db; border-radius:3px;">`
             + [['ge', 'GE'], ['expr', 'mRNA'], ['cn', 'CN']].map(([k, l]) => `<option value="${k}"${v === k ? ' selected' : ''}>${l}</option>`).join('') + '</select>';
         const inp = (cls, v, ph) => `<input type="text" class="${cls}" value="${this.esc(v || '')}" placeholder="${ph}" autocomplete="off" style="width:100%; min-width:0; font-size:11px; padding:2px 5px; border:1px solid #d1d5db; border-radius:3px;">`;
+        // Include zero on the axis (on unless unticked), so an axis is never
+        // zoomed onto a narrow band such as 1 to 3.
+        const zero = (cls, v) => `<label title="Always show 0 on this axis" style="font-size:10px; color:#6b7280; display:inline-flex; align-items:center; gap:1px; cursor:pointer;"><input type="checkbox" class="${cls}"${v === false ? '' : ' checked'} style="margin:0;">0</label>`;
         let html = '';
         for (let i = 0; i < n * n; i++) {
             const p = st.panels[i] || {};
             html += `<div class="comp-cell" data-i="${i}" style="border:1px solid #e5e7eb; border-radius:6px; padding:4px 6px; background:#fafafa; min-width:0;">
                 <div style="font-size:10px; color:#9ca3af;">Panel ${i + 1}</div>
-                <div style="display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:3px; align-items:center;">
-                    <span style="font-size:10px;">X</span>${inp('comp-xg', p.xg, 'gene')}${typeSel('comp-xt', p.xt || 'ge')}
-                    <span style="font-size:10px;">Y</span>${inp('comp-yg', p.yg, 'gene')}${typeSel('comp-yt', p.yt || 'ge')}
-                </div></div>`;
+                <div style="display:grid; grid-template-columns:auto minmax(0,1fr) auto auto; gap:3px; align-items:center;">
+                    <span style="font-size:10px;">X</span>${inp('comp-xg', p.xg, 'gene')}${typeSel('comp-xt', p.xt || 'ge')}${zero('comp-x0', p.x0)}
+                    <span style="font-size:10px;">Y</span>${inp('comp-yg', p.yg, 'gene')}${typeSel('comp-yt', p.yt || 'ge')}${zero('comp-y0', p.y0)}
+                </div>
+                <button type="button" class="btn btn-outline btn-sm comp-fc" id="comp-fc-${i}" data-i="${i}" style="margin-top:3px; font-size:10px; padding:1px 8px; color:#5d9239; border-color:#6ba544;" title="Find the genes whose gene effect or expression correlates with this panel's X gene in the shared cohort; click one to put it on Y">Find correlates</button></div>`;
         }
         ed.innerHTML = html;
+        ed.querySelectorAll('.comp-fc').forEach(b => b.onclick = () => {
+            this._compReadEditor();
+            const i = +b.dataset.i, p = this._compState.panels[i] || {};
+            const s2 = document.getElementById('compStatus');
+            if (!p.xg) { if (s2) s2.textContent = `Panel ${i + 1}: enter an X gene first.`; return; }
+            if (p.xt === 'cn') { if (s2) s2.textContent = 'Find correlates works on a gene effect or mRNA X axis.'; return; }
+            this.findInspectCorrelates({ xGene: p.xg, xType: p.xt, buttonId: b.id, onPick: (gene, kind) => {
+                this._compState.panels[i] = { ...this._compState.panels[i], yg: gene, yt: kind === 'expr' ? 'expr' : 'ge' };
+                this._compRenderEditor();
+                this.drawCompilation();
+            } });
+        });
         ed.querySelectorAll('input').forEach(el => el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { this._compReadEditor(); this.drawCompilation(); } }));
     }
 
@@ -22704,7 +22732,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const i = +cell.dataset.i;
             st.panels[i] = {
                 xg: cell.querySelector('.comp-xg').value.trim().toUpperCase(), xt: cell.querySelector('.comp-xt').value,
-                yg: cell.querySelector('.comp-yg').value.trim().toUpperCase(), yt: cell.querySelector('.comp-yt').value
+                yg: cell.querySelector('.comp-yg').value.trim().toUpperCase(), yt: cell.querySelector('.comp-yt').value,
+                x0: cell.querySelector('.comp-x0').checked, y0: cell.querySelector('.comp-y0').checked
             };
         });
     }
@@ -22747,91 +22776,135 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const panels = [];
         for (let i = 0; i < n * n; i++) panels.push({ p: st.panels[i], res: await this._compPanelData(st.panels[i]) });
         this._compLast = panels;
+        await this._compRenderFigure(plotEl, panels, n);
 
+        const allData = panels.flatMap(x => x.res.data || []);
+        const look = this._compLook(allData);
+        const nCohort = this._applyScatterFilters((this.metadata.cellLines || []).map(cl => ({ cellLineId: cl, cellLineName: this.getCellLineName(cl), lineage: this.getCellLineLineage(cl) }))).length;
+        const nHl = new Set(allData.filter(look.isHl).map(q => q.cellLineId)).size;
+        const note = document.getElementById('compCohortNote');
+        if (note) note.textContent = `Cohort: ${nCohort.toLocaleString()} cell lines after the correlation plot's filters`
+            + (nHl ? `; ${nHl} highlighted` : '') + (look.groupsBy ? `; coloured by ${look.groupsBy}` : '');
+        if (status) status.textContent = '';
+    }
+
+    // How points are coloured and which are highlighted, read from the
+    // correlation plot: its mutation or fusion overlay first, as there, then
+    // its colour-by groups.
+    _compLook(allData) {
         const terms = (document.getElementById('scatterCellSearch')?.value || '').split(/[\n,;\t]+/).map(s => s.trim()).filter(Boolean);
         const hl = this._highlightMatcher(terms);
         const isHl = (d) => hl(d.cellLineName, d.cellLineId) || this.clickedCells?.has(d.cellLineName);
+        const hotGene = document.getElementById('hotspotGene')?.value || '';
+        const hotMode = document.getElementById('hotspotMode')?.value || 'none';
+        const trGene = document.getElementById('translocationGene')?.value || '';
+        const trMode = document.getElementById('translocationMode')?.value || 'none';
+        if (hotGene && hotMode !== 'none') {
+            const src = this._mutSource?.(hotGene)?.mutations || {};
+            const ow = this._mutOverlayWords(hotGene);
+            const groups = [{ key: 0, name: ow.legend[0], color: '#9ca3af' }, { key: 1, name: ow.legend[1], color: '#3b82f6' }];
+            if (ow.hasTwo !== false) groups.push({ key: 2, name: ow.legend[2], color: '#dc2626' });
+            const top = groups.length - 1;
+            return { isHl, groupsBy: `${ow.gene || hotGene} ${String(ow.typeWord || 'mutation').toLowerCase()}`, title: this.gi(ow.gene || hotGene), groups,
+                groupOf: (d) => Math.min(top, src[d.cellLineId] || 0) };
+        }
+        if (trGene && trMode !== 'none') {
+            const lv = this.translocations?.geneData?.[trGene]?.translocations || {};
+            return { isHl, groupsBy: `${trGene} fusion`, title: `${this.gi(trGene)} (fusion)`,
+                groups: [{ key: 0, name: 'No fusion', color: '#9ca3af' }, { key: 1, name: '1 partner', color: '#3b82f6' }, { key: 2, name: '2+ partners', color: '#dc2626' }],
+                groupOf: (d) => Math.min(2, lv[d.cellLineId] || 0) };
+        }
         const colorBy = document.getElementById('colorByCategory')?.value || '';
-        const allData = panels.flatMap(x => x.res.data || []);
-        let cats = [], picked = null;
         if (colorBy) {
             const cnt = {};
             allData.forEach(d => { const c = this._colorByGroup(d, colorBy); cnt[c] = (cnt[c] || 0) + 1; });
-            cats = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a]);
-            picked = this._colorByPickedSet(cats);
+            let cats = Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a]);
+            const picked = this._colorByPickedSet(cats);
             if (picked) cats = cats.filter(c => picked.has(c));
+            const palette = CorrelationExplorer.CATEGORY_COLORS;
+            const groups = cats.map((c, i) => ({ key: c, name: c, color: palette[i % palette.length] }));
+            if (picked) groups.unshift({ key: this.OTHER_GROUP_LABEL, name: this.OTHER_GROUP_LABEL, color: '#d1d5db' });
+            return { isHl, groupsBy: colorBy, title: this._legendTitleText?.(colorBy) || colorBy, groups,
+                groupOf: (d) => { const c = this._colorByGroup(d, colorBy); return cats.includes(c) ? c : this.OTHER_GROUP_LABEL; } };
         }
-        const palette = CorrelationExplorer.CATEGORY_COLORS;
-        const colorOf = (c) => palette[cats.indexOf(c) % palette.length];
+        return { isHl, groupsBy: '', groups: null };
+    }
 
-        // Square panels laid out on paper coordinates, with room above each
-        // for its title and below for its x label.
-        const host = plotEl.parentElement;
+    // Draws the panels into el, cols per row. Empty and failed panels are
+    // drawn as placeholders here; the export copies pass only drawn panels.
+    async _compRenderFigure(el, panels, cols) {
+        const rows = Math.ceil(panels.length / cols);
+        const allData = panels.flatMap(x => x.res.data || []);
+        const look = this._compLook(allData);
+        const host = document.getElementById('compilationPlot')?.parentElement;
         const avail = Math.max(420, (host?.clientWidth || 900) - 10);
-        const panelPx = Math.max(150, Math.min(n === 2 ? 340 : n === 3 ? 270 : 220, Math.floor((avail - 70) / n) - 40));
-        const gapX = 46, gapY = 70, mL = 56, mR = 16, mT = 46;
-        const legendRows = colorBy && cats.length ? Math.ceil((cats.length + 1) / Math.max(1, Math.floor((n * (panelPx + gapX)) / 200))) : 0;
+        const panelPx = Math.max(150, Math.min(cols === 1 ? 380 : cols === 2 ? 340 : cols === 3 ? 270 : 220, Math.floor((avail - 70) / cols) - 40));
+        const gapX = 50, gapY = 74, mL = 56, mR = 16, mT = 48;
+        const legendN = look.groups ? look.groups.length : 0;
+        const legendRows = legendN ? Math.ceil(legendN / Math.max(1, Math.floor((cols * (panelPx + gapX)) / 200))) : 0;
         const mB = 44 + (legendRows ? 28 + legendRows * 18 : 0);
-        const W = mL + mR + n * panelPx + (n - 1) * gapX, plotW = W - mL - mR;
-        const H = mT + mB + n * panelPx + (n - 1) * gapY, plotH = H - mT - mB;
+        const W = mL + mR + cols * panelPx + (cols - 1) * gapX, plotW = W - mL - mR;
+        const H = mT + mB + rows * panelPx + (rows - 1) * gapY, plotH = H - mT - mB;
         const traces = [], annotations = [], layout = {
-            width: W, height: H, showlegend: !!(colorBy && cats.length), hovermode: 'closest',
+            width: W, height: H, showlegend: legendN > 0, hovermode: 'closest',
             margin: { l: mL, r: mR, t: mT, b: mB, autoexpand: false }, plot_bgcolor: '#fafafa', paper_bgcolor: '#fff',
             font: { family: 'Arial, sans-serif' }
         };
-        if (layout.showlegend) layout.legend = { orientation: 'h', x: 0.5, xanchor: 'center', y: -(30 / plotH), yanchor: 'top', font: { size: 11 }, title: { text: this._legendTitleText?.(colorBy) || colorBy, font: { size: 10, color: '#6b7280' } } };
-        const legendShown = new Set();
+        if (legendN) layout.legend = { orientation: 'h', x: 0.5, xanchor: 'center', y: -(30 / plotH), yanchor: 'top', font: { size: 11 }, title: { text: look.title, font: { size: 10, color: '#6b7280' } } };
+        const shown = new Set();
+        const word = (t) => t === 'expr' ? 'mRNA' : t === 'cn' ? 'CN' : 'GE';
         panels.forEach(({ p, res }, i) => {
-            const r = Math.floor(i / n), c = i % n, k = i + 1, ax = k === 1 ? '' : String(k);
+            const r = Math.floor(i / cols), c = i % cols, k = i + 1, ax = k === 1 ? '' : String(k);
             const x0 = (c * (panelPx + gapX)) / plotW, x1 = x0 + panelPx / plotW;
             const y1 = 1 - (r * (panelPx + gapY)) / plotH, y0 = y1 - panelPx / plotH;
-            layout['xaxis' + ax] = { domain: [x0, x1], anchor: 'y' + ax, tickfont: { size: 9 }, zeroline: true, zerolinecolor: '#000', zerolinewidth: 1, gridcolor: '#eee',
+            layout['xaxis' + ax] = { domain: [x0, x1], anchor: 'y' + ax, rangemode: p?.x0 === false ? 'normal' : 'tozero', tickfont: { size: 9 }, zeroline: true, zerolinecolor: '#000', zerolinewidth: 1, gridcolor: '#eee',
                 title: { text: p?.xg ? this._compShortLabel(p.xg, p.xt) : '', font: { size: 11 }, standoff: 4 } };
-            layout['yaxis' + ax] = { domain: [y0, y1], anchor: 'x' + ax, tickfont: { size: 9 }, zeroline: true, zerolinecolor: '#000', zerolinewidth: 1, gridcolor: '#eee',
+            layout['yaxis' + ax] = { domain: [y0, y1], anchor: 'x' + ax, rangemode: p?.y0 === false ? 'normal' : 'tozero', tickfont: { size: 9 }, zeroline: true, zerolinecolor: '#000', zerolinewidth: 1, gridcolor: '#eee',
                 title: { text: p?.yg ? this._compShortLabel(p.yg, p.yt) : '', font: { size: 11 }, standoff: 4 } };
             const xa = 'x' + ax, ya = 'y' + ax;
             const head = (txt) => annotations.push({ xref: 'paper', yref: 'paper', x: (x0 + x1) / 2, y: y1 + 6 / plotH, xanchor: 'center', yanchor: 'bottom', showarrow: false, text: txt, font: { size: 11 } });
-            if (res.empty) { head('<span style="color:#9ca3af;">empty</span>'); traces.push({ x: [], y: [], xaxis: xa, yaxis: ya, type: 'scatter', showlegend: false }); return; }
-            if (res.error) { head(`<span style="color:#b45309;">${this.esc(res.error)}</span>`); traces.push({ x: [], y: [], xaxis: xa, yaxis: ya, type: 'scatter', showlegend: false }); return; }
+            const blank = () => traces.push({ x: [], y: [], xaxis: xa, yaxis: ya, type: 'scatter', showlegend: false });
+            if (res.empty) { head('<span style="color:#9ca3af;">empty</span>'); blank(); return; }
+            if (res.error) { head(`<span style="color:#b45309;">${this.esc(res.error)}</span>`); blank(); return; }
             const d = res.data, s = res.stats;
             const rTxt = isNaN(s.correlation) ? 'n/a' : s.correlation.toFixed(2);
             const pTxt = isNaN(s.pValue) ? '' : ', ' + this.formatPClause(s.pValue).replace(/<[^>]*>/g, '');
-            head(`<b>${this.gi(p.xg)}</b> vs <b>${this.gi(p.yg)}</b><br><span style="font-size:9px; color:#6b7280;">r=${rTxt}, n=${d.length}${pTxt}</span>`);
+            head(`<b>${this.gi(p.xg)}</b> ${word(p.xt)} vs <b>${this.gi(p.yg)}</b> ${word(p.yt)}<br><span style="font-size:9px; color:#6b7280;">r=${rTxt}, n=${d.length}${pTxt}</span>`);
             // SVG, not WebGL: GL points paint above every SVG trace (they hid
             // the highlights) and export as a picture rather than vectors.
             const base = { xaxis: xa, yaxis: ya, type: 'scatter', mode: 'markers', hovertemplate: '%{text}<br>x %{x:.2f}, y %{y:.2f}<extra></extra>' };
-            if (colorBy && cats.length) {
-                const rest = d.filter(q => !cats.includes(this._colorByGroup(q, colorBy)));
-                if (rest.length) traces.push({ ...base, x: rest.map(q => q.x), y: rest.map(q => q.y), text: rest.map(q => q.cellLineName), name: this.OTHER_GROUP_LABEL, legendgroup: '__other', showlegend: !legendShown.has('__other') && picked !== null, marker: { size: 5, color: '#d1d5db' } });
-                if (picked !== null) legendShown.add('__other');
-                cats.forEach(cat => {
-                    const g = d.filter(q => this._colorByGroup(q, colorBy) === cat);
-                    if (!g.length) return;
-                    traces.push({ ...base, x: g.map(q => q.x), y: g.map(q => q.y), text: g.map(q => q.cellLineName), name: cat, legendgroup: cat, showlegend: !legendShown.has(cat), marker: { size: 6, color: colorOf(cat) } });
-                    legendShown.add(cat);
+            if (look.groups) {
+                look.groups.forEach(g => {
+                    const pts = d.filter(q => look.groupOf(q) === g.key);
+                    if (!pts.length) return;
+                    traces.push({ ...base, x: pts.map(q => q.x), y: pts.map(q => q.y), text: pts.map(q => q.cellLineName), name: g.name,
+                        legendgroup: String(g.key), showlegend: !shown.has(g.key), marker: { size: 6, color: g.color } });
+                    shown.add(g.key);
                 });
             } else {
-                // Coloured by a grouping with no group picked: grey, as in the
-                // correlation plot itself.
-                const grey = !!colorBy && picked && picked.size === 0;
-                traces.push({ ...base, x: d.map(q => q.x), y: d.map(q => q.y), text: d.map(q => q.cellLineName), showlegend: false, marker: { size: 5, color: grey ? '#d1d5db' : '#60a5fa', opacity: grey ? 1 : 0.7 } });
+                traces.push({ ...base, x: d.map(q => q.x), y: d.map(q => q.y), text: d.map(q => q.cellLineName), showlegend: false, marker: { size: 5, color: '#60a5fa', opacity: 0.7 } });
             }
             if (!isNaN(s.slope)) {
                 const xs = d.map(q => q.x), lo = Math.min(...xs), hi = Math.max(...xs), b0 = s.meanY - s.slope * s.meanX;
                 traces.push({ x: [lo, hi], y: [b0 + s.slope * lo, b0 + s.slope * hi], xaxis: xa, yaxis: ya, type: 'scatter', mode: 'lines', line: { color: '#6ba544', width: 1.5 }, hoverinfo: 'skip', showlegend: false });
             }
-            const h = d.filter(isHl);
-            if (h.length) traces.push({ ...base, type: 'scatter', mode: h.length <= 6 ? 'markers+text' : 'markers', x: h.map(q => q.x), y: h.map(q => q.y), text: h.map(q => q.cellLineName), textposition: 'top center', textfont: { size: 9 }, showlegend: false, marker: { size: 8, color: '#f59e0b', line: { color: '#111', width: 1 } } });
+            const h = d.filter(look.isHl);
+            if (h.length) traces.push({ ...base, mode: h.length <= 6 ? 'markers+text' : 'markers', x: h.map(q => q.x), y: h.map(q => q.y), text: h.map(q => q.cellLineName), textposition: 'top center', textfont: { size: 9 }, showlegend: false, marker: { size: 8, color: '#f59e0b', line: { color: '#111', width: 1 } } });
         });
         layout.annotations = annotations;
-        await Plotly.react(plotEl, traces, layout, { displayModeBar: false, responsive: false });
+        await Plotly.react(el, traces, layout, { displayModeBar: false, responsive: false });
+    }
 
-        const nCohort = this._applyScatterFilters((this.metadata.cellLines || []).map(cl => ({ cellLineId: cl, cellLineName: this.getCellLineName(cl), lineage: this.getCellLineLineage(cl) }))).length;
-        const nHl = this._compLast.length ? new Set(allData.filter(isHl).map(q => q.cellLineId)).size : 0;
-        const note = document.getElementById('compCohortNote');
-        if (note) note.textContent = `Cohort: ${nCohort.toLocaleString()} cell lines after the correlation plot's filters`
-            + (nHl ? `; ${nHl} highlighted` : '') + (colorBy ? `; coloured by ${colorBy}` : '');
-        if (status) status.textContent = '';
+    // A copy of the figure with only the drawn panels, packed into the grid,
+    // for copying and exporting. Removed again by the caller.
+    async _compPackedFigure() {
+        const drawn = (this._compLast || []).filter(x => x.res?.data);
+        if (!drawn.length) return null;
+        const el = document.createElement('div');
+        el.style.cssText = 'position:fixed; left:-20000px; top:0;';
+        document.body.appendChild(el);
+        await this._compRenderFigure(el, drawn, Math.min(this._compState.n, drawn.length));
+        return el;
     }
 
     async _compExportAI() {
@@ -22842,7 +22915,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const cohort = [...new Set(panels.flatMap(({ res }) => res.data.map(d => d.cellLineId)))];
         const terms = (document.getElementById('scatterCellSearch')?.value || '').split(/[\n,;\t]+/).map(s => s.trim()).filter(Boolean);
         const hl = this._highlightMatcher(terms);
-        const colorBy = document.getElementById('colorByCategory')?.value || '';
+        const colorBy = this._compLook(panels.flatMap(({ res }) => res.data)).groupsBy || '';
         const word = (t) => t === 'expr' ? 'mRNA expression (log2 TPM+1)' : t === 'cn' ? 'relative copy number (1.0 = the line\'s baseline)' : 'CRISPR gene effect (Chronos)';
         this._aiCompilation = {
             n: this._compState.n,
