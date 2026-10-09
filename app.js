@@ -22639,12 +22639,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
                         <span>Grid:</span>
                         ${[2, 3, 4].map(k => `<button type="button" class="btn btn-outline btn-sm comp-n" data-n="${k}" style="font-size:11px; padding:2px 10px;">${k} &times; ${k}</button>`).join('')}
+                        <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" id="compShowLine" checked> Regression line</label>
                         <span id="compCohortNote" style="color:#6b7280; font-size:11px;"></span>
                     </div>
                     <div id="compEditor" style="display:grid; gap:6px; margin-bottom:8px;"></div>
                     <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
                         <button type="button" class="btn btn-sm" id="compDraw" style="background:#6ba544; color:#fff; font-size:12px; padding:3px 14px;">Draw</button>
-                        <span style="color:#9ca3af; font-size:11px;">Filters, highlights and colours come from the correlation plot; change them there and press Draw again.</span>
+                        <span style="color:#9ca3af; font-size:11px;">Filters, highlights and colours come from the correlation plot; change them there and press Draw again. Click a point to label or unlabel that cell line in every panel.</span>
                     </div>
                     <div id="compilationPlot"></div>
                 </div>
@@ -22679,8 +22680,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 } finally { el.remove(); }
             };
             modal.querySelector('#compExportAI').onclick = () => this._compExportAI();
+            modal.querySelector('#compShowLine').onchange = (e) => {
+                st.showLine = e.target.checked;
+                if (this._compLast) this._compRenderFigure(document.getElementById('compilationPlot'), this._compLast, st.n);
+            };
         }
         modal.classList.add('active');
+        const lineBox = modal.querySelector('#compShowLine');
+        if (lineBox) lineBox.checked = st.showLine !== false;
         this._compRenderEditor();
         this.drawCompilation();
     }
@@ -22777,6 +22784,20 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         for (let i = 0; i < n * n; i++) panels.push({ p: st.panels[i], res: await this._compPanelData(st.panels[i]) });
         this._compLast = panels;
         await this._compRenderFigure(plotEl, panels, n);
+        // Click a point: label or unlabel that cell line, in every panel and
+        // in the correlation plot, which share the same list.
+        if (!plotEl._compClickWired) {
+            plotEl._compClickWired = true;
+            plotEl.on('plotly_click', (ev) => {
+                const name = ev?.points?.[0]?.text;
+                if (!name || typeof name !== 'string') return;
+                const look = this._compLook((this._compLast || []).flatMap(x => x.res?.data || []));
+                const d = (this._compLast || []).flatMap(x => x.res?.data || []).find(q => q.cellLineName === name);
+                if (d && look.isHl(d)) this.removeHighlight(name);
+                else { this.clickedCells.add(name); this.updateInspectPlot?.(); }
+                this._compRenderFigure(plotEl, this._compLast, this._compState.n);
+            });
+        }
 
         const allData = panels.flatMap(x => x.res.data || []);
         const look = this._compLook(allData);
@@ -22884,12 +22905,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             } else {
                 traces.push({ ...base, x: d.map(q => q.x), y: d.map(q => q.y), text: d.map(q => q.cellLineName), showlegend: false, marker: { size: 5, color: '#60a5fa', opacity: 0.7 } });
             }
-            if (!isNaN(s.slope)) {
+            if (!isNaN(s.slope) && this._compState?.showLine !== false) {
                 const xs = d.map(q => q.x), lo = Math.min(...xs), hi = Math.max(...xs), b0 = s.meanY - s.slope * s.meanX;
                 traces.push({ x: [lo, hi], y: [b0 + s.slope * lo, b0 + s.slope * hi], xaxis: xa, yaxis: ya, type: 'scatter', mode: 'lines', line: { color: '#6ba544', width: 1.5 }, hoverinfo: 'skip', showlegend: false });
             }
             const h = d.filter(look.isHl);
-            if (h.length) traces.push({ ...base, mode: h.length <= 6 ? 'markers+text' : 'markers', x: h.map(q => q.x), y: h.map(q => q.y), text: h.map(q => q.cellLineName), textposition: 'top center', textfont: { size: 9 }, showlegend: false, marker: { size: 8, color: '#f59e0b', line: { color: '#111', width: 1 } } });
+            if (h.length) traces.push({ ...base, mode: h.length <= 12 ? 'markers+text' : 'markers', x: h.map(q => q.x), y: h.map(q => q.y), text: h.map(q => q.cellLineName), textposition: 'top center', textfont: { size: 9 }, showlegend: false, marker: { size: 8, color: '#f59e0b', line: { color: '#111', width: 1 } } });
         });
         layout.annotations = annotations;
         await Plotly.react(el, traces, layout, { displayModeBar: false, responsive: false });
