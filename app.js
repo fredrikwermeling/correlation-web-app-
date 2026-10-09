@@ -20679,6 +20679,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             text: xLabelText,
             showarrow: false,
             font: { size: sts?.xLabelFontSize || (_isPhone ? 13 : 20) },
+            hovertext: 'Click to change the gene or data type',
             _tsRole: 'xlabel'
         };
         const yLabelAnnotation = {
@@ -20693,6 +20694,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             showarrow: false,
             font: { size: sts?.yLabelFontSize || (_isPhone ? 13 : 20) },
             textangle: -90,
+            hovertext: 'Click to change the gene or data type',
             _tsRole: 'ylabel'
         };
 
@@ -22552,6 +22554,50 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         } catch (err) {
             content.innerHTML = `<div style="text-align:center; padding:60px; color:#ef4444;">Failed to connect to Enrichr. Check internet connection.<br><small style="color:#888;">${err.message}</small></div>`;
         }
+    }
+
+    // A small editor at an axis title: the gene and what is measured for it.
+    // It writes into the same X / Y controls above the plot and redraws
+    // through them, so the plot and the controls can never disagree.
+    _openAxisEditor(axis, evt) {
+        document.getElementById('axisEditorPopup')?.remove();
+        const geneEl = document.getElementById('inspectGene' + axis);
+        const typeEl = document.getElementById((axis === 'X' ? 'x' : 'y') + 'AxisDataType');
+        if (!geneEl || !typeEl) return;
+        const box = document.createElement('div');
+        box.id = 'axisEditorPopup';
+        box.style.cssText = 'position:fixed; z-index:10002; background:#fff; border:1px solid #6ba544; border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,0.18); padding:8px 10px; font-size:12px; display:flex; gap:6px; align-items:center; flex-wrap:wrap; max-width:calc(100vw - 16px);';
+        const opts = [...typeEl.options].map(o => `<option value="${this.esc(o.value)}"${o.value === typeEl.value ? ' selected' : ''}>${this.esc(o.textContent)}</option>`).join('');
+        box.innerHTML = `<span style="color:#6b7280;">${axis} axis</span>`
+            + `<input type="text" id="axisEditorGene" value="${this.esc(geneEl.value)}" autocomplete="off" style="width:96px; font-size:12px; padding:3px 6px; border:1px solid #d1d5db; border-radius:4px;">`
+            + `<select id="axisEditorType" style="font-size:12px; padding:2px 4px; border:1px solid #d1d5db; border-radius:4px;">${opts}</select>`
+            + `<button type="button" class="btn btn-sm" id="axisEditorApply" style="background:#6ba544; color:#fff; font-size:11px; padding:3px 10px;">Update</button>`;
+        document.body.appendChild(box);
+        const x = evt?.clientX ?? window.innerWidth / 2, y = evt?.clientY ?? window.innerHeight / 2;
+        box.style.left = Math.max(8, Math.min(window.innerWidth - box.offsetWidth - 8, x - box.offsetWidth / 2)) + 'px';
+        box.style.top = Math.max(8, Math.min(window.innerHeight - box.offsetHeight - 8, y - box.offsetHeight - 12)) + 'px';
+        const input = box.querySelector('#axisEditorGene');
+        input.focus(); input.select();
+        const close = () => { box.remove(); document.removeEventListener('mousedown', outside, true); document.removeEventListener('keydown', onKey, true); };
+        const apply = () => {
+            // Set directly rather than through the selector's change handler,
+            // which redraws on its own and can restore an earlier gene.
+            const type = box.querySelector('#axisEditorType').value;
+            typeEl.value = type;
+            const noGene = type === 'growth' || type === 'geneset';
+            geneEl.disabled = noGene;
+            if (noGene) { geneEl.dataset.savedGene = input.value.trim(); geneEl.value = ''; }
+            else { geneEl.value = input.value.trim(); geneEl.placeholder = axis + ' gene'; }
+            close();
+            this.updateInspectGenes();
+        };
+        const outside = (e) => { if (!box.contains(e.target)) close(); };
+        const onKey = (e) => {
+            if (e.key === 'Escape') { e.stopPropagation(); close(); }
+            else if (e.key === 'Enter' && box.contains(e.target)) { e.preventDefault(); apply(); }
+        };
+        box.querySelector('#axisEditorApply').addEventListener('click', apply);
+        setTimeout(() => { document.addEventListener('mousedown', outside, true); document.addEventListener('keydown', onKey, true); }, 0);
     }
 
     async updateInspectGenes() {
@@ -24776,6 +24822,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // clicked onto the chart.
         hoverEl.removeAllListeners?.('plotly_clickannotation');
         hoverEl.on('plotly_clickannotation', (ev) => {
+            const role = ev?.annotation?._tsRole;
+            if (role === 'xlabel' || role === 'ylabel') {
+                this._openAxisEditor(role === 'xlabel' ? 'X' : 'Y', ev.event);
+                return;
+            }
             const name = ev?.annotation?._cellLabel;
             if (!name) return;
             ev.event?.preventDefault?.();
