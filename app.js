@@ -20681,7 +20681,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const _legendBelow = _scPhone && !colorByCategory && !this._userLegendPosition
             && ((hotspotMode === 'color' && hotspotGene) || (transOverlayMode === 'color' && transOverlayGene));
         const _xLabelRows = xLabelText.includes('<br>') ? 2 : 1;
-        const _botMargin = colorByCategory ? 100 : (_legendBelow ? 90 + _xLabelRows * 17 : 60);
+        const _xLabelFont = sts?.xLabelFontSize || (_isPhone ? 13 : 20);
+        // A wrapped x label is a line taller, and the colour legend under it
+        // has to start below its second line rather than across it.
+        const _botMargin = colorByCategory ? 100 + (_xLabelRows - 1) * Math.round(_xLabelFont * 1.25)
+            : (_legendBelow ? 90 + _xLabelRows * 17 : 60);
         // The offsets below are pixels divided by the plot height, so they have
         // to use the height that is actually drawn. On a phone the plot is
         // capped further down, and measuring against the uncapped control
@@ -20762,7 +20766,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             legend: colorByCategory ? {
                 orientation: 'h',
                 x: 0.5,
-                y: -0.15,
+                y: -(0.08 + (_xLabelRows * _xLabelFont * 1.25 + 10) / _plotPx),
                 xanchor: 'center',
                 yanchor: 'top',
                 bgcolor: 'white',
