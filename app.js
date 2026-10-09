@@ -8533,26 +8533,66 @@ class CorrelationExplorer {
             || null;
     }
 
+    // The name this data uses for a gene typed under another one: a synonym,
+    // a mouse symbol's human ortholog, or a Green Listed library alias.
+    _knownAliasFor(gene) {
+        const up = String(gene || '').trim().toUpperCase();
+        const inData = (g) => !!g && (this.geneIndex?.has(g) || this.expressionGeneIndex?.has(g));
+        const m = this.synonymLookup?.[up];
+        if (m && inData((m.d || '').toUpperCase())) return { rep: m.d.toUpperCase(), src: 'synonym' };
+        const o = (this.orthologs?.mouseToHuman?.[up] || '').toUpperCase();
+        if (inData(o)) return { rep: o, src: 'mouse ortholog' };
+        const a = this.libraryGenes?.alias?.[up];
+        if (inData(a)) return { rep: a, src: 'library synonym' };
+        return null;
+    }
+
+    // The alias tables load on first need; the notice is drawn at once and
+    // redrawn with the known name when they arrive.
+    _ensureAliasTables() {
+        if (!this._synonymLoadPromise) {
+            this._synonymLoadPromise = fetch(this._dataUrl('web_data/synonyms.json')).then(r => r.json()).catch(() => ({}));
+        }
+        if (!this._libraryGenesPromise) {
+            this._libraryGenesPromise = fetch(this._dataUrl('web_data/library_genes.json')).then(r => r.json()).catch(() => ({ alias: {}, notScreened: {} }));
+        }
+        return Promise.all([this._synonymLoadPromise, this._libraryGenesPromise]).then(([syn, lib]) => {
+            this.synonymLookup = this.synonymLookup || syn;
+            this.libraryGenes = this.libraryGenes || lib;
+        });
+    }
+
     geneNotFound(gene, where = '') {
+        if (!this.synonymLookup || !this.libraryGenes) {
+            this._ensureAliasTables().then(() => {
+                const open = document.getElementById('geneNotFoundNotice');
+                if (open && open.dataset.gene === String(gene)) this.geneNotFound(gene, where);
+            });
+        }
+        const known = this._knownAliasFor(gene);
         // A family query ("USP") lists every member in a scrolling strip,
         // because the one the user wants is as likely to be USP18 as USP1,
         // and six arbitrary names answered the wrong question. Only a very
         // short query overflows the 80 shown, and the note then says so.
-        const all = this._findGeneSuggestions([gene]).get(gene) || [];
+        const all = (this._findGeneSuggestions([gene]).get(gene) || []).filter(g => !known || g !== known.rep);
         const sugg = all.slice(0, 80);
         document.getElementById('geneNotFoundNotice')?.remove();
         const box = document.createElement('div');
         box.id = 'geneNotFoundNotice';
+        box.dataset.gene = String(gene);
         box.style.cssText = 'position:fixed; z-index:11500; left:50%; top:16vh; transform:translateX(-50%); width:380px; max-width:92vw; background:#fff; border:1px solid #d1d5db; border-left:4px solid #b45309; border-radius:8px; box-shadow:0 18px 40px rgba(0,0,0,0.22); padding:14px 16px; font-size:12px; color:#374151;';
         box.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
                 <b style="color:#b45309;">"${this.gi(gene)}" not found${where ? ' in ' + this.esc(where) : ''}</b>
                 <button style="background:none;border:none;font-size:18px;line-height:1;cursor:pointer;color:#9ca3af;">&times;</button>
             </div>`
+            + (known
+                ? `<div style="margin-bottom:8px;">Called <b>${this.gi(known.rep)}</b> in this data (${this.esc(known.src)}). <button data-g="${this.esc(known.rep)}" style="border:none; background:#4c782e; color:#fff; font-weight:600; border-radius:10px; padding:2px 10px; margin-left:4px; cursor:pointer; font-size:11px;">Use ${this.gi(known.rep)}</button></div>`
+                : '')
             + (sugg.length
-                ? `<div style="color:#6b7280; margin-bottom:6px;">Did you mean:</div><div style="max-height:150px; overflow-y:auto;">${sugg.map(g =>
+                ? `<div style="color:#6b7280; margin-bottom:6px;">${known ? 'Or a similar name:' : 'Did you mean:'}</div><div style="max-height:150px; overflow-y:auto;">${sugg.map(g =>
                     `<button data-g="${this.esc(g)}" style="border:1px solid #d1d5db; background:#f9fafb; color:#4c782e; font-weight:600; border-radius:10px; padding:2px 10px; margin:0 6px 6px 0; cursor:pointer; font-size:11px;">${this.gi(g)}</button>`).join('')}</div>
                    <div style="color:#9ca3af; font-size:10px; margin-top:4px;">Click one to use it.${all.length > sugg.length ? ` Showing ${sugg.length} of ${all.length} names; type more letters to narrow.` : sugg.length > 8 ? ' Every name starting with what you typed is listed.' : ''}</div>`
-                : `<div style="color:#6b7280;">No similar gene symbol in this dataset. Check the spelling, or use Find synonyms for an alternative name.</div>`);
+                : known ? '' : `<div style="color:#6b7280;">No similar gene symbol in this dataset. Check the spelling, or try another name for the gene.</div>`);
         document.body.appendChild(box);
         box.querySelector('button').onclick = () => box.remove();
         box.querySelectorAll('[data-g]').forEach(b => {
