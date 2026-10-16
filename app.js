@@ -32096,10 +32096,19 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         };
         if (view === 'scatter') {
             if (!opts.x || !opts.y) return { ok: false, why: 'a scatter needs both x: and y: genes' };
-            const xs = document.getElementById('xAxisDataType'); if (xs) xs.value = opts.xType || 'ge';
-            const ys = document.getElementById('yAxisDataType'); if (ys) ys.value = opts.yType || 'ge';
+            // Measures go on after opening: opening resets the scatter to the
+            // analysis basis, which silently turned an mRNA view into gene effect.
+            const setTypes = () => {
+                const xs = document.getElementById('xAxisDataType'); if (xs) xs.value = opts.xType || 'ge';
+                const ys = document.getElementById('yAxisDataType'); if (ys) ys.value = opts.yType || 'ge';
+            };
+            if ((opts.xType === 'expr' || opts.yType === 'expr') && !this.expressionLoaded) await this.loadExpressionData?.();
+            setTypes();
             this.openInspectByGenes(opts.x, opts.y);
             await new Promise(r => setTimeout(r, 400));
+            setTypes();
+            // The same step as pressing Update, which reads the measures.
+            if (opts.xType || opts.yType) { await this.updateInspectGenes?.(); await new Promise(r => setTimeout(r, 300)); }
             if (opts.tissue) setSel('scatterCancerFilter', opts.tissue);
             if (opts.disease) { await new Promise(r => setTimeout(r, 200)); setSel('scatterSubtypeFilter', opts.disease); }
             if (opts.colorBy) setSel('colorByCategory', opts.colorBy);
