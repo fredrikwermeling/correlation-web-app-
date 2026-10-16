@@ -2689,7 +2689,7 @@ class CorrelationExplorer {
         geneCounts.forEach(({ gene, count }) => {
             const option = document.createElement('option');
             option.value = gene;
-            option.textContent = `${gene} (${count} mutated)`;
+            option.textContent = `${gene} (hotspot, ${count})`;
             select.appendChild(option);
         });
         // Say why the list is empty rather than showing a bare dropdown.
@@ -6173,7 +6173,7 @@ class CorrelationExplorer {
         for (const gene of (this.mutations?.genes || [])) {
             const hotN = countIn(this.mutations.geneData?.[gene]?.mutations);
             const items = [];
-            if (hotN > 0) items.push({ value: gene, primary: gene, count: hotN, secondary: 'hotspot mutation' });
+            if (hotN > 0) items.push({ value: gene, primary: `${gene} (hotspot)`, count: hotN, secondary: 'hotspot mutation' });
             const anyVal = `${gene} (any mutation)`;
             const anyN = countIn(this._mutCalls(anyVal));
             if (anyN > hotN) items.push({ value: anyVal, primary: anyVal, count: anyN, secondary: 'hotspot or damaging call, DepMap' });
@@ -6213,7 +6213,7 @@ class CorrelationExplorer {
         for (const g of (this.mutations?.genes || [])) {
             if (this._isPolymorphicLocus(g)) continue;
             const hotN = countIn(this.mutations.geneData?.[g]?.mutations);
-            html += opt(g, `${g} (${hotN} mut)`);
+            html += opt(g, `${g} (hotspot, ${hotN})`);
             const anyVal = `${g} (any mutation)`;
             const anyN = countIn(this._mutCalls(anyVal));
             if (anyN > hotN) html += opt(anyVal, `${g} (any mutation, ${anyN})`);
@@ -19100,7 +19100,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     const mutData = this.mutations.geneData?.[g]?.mutations || {};
                     let count = 0;
                     for (const cl of cells) if (mutData[cl] > 0) count++;
-                    return `<option value="${g}">${g} (${count} mut)</option>`;
+                    return `<option value="${g}">${g} (hotspot, ${count})</option>`;
                 }).join('');
             if (prevMut) mutFilterGene.value = prevMut;
             document.getElementById('mutationFilterBox').style.display = 'block';
@@ -22624,36 +22624,54 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // plot uses), its highlighted cell lines and its colour-by groups, so the
     // panels are directly comparable and the setup is done in one place.
     openCompilation() {
-        const st = this._compState = this._compState || { n: 3, panels: [] };
+        // Starts fresh on every open; the modal's handlers hold this object,
+        // so it is reset in place rather than replaced.
+        const st = this._compState = this._compState || {};
+        for (const k of Object.keys(st)) delete st[k];
+        Object.assign(st, { rows: 2, cols: 5, panels: [], showLine: true, sameRange: true, minPct: 75, lastFill: null });
+        this._compLast = null;
         const ci = this.currentInspect;
-        if (!st.panels.length && ci?.gene1) st.panels[0] = { xg: ci.gene1, xt: ci.xType || 'ge', yg: ci.gene2, yt: ci.yType || 'ge' };
+        if (ci?.gene1) st.panels[0] = { xg: ci.gene1, xt: ci.xType || 'ge', yg: ci.gene2, yt: ci.yType || 'ge' };
         let modal = document.getElementById('compilationModal');
         if (!modal) {
             modal = document.createElement('div');
             modal.id = 'compilationModal';
             modal.className = 'modal-overlay';
             modal.style.zIndex = '1360';
-            modal.innerHTML = `<div class="modal" id="compilationModalInner" style="max-width:min(96vw,1240px); width:96vw;">
+            const sel = (id, title, opts = '') => `<select id="${id}" title="${title}" style="font-size:11px; padding:1px 4px; border:1px solid #d1d5db; border-radius:4px; max-width:135px;">${opts}</select>`;
+            modal.innerHTML = `<div class="modal" id="compilationModalInner" style="max-width:min(97vw,1500px); width:97vw;">
                 <div class="modal-header"><h3>Compilation</h3><button class="modal-close" id="compClose" title="Close">&times;</button></div>
                 <div class="modal-body" style="font-size:12px; color:#374151;">
-                    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
-                        <span>Grid:</span>
-                        ${[2, 3, 4].map(k => `<button type="button" class="btn btn-outline btn-sm comp-n" data-n="${k}" style="font-size:11px; padding:2px 10px;">${k} &times; ${k}</button>`).join('')}
+                    <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:6px;">
+                        <label title="Rows and panels per row, up to 8 each">Grid <input type="number" id="compRows" min="1" max="8" style="width:38px; font-size:11px; padding:1px 4px; border:1px solid #d1d5db; border-radius:4px;"> rows × <input type="number" id="compCols" min="1" max="8" style="width:38px; font-size:11px; padding:1px 4px; border:1px solid #d1d5db; border-radius:4px;"> columns</label>
+                        <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;" title="Every panel on the same x and y range (per measure), so they line up; a panel can be set to fit its own data in its editor"><input type="checkbox" id="compSameRange" checked> Same axis ranges</label>
                         <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" id="compShowLine" checked> Regression line</label>
                         <span id="compCohortNote" style="color:#6b7280; font-size:11px;"></span>
                     </div>
-                    <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
+                    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:6px; padding:5px 8px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:6px;">
+                        <b style="font-size:11px; color:#4b5563;">Cohort &amp; highlights</b>
+                        <label>Tissue ${sel('compTissue', 'Same as the correlation plot\'s tissue filter')}</label>
+                        <label>Subtype ${sel('compSubtype', 'Same as the correlation plot\'s subtype filter')}</label>
+                        <label>Mutation colour ${sel('compHot', 'Colour points by this gene\'s mutation status')}</label>
+                        <label>Colour by ${sel('compColorBy', 'Colour points by group', '<option value="">none</option><option value="tissue">Tissue</option><option value="subtype">Subtype</option><option value="disease">Disease</option><option value="medium">Culture medium</option>')}</label>
+                        <button type="button" class="btn btn-outline btn-sm" id="compGroups" style="font-size:10px; padding:1px 6px; min-width:122px; visibility:hidden;" title="Pick which groups are coloured; the rest turn grey">Groups...</button>
+                        <span style="display:inline-flex; gap:4px; align-items:center; white-space:nowrap;"><label title="Typed names and cell lines clicked in the plots">Highlight <input type="text" id="compHl" placeholder="cell lines, comma separated" autocomplete="off" style="width:130px; font-size:11px; padding:2px 6px; border:1px solid #d1d5db; border-radius:4px;"></label>
+                        <button type="button" class="btn btn-outline btn-sm" id="compHlCopy" style="font-size:10px; padding:1px 6px;" title="Copy the highlighted cell line names">Copy</button>
+                        <button type="button" class="btn btn-outline btn-sm" id="compHlClear" style="font-size:10px; padding:1px 6px;" title="Remove all highlighted and clicked cell lines">Clear</button></span>
+                    </div>
+                    <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-bottom:6px;">
                         <span>Top correlates of</span>
                         <input type="text" id="compTopGene" placeholder="gene" autocomplete="off" style="width:90px; font-size:12px; padding:2px 6px; border:1px solid #d1d5db; border-radius:4px;">
-                        <select id="compTopMode" style="font-size:12px; padding:2px 4px; border:1px solid #d1d5db; border-radius:4px;">
-                            <option value="ge:ge">GE vs GE</option>
-                            <option value="ge:expr">GE vs mRNA</option>
-                            <option value="expr:expr">mRNA vs mRNA</option>
-                        </select>
+                        ${sel('compTopMode', 'What is correlated', '<option value="ge:ge">GE vs GE</option><option value="ge:expr">GE vs mRNA</option><option value="expr:expr">mRNA vs mRNA</option>')}
+                        <label title="How much of this cohort a gene must be measured in before it can appear. A correlation computed on a fraction of the cell lines is mostly noise, and it rises to the top of the list precisely because small samples give large numbers. Expressed as a share of the cohort so it scales with whatever you have filtered to. Set 0 to see everything.">measured in ≥ <input type="text" inputmode="numeric" id="compMinPct" style="width:40px; font-size:11px; padding:1px 4px; border:1px solid #d1d5db; border-radius:4px;"> <span style="color:#6b7280;">% of lines</span></label>
                         <button type="button" class="btn btn-outline btn-sm" id="compTopFill" style="font-size:11px; padding:2px 10px; color:#5d9239; border-color:#6ba544;" title="Fill every panel: this gene on X, the genes that correlate most strongly with it (either direction) on Y, in the shared cohort">Fill</button>
                     </div>
-                    <div id="compEditor" style="display:grid; gap:6px; margin-bottom:6px;"></div>
-                    <div style="color:#9ca3af; font-size:11px; margin-bottom:8px;">Filters, highlights and colours come from the correlation plot. Click a point to label or unlabel that cell line in every panel.</div>
+                    <div style="display:flex; gap:5px; align-items:center; flex-wrap:wrap; margin-bottom:6px;">
+                        <span style="font-size:11px; color:#6b7280;">Panels:</span>
+                        <span id="compChips" style="display:contents;"></span>
+                        <button type="button" class="btn btn-outline btn-sm" id="compClearAll" style="font-size:10px; padding:1px 8px;">Clear all</button>
+                    </div>
+                    <div style="color:#9ca3af; font-size:11px; margin-bottom:6px;">Click a panel, or its title in the plot, to change it. Click a point to label or unlabel that cell line in every panel.</div>
                     <div id="compilationPlot"></div>
                 </div>
                 <div class="modal-footer" style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
@@ -22661,17 +22679,73 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     <button class="btn btn-outline btn-sm" id="compExportImg">Export image...</button>
                     <button class="btn btn-outline btn-sm" id="compCopy">Copy</button>
                     <button class="btn btn-outline btn-sm" id="compExportAI">Export for AI</button>
+                    <button class="btn btn-outline btn-sm" id="compReset" style="font-size:10px;" title="Clear the panels and the cohort, highlight and colour settings, and go back to the default layout">Reset</button>
                     <span id="compStatus" style="font-size:11px; color:#6b7280;"></span>
                     <button class="btn btn-outline btn-sm" id="compClose2" style="margin-left:auto;">Close</button>
                 </div></div>`;
             document.body.appendChild(modal);
-            const close = () => modal.classList.remove('active');
+            const close = () => { modal.classList.remove('active'); document.getElementById('compPanelPop')?.remove(); };
             modal.querySelector('#compClose').onclick = close;
             modal.querySelector('#compClose2').onclick = close;
             modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
-            modal.querySelectorAll('.comp-n').forEach(b => b.onclick = () => { this._compReadEditor(); st.n = +b.dataset.n; this._compRenderEditor(); this.drawCompilation(); });
+            const onGrid = () => {
+                const clamp = (id, cur) => { const el = modal.querySelector(id); const v = Math.max(1, Math.min(8, parseInt(el.value, 10) || cur)); el.value = v; return v; };
+                const r = clamp('#compRows', st.rows), c = clamp('#compCols', st.cols);
+                if (r === st.rows && c === st.cols) return;
+                st.rows = r; st.cols = c;
+                // A filled grid stays filled at the new size.
+                if (st.lastFill) this._compFillTop(st.lastFill);
+                else { this._compRenderEditor(); this.drawCompilation(); }
+            };
+            modal.querySelector('#compRows').onchange = onGrid;
+            modal.querySelector('#compCols').onchange = onGrid;
+            modal.querySelector('#compSameRange').onchange = (e) => { st.sameRange = e.target.checked; this._compRedrawFigureOnly(); };
+            modal.querySelector('#compShowLine').onchange = (e) => { st.showLine = e.target.checked; this._compRedrawFigureOnly(); };
+            modal.querySelector('#compMinPct').onchange = (e) => { st.minPct = Math.max(0, Math.min(100, parseFloat(e.target.value) || 0)); };
             modal.querySelector('#compTopFill').onclick = () => this._compFillTop();
             modal.querySelector('#compTopGene').addEventListener('keydown', (e) => { if (e.key === 'Enter') this._compFillTop(); });
+            modal.querySelector('#compClearAll').onclick = () => { st.panels = []; st.lastFill = null; this._compRenderEditor(); this.drawCompilation(); };
+            // The cohort and highlight controls write into the correlation
+            // plot's own controls, which the panels read, so the two views can
+            // never disagree.
+            const drive = (id, value, evt = 'change') => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.value = value;
+                el.dispatchEvent(new Event(evt, { bubbles: true }));
+            };
+            modal.querySelector('#compTissue').onchange = (e) => { drive('scatterCancerFilter', e.target.value); this._compSyncControls(); this.drawCompilation(); };
+            modal.querySelector('#compSubtype').onchange = (e) => { drive('scatterSubtypeFilter', e.target.value); this.drawCompilation(); };
+            modal.querySelector('#compHot').onchange = (e) => {
+                drive('hotspotGene', e.target.value);
+                drive('hotspotMode', e.target.value ? 'color' : 'none');
+                this._compRedrawFigureOnly();
+            };
+            modal.querySelector('#compColorBy').onchange = (e) => {
+                drive('colorByCategory', e.target.value);
+                this._compSyncControls();
+                this._compRedrawFigureOnly();
+            };
+            let hlTimer = null;
+            modal.querySelector('#compHl').addEventListener('input', (e) => {
+                clearTimeout(hlTimer);
+                hlTimer = setTimeout(() => {
+                    // The box lists clicked lines too, so what is typed replaces both.
+                    this.clickedCells.clear();
+                    drive('scatterCellSearch', e.target.value.split(/[,;\n]+/).map(s => s.trim()).filter(Boolean).join('\n'), 'input');
+                    this.updateInspectPlot?.();
+                    this._compRedrawFigureOnly();
+                }, 500);
+            });
+            modal.querySelector('#compHlCopy').onclick = () => this.copyNamesToClipboard(this._compHighlightNames(), 'highlighted');
+            modal.querySelector('#compHlClear').onclick = () => {
+                drive('scatterCellSearch', '', 'input');
+                this.clickedCells.clear();
+                this._userLabelPositions?.clear();
+                this.updateInspectPlot?.();
+                this._compSyncControls();
+                this._compRedrawFigureOnly();
+            };
             // Copy and export use a packed copy without the empty panels.
             const noPanels = () => { const s2 = document.getElementById('compStatus'); if (s2) s2.textContent = 'Draw at least one panel first.'; };
             modal.querySelector('#compCopy').onclick = async () => {
@@ -22684,83 +22758,180 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 if (!el) return noPanels();
                 try {
                     await this._exportPlotly(el, { w: el._fullLayout?.width || el.offsetWidth, h: el._fullLayout?.height || el.offsetHeight,
-                        format: 'png', filename: `correlate_compilation_${st.n}x${st.n}` });
+                        format: 'png', filename: `correlate_compilation_${st.rows}x${st.cols}` });
                 } finally { el.remove(); }
             };
             modal.querySelector('#compExportAI').onclick = () => this._compExportAI();
-            modal.querySelector('#compShowLine').onchange = (e) => {
-                st.showLine = e.target.checked;
-                if (this._compLast) this._compRenderFigure(document.getElementById('compilationPlot'), this._compLast, st.n);
+            modal.querySelector('#compGroups').onclick = (e) => this.showColorByGroupPicker(e.currentTarget, () => { this._compSyncControls(); this._compRedrawFigureOnly(); });
+            modal.querySelector('#compReset').onclick = () => {
+                drive('scatterCancerFilter', '');
+                drive('scatterSubtypeFilter', '');
+                drive('hotspotMode', 'none');
+                const picked = document.getElementById('colorByPicked'); if (picked) picked.value = '';
+                drive('colorByCategory', '');
+                drive('scatterCellSearch', '', 'input');
+                this.clickedCells?.clear();
+                this.updateInspectPlot?.();
+                Object.assign(st, { rows: 2, cols: 5, panels: [], showLine: true, sameRange: true, minPct: 75, lastFill: null });
+                const c0 = this.currentInspect;
+                if (c0?.gene1) st.panels[0] = { xg: c0.gene1, xt: c0.xType || 'ge', yg: c0.gene2, yt: c0.yType || 'ge' };
+                modal.querySelector('#compRows').value = 2; modal.querySelector('#compCols').value = 5;
+                modal.querySelector('#compShowLine').checked = true;
+                modal.querySelector('#compSameRange').checked = true;
+                modal.querySelector('#compMinPct').value = 75;
+                modal.querySelector('#compTopGene').value = '';
+                this._compSyncControls();
+                this._compRenderEditor();
+                this.drawCompilation();
             };
         }
         modal.classList.add('active');
-        const lineBox = modal.querySelector('#compShowLine');
-        if (lineBox) lineBox.checked = st.showLine !== false;
+        modal.querySelector('#compRows').value = st.rows; modal.querySelector('#compCols').value = st.cols;
+        modal.querySelector('#compShowLine').checked = st.showLine !== false;
+        modal.querySelector('#compSameRange').checked = st.sameRange !== false;
+        modal.querySelector('#compMinPct').value = st.minPct ?? 75;
+        modal.querySelector('#compTopGene').value = '';
+        modal.querySelector('#compTopMode').value = 'ge:ge';
+        const status0 = modal.querySelector('#compStatus'); if (status0) status0.textContent = '';
+        document.getElementById('compPanelPop')?.remove();
+        this._compSyncControls();
         this._compRenderEditor();
         this.drawCompilation();
     }
 
+    // Copies the correlation plot's cohort and highlight settings into the
+    // compilation's own controls.
+    _compSyncControls() {
+        const copySel = (fromId, toId) => {
+            const from = document.getElementById(fromId), to = document.getElementById(toId);
+            if (!from || !to) return;
+            to.innerHTML = from.innerHTML;
+            to.value = from.value;
+        };
+        copySel('scatterCancerFilter', 'compTissue');
+        copySel('scatterSubtypeFilter', 'compSubtype');
+        const hot = document.getElementById('compHot'), hotSrc = document.getElementById('hotspotGene');
+        if (hot && hotSrc) {
+            hot.innerHTML = '<option value="">none</option>' + [...hotSrc.options].filter(o => o.value).map(o => `<option value="${this.esc(o.value)}">${this.esc(o.textContent)}</option>`).join('');
+            const on = (document.getElementById('hotspotMode')?.value || 'none') !== 'none';
+            hot.value = on ? hotSrc.value : '';
+        }
+        const cb = document.getElementById('compColorBy');
+        if (cb) cb.value = document.getElementById('colorByCategory')?.value || '';
+        const gb = document.getElementById('compGroups');
+        if (gb) {
+            gb.style.visibility = cb?.value ? 'visible' : 'hidden';
+            gb.textContent = this._colorByGroupBtnLabel();
+        }
+        const hl = document.getElementById('compHl');
+        if (hl && document.activeElement !== hl) hl.value = this._compHighlightNames().join(', ');
+    }
+
+    // Typed highlights plus clicked cell lines, once each.
+    _compHighlightNames() {
+        const typed = (document.getElementById('scatterCellSearch')?.value || '').split(/[,\n]+/).map(t => t.trim()).filter(Boolean);
+        const seen = new Set(), out = [];
+        for (const n of [...typed, ...(this.clickedCells || [])]) {
+            const k = String(n).toUpperCase();
+            if (!seen.has(k)) { seen.add(k); out.push(n); }
+        }
+        return out;
+    }
+
+    _compRedrawFigureOnly() {
+        const el = document.getElementById('compilationPlot');
+        if (el && this._compLast) this._compRenderFigure(el, this._compLast, this._compState.cols);
+    }
+
+    _compTotal() { return (this._compState.rows || 2) * (this._compState.cols || 5); }
+
+    // One small chip per panel; the panel is edited in a pop-up, so the grid
+    // of panels is the main thing on screen.
     _compRenderEditor() {
-        const st = this._compState, n = st.n;
-        document.querySelectorAll('#compilationModal .comp-n').forEach(b => {
-            const on = +b.dataset.n === n;
-            b.style.background = on ? '#6ba544' : ''; b.style.color = on ? '#fff' : '';
-        });
-        const ed = document.getElementById('compEditor');
-        ed.style.gridTemplateColumns = `repeat(${n}, minmax(0, 1fr))`;
+        const st = this._compState, box = document.getElementById('compChips');
+        if (!box) return;
+        const word = (t) => t === 'expr' ? 'mRNA' : t === 'cn' ? 'CN' : 'GE';
+        let html = '';
+        for (let i = 0; i < this._compTotal(); i++) {
+            const p = st.panels[i];
+            const filled = p?.xg && p?.yg;
+            html += `<button type="button" class="comp-chip" data-i="${i}" title="Edit panel ${i + 1}" style="border:1px solid ${filled ? '#6ba544' : '#d1d5db'}; background:${filled ? '#f0fdf4' : '#fafafa'}; color:${filled ? '#374151' : '#9ca3af'}; border-radius:10px; padding:1px 8px; font-size:10px; cursor:pointer; white-space:nowrap;">`
+                + `<span style="color:#9ca3af;">${i + 1}</span> `
+                + (filled ? `${this.gi(p.xg)} ${word(p.xt)} / ${this.gi(p.yg)} ${word(p.yt)}${p.fit ? ' &#8596;' : ''}` : '+') + '</button>';
+        }
+        box.innerHTML = html;
+        box.querySelectorAll('.comp-chip').forEach(b => b.onclick = (e) => this._compOpenPanelEditor(+b.dataset.i, e));
+    }
+
+    _compReadEditor() { /* panels are edited in place by the pop-up */ }
+
+    _compOpenPanelEditor(i, evt) {
+        const st = this._compState;
+        document.getElementById('compPanelPop')?.remove();
+        const p = st.panels[i] = st.panels[i] || { xg: '', xt: 'ge', yg: '', yt: 'ge' };
+        const pop = document.createElement('div');
+        pop.id = 'compPanelPop';
+        pop.style.cssText = 'position:fixed; z-index:1370; background:#fff; border:1px solid #6ba544; border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,0.2); padding:8px 10px; font-size:12px; width:300px; max-width:calc(100vw - 16px);';
         const typeSel = (cls, v) => `<select class="${cls}" style="font-size:11px; padding:1px 2px; border:1px solid #d1d5db; border-radius:3px;">`
             + [['ge', 'GE'], ['expr', 'mRNA'], ['cn', 'CN']].map(([k, l]) => `<option value="${k}"${v === k ? ' selected' : ''}>${l}</option>`).join('') + '</select>';
-        const inp = (cls, v, ph) => `<input type="text" class="${cls}" value="${this.esc(v || '')}" placeholder="${ph}" autocomplete="off" style="width:100%; min-width:0; font-size:11px; padding:2px 5px; border:1px solid #d1d5db; border-radius:3px;">`;
-        // Include zero on the axis (on unless unticked), so an axis is never
-        // zoomed onto a narrow band such as 1 to 3.
-        const zero = (cls, v) => `<label title="Always show 0 on this axis" style="font-size:10px; color:#6b7280; display:inline-flex; align-items:center; gap:1px; cursor:pointer;"><input type="checkbox" class="${cls}"${v === false ? '' : ' checked'} style="margin:0;">0</label>`;
-        let html = '';
-        for (let i = 0; i < n * n; i++) {
-            const p = st.panels[i] || {};
-            html += `<div class="comp-cell" data-i="${i}" style="border:1px solid #e5e7eb; border-radius:6px; padding:4px 6px; background:#fafafa; min-width:0;">
-                <div style="font-size:10px; color:#9ca3af;">Panel ${i + 1}</div>
-                <div style="display:grid; grid-template-columns:auto minmax(0,1fr) auto auto; gap:3px; align-items:center;">
-                    <span style="font-size:10px;">X</span>${inp('comp-xg', p.xg, 'gene')}${typeSel('comp-xt', p.xt || 'ge')}${zero('comp-x0', p.x0)}
-                    <span style="font-size:10px;">Y</span>${inp('comp-yg', p.yg, 'gene')}${typeSel('comp-yt', p.yt || 'ge')}${zero('comp-y0', p.y0)}
-                </div>
-                <button type="button" class="btn btn-outline btn-sm comp-fc" id="comp-fc-${i}" data-i="${i}" style="margin-top:3px; font-size:10px; padding:1px 8px; color:#5d9239; border-color:#6ba544;" title="Find the genes whose gene effect or expression correlates with this panel's X gene in the shared cohort; click one to put it on Y">Find correlates</button></div>`;
-        }
-        ed.innerHTML = html;
-        ed.querySelectorAll('.comp-fc').forEach(b => b.onclick = () => {
-            this._compReadEditor();
-            const i = +b.dataset.i, p = this._compState.panels[i] || {};
+        const zero = (cls, v) => `<label title="Always show 0 on this axis" style="font-size:10px; color:#6b7280; display:inline-flex; align-items:center; gap:1px;"><input type="checkbox" class="${cls}"${v === false ? '' : ' checked'} style="margin:0;">0</label>`;
+        const inp = (cls, v) => `<input type="text" class="${cls}" value="${this.esc(v || '')}" placeholder="gene" autocomplete="off" style="width:100%; min-width:0; font-size:12px; padding:2px 5px; border:1px solid #d1d5db; border-radius:3px;">`;
+        pop.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;"><b>Panel ${i + 1}</b><button type="button" class="pp-close" style="background:none; border:none; font-size:16px; cursor:pointer; color:#9ca3af;">&times;</button></div>
+            <div style="display:grid; grid-template-columns:auto minmax(0,1fr) auto auto; gap:4px; align-items:center;">
+                <span>X</span>${inp('pp-xg', p.xg)}${typeSel('pp-xt', p.xt || 'ge')}${zero('pp-x0', p.x0)}
+                <span>Y</span>${inp('pp-yg', p.yg)}${typeSel('pp-yt', p.yt || 'ge')}${zero('pp-y0', p.y0)}
+            </div>
+            <label style="display:flex; align-items:center; gap:4px; margin-top:6px; font-size:11px;" title="Give this panel its own x and y range, fitted to its data, instead of the shared one"><input type="checkbox" class="pp-fit"${p.fit ? ' checked' : ''}> Fit axes to this panel's data</label>
+            <div style="display:flex; gap:6px; margin-top:7px; flex-wrap:wrap;">
+                <button type="button" class="btn btn-outline btn-sm pp-fc" id="compPopFc" style="font-size:10px; padding:1px 8px; color:#5d9239; border-color:#6ba544;">Find correlates of X</button>
+                <button type="button" class="btn btn-outline btn-sm pp-clear" style="font-size:10px; padding:1px 8px;">Clear panel</button>
+            </div>`;
+        document.body.appendChild(pop);
+        const x = evt?.clientX ?? window.innerWidth / 2, y = evt?.clientY ?? 200;
+        pop.style.left = Math.max(8, Math.min(window.innerWidth - pop.offsetWidth - 8, x - 40)) + 'px';
+        pop.style.top = Math.max(8, Math.min(window.innerHeight - pop.offsetHeight - 8, y + 12)) + 'px';
+        const q = (c) => pop.querySelector(c);
+        let t = null;
+        const apply = (ms) => {
+            clearTimeout(t);
+            t = setTimeout(() => {
+                Object.assign(p, {
+                    xg: q('.pp-xg').value.trim().toUpperCase(), xt: q('.pp-xt').value, x0: q('.pp-x0').checked,
+                    yg: q('.pp-yg').value.trim().toUpperCase(), yt: q('.pp-yt').value, y0: q('.pp-y0').checked, fit: q('.pp-fit').checked
+                });
+                st.lastFill = null;
+                this._compRenderEditor();
+                this.drawCompilation();
+            }, ms);
+        };
+        pop.querySelectorAll('input[type="text"]').forEach(el => {
+            el.addEventListener('input', () => apply(800));
+            el.addEventListener('keydown', (e) => { if (e.key === 'Enter') apply(0); });
+        });
+        pop.querySelectorAll('select, input[type="checkbox"]').forEach(el => el.addEventListener('change', () => apply(0)));
+        const close = () => { pop.remove(); document.removeEventListener('mousedown', outside, true); document.removeEventListener('keydown', onEsc, true); };
+        const outside = (e) => {
+            if (pop.contains(e.target) || e.target.closest?.('.comp-chip') || e.target.closest?.('#inspectCorrelatesModal')) return;
+            close();
+        };
+        const onEsc = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+        q('.pp-close').onclick = close;
+        q('.pp-clear').onclick = () => { st.panels[i] = { xg: '', xt: 'ge', yg: '', yt: 'ge' }; st.lastFill = null; close(); this._compRenderEditor(); this.drawCompilation(); };
+        q('.pp-fc').onclick = () => {
+            const xg = q('.pp-xg').value.trim().toUpperCase(), xt = q('.pp-xt').value;
             const s2 = document.getElementById('compStatus');
-            if (!p.xg) { if (s2) s2.textContent = `Panel ${i + 1}: enter an X gene first.`; return; }
-            if (p.xt === 'cn') { if (s2) s2.textContent = 'Find correlates works on a gene effect or mRNA X axis.'; return; }
-            this.findInspectCorrelates({ xGene: p.xg, xType: p.xt, buttonId: b.id, onPick: (gene, kind) => {
-                this._compState.panels[i] = { ...this._compState.panels[i], yg: gene, yt: kind === 'expr' ? 'expr' : 'ge' };
+            if (!xg) { if (s2) s2.textContent = `Panel ${i + 1}: enter an X gene first.`; return; }
+            if (xt === 'cn') { if (s2) s2.textContent = 'Find correlates works on a gene effect or mRNA X axis.'; return; }
+            this.findInspectCorrelates({ xGene: xg, xType: xt, buttonId: 'compPopFc', onPick: (gene, kind) => {
+                Object.assign(p, { xg, xt, yg: gene, yt: kind === 'expr' ? 'expr' : 'ge' });
+                st.lastFill = null;
+                close();
                 this._compRenderEditor();
                 this.drawCompilation();
             } });
-        });
-        // Redraw on its own: at once for a measure or the 0 box, after a short
-        // pause for a gene name so a half-typed one is not drawn as missing.
-        const schedule = (ms) => {
-            clearTimeout(this._compAutoTimer);
-            this._compAutoTimer = setTimeout(() => { this._compReadEditor(); this.drawCompilation(); }, ms);
         };
-        ed.querySelectorAll('input[type="text"]').forEach(el => {
-            el.addEventListener('input', () => schedule(800));
-            el.addEventListener('keydown', (e) => { if (e.key === 'Enter') schedule(0); });
-        });
-        ed.querySelectorAll('select, input[type="checkbox"]').forEach(el => el.addEventListener('change', () => schedule(0)));
-    }
-
-    _compReadEditor() {
-        const st = this._compState;
-        document.querySelectorAll('#compEditor .comp-cell').forEach(cell => {
-            const i = +cell.dataset.i;
-            st.panels[i] = {
-                xg: cell.querySelector('.comp-xg').value.trim().toUpperCase(), xt: cell.querySelector('.comp-xt').value,
-                yg: cell.querySelector('.comp-yg').value.trim().toUpperCase(), yt: cell.querySelector('.comp-yt').value,
-                x0: cell.querySelector('.comp-x0').checked, y0: cell.querySelector('.comp-y0').checked
-            };
-        });
+        setTimeout(() => { document.addEventListener('mousedown', outside, true); document.addEventListener('keydown', onEsc, true); }, 0);
+        q('.pp-xg').focus();
     }
 
     // The values of one panel over the correlation plot's cohort, or why there
@@ -22792,7 +22963,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     _compShortLabel(g, t) { return `${this.gi(g)} ${t === 'expr' ? 'mRNA' : t === 'cn' ? 'CN' : 'GE'}`; }
 
     async drawCompilation() {
-        const st = this._compState, n = st.n;
+        const st = this._compState, total = this._compTotal();
         const plotEl = document.getElementById('compilationPlot');
         if (!plotEl) return;
         // A newer draw supersedes this one (auto-redraw can start several).
@@ -22801,10 +22972,28 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (status) status.textContent = 'Drawing...';
         try { await this._ensureAliasTables?.(); } catch (e) { /* names still shown without the alias */ }
         const panels = [];
-        for (let i = 0; i < n * n; i++) panels.push({ p: st.panels[i], res: await this._compPanelData(st.panels[i]) });
+        for (let i = 0; i < total; i++) panels.push({ p: st.panels[i], res: await this._compPanelData(st.panels[i]) });
         if (token !== this._compDrawToken) return;
         this._compLast = panels;
-        await this._compRenderFigure(plotEl, panels, n);
+        await this._compRenderFigure(plotEl, panels, st.cols);
+        // A panel title opens that panel's editor; a point shows the card.
+        if (!plotEl._compTitleWired) {
+            plotEl._compTitleWired = true;
+            let hoverTimer = null;
+            plotEl.on('plotly_hover', (ev) => {
+                const pt = ev?.points?.[0];
+                const id = pt?.customdata;
+                if (!id) return;
+                const e = { clientX: ev.event?.clientX, clientY: ev.event?.clientY };
+                clearTimeout(hoverTimer);
+                hoverTimer = setTimeout(() => this.showCellLineTooltip(e, id, 'Click to label or unlabel in every panel'), this._HOVER_DELAY);
+            });
+            plotEl.on('plotly_unhover', () => { clearTimeout(hoverTimer); this.hideCellLineTooltip?.(); });
+            plotEl.on('plotly_clickannotation', (ev) => {
+                const i = ev?.annotation?._compPanel;
+                if (i !== undefined) this._compOpenPanelEditor(i, ev.event);
+            });
+        }
         // Click a point: label or unlabel that cell line, in every panel and
         // in the correlation plot, which share the same list.
         if (!plotEl._compClickWired) {
@@ -22816,7 +23005,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 const d = (this._compLast || []).flatMap(x => x.res?.data || []).find(q => q.cellLineName === name);
                 if (d && look.isHl(d)) this.removeHighlight(name);
                 else { this.clickedCells.add(name); this.updateInspectPlot?.(); }
-                this._compRenderFigure(plotEl, this._compLast, this._compState.n);
+                this._compSyncControls();
+                this._compRenderFigure(plotEl, this._compLast, this._compState.cols);
             });
         }
 
@@ -22895,6 +23085,28 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (legendN) layout.legend = { orientation: 'h', x: 0.5, xanchor: 'center', y: -(30 / plotH), yanchor: 'top', font: { size: 11 }, title: { text: look.title, font: { size: 10, color: '#6b7280' } } };
         const shown = new Set();
         const word = (t) => t === 'expr' ? 'mRNA' : t === 'cn' ? 'CN' : 'GE';
+        // Shared ranges: one x range and one y range per measure, over every
+        // panel that is not set to fit its own data, so the panels line up.
+        const same = this._compState?.sameRange !== false;
+        const span = {};
+        const grow = (key, vals) => {
+            if (!vals.length) return;
+            const r = span[key] = span[key] || [Infinity, -Infinity];
+            for (const v of vals) { if (v < r[0]) r[0] = v; if (v > r[1]) r[1] = v; }
+        };
+        if (same) panels.forEach(({ p, res }) => {
+            if (!res.data?.length || p?.fit) return;
+            grow('x:' + p.xt, res.data.map(q => q.x));
+            grow('y:' + p.yt, res.data.map(q => q.y));
+        });
+        const rangeFor = (key, withZero) => {
+            const r = span[key];
+            if (!r || !isFinite(r[0])) return null;
+            let lo = r[0], hi = r[1];
+            if (withZero) { lo = Math.min(lo, 0); hi = Math.max(hi, 0); }
+            const pad = (hi - lo || 1) * 0.04;
+            return [lo - pad, hi + pad];
+        };
         panels.forEach(({ p, res }, i) => {
             const r = Math.floor(i / cols), c = i % cols, k = i + 1, ax = k === 1 ? '' : String(k);
             const x0 = (c * (panelPx + gapX)) / plotW, x1 = x0 + panelPx / plotW;
@@ -22903,8 +23115,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 title: { text: p?.xg ? this._compShortLabel(p.xg, p.xt) : '', font: { size: 11 }, standoff: 4 } };
             layout['yaxis' + ax] = { domain: [y0, y1], anchor: 'x' + ax, rangemode: p?.y0 === false ? 'normal' : 'tozero', tickfont: { size: 9 }, zeroline: true, zerolinecolor: '#000', zerolinewidth: 1, gridcolor: '#eee',
                 title: { text: p?.yg ? this._compShortLabel(p.yg, p.yt) : '', font: { size: 11 }, standoff: 4 } };
+            if (same && res.data?.length && !p?.fit) {
+                const rx = rangeFor('x:' + p.xt, p.x0 !== false), ry = rangeFor('y:' + p.yt, p.y0 !== false);
+                if (rx) { layout['xaxis' + ax].range = rx; layout['xaxis' + ax].autorange = false; }
+                if (ry) { layout['yaxis' + ax].range = ry; layout['yaxis' + ax].autorange = false; }
+            }
             const xa = 'x' + ax, ya = 'y' + ax;
-            const head = (txt) => annotations.push({ xref: 'paper', yref: 'paper', x: (x0 + x1) / 2, y: y1 + 6 / plotH, xanchor: 'center', yanchor: 'bottom', showarrow: false, text: txt, font: { size: 11 } });
+            const head = (txt) => annotations.push({ xref: 'paper', yref: 'paper', x: (x0 + x1) / 2, y: y1 + 6 / plotH, xanchor: 'center', yanchor: 'bottom', showarrow: false, text: txt, font: { size: 11 },
+                captureevents: true, hovertext: 'Click to change this panel', _compPanel: p?._idx ?? i });
             const blank = () => traces.push({ x: [], y: [], xaxis: xa, yaxis: ya, type: 'scatter', showlegend: false });
             if (res.empty) { head('<span style="color:#9ca3af;">empty</span>'); blank(); return; }
             if (res.error) { head(`<span style="color:#b45309;">${this.esc(res.error)}</span>`); blank(); return; }
@@ -22914,24 +23132,27 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             head(`<b>${this.gi(p.xg)}</b> ${word(p.xt)} vs <b>${this.gi(p.yg)}</b> ${word(p.yt)}<br><span style="font-size:9px; color:#6b7280;">r=${rTxt}, n=${d.length}${pTxt}</span>`);
             // SVG, not WebGL: GL points paint above every SVG trace (they hid
             // the highlights) and export as a picture rather than vectors.
-            const base = { xaxis: xa, yaxis: ya, type: 'scatter', mode: 'markers', hovertemplate: '%{text}<br>x %{x:.2f}, y %{y:.2f}<extra></extra>' };
+            // Plotly's own label is off; hovering shows the same cell-line card
+            // as the correlation plot (wired in drawCompilation).
+            const base = { xaxis: xa, yaxis: ya, type: 'scatter', mode: 'markers', hoverinfo: 'none' };
+            const ids = (pts) => pts.map(q => q.cellLineId);
             if (look.groups) {
                 look.groups.forEach(g => {
                     const pts = d.filter(q => look.groupOf(q) === g.key);
                     if (!pts.length) return;
-                    traces.push({ ...base, x: pts.map(q => q.x), y: pts.map(q => q.y), text: pts.map(q => q.cellLineName), name: g.name,
+                    traces.push({ ...base, x: pts.map(q => q.x), y: pts.map(q => q.y), text: pts.map(q => q.cellLineName), customdata: ids(pts), name: g.name,
                         legendgroup: String(g.key), showlegend: !shown.has(g.key), marker: { size: 6, color: g.color } });
                     shown.add(g.key);
                 });
             } else {
-                traces.push({ ...base, x: d.map(q => q.x), y: d.map(q => q.y), text: d.map(q => q.cellLineName), showlegend: false, marker: { size: 5, color: '#60a5fa', opacity: 0.7 } });
+                traces.push({ ...base, x: d.map(q => q.x), y: d.map(q => q.y), text: d.map(q => q.cellLineName), customdata: ids(d), showlegend: false, marker: { size: 5, color: '#60a5fa', opacity: 0.7 } });
             }
             if (!isNaN(s.slope) && this._compState?.showLine !== false) {
                 const xs = d.map(q => q.x), lo = Math.min(...xs), hi = Math.max(...xs), b0 = s.meanY - s.slope * s.meanX;
                 traces.push({ x: [lo, hi], y: [b0 + s.slope * lo, b0 + s.slope * hi], xaxis: xa, yaxis: ya, type: 'scatter', mode: 'lines', line: { color: '#6ba544', width: 1.5 }, hoverinfo: 'skip', showlegend: false });
             }
             const h = d.filter(look.isHl);
-            if (h.length) traces.push({ ...base, mode: h.length <= 12 ? 'markers+text' : 'markers', x: h.map(q => q.x), y: h.map(q => q.y), text: h.map(q => q.cellLineName), textposition: 'top center', textfont: { size: 9 }, showlegend: false, marker: { size: 8, color: '#f59e0b', line: { color: '#111', width: 1 } } });
+            if (h.length) traces.push({ ...base, mode: h.length <= 12 ? 'markers+text' : 'markers', x: h.map(q => q.x), y: h.map(q => q.y), text: h.map(q => q.cellLineName), customdata: ids(h), textposition: 'top center', textfont: { size: 9 }, showlegend: false, marker: { size: 8, color: '#f59e0b', line: { color: '#111', width: 1 } } });
         });
         layout.annotations = annotations;
         await Plotly.react(el, traces, layout, { displayModeBar: false, responsive: false });
@@ -22945,13 +23166,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const el = document.createElement('div');
         el.style.cssText = 'position:fixed; left:-20000px; top:0;';
         document.body.appendChild(el);
-        await this._compRenderFigure(el, drawn, Math.min(this._compState.n, drawn.length));
+        await this._compRenderFigure(el, drawn, Math.min(this._compState.cols, drawn.length));
         return el;
     }
 
     // Rank every gene of the target measure by correlation with one gene, in
     // the correlation plot's cohort; strongest first, either direction.
-    async _compTopCorrelates(gene, tx, ty, k) {
+    async _compTopCorrelates(gene, tx, ty, k, minPct = 0) {
         if ((tx === 'expr' || ty === 'expr') && !this.expressionLoaded) await this.loadExpressionData?.();
         let ids = this._computeInspectFilteredIdsFromDOM();
         if (!Array.isArray(ids)) ids = this.metadata.cellLines.slice();
@@ -22969,6 +23190,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (xi === undefined) return { error: `${gene} has no ${tx === 'ge' ? 'gene-effect' : 'expression'} data` };
         const x = row(tx, xi, new Float64Array(idx.length));
         const y = new Float64Array(idx.length);
+        // Same coverage rule as Find correlates: a share of the lines with an X value.
+        let xN = 0;
+        for (let j = 0; j < x.length; j++) if (!isNaN(x[j])) xN++;
+        const nMin = minPct > 0 ? Math.ceil(xN * minPct / 100) : 0;
         const genes = ty === 'ge' ? this.metadata.genes : this.expressionMetadata.genes;
         const out = [];
         for (let g = 0; g < genes.length; g++) {
@@ -22981,6 +23206,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 n++; sx += a; sy += b; sxx += a * a; syy += b * b; sxy += a * b;
             }
             if (n < 10) continue;
+            if (n < nMin) continue;
             const den = Math.sqrt((n * sxx - sx * sx) * (n * syy - sy * sy));
             if (!(den > 0)) continue;
             out.push({ gene: String(genes[g]).toUpperCase(), r: (n * sxy - sx * sy) / den });
@@ -22989,13 +23215,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         return { top: out.slice(0, k) };
     }
 
-    async _compFillTop() {
+    async _compFillTop(again) {
         const st = this._compState;
         const status = document.getElementById('compStatus');
         const box = document.getElementById('compTopGene');
+        const modeEl = document.getElementById('compTopMode');
+        if (again) { if (box) box.value = again.gene; if (modeEl) modeEl.value = again.mode; }
         let gene = (box?.value || '').trim().toUpperCase();
         if (!gene) { if (status) status.textContent = 'Type a gene for the top correlates first.'; return; }
-        const [tx, ty] = (document.getElementById('compTopMode')?.value || 'ge:ge').split(':');
+        const mode = modeEl?.value || 'ge:ge';
+        const [tx, ty] = mode.split(':');
         if (tx === 'expr' && !this.expressionLoaded) await this.loadExpressionData?.();
         const has = (g) => tx === 'ge' ? this.geneIndex.has(g) : !!this.expressionGeneIndex?.has(g);
         if (!has(gene)) {
@@ -23006,9 +23235,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
         if (status) status.textContent = `Ranking correlates of ${gene}...`;
         await new Promise(r => setTimeout(r, 30));
-        const res = await this._compTopCorrelates(gene, tx, ty, st.n * st.n);
+        const res = await this._compTopCorrelates(gene, tx, ty, this._compTotal(), st.minPct ?? 75);
         if (res.error) { if (status) status.textContent = res.error; return; }
         st.panels = res.top.map(t => ({ xg: gene, xt: tx, yg: t.gene, yt: ty, x0: true, y0: true }));
+        st.lastFill = { gene, mode };
         if (status) status.textContent = '';
         this._compRenderEditor();
         this.drawCompilation();
@@ -23025,7 +23255,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const colorBy = this._compLook(panels.flatMap(({ res }) => res.data)).groupsBy || '';
         const word = (t) => t === 'expr' ? 'mRNA expression (log2 TPM+1)' : t === 'cn' ? 'relative copy number (1.0 = the line\'s baseline)' : 'CRISPR gene effect (Chronos)';
         this._aiCompilation = {
-            n: this._compState.n,
+            grid: `${this._compState.rows} x ${this._compState.cols}`,
             filters: (document.getElementById('scatterActiveFilters')?.innerText || '').replace(/[×✕▾▼]/g, '').replace(/\s+/g, ' ').trim().replace(/^none$/i, ''),
             colorBy: colorBy || null,
             highlighted: [...new Set(panels.flatMap(({ res }) => res.data.filter(d => hl(d.cellLineName, d.cellLineId) || this.clickedCells?.has(d.cellLineName)).map(d => d.cellLineId)))],
@@ -33589,18 +33819,18 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (comp) {
             extras = {
                 compilationPanels: comp.panels,
-                compilationPanels_readMe: `The ${comp.panels.length} drawn panels of a ${comp.n} x ${comp.n} compilation of correlation plots, in reading order. Each gives the two genes and what was measured for each (gene effect, mRNA expression or copy number), n, Pearson r with its two-sided p, the least-squares slope, and values: every plotted cell line as [cell line ID, x, y], the exact points of that panel. Use these values rather than the matrices for a panel's own numbers: a copy-number panel has no matrix in this file, and the panels' cohorts can differ slightly because a line missing one gene's value drops out of that panel only.`
+                compilationPanels_readMe: `The ${comp.panels.length} drawn panels of a ${comp.grid} compilation of correlation plots, in reading order. Each gives the two genes and what was measured for each (gene effect, mRNA expression or copy number), n, Pearson r with its two-sided p, the least-squares slope, and values: every plotted cell line as [cell line ID, x, y], the exact points of that panel. Use these values rather than the matrices for a panel's own numbers: a copy-number panel has no matrix in this file, and the panels' cohorts can differ slightly because a line missing one gene's value drops out of that panel only.`
             };
             cellLineGroups = {};
             context = {
-                type: 'correlation_compilation', plotType: `${comp.n} x ${comp.n} grid of scatter plots`, stratification: 'none',
+                type: 'correlation_compilation', plotType: `${comp.grid} grid of scatter plots`, stratification: 'none',
                 inputGenes: genesInCompilation(comp),
                 filtersFromCorrelationPlot: comp.filters || 'none',
                 colorBy: comp.colorBy,
                 highlightedCellLines: comp.highlighted.length ? comp.highlighted : null
             };
             context.plotDescribesWhat = `A compilation of ${comp.panels.length} correlation plots sharing one cohort, set by the filters of the correlation plot${comp.filters ? ' (' + comp.filters + ')' : ''}${comp.highlighted.length ? `, with ${comp.highlighted.length} cell line(s) highlighted` : ''}${comp.colorBy ? `, coloured by ${comp.colorBy}` : ''}. Panels: ` + comp.panels.map(p => `${p.panel}) ${p.x.gene} vs ${p.y.gene}, r=${p.r}, n=${p.n}`).join('; ') + '.';
-            description = `${comp.panels.length} correlation plots (${comp.n} x ${comp.n} compilation) across ${cellLines.length.toLocaleString()} cell lines.`;
+            description = `${comp.panels.length} correlation plots (${comp.grid} compilation) across ${cellLines.length.toLocaleString()} cell lines.`;
         }
         function genesInCompilation(c) { return [...new Set(c.panels.flatMap(p => [p.x.gene, p.y.gene]))]; }
         context.description = description;
@@ -35539,10 +35769,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     : null;
                 const el = plotId && document.getElementById(plotId);
                 if (el && el.data && typeof Plotly !== 'undefined') {
+                    // On-screen size with scale, not a doubled width/height:
+                    // a relayout at 2x drops the title and axis-label
+                    // annotations, which carry what X and Y are.
                     _pngUrl = await timed(Plotly.toImage(el, {
                         format: 'png',
-                        width: (el._fullLayout?.width || el.clientWidth || 900) * 2,
-                        height: (el._fullLayout?.height || el.clientHeight || 600) * 2
+                        width: el._fullLayout?.width || el.clientWidth || 900,
+                        height: el._fullLayout?.height || el.clientHeight || 600,
+                        scale: 2
                     }));
                 }
             }
@@ -42012,10 +42246,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // Panel for choosing which tissues / subtypes to color. Everything else on
     // the plot goes gray, so a couple of groups can be picked out of a list far
     // too long to color all at once.
-    showColorByGroupPicker() {
+    // anchorEl / afterApply let another view (the compilation) open the same
+    // picker next to its own button and redraw itself after a choice.
+    showColorByGroupPicker(anchorEl, afterApply) {
         document.getElementById('colorByGroupPanel')?.remove();
         const mode = document.getElementById('colorByCategory')?.value;
-        if (mode !== 'tissue' && mode !== 'subtype' && mode !== 'disease') return;
+        if (mode !== 'tissue' && mode !== 'subtype' && mode !== 'disease' && mode !== 'medium') return;
 
         // Only what is on the plot: offering a subtype that every active filter
         // has already excluded gives a choice that cannot change anything.
@@ -42093,7 +42329,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             `</div></div>`;
         document.body.appendChild(panel);
 
-        const btn = document.getElementById('colorByGroupBtn');
+        const btn = anchorEl || document.getElementById('colorByGroupBtn');
         const r = btn.getBoundingClientRect();
         panel.style.left = Math.max(8, Math.min(r.left, window.innerWidth - 278)) + 'px';
         const ph = panel.getBoundingClientRect().height;
@@ -42165,6 +42401,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             close();
             this._syncColorByGroupBtn();
             this.updateInspectPlot();
+            afterApply?.();
         });
     }
 
@@ -42185,11 +42422,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         btn.style.display = on ? '' : 'none';
         const statSel = document.getElementById('colorByLegendStat');
         if (statSel) statSel.style.display = on ? '' : 'none';
+        btn.textContent = this._colorByGroupBtnLabel();
+    }
+
+    _colorByGroupBtnLabel() {
+        const mode = document.getElementById('colorByCategory')?.value;
         const raw = (document.getElementById('colorByPicked')?.value || '').trim();
-        if (raw === '*') btn.textContent = 'Groups: all';
-        else if (raw === 'none') btn.textContent = 'Groups: none';
-        else if (raw) btn.textContent = `Groups: ${raw.split('|').filter(Boolean).length}`;
-        else btn.textContent = mode === 'subtype' ? 'Pick subtypes to color...'
+        if (raw === '*') return 'Groups: all';
+        if (raw === 'none') return 'Groups: none';
+        if (raw) return `Groups: ${raw.split('|').filter(Boolean).length}`;
+        return mode === 'subtype' ? 'Pick subtypes to color...'
             : mode === 'disease' ? 'Pick diseases to color...' : 'Groups: all';
     }
 
@@ -45593,7 +45835,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 for (const [cl, v] of Object.entries(muts)) {
                     if (v > 0 && hotspotBaseSet.has(cl)) n++;
                 }
-                if (n > 0) items.push({ value: gene, primary: gene, count: n, secondary: 'hotspot mutation' });
+                if (n > 0) items.push({ value: gene, primary: `${gene} (hotspot)`, count: n, secondary: 'hotspot mutation' });
             }
             items.sort((a, b) => b.count - a.count);
             this._hotspotFilterItems = items;
