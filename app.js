@@ -23274,10 +23274,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         finally { this._aiCompilation = null; }
     }
 
-    // Genes past a cutoff: every gene's share of cell lines below and above
-    // two values, in a filterable cohort. Cohort filters follow the heatmap's,
-    // the coverage rule follows Find correlates, the histogram grid follows
-    // the correlation compilation.
+    // Threshold scan: every gene's share of cell lines below (or above) one
+    // value, in a filterable cohort. Cohort filters follow the heatmap's, the
+    // coverage rule follows Find correlates, the histogram grid follows the
+    // correlation compilation.
     setupCutoffTool() {
         const modal = document.getElementById('cutoffModal');
         if (!modal) return;
@@ -23288,18 +23288,21 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         document.getElementById('ctCloseBtn')?.addEventListener('click', close);
         let t = null;
         const debounce = (fn) => () => { clearTimeout(t); t = setTimeout(fn, 350); };
-        document.getElementById('ctMeasure')?.addEventListener('change', (e) => {
-            const d = this._ctDefaults(e.target.value);
-            document.getElementById('ctBelow').value = d.below;
-            document.getElementById('ctAbove').value = d.above;
-            this._ct.sortCol = e.target.value === 'expr' ? 'above' : 'below';
-            this._ct.sortAsc = false;
+        const resetCut = () => {
+            document.getElementById('ctCut').value = this._ctDefault(document.getElementById('ctMeasure').value, document.getElementById('ctDir').value);
+        };
+        document.getElementById('ctMeasure')?.addEventListener('change', () => {
+            resetCut();
             this._ct.selectedG = null;
+            ['ctXmin', 'ctXmax'].forEach(id => { document.getElementById(id).value = ''; });
             this._ctRecompute();
         });
-        ['ctBelow', 'ctAbove'].forEach(id => document.getElementById(id)?.addEventListener('input', debounce(() => this._ctRecount())));
-        ['ctMinPct', 'ctListPct', 'ctSearch'].forEach(id => document.getElementById(id)?.addEventListener('input', debounce(() => this._ctRenderTable())));
-        document.getElementById('ctListDir')?.addEventListener('change', () => this._ctRenderTable());
+        document.getElementById('ctDir')?.addEventListener('change', () => { resetCut(); this._ctRecount(); });
+        document.getElementById('ctCut')?.addEventListener('input', debounce(() => this._ctRecount()));
+        ['ctMinShare', 'ctMinPct', 'ctSearch'].forEach(id => document.getElementById(id)?.addEventListener('input', debounce(() => this._ctRenderTable())));
+        ['ctXmin', 'ctXmax'].forEach(id => document.getElementById(id)?.addEventListener('input', debounce(() => this._ctRenderPlot())));
+        document.getElementById('ctZero')?.addEventListener('change', () => this._ctRenderPlot());
+        document.getElementById('ctAllGenes')?.addEventListener('click', () => { this._ct.selectedG = null; this._ctRenderTable(); this._ctRenderPlot(); });
         ['ctLineage', 'ctSubtype', 'ctDisease'].forEach(id => document.getElementById(id)?.addEventListener('change', () => this._ctRecompute()));
         const changed = () => { this._renderFilterChips('cutoff'); this._ctRecompute(); };
         this._setupMutFilterWidget('hotspot', 'ctHotspotFilter', 'ctHotspotDropdown', changed, () => this._ctCohortExcluding('hotspot'));
@@ -23332,7 +23335,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         document.getElementById('ctCopyDataBtn')?.addEventListener('click', () => this._ctCopyData());
         document.getElementById('ctCopyGenesBtn')?.addEventListener('click', () => {
             const genes = (this._ct.listed || []).map(r => r.gene);
-            if (!genes.length) { this.showCopyNotification?.('No genes listed.'); return; }
+            if (!genes.length) { this.showCopyNotification?.('No gene meets the criterion.'); return; }
             navigator.clipboard?.writeText(genes.join('\n')).then(
                 () => this.showCopyNotification?.(`Copied ${genes.length.toLocaleString()} gene${genes.length === 1 ? '' : 's'}`),
                 () => this.showCopyNotification?.('Could not reach the clipboard.'));
@@ -23340,9 +23343,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         document.getElementById('ctExportImageBtn')?.addEventListener('click', () => {
             const el = document.getElementById('ctPlot');
             if (!el?.data) return;
-            const gene = this._ct.genes?.[this._ct.selectedG] || 'gene';
+            const gene = this._ct.selectedG == null ? 'all_genes' : this._ct.genes?.[this._ct.selectedG];
             this._exportPlotly(el, { w: el._fullLayout?.width || el.offsetWidth, h: el._fullLayout?.height || el.offsetHeight,
-                format: 'png', filename: `genes_past_cutoff_${gene}` });
+                format: 'png', filename: `threshold_scan_${gene}` });
         });
         document.getElementById('ctCopyBtn')?.addEventListener('click', () => {
             if (document.getElementById('ctPlot')?.data) this.copyPlotToClipboard('ctPlot', 'Histogram');
@@ -23351,10 +23354,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         document.getElementById('ctExportAIBtn')?.addEventListener('click', () => this._ctExportAI());
     }
 
-    _ctDefaults(measure) {
-        // GE: the app's "clearly essential" level and its mirror. mRNA: not
-        // expressed (log2 TPM+1 below 1) and highly expressed (about 30 TPM).
-        return measure === 'expr' ? { below: 1, above: 5 } : { below: -0.5, above: 0.5 };
+    // GE: the app's "clearly essential" level, or its mirror. mRNA: not
+    // expressed (log2 TPM+1 below 1), or well expressed (about 30 TPM).
+    _ctDefault(measure, dir) {
+        if (measure === 'expr') return dir === 'above' ? 5 : 1;
+        return dir === 'above' ? 0.5 : -0.5;
     }
 
     _ctNum(id) {
@@ -23369,15 +23373,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (!modal || !this.metadata) return;
         // Starts fresh on every open.
         const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
-        const d = this._ctDefaults('ge');
-        set('ctMeasure', 'ge'); set('ctBelow', d.below); set('ctAbove', d.above); set('ctMinPct', 75);
-        set('ctListPct', 0); set('ctListDir', 'below'); set('ctSearch', '');
+        set('ctMeasure', 'ge'); set('ctDir', 'below'); set('ctCut', this._ctDefault('ge', 'below'));
+        set('ctMinShare', 10); set('ctMinPct', 75); set('ctSearch', '');
+        set('ctXmin', ''); set('ctXmax', '');
+        const z = document.getElementById('ctZero'); if (z) z.checked = true;
         set('ctLineage', ''); set('ctSubtype', ''); set('ctDisease', '');
         [['ctHotspotFilter', 'ctHotspotLevel', '1+2'], ['ctFusionFilter', 'ctFusionLevel', '1+2'], ['ctCnFilter', 'ctCnLevel', 'altered']].forEach(([i, l, def]) => {
             set(i, ''); set(l, def);
             const lv = document.getElementById(l); if (lv) lv.style.display = 'none';
         });
-        this._ct = { sortCol: 'below', sortAsc: false, selectedG: null };
+        this._ct = { sortCol: 'pct', sortAsc: false, selectedG: null };
         modal.style.display = 'flex';
         const body = modal.querySelector('.modal-body'); if (body) body.scrollTop = 0;
         await this._ctRecompute();
@@ -23472,8 +23477,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const data = measure === 'expr' ? this.expressionData : this.geneEffects;
         const genes = measure === 'expr' ? this.expressionMetadata.genes : this.metadata.genes;
         const pos = new Map(ids.map((c, i) => [c, i]));
-        const colIdx = cohort.map(c => pos.get(c)).filter(i => i !== undefined);
-        const cols = Int32Array.from(colIdx);
+        const cols = Int32Array.from(cohort.map(c => pos.get(c)).filter(i => i !== undefined));
         if (status) status.textContent = `Computing ${genes.length.toLocaleString()} genes...`;
         const median = new Float32Array(genes.length);
         const nValid = new Int32Array(genes.length);
@@ -23493,128 +23497,139 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         this._ctRecount();
     }
 
-    // Counts past the two cutoffs; reruns when a cutoff changes.
+    // Lines past the cutoff per gene; reruns when the cutoff changes.
     _ctRecount() {
         const c = this._ct;
         if (!c?.genes) return;
-        const below = this._ctNum('ctBelow'), above = this._ctNum('ctAbove');
-        const nB = new Int32Array(c.genes.length), nA = new Int32Array(c.genes.length);
+        const cut = this._ctNum('ctCut');
+        const dir = document.getElementById('ctDir')?.value === 'above' ? 'above' : 'below';
+        const nP = new Int32Array(c.genes.length);
         const { data, cols, stride } = c;
-        const doB = !isNaN(below), doA = !isNaN(above);
-        for (let g = 0; g < c.genes.length; g++) {
-            if (!c.nValid[g]) continue;
-            const off = g * stride;
-            let b = 0, a = 0;
-            for (let j = 0; j < cols.length; j++) {
-                const v = data[off + cols[j]];
-                if (v !== v || v === -999) continue;
-                if (doB && v < below) b++;
-                if (doA && v > above) a++;
+        if (!isNaN(cut)) {
+            for (let g = 0; g < c.genes.length; g++) {
+                if (!c.nValid[g]) continue;
+                const off = g * stride;
+                let k = 0;
+                for (let j = 0; j < cols.length; j++) {
+                    const v = data[off + cols[j]];
+                    if (v !== v || v === -999) continue;
+                    if (dir === 'below' ? v < cut : v > cut) k++;
+                }
+                nP[g] = k;
             }
-            nB[g] = b; nA[g] = a;
         }
-        Object.assign(c, { below, above, nB, nA });
+        Object.assign(c, { cut, dir, nP });
         this._ctRenderTable();
         this._ctRenderPlot();
     }
 
     _ctFmt(v) { return String(Math.round(v * 1000) / 1000).replace('-', '−'); }
 
+    // "below −0.5", the criterion in words.
+    _ctCutWords() {
+        const c = this._ct;
+        return isNaN(c.cut) ? 'past the cutoff' : `${c.dir} ${this._ctFmt(c.cut)}`;
+    }
+
     _ctRenderTable() {
         const c = this._ct;
-        if (!c?.nB) return;
+        if (!c?.nP) return;
         const N = c.cohort.length;
         const minPct = Math.max(0, Math.min(100, this.numInput('ctMinPct', 75) || 0));
         const nMin = minPct > 0 ? Math.ceil(N * minPct / 100) : 0;
-        const listPct = Math.max(0, Math.min(100, this.numInput('ctListPct', 0) || 0));
-        const dir = document.getElementById('ctListDir')?.value || 'below';
+        const minShare = Math.max(0, Math.min(100, this.numInput('ctMinShare', 10) || 0));
         const q = (document.getElementById('ctSearch')?.value || '').trim().toUpperCase();
-        const rows = [];
+        // Listed = the genes meeting the criterion; a search also shows
+        // matching genes that miss it, greyed, so a gene can always be found.
+        const listed = [], found = [];
         let measured = 0;
         for (let g = 0; g < c.genes.length; g++) {
             const n = c.nValid[g];
-            if (!n || n < nMin) continue;
-            measured++;
-            const pb = isNaN(c.below) ? null : c.nB[g] / n * 100;
-            const pa = isNaN(c.above) ? null : c.nA[g] / n * 100;
-            if (listPct > 0) {
-                const okB = pb !== null && pb >= listPct, okA = pa !== null && pa >= listPct;
-                if (dir === 'below' ? !okB : dir === 'above' ? !okA : !(okB || okA)) continue;
-            }
+            if (!n) continue;
+            const covered = n >= nMin;
+            if (covered) measured++;
+            const pct = isNaN(c.cut) ? null : c.nP[g] / n * 100;
+            const meets = covered && pct !== null && pct >= minShare && c.nP[g] > 0;
             const gene = String(c.genes[g]);
-            if (q && !gene.toUpperCase().includes(q)) continue;
-            rows.push({ g, gene, n, pb, pa, med: c.median[g] });
+            const row = { g, gene, n, pct, med: c.median[g], meets, covered };
+            if (meets) listed.push(row);
+            if (q && gene.toUpperCase().includes(q)) found.push(row);
         }
-        const col = c.sortCol || 'below', asc = !!c.sortAsc;
-        const key = { gene: r => r.gene, n: r => r.n, below: r => r.pb ?? -1, above: r => r.pa ?? -1, median: r => r.med }[col] || (r => r.pb ?? -1);
-        rows.sort((a, b) => {
+        const col = c.sortCol || 'pct', asc = !!c.sortAsc;
+        const key = { gene: r => r.gene, n: r => r.n, pct: r => r.pct ?? -1, median: r => r.med }[col] || (r => r.pct ?? -1);
+        const sorter = (a, b) => {
             const x = key(a), y = key(b);
             const d = typeof x === 'string' ? x.localeCompare(y) : x - y;
             return (asc ? d : -d) || a.gene.localeCompare(b.gene);
-        });
-        Object.assign(c, { listed: rows, measuredN: measured, nMin, minPct, listPct, listDir: dir, search: q });
-        if (c.selectedG == null && rows.length) c.selectedG = rows[0].g;
+        };
+        listed.sort(sorter);
+        found.sort((a, b) => (b.meets - a.meets) || sorter(a, b));
+        Object.assign(c, { listed, measuredN: measured, nMin, minPct, minShare, search: q });
+        const shown = q ? found : listed;
 
         const th = (k, label, title) => `<th data-ct-sort="${k}" title="${this.esc(title)}" style="padding:6px 8px; border-bottom:2px solid #d1d5db; cursor:pointer; user-select:none; white-space:nowrap; text-align:${k === 'gene' ? 'left' : 'center'};">${label}${col === k ? (asc ? ' ▲' : ' ▼') : ''}</th>`;
         document.getElementById('ctHead').innerHTML =
             th('gene', 'Gene', 'Gene symbol')
             + th('n', 'n', 'Cell lines in the cohort with a value for this gene')
-            + th('below', isNaN(c.below) ? '% below' : `% below ${this._ctFmt(c.below)}`, 'Share of those cell lines with a value lower than the Below cutoff')
-            + th('above', isNaN(c.above) ? '% above' : `% above ${this._ctFmt(c.above)}`, 'Share of those cell lines with a value higher than the Above cutoff')
+            + th('pct', `% ${this._ctCutWords()}`, `Share of those cell lines with a value ${c.dir === 'above' ? 'higher' : 'lower'} than the cutoff`)
             + th('median', 'Median', 'Median value across those cell lines');
         const CAP = 500;
         const td = 'padding:3px 8px; border-bottom:1px solid #f3f4f6;';
-        document.getElementById('ctBody').innerHTML = rows.slice(0, CAP).map(r =>
-            `<tr data-g="${r.g}" style="cursor:pointer;${r.g === c.selectedG ? ' background:#ecfdf5;' : ''}">`
-            + `<td style="${td}">${this.gi(r.gene)}</td>`
-            + `<td style="${td} text-align:center; color:#6b7280;">${r.n}</td>`
-            + `<td style="${td} text-align:center; color:#b91c1c;">${r.pb === null ? '' : r.pb.toFixed(1)}</td>`
-            + `<td style="${td} text-align:center; color:#1d4ed8;">${r.pa === null ? '' : r.pa.toFixed(1)}</td>`
+        const pctColor = c.dir === 'above' ? '#1d4ed8' : '#b91c1c';
+        const miss = (r) => !r.covered ? `measured in fewer than ${minPct}% of the cell lines` : `fewer than ${minShare}% of lines ${this._ctCutWords()}`;
+        document.getElementById('ctBody').innerHTML = shown.slice(0, CAP).map(r =>
+            `<tr data-g="${r.g}" style="cursor:pointer;${r.g === c.selectedG ? ' background:#ecfdf5;' : ''}${r.meets ? '' : ' color:#9ca3af;'}"${r.meets ? '' : ` title="Not in the list: ${this.esc(miss(r))}"`}>`
+            + `<td style="${td}"><span class="gene-hover" data-gene="${this.esc(r.gene)}">${this.gi(r.gene)}</span></td>`
+            + `<td style="${td} text-align:center;${r.meets ? ' color:#6b7280;' : ''}">${r.n}</td>`
+            + `<td style="${td} text-align:center;${r.meets ? ` color:${pctColor};` : ''}">${r.pct === null ? '' : r.pct.toFixed(1)}</td>`
             + `<td style="${td} text-align:center;">${r.med.toFixed(2)}</td></tr>`).join('')
-            || `<tr><td colspan="5" style="padding:10px; color:#6b7280;">No gene passes these settings.</td></tr>`;
+            || `<tr><td colspan="4" style="padding:10px; color:#6b7280;">${q ? 'No gene symbol contains that text.' : 'No gene meets the criterion.'}</td></tr>`;
+        // Same gene card as the network and the other gene lists.
+        this.attachGeneTooltips?.(document.getElementById('ctBody'));
         const countEl = document.getElementById('ctCount');
-        if (countEl) countEl.textContent = `${rows.length.toLocaleString()} of ${measured.toLocaleString()} genes, in ${N.toLocaleString()} cell lines`
-            + (rows.length > CAP ? `; the first ${CAP} shown, .csv and Copy data carry all` : '');
+        if (countEl) countEl.textContent = `${listed.length.toLocaleString()} of ${measured.toLocaleString()} genes, in ${N.toLocaleString()} cell lines`
+            + (!q && listed.length > CAP ? `; the first ${CAP} shown, .csv and Copy data carry all` : '');
     }
 
-    // Bars of 0.1 (GE) or 0.25 (mRNA) with edges on the lower cutoff, y as %
-    // of the cell lines; bars past the cutoffs in red / blue, dashed lines at
-    // the cutoffs labelled with the share. ax is the axis suffix ('' or '2'...).
-    _ctHistParts(values, ax, fs = 11, labels = true) {
+    // Bars of 0.1 (GE) or 0.25 (mRNA) with an edge on the cutoff, y as % of
+    // the values; bars past the cutoff coloured, a dashed line at the cutoff
+    // labelled with the share. ax is the axis suffix ('' or '2'...).
+    _ctHistParts(values, ax, fs = 11, labels = true, unit = 'cell lines') {
         const c = this._ct;
         const size = c.measure === 'expr' ? 0.25 : 0.1;
         const n = values.length;
         let lo = Infinity, hi = -Infinity;
         for (const v of values) { if (v < lo) lo = v; if (v > hi) hi = v; }
-        const anchor = !isNaN(c.below) ? c.below : (!isNaN(c.above) ? c.above : 0);
+        const anchor = isNaN(c.cut) ? 0 : c.cut;
         const start = anchor - Math.ceil((anchor - lo) / size - 1e-9) * size;
         const nb = Math.max(1, Math.floor((hi - start) / size + 1e-9) + 1);
         const counts = new Array(nb).fill(0);
-        let b = 0, a = 0;
+        let k = 0;
         for (const v of values) {
             counts[Math.max(0, Math.min(nb - 1, Math.floor((v - start) / size + 1e-9)))]++;
-            if (v < c.below) b++;
-            if (v > c.above) a++;
+            if (c.dir === 'above' ? v > c.cut : v < c.cut) k++;
         }
+        const pastColor = c.dir === 'above' ? '#3b82f6' : '#dc2626';
         const x = [], y = [], col = [], txt = [];
         for (let i = 0; i < nb; i++) {
             const l = start + i * size, mid = l + size / 2, pct = counts[i] / n * 100;
             x.push(mid); y.push(pct);
-            col.push(!isNaN(c.below) && mid < c.below ? '#dc2626' : !isNaN(c.above) && mid > c.above ? '#3b82f6' : '#9ca3af');
-            txt.push(`${l.toFixed(2)} to ${(l + size).toFixed(2)}: ${pct.toFixed(1)}% (${counts[i]} line${counts[i] === 1 ? '' : 's'})`);
+            col.push(!isNaN(c.cut) && (c.dir === 'above' ? mid > c.cut : mid < c.cut) ? pastColor : '#9ca3af');
+            txt.push(`${l.toFixed(2)} to ${(l + size).toFixed(2)}: ${pct.toFixed(1)}% (${counts[i]} ${counts[i] === 1 ? unit.replace(/s$/, '') : unit})`);
         }
         const ymax = Math.max(1, ...y);
+        const pct = n ? k / n * 100 : 0;
         const shapes = [], annotations = [];
-        const mark = (v, color, text, xanchor) => {
-            shapes.push({ type: 'line', xref: 'x' + ax, yref: 'y' + ax, x0: v, x1: v, y0: 0, y1: ymax * 1.12, line: { color, width: 1.5, dash: 'dash' } });
-            if (labels) annotations.push({ xref: 'x' + ax, yref: 'y' + ax, x: v, y: ymax * 1.12, text, showarrow: false, xanchor, yanchor: 'bottom', font: { size: fs, color }, bgcolor: 'rgba(255,255,255,0.85)' });
-        };
-        const pb = n ? b / n * 100 : 0, pa = n ? a / n * 100 : 0;
-        if (!isNaN(c.below)) mark(c.below, '#dc2626', `${pb.toFixed(1)}% below ${this._ctFmt(c.below)}`, 'right');
-        if (!isNaN(c.above)) mark(c.above, '#2563eb', `${pa.toFixed(1)}% above ${this._ctFmt(c.above)}`, 'left');
+        if (!isNaN(c.cut)) {
+            const lineColor = c.dir === 'above' ? '#2563eb' : '#dc2626';
+            shapes.push({ type: 'line', xref: 'x' + ax, yref: 'y' + ax, x0: c.cut, x1: c.cut, y0: 0, y1: ymax * 1.12, line: { color: lineColor, width: 1.5, dash: 'dash' } });
+            if (labels) annotations.push({ xref: 'x' + ax, yref: 'y' + ax, x: c.cut, y: ymax * 1.12, showarrow: false, yanchor: 'bottom',
+                xanchor: c.dir === 'above' ? 'left' : 'right', font: { size: fs, color: lineColor }, bgcolor: 'rgba(255,255,255,0.85)',
+                text: `${pct.toFixed(1)}% of ${unit} ${this._ctCutWords()}` });
+        }
         const trace = { type: 'bar', x, y, width: size, marker: { color: col, line: { color: '#ffffff', width: 0.5 } },
             hovertext: txt, hoverinfo: 'text', xaxis: 'x' + ax, yaxis: 'y' + ax, showlegend: false };
-        return { traces: [trace], shapes, annotations, ymax, start, end: start + nb * size, n, pb, pa };
+        return { traces: [trace], shapes, annotations, ymax, start, end: start + nb * size, n, pct };
     }
 
     _ctValues(g, withIds = false) {
@@ -23632,25 +23647,50 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         return this._ct.measure === 'expr' ? (full ? 'mRNA expression (log2 TPM+1)' : 'mRNA') : (full ? 'gene effect (Chronos)' : 'GE');
     }
 
+    // The x range the user set, else the data's; 0 kept in view when ticked.
+    _ctXRange(start, end) {
+        let lo = this._ctNum('ctXmin'), hi = this._ctNum('ctXmax');
+        if (isNaN(lo)) lo = start;
+        if (isNaN(hi)) hi = end;
+        if (document.getElementById('ctZero')?.checked !== false) { lo = Math.min(lo, 0); hi = Math.max(hi, 0); }
+        const pad = (hi - lo) * 0.02;
+        return hi > lo ? [lo - pad, hi + pad] : null;
+    }
+
+    // With no gene picked: the median of every gene in the scan.
     _ctRenderPlot() {
         const el = document.getElementById('ctPlot');
         const c = this._ct;
         if (!el || !c?.genes) return;
         const g = c.selectedG;
-        const vals = g == null ? [] : this._ctValues(g);
-        if (!vals.length) {
-            Plotly.purge(el);
-            el.innerHTML = '<div style="padding:40px; color:#9ca3af; text-align:center;">Click a gene in the table to see its histogram.</div>';
-            return;
-        }
-        if (!el.data) el.innerHTML = '';
-        const gene = c.genes[g];
-        const p = this._ctHistParts(vals, '');
+        const allBtn = document.getElementById('ctAllGenes');
+        if (allBtn) allBtn.disabled = g == null;
+        let vals, unit, titleTop, xTitle, sub;
         const filt = this._ctFilterParts();
+        const cohortWords = `${c.cohort.length.toLocaleString()} cell lines${filt.length ? ', ' + this.esc(filt.join(', ')) : ''}`;
+        const mName = c.measure === 'expr' ? 'mRNA expression' : 'gene effect';
+        if (g == null) {
+            vals = [];
+            for (let i = 0; i < c.genes.length; i++) if (c.nValid[i] && c.nValid[i] >= (c.nMin || 0)) vals.push(c.median[i]);
+            unit = 'genes';
+            titleTop = `<b>Median ${mName} of every gene</b>`;
+            sub = `${vals.length.toLocaleString()} genes, each its median across ${cohortWords}`;
+            xTitle = `Median ${this._ctMeasureWord()}`;
+        } else {
+            vals = this._ctValues(g);
+            unit = 'cell lines';
+            const gene = this.esc(c.genes[g]);
+            titleTop = `<b><i>${gene}</i> ${mName}</b>`;
+            sub = `n = ${vals.length.toLocaleString()} of ${cohortWords}`;
+            xTitle = `<i>${gene}</i> ${this._ctMeasureWord()}`;
+        }
+        if (!vals.length) { Plotly.purge(el); return; }
+        const p = this._ctHistParts(vals, '', 11, true, unit);
+        const range = this._ctXRange(p.start, p.end);
         const layout = {
-            title: { text: `<b><i>${this.esc(gene)}</i> ${c.measure === 'expr' ? 'mRNA expression' : 'gene effect'}</b><br><span style="font-size:11px; color:#6b7280;">n = ${p.n.toLocaleString()} cell lines${filt.length ? ', ' + this.esc(filt.join(', ')) : ''}</span>`, font: { size: 14 }, y: 0.96 },
-            xaxis: { title: { text: `<i>${this.esc(gene)}</i> ${this._ctMeasureWord()}` }, zeroline: c.measure !== 'expr', zerolinecolor: '#9ca3af', gridcolor: '#eeeeee' },
-            yaxis: { title: { text: '% of cell lines' }, range: [0, p.ymax * 1.3], gridcolor: '#eeeeee' },
+            title: { text: `${titleTop}<br><span style="font-size:11px; color:#6b7280;">${sub}</span>`, font: { size: 14 }, y: 0.96 },
+            xaxis: { title: { text: xTitle }, zeroline: true, zerolinecolor: '#9ca3af', gridcolor: '#eeeeee', ...(range ? { range } : {}) },
+            yaxis: { title: { text: `% of ${unit}` }, range: [0, p.ymax * 1.3], gridcolor: '#eeeeee' },
             shapes: p.shapes, annotations: p.annotations, bargap: 0,
             margin: { l: 60, r: 20, t: 70, b: 55 }, height: 440,
             paper_bgcolor: '#ffffff', plot_bgcolor: '#fafafa', font: { family: 'Open Sans, sans-serif' }
@@ -23660,50 +23700,47 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
     _ctSortWords() {
         const c = this._ct;
-        const name = { gene: 'gene name', n: 'n', below: `% below ${this._ctFmt(c.below)}`, above: `% above ${this._ctFmt(c.above)}`, median: 'median' }[c.sortCol] || '% below';
-        return `sorted by ${name}, ${c.sortAsc ? 'lowest first' : 'highest first'}`.replace('lowest first', c.sortCol === 'gene' ? 'A to Z' : 'lowest first').replace('highest first', c.sortCol === 'gene' ? 'Z to A' : 'highest first');
+        const name = { gene: 'gene name', n: 'n', pct: `% ${this._ctCutWords()}`, median: 'median' }[c.sortCol] || `% ${this._ctCutWords()}`;
+        const dirWord = c.sortCol === 'gene' ? (c.sortAsc ? 'A to Z' : 'Z to A') : (c.sortAsc ? 'lowest first' : 'highest first');
+        return `sorted by ${name}, ${dirWord}`;
     }
 
+    // The criterion in words.
     _ctListWords() {
         const c = this._ct;
-        const parts = [`measured in at least ${c.minPct}% of the cell lines (${c.nMin.toLocaleString()} or more)`];
-        const b = this._ctFmt(c.below), a = this._ctFmt(c.above);
-        if (c.listPct > 0) parts.push(`at least ${c.listPct}% of lines ${c.listDir === 'either' ? `below ${b} or above ${a}` : c.listDir === 'above' ? `above ${a}` : `below ${b}`}`);
-        if (c.search) parts.push(`symbol containing "${c.search}"`);
-        return parts.join('; ');
+        return `at least ${c.minShare}% of the cell lines ${this._ctCutWords()}, and measured in at least ${c.minPct}% of them (${c.nMin.toLocaleString()} or more)`;
     }
 
     _ctTableRows() {
-        return (this._ct.listed || []).map(r => [r.gene, r.n, r.pb === null ? '' : +r.pb.toFixed(2), r.pa === null ? '' : +r.pa.toFixed(2), +r.med.toFixed(3)]);
+        return (this._ct.listed || []).map(r => [r.gene, r.n, r.pct === null ? '' : +r.pct.toFixed(2), +r.med.toFixed(3)]);
     }
 
     _ctHeaderCols() {
         const c = this._ct;
-        return ['Gene', 'N', isNaN(c.below) ? 'Pct_below' : `Pct_below_${c.below}`, isNaN(c.above) ? 'Pct_above' : `Pct_above_${c.above}`, 'Median'];
+        return ['Gene', 'N', isNaN(c.cut) ? 'Pct' : `Pct_${c.dir}_${c.cut}`, 'Median'];
     }
 
     _ctDownloadCsv() {
         const c = this._ct;
         if (!c?.listed) return;
         const filt = this._ctFilterParts();
-        let csv = '# Genes past a cutoff\n';
+        let csv = '# Threshold scan\n';
         csv += `# Measure: ${this._ctMeasureWord()}\n`;
-        csv += `# Below cutoff: ${isNaN(c.below) ? 'none' : c.below} (share of cell lines with a lower value)\n`;
-        csv += `# Above cutoff: ${isNaN(c.above) ? 'none' : c.above} (share of cell lines with a higher value)\n`;
+        csv += `# Cutoff: ${c.dir} ${isNaN(c.cut) ? 'none' : c.cut}\n`;
         csv += `# Cell lines: ${c.cohort.length}${filt.length ? ' (' + filt.join(', ') + ')' : ' (all with data)'}\n`;
-        csv += `# Genes listed: ${c.listed.length} (${this._ctListWords()}), ${this._ctSortWords()}\n`;
+        csv += `# Genes: ${c.listed.length} with ${this._ctListWords()}, ${this._ctSortWords()}\n`;
         csv += `# DepMap release: ${DEPMAP_VERSION}\n`;
         csv += this._ctHeaderCols().join(',') + '\n';
         csv += this._ctTableRows().map(r => r.join(',')).join('\n') + '\n';
-        const stem = `genes_past_cutoff_${c.measure === 'expr' ? 'mrna' : 'ge'}${this._csvSlug(filt.join('_'))}`;
+        const stem = `threshold_scan_${c.measure === 'expr' ? 'mrna' : 'ge'}_${c.dir}${this._csvSlug(filt.join('_'))}`;
         this.downloadFile(csv, `${stem}_${new Date().toISOString().slice(0, 10)}.csv`, 'text/csv');
     }
 
     _ctCopyData() {
         const c = this._ct;
-        if (!c?.listed?.length) { this.showCopyNotification?.('No genes listed.'); return; }
+        if (!c?.listed?.length) { this.showCopyNotification?.('No gene meets the criterion.'); return; }
         const filt = this._ctFilterParts();
-        const desc = `Genes past a cutoff, ${this._ctMeasureWord()}, ${c.cohort.length} cell lines${filt.length ? ' (' + filt.join(', ') + ')' : ''}, ${this._ctSortWords()}`;
+        const desc = `Threshold scan, ${this._ctMeasureWord()}, genes with ${this._ctListWords()}, ${c.cohort.length} cell lines${filt.length ? ' (' + filt.join(', ') + ')' : ''}, ${this._ctSortWords()}`;
         const tsv = [desc, this._ctHeaderCols().join('\t'), ...this._ctTableRows().map(r => r.join('\t'))].join('\n');
         navigator.clipboard?.writeText(tsv).then(
             () => this.showCopyNotification?.(`Copied ${c.listed.length.toLocaleString()} rows, paste into a spreadsheet`),
@@ -23714,7 +23751,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // compilation. Fresh on every open.
     _ctOpenCompilation() {
         const status = document.getElementById('ctStatus');
-        if (!this._ct?.listed?.length) { if (status) status.textContent = 'No genes in the table.'; return; }
+        if (!this._ct?.listed?.length) { if (status) status.textContent = 'No gene meets the criterion.'; return; }
         let modal = document.getElementById('ctCompModal');
         if (!modal) {
             modal = document.createElement('div');
@@ -23759,7 +23796,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 const el = document.getElementById('ctCompPlot');
                 if (!el?.data) return;
                 this._exportPlotly(el, { w: el._fullLayout?.width || el.offsetWidth, h: el._fullLayout?.height || el.offsetHeight,
-                    format: 'png', filename: `genes_past_cutoff_compilation_${this._ctComp.rows}x${this._ctComp.cols}` });
+                    format: 'png', filename: `threshold_scan_compilation_${this._ctComp.rows}x${this._ctComp.cols}` });
             };
         }
         this._ctComp = { rows: 2, cols: 5, sameX: true };
@@ -23790,52 +23827,51 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const W = mL + mR + cols * panelW + (cols - 1) * gapX;
         const H = mT + mB + nr * panelH + (nr - 1) * gapY;
         const plotW = W - mL - mR, plotH = H - mT - mB;
-        // Small panels: the shares go in the panel title, not on the lines.
+        // Small panels: the share goes in the panel title, not on the line.
         const parts = rows.map((r, i) => this._ctHistParts(this._ctValues(r.g), i === 0 ? '' : String(i + 1), 9, false));
-        const gx0 = Math.min(...parts.map(p => p.start)), gx1 = Math.max(...parts.map(p => p.end));
+        const shared = this._ctXRange(Math.min(...parts.map(p => p.start)), Math.max(...parts.map(p => p.end)));
         const layout = { width: W, height: H, margin: { l: mL, r: mR, t: mT, b: mB, autoexpand: false }, showlegend: false, bargap: 0,
             paper_bgcolor: '#ffffff', plot_bgcolor: '#fafafa', font: { family: 'Open Sans, sans-serif', size: 10 }, shapes: [], annotations: [] };
         const traces = [];
+        const pastColor = c.dir === 'above' ? '#2563eb' : '#dc2626';
         rows.forEach((r, i) => {
             const ax = i === 0 ? '' : String(i + 1), p = parts[i];
             const col = i % cols, row = Math.floor(i / cols);
             const x0 = (col * (panelW + gapX)) / plotW, x1 = (col * (panelW + gapX) + panelW) / plotW;
             const yTop = 1 - (row * (panelH + gapY)) / plotH, yBot = 1 - (row * (panelH + gapY) + panelH) / plotH;
-            layout['xaxis' + ax] = { domain: [x0, x1], anchor: 'y' + ax, tickfont: { size: 9 }, gridcolor: '#eeeeee',
-                zeroline: c.measure !== 'expr', zerolinecolor: '#9ca3af',
+            const range = sameX ? shared : this._ctXRange(p.start, p.end);
+            layout['xaxis' + ax] = { domain: [x0, x1], anchor: 'y' + ax, tickfont: { size: 9 }, gridcolor: '#eeeeee', zeroline: true, zerolinecolor: '#9ca3af',
                 title: { text: `<i>${this.esc(r.gene)}</i> ${this._ctMeasureWord(false)}`, font: { size: 10 }, standoff: 4 },
-                ...(sameX ? { range: [gx0, gx1] } : {}) };
+                ...(range ? { range } : {}) };
             layout['yaxis' + ax] = { domain: [yBot, yTop], anchor: 'x' + ax, range: [0, p.ymax * 1.3], tickfont: { size: 9 }, gridcolor: '#eeeeee',
                 ...(col === 0 ? { title: { text: '% of cell lines', font: { size: 10 } } } : {}) };
             traces.push(...p.traces);
             layout.shapes.push(...p.shapes);
             layout.annotations.push(...p.annotations, { xref: 'paper', yref: 'paper', x: (x0 + x1) / 2, y: yTop, yshift: 3, xanchor: 'center', yanchor: 'bottom', showarrow: false,
                 text: `<b><i>${this.esc(r.gene)}</i></b> <span style="color:#6b7280; font-size:9px;">n=${p.n}</span>`
-                    + (isNaN(c.below) ? '' : ` <span style="color:#dc2626; font-size:9px;">${p.pb.toFixed(1)}% below</span>`)
-                    + (isNaN(c.above) ? '' : ` <span style="color:#2563eb; font-size:9px;">${p.pa.toFixed(1)}% above</span>`), font: { size: 11 } });
+                    + (isNaN(c.cut) ? '' : ` <span style="color:${pastColor}; font-size:9px;">${p.pct.toFixed(1)}% ${c.dir}</span>`), font: { size: 11 } });
         });
         const filt = this._ctFilterParts();
-        const cuts = [isNaN(c.below) ? '' : `<span style="color:#dc2626;">below ${this._ctFmt(c.below)}</span>`, isNaN(c.above) ? '' : `<span style="color:#2563eb;">above ${this._ctFmt(c.above)}</span>`].filter(Boolean).join(', ');
         layout.annotations.push({ xref: 'paper', yref: 'paper', x: 0, y: 1, yshift: 30, xanchor: 'left', yanchor: 'bottom', showarrow: false, font: { size: 11, color: '#374151' },
-            text: `${c.measure === 'expr' ? 'mRNA expression' : 'Gene effect'}, share of cell lines ${cuts || 'past the cutoffs'}; ${c.cohort.length.toLocaleString()} cell lines${filt.length ? ' (' + this.esc(filt.join(', ')) + ')' : ''}` });
+            text: `${c.measure === 'expr' ? 'mRNA expression' : 'Gene effect'}, share of cell lines <span style="color:${pastColor};">${this._ctCutWords()}</span>; ${c.cohort.length.toLocaleString()} cell lines${filt.length ? ' (' + this.esc(filt.join(', ')) + ')' : ''}` });
         Plotly.react(el, traces, layout, { displayModeBar: false, responsive: false });
     }
 
     async _ctExportAI() {
         const c = this._ct;
         const status = document.getElementById('ctStatus');
-        if (!c?.listed?.length) { if (status) status.textContent = 'No genes in the table.'; return; }
+        if (!c?.listed?.length) { if (status) status.textContent = 'No gene meets the criterion.'; return; }
         const CAP = 2000;
         const sel = c.selectedG == null ? null : c.genes[c.selectedG];
         this._aiCutoff = {
             measure: this._ctMeasureWord(),
-            below: isNaN(c.below) ? null : c.below,
-            above: isNaN(c.above) ? null : c.above,
+            dir: c.dir,
+            cut: isNaN(c.cut) ? null : c.cut,
             cohortN: c.cohort.length,
             filters: this._ctFilterParts().join(', '),
             listRule: this._ctListWords(),
             sort: this._ctSortWords(),
-            columns: ['gene', 'n', isNaN(c.below) ? 'pctBelow' : `pctBelow_${c.below}`, isNaN(c.above) ? 'pctAbove' : `pctAbove_${c.above}`, 'median'],
+            columns: ['gene', 'n', isNaN(c.cut) ? 'pct' : `pct_${c.dir}_${c.cut}`, 'median'],
             rows: this._ctTableRows().slice(0, CAP),
             listed: c.listed.length,
             selected: sel ? { gene: sel, values: this._ctValues(c.selectedG, true).map(([id, v]) => [id, +v.toFixed(3)]) } : null
@@ -23849,32 +23885,28 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
 
     _methodsCutoff() {
-        const title = 'Genes past a cutoff';
+        const title = 'Threshold scan';
         const c = this._ct;
-        if (!c?.listed) return this._methodsNotReady(title, 'Open Genes past a cutoff under Options, Other first.');
+        if (!c?.listed) return this._methodsNotReady(title, 'Open Threshold scan under Options, Other first.');
         const kind = c.measure === 'expr' ? 'expr' : 'ge';
         const filt = this._ctFilterParts();
         const N = c.cohort.length;
         const cohortWords = filt.length
             ? `${this._mNum(N)} cell lines (${this._mListOr(filt, '')})`
             : `all ${this._mNum(N)} cell lines with ${kind === 'expr' ? 'mRNA expression' : 'CRISPR gene effect'} data`;
-        const cut = [];
-        if (!isNaN(c.below)) cut.push(`the percentage of cell lines with a value below ${c.below}`);
-        if (!isNaN(c.above)) cut.push(`the percentage with a value above ${c.above}`);
         const size = kind === 'expr' ? 0.25 : 0.1;
         const condensed = this._mSentences([
             this._methodsDataSentence(kind),
-            `For each gene, ${this._mListOr(cut, 'no cutoff')} ${cut.length > 1 ? 'were' : 'was'} calculated across ${cohortWords}, counting only cell lines with a value for that gene.`,
-            c.nMin ? `Genes measured in fewer than ${this._mNum(c.nMin)} of these cell lines (${c.minPct}%) were excluded.` : '',
-            c.listPct > 0 ? `Genes with at least ${c.listPct}% of cell lines ${c.listDir === 'either' ? 'below or above' : c.listDir} the cutoff were listed.` : '',
+            `For each gene, the percentage of cell lines with a value ${c.dir} ${c.cut} was calculated across ${cohortWords}, counting only cell lines with a value for that gene.`,
+            `Genes were listed when at least ${c.minShare}% of these cell lines were ${c.dir} the cutoff${c.nMin ? ` and the gene was measured in at least ${this._mNum(c.nMin)} of them (${c.minPct}%)` : ''}.`,
             this._methodsCitation()
         ]);
         const long = this._mBlocks([
             this._methodsHeaderBlock(title, kind),
-            `WHAT WAS COUNTED\n   For every gene, the cell lines in the cohort with a value for it (n), the percentage of those with a value strictly below ${isNaN(c.below) ? '(no lower cutoff set)' : c.below}, the percentage strictly above ${isNaN(c.above) ? '(no upper cutoff set)' : c.above}, and the median value. A cell line without a value for a gene is left out of that gene's n rather than counted on either side.`,
+            `WHAT WAS COUNTED\n   For every gene, the cell lines in the cohort with a value for it (n), the percentage of those with a value strictly ${c.dir} ${c.cut}, and the median value. A cell line without a value for a gene is left out of that gene's n.`,
             `THE COHORT\n   ${this._mNum(N)} cell lines. Filters: ${this._mListOr(filt, 'none, every cell line with data')}.`,
-            `THE TABLE\n   ${this._mNum(c.listed.length)} of ${this._mNum(c.measuredN)} genes listed: ${this._ctListWords()}. Rows are ${this._ctSortWords()}.`,
-            `THE HISTOGRAM\n   One gene's values across the cohort in bins of ${size}, with bin edges placed on the lower cutoff. The y axis is the percentage of the cell lines with a value. Bars below the lower cutoff are red, bars above the upper cutoff blue, and dashed lines mark the cutoffs with the share past each.`,
+            `THE TABLE\n   ${this._mNum(c.listed.length)} of ${this._mNum(c.measuredN)} genes listed: those with ${this._ctListWords()}. Rows are ${this._ctSortWords()}.`,
+            `THE HISTOGRAM\n   With no gene chosen, the median value of every gene measured in enough cell lines, as a percentage of genes. With a gene chosen, that gene's values across the cohort, as a percentage of cell lines. Bins of ${size}, with an edge on the cutoff; bars past the cutoff are coloured and a dashed line marks it with the share past it.`,
             'WHAT THIS DOES NOT SAY\nA share of cell lines past a cutoff describes a distribution; no test was run and no p-value exists in this view. Where a cutoff is drawn is a convention, and a gene just short of it can behave much like one just past it.'
         ]);
         return { title, condensed, long };
@@ -32603,7 +32635,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     _aiViewSyntax() {
         return [
             'CORRELATE-VIEW v1',
-            '# paste into Options > Other > "Open a view from AI"',
+            '# paste into Options > Other > "Paste from AI"',
             'view: scatter | gene-effect | cell-lines',
             'x: <gene>            (scatter) and y: <gene>',
             'x-measure / y-measure: ge | expr | cn   (default ge)',
@@ -32753,7 +32785,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     _aiRequestSyntax() {
         return [
             'CORRELATE-REQUEST v1',
-            '# paste into Options > Other > "Custom export for AI"',
+            '# paste into Options > Other > "Paste from AI"',
             'cohort: all | tissue:<name> | disease:<name> | <comma-separated cell line names or IDs> | view',
             'genes: auto | <comma-separated gene symbols> | a cytoband or arm such as 16q or 16q22',
             'gene-limit: <number of genes per matrix, or "all">',
@@ -32982,47 +33014,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         return null;
     }
 
+    // Views and requests share one dialog; this name stays for callers.
     openAIViewDialog(prefill) {
-        const dlg = document.getElementById('aiViewDialog');
-        if (!dlg) return;
-        const ta = document.getElementById('aiViewText');
-        // Starts empty each time: a block left from an earlier paste was
-        // opened again by the next press.
-        if (ta) ta.value = prefill || '';
-        const note = document.getElementById('aiViewNote');
-        if (note) note.textContent = '';
-        const why = document.getElementById('aiViewWhy');
-        if (why) { why.style.display = 'none'; why.textContent = ''; }
-        dlg.style.display = 'flex';
-        if (!dlg.dataset.wired) {
-            dlg.dataset.wired = '1';
-            document.getElementById('aiViewClose')?.addEventListener('click', () => { dlg.style.display = 'none'; });
-            dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.style.display = 'none'; });
-            document.getElementById('aiViewOpen')?.addEventListener('click', async () => {
-                const text = document.getElementById('aiViewText')?.value || '';
-                if (!text.trim()) { this._setAiViewNote('Nothing to open, the box is empty.'); return; }
-                // A request block pasted here is the other kind. Send it where
-                // it belongs rather than refusing it on a technicality.
-                if (/CORRELATE-REQUEST/i.test(text)) {
-                    dlg.style.display = 'none';
-                    this.openCustomAIExport(text);
-                    this._setCaiNote('That is an export request, not a view. Moved here for you; press Apply request, or Export to apply and export in one go.');
-                    return;
-                }
-                const parsed = this._parseAIView(text);
-                if (!parsed.view) {
-                    this._setAiViewNote(parsed.ignored.join('; ') || 'Nothing here says which view to open.');
-                    return;
-                }
-                const res = await this.openAIView(parsed);
-                if (!res.ok) { this._setAiViewNote(res.why); return; }
-                dlg.style.display = 'none';
-                // The assistant's own sentence about what to look for, kept on
-                // screen beside the view rather than left in the chat window.
-                if (parsed.why) this.showCopyNotification?.(`Opened ${res.what}. ${parsed.why}`);
-                else this.showCopyNotification?.(`Opened ${res.what}.`);
-            });
-        }
+        this.openCustomAIExport(prefill);
     }
 
     _setAiViewNote(msg) {
@@ -33113,9 +33107,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // The two block types get confused with each other, so each box
         // hands the other kind over rather than reporting gibberish.
         if (/CORRELATE-VIEW/i.test(text)) {
+            const parsed = this._parseAIView(text);
+            if (!parsed.view) { this._setCaiNote(parsed.ignored.join('; ') || 'Nothing here says which view to open.'); return false; }
+            const res = await this.openAIView(parsed);
+            if (!res.ok) { this._setCaiNote(res.why); return false; }
             document.getElementById('customAIDialog').style.display = 'none';
-            this.openAIViewDialog(text);
-            this._setAiViewNote('That is a view, not an export request. Moved here for you.');
+            this.showCopyNotification?.(`Opened ${res.what}.${parsed.why ? ' ' + parsed.why : ''}`);
             return false;
         }
         // A band in the request resolves against the location table,
@@ -34418,15 +34415,15 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 context = {
                     type: 'custom_export',
                     plotType: 'none', stratification: 'none',
-                    builtFrom: 'the Custom export for AI dialog, with a cohort named in the request rather than taken from whatever view was on screen',
+                    builtFrom: 'the "Paste from AI" dialog, with a cohort named in the request rather than taken from whatever view was on screen',
                     cohortReplaced: `The ${cellLines.length.toLocaleString()} cell lines here were named in the request. They are NOT the cohort of the view that happened to be open, which held ${viewCLs.length.toLocaleString()} lines and overlaps this file by ${overlap}.`,
                     viewResultsDropped: dropped.length
                         ? `The open view's precomputed results (${dropped.join(', ')}) were computed over its cohort, not this one, so they have been REMOVED rather than shipped beside matrices they do not describe. Nothing here is left over from it. To get numbers like those for THIS cohort, set this cohort up in the app and export from that view.`
                         : 'The open view had no precomputed results, so nothing had to be dropped.',
                     whatToAnalyse: 'There is no precomputed contrast in this file. Work from the matrices, cellLineMetadata and any optional layers: define whatever grouping the question needs (by mutation, tissue, disease or anything else in cellLineMetadata) yourself, over cellLineOrder, and compute it.'
                 };
-                context.plotDescribesWhat = `Not a picture of anything on screen: this cohort of ${cellLines.length.toLocaleString()} cell lines was typed into the Custom export for AI dialog, not read off a chart. There is no companion image.`;
-                description = `${cellLines.length.toLocaleString()} cell lines requested through the Custom export for AI dialog, with the genes named in the request.`;
+                context.plotDescribesWhat = `Not a picture of anything on screen: this cohort of ${cellLines.length.toLocaleString()} cell lines was typed into the "Paste from AI" dialog, not read off a chart. There is no companion image.`;
+                description = `${cellLines.length.toLocaleString()} cell lines requested through the "Paste from AI" dialog, with the genes named in the request.`;
             }
         }
         // A compilation describes its own grid of panels, not the single
@@ -34448,30 +34445,29 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             context.plotDescribesWhat = `A compilation of ${comp.panels.length} correlation plots sharing one cohort, set by the filters of the correlation plot${comp.filters ? ' (' + comp.filters + ')' : ''}${comp.highlighted.length ? `, with ${comp.highlighted.length} cell line(s) highlighted` : ''}${comp.colorBy ? `, coloured by ${comp.colorBy}` : ''}. Panels: ` + comp.panels.map(p => `${p.panel}) ${p.x.gene} vs ${p.y.gene}, r=${p.r}, n=${p.n}`).join('; ') + '.';
             description = `${comp.panels.length} correlation plots (${comp.grid} compilation) across ${cellLines.length.toLocaleString()} cell lines.`;
         }
-        // The cutoff table describes every gene's share of lines past two
-        // values, not whatever view is open behind it.
+        // The threshold scan describes every gene's share of lines past one
+        // value, not whatever view is open behind it.
         const ctab = opts.cutoffTable ? this._aiCutoff : null;
         if (ctab) {
-            const cutWords = [ctab.below !== null ? `below ${ctab.below}` : '', ctab.above !== null ? `above ${ctab.above}` : ''].filter(Boolean).join(' and ');
-            const pctCols = [ctab.below !== null ? `the percentage of those with a value strictly below ${ctab.below}` : '', ctab.above !== null ? `the percentage strictly above ${ctab.above}` : ''].filter(Boolean).join('; ');
+            const cutWords = ctab.cut === null ? 'past the cutoff' : `${ctab.dir} ${ctab.cut}`;
             const complete = ctab.rows.length === ctab.listed;
             extras = {
-                cutoffTable: { columns: ctab.columns, rows: ctab.rows, genesListed: ctab.listed, rowsIncluded: ctab.rows.length, complete },
-                cutoffTable_readMe: `One row per gene, as listed in the table on screen (${ctab.sort}). Columns: gene; n, the cell lines in this file's cohort with a value for the gene; ${pctCols || 'no percentage (no cutoff was set)'}; and the median, all in ${ctab.measure}. Which genes are listed: ${ctab.listRule}. ${complete ? `All ${ctab.listed.toLocaleString()} listed genes are included.` : `The table listed ${ctab.listed.toLocaleString()} genes; the first ${ctab.rows.length.toLocaleString()} in its order are included and the rest were cut.`} A cell line without a value for a gene counts in neither n nor the percentages for that gene.`
+                thresholdScan: { columns: ctab.columns, rows: ctab.rows, genesListed: ctab.listed, rowsIncluded: ctab.rows.length, complete },
+                thresholdScan_readMe: `One row per gene that meets the criterion on screen: ${ctab.listRule}. Rows are ${ctab.sort}. Columns: gene; n, the cell lines in this file's cohort with a value for the gene; the percentage of those with a value strictly ${cutWords}; and the median, all in ${ctab.measure}. ${complete ? `All ${ctab.listed.toLocaleString()} genes meeting the criterion are included.` : `${ctab.listed.toLocaleString()} genes meet the criterion; the first ${ctab.rows.length.toLocaleString()} in the table's order are included and the rest were cut.`} Genes that miss the criterion are not in this list. A cell line without a value for a gene counts in neither n nor the percentage for that gene.`
             };
             if (ctab.selected) {
-                extras.cutoffSelectedGene = ctab.selected;
-                extras.cutoffSelectedGene_readMe = `The gene whose histogram was open (${ctab.selected.gene}): its value in every cell line of the cohort that has one, as [cell line ID, value], ${ctab.measure}. The histogram's bars and percentages are computed from exactly these values.`;
+                extras.thresholdScanSelectedGene = ctab.selected;
+                extras.thresholdScanSelectedGene_readMe = `The gene whose histogram was open (${ctab.selected.gene}): its value in every cell line of the cohort that has one, as [cell line ID, value], ${ctab.measure}. The histogram's bars and percentage are computed from exactly these values.`;
             }
             cellLineGroups = {};
             context = {
-                type: 'gene_cutoff_table', plotType: 'table of genes by share of cell lines past a cutoff, with a histogram of one gene', stratification: 'none',
-                measure: ctab.measure, cutoffBelow: ctab.below, cutoffAbove: ctab.above,
-                cohortFilters: ctab.filters || 'none', geneListRule: ctab.listRule,
+                type: 'threshold_scan', plotType: 'table of genes by share of cell lines past a cutoff, with a histogram', stratification: 'none',
+                measure: ctab.measure, cutoff: ctab.cut, direction: ctab.dir,
+                cohortFilters: ctab.filters || 'none', geneCriterion: ctab.listRule,
                 inputGenes: ctab.rows.slice(0, 30).map(r => r[0])
             };
-            context.plotDescribesWhat = `A table of every gene's share of cell lines with ${ctab.measure} ${cutWords || 'past the cutoffs'}, across ${ctab.cohortN.toLocaleString()} cell lines${ctab.filters ? ' (' + ctab.filters + ')' : ' (every line with data)'}${ctab.selected ? `, with a histogram of ${ctab.selected.gene}` : ''}. The matrices in this file carry the first 30 listed genes${ctab.selected ? ' and the histogram gene' : ''}; the table itself is extras.cutoffTable.`;
-            description = `Genes past a cutoff (${ctab.measure}, ${cutWords || 'no cutoff'}) across ${ctab.cohortN.toLocaleString()} cell lines.`;
+            context.plotDescribesWhat = `A threshold scan: every gene's share of cell lines with ${ctab.measure} ${cutWords}, across ${ctab.cohortN.toLocaleString()} cell lines${ctab.filters ? ' (' + ctab.filters + ')' : ' (every line with data)'}, listing the genes with ${ctab.listRule}${ctab.selected ? `, with a histogram of ${ctab.selected.gene}` : ', with a histogram of every gene\'s median'}. The matrices in this file carry the first 30 listed genes${ctab.selected ? ' and the histogram gene' : ''}; the table itself is extras.thresholdScan.`;
+            description = `Threshold scan (${ctab.measure}, ${cutWords}) across ${ctab.cohortN.toLocaleString()} cell lines.`;
         }
         function genesInCompilation(c) { return [...new Set(c.panels.flatMap(p => [p.x.gene, p.y.gene]))]; }
         context.description = description;
@@ -35717,13 +35713,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     const present = layers.filter(l => custom?.layers?.[l.key]).map(l => l.canonical);
                     const tissues = [...new Set(Object.values(this.cellLineMetadata?.lineage || {}).filter(Boolean))].sort();
                     return {
-                    _readMe: 'Everything listed above except neverInThisApp CAN be exported, it simply was not this time. The app has a Custom export for AI dialog (Options > Other > Custom export for AI) which carries any of it, and that dialog takes a pasted request block. So if answering the question properly needs something this file lacks, do not stop at saying so: write the block below into your reply, in a code fence, and tell the user to paste it into that box, which sets every control at once. Everything you need to write a valid one is in this section: the keys, what each layer adds, the tissue names that resolve, and what this file already carries so you do not ask for it twice. ONE RULE BEFORE YOU WRITE ONE: every line you write is a value you are choosing on the user\'s behalf, and you cannot see their screen. `cohort: view` is the line that goes wrong, because it means whatever is open at that moment and exports nothing when nothing is; see keys.cohort and exampleWholePanel.',
-                    whereToFindIt: 'In the app: Options > Other > "Custom export for AI". Paste into the box headed "Or paste what an assistant asked for", press Apply request, then Export. The dialog reports what it understood and what it could not use. SAY THAT PATH IN YOUR REPLY whenever you hand over a block: one line beside the code fence, for example: paste this into Options > Other > "Custom export for AI". A block the user cannot find a home for is wasted.',
+                    _readMe: 'Everything listed above except neverInThisApp CAN be exported, it simply was not this time. The app has a "Paste from AI" dialog (Options > Other > Paste from AI) which carries any of it, and that dialog takes a pasted request block. So if answering the question properly needs something this file lacks, do not stop at saying so: write the block below into your reply, in a code fence, and tell the user to paste it into that box, which sets every control at once. Everything you need to write a valid one is in this section: the keys, what each layer adds, the tissue names that resolve, and what this file already carries so you do not ask for it twice. ONE RULE BEFORE YOU WRITE ONE: every line you write is a value you are choosing on the user\'s behalf, and you cannot see their screen. `cohort: view` is the line that goes wrong, because it means whatever is open at that moment and exports nothing when nothing is; see keys.cohort and exampleWholePanel.',
+                    whereToFindIt: 'In the app: Options > Other > "Paste from AI". Paste into the box at the top, press Apply, then Export. The dialog reports what it understood and what it could not use. SAY THAT PATH IN YOUR REPLY whenever you hand over a block: one line beside the code fence, for example: paste this into Options > Other > "Paste from AI". A block the user cannot find a home for is wasted.',
                     syntax: this._aiRequestSyntax(),
-                    example: 'CORRELATE-REQUEST v1\n# paste into Options > Other > "Custom export for AI"\ncohort: tissue:Skin\ngenes: BRAF, NRAS, MITF, SOX10\ngene-limit: all\ninclude: drug-response, matched-pairs\ndrugs: BRAF, MEK\nquestion: does BRAF dependency track measured BRAF-inhibitor sensitivity?',
+                    example: 'CORRELATE-REQUEST v1\n# paste into Options > Other > "Paste from AI"\ncohort: tissue:Skin\ngenes: BRAF, NRAS, MITF, SOX10\ngene-limit: all\ninclude: drug-response, matched-pairs\ndrugs: BRAF, MEK\nquestion: does BRAF dependency track measured BRAF-inhibitor sensitivity?',
                     exampleWholePanel: {
                         _readMe: 'The shape to reach for when you are writing this for someone whose screen you cannot see: a named gene panel across the whole release. It needs nothing to be open, so it cannot fail the way `cohort: view` does.',
-                        block: 'CORRELATE-REQUEST v1\n# paste into Options > Other > "Custom export for AI"\ncohort: all\ngenes: ADAR, RIGI, IFIH1, MAVS, TREX1, SETDB1, TRIM28\ngene-limit: all\nscan-size: 100\ninclude: copy-number, virus, identity\nquestion: <the question>'
+                        block: 'CORRELATE-REQUEST v1\n# paste into Options > Other > "Paste from AI"\ncohort: all\ngenes: ADAR, RIGI, IFIH1, MAVS, TREX1, SETDB1, TRIM28\ngene-limit: all\nscan-size: 100\ninclude: copy-number, virus, identity\nquestion: <the question>'
                     },
                     keys: {
                         cohort: 'all (every cell line in the release), a group written as tissue:<name> / disease:<name> / subtype:<name>, or a comma-separated list of cell line names or IDs. PREFER ONE OF THOSE when you are writing this block for someone else: the fourth option, view, means whatever chart or list happens to be open at the time, so it exports NOTHING if they paste the block with nothing open, and you cannot see their screen to know. Use view only when you are also telling them which view to open first. Groups and names can be mixed on one line. Names are matched ignoring punctuation and case, so MEC-1 and MEC1 both resolve; anything that does not resolve is reported back rather than dropped.',
@@ -35766,7 +35762,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 { when: 'always', text: "Step 2c - Do not enter the data through the raw per-line leaderboard. The lines with the most negative score for any gene are disproportionately lines whose whole screen reads sensitive, so a straight sort surfaces the same tumour-suppressor-loss lines whatever gene you ask about, across unrelated tissues, and it is easy to mistake that for a finding. Enter through the grouped summaries, and check meanGeneEffectPercentile on any line before naming it." },
                 { when: 'groups', text: "Step 3 - Deep analysis: Work data-first. Use the precomputed extras (focalGeneTissueSummary for per-tissue/subtype means, focalGeneMutationSummary for driver-mutation effects) before scanning the matrix gene-by-gene. Characterize unbiased genome-wide hits and annotate by pathway before testing hypothesis-driven candidate gene lists. After finding one explanatory model, actively search for alternative or complementary axes. Report all major signals, not just the first plausible one." },
                 { when: 'always', text: "Step 3b - Name the gaps, then ask ONCE. If answering the question properly would need something in `notIncluded` (drug response, genome-wide copy number, viral transformation status, cell lines outside this cohort), say so plainly and tell the user which export would supply it, and do not treat an absent layer as a negative result. When several open questions each need something, do NOT send the user round the export loop once per question: work out what they need between them and ask for it in ONE request. That means the union of the genes, the widest cohort any of them requires, and the union of the layers. Every round costs the user a dialog, an export and an upload, and costs you the thread; the only reason to split is when the answer to the first question would change what the second one should ask for, and if that is the reason, say so." },
-                { when: 'always', text: "Step 3a - SHOW, do not only tell. Any claim resting on a shape in the data deserves a figure, and you have the raw matrices to draw one: a scatter with the fit and its r, a distribution split by the groups you are contrasting, a per-lineage forest of the same statistic, a 2x2 of two thresholds. Prefer one figure that carries the argument over three that decorate it, label the axes in the reader's words rather than the file's field names, and say in the caption what the reader should conclude and what the figure cannot settle. Where the point is about something the APP can already draw, do both: give the figure and a CORRELATE-VIEW block (see howToDirectTheUser) so the user can open that same view themselves and click around it. WHENEVER YOU HAND OVER A BLOCK OF EITHER KIND, name where it goes in the same breath: 'paste this into Options > Other > \"Open a view from AI\"' for a view, 'Options > Other > \"Custom export for AI\"' for an export request. The user does not know the menu, and a block with no destination is a block they cannot use." },
+                { when: 'always', text: "Step 3a - SHOW, do not only tell. Any claim resting on a shape in the data deserves a figure, and you have the raw matrices to draw one: a scatter with the fit and its r, a distribution split by the groups you are contrasting, a per-lineage forest of the same statistic, a 2x2 of two thresholds. Prefer one figure that carries the argument over three that decorate it, label the axes in the reader's words rather than the file's field names, and say in the caption what the reader should conclude and what the figure cannot settle. Where the point is about something the APP can already draw, do both: give the figure and a CORRELATE-VIEW block (see howToDirectTheUser) so the user can open that same view themselves and click around it. WHENEVER YOU HAND OVER A BLOCK OF EITHER KIND, name where it goes in the same breath: 'paste this into Options > Other > \"Paste from AI\" and press Apply'; both kinds of block go into the same box. The user does not know the menu, and a block with no destination is a block they cannot use." },
                 { when: 'always', text: "Step 3c - Write for the person, not the file: the reader has not seen this file and does not know its field names. Translate every internal name into plain language before it reaches your reply, and lead with the biological answer rather than the evidence trail." },
             ],
             context,
@@ -35982,12 +35978,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // for. Each one also strikes its own line from `notIncluded`, so the
         // file never says a section is missing while carrying it.
         if (custom) {
-            exportData.dataStructure.customExport = 'What was chosen in the Custom export for AI dialog, so the contents of this file can be read against the choices that produced it.';
+            exportData.dataStructure.customExport = 'What was chosen in the "Paste from AI" dialog, so the contents of this file can be read against the choices that produced it.';
             if (custom.layers.drugResponse) exportData.dataStructure.drugResponse = 'Measured drug sensitivity per cell line as area under the dose-response curve, plus each compound\'s target and mechanism. Lower auc means more easily killed.';
             if (custom.layers.viralTransformation) exportData.dataStructure.viralTransformation = 'Curated records of what a cell line was transformed BY. Absence is not evidence of absence.';
             if (custom.layers.identityWarnings) exportData.dataStructure.identityWarnings = 'Curated provenance flags: a line that may not be what its name says, or one filed under the wrong disease.';
             exportData.customExport = {
-                _readMe: 'This file was built from the Custom export for AI dialog rather than the standard export, so its contents were chosen deliberately. What follows is what was chosen.',
+                _readMe: 'This file was built from the "Paste from AI" dialog rather than the standard export, so its contents were chosen deliberately. What follows is what was chosen.',
                 cellLines: custom.cohort === 'all' ? 'every cell line in the release'
                     : custom.cohort === 'list' ? `${cellLines.length} named cell lines`
                     : 'the cohort the exported view was showing',
@@ -36185,13 +36181,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 const nEx = Object.keys(exportData.expression || {}).length;
                 if (nGE || nEx) {
                     exportData.howToDirectTheUser = {
-                        whereToFindIt: 'In the app: Options > Other > "Open a view from AI". Paste the block into the box and press "Open the view". SAY THIS IN YOUR REPLY every time you hand over a block: the user cannot be assumed to know where it goes, and a block with nowhere to put it is worse than no block. One line beside the code fence is enough, for example: paste this into Options > Other > "Open a view from AI".',
-                        _readMe: 'You can do more than answer: you can put the user in front of the exact plot you are arguing from. Write a CORRELATE-VIEW block, in a code fence, and tell them to paste it into Options > Other > "Open a view from AI". The app opens that view with those settings. Use it whenever your reasoning rests on something visible, a correlation you want them to see holding inside one lineage, a gene whose dependency splits by tissue, a list ordered by a measure you are citing. It is the difference between describing a picture and showing it. This is NOT the export request block: that one (notIncluded.howToAskForMore) builds a new FILE for you to read, this one opens a VIEW for the user to look at. Either box accepts either block and hands it to the other, so a mistake here costs nothing.',
+                        whereToFindIt: 'In the app: Options > Other > "Paste from AI". Paste the block into the box at the top and press Apply. SAY THIS IN YOUR REPLY every time you hand over a block: the user cannot be assumed to know where it goes, and a block with nowhere to put it is worse than no block. One line beside the code fence is enough, for example: paste this into Options > Other > "Paste from AI".',
+                        _readMe: 'You can do more than answer: you can put the user in front of the exact plot you are arguing from. Write a CORRELATE-VIEW block, in a code fence, and tell them to paste it into Options > Other > "Paste from AI". The app opens that view with those settings. Use it whenever your reasoning rests on something visible, a correlation you want them to see holding inside one lineage, a gene whose dependency splits by tissue, a list ordered by a measure you are citing. It is the difference between describing a picture and showing it. This is NOT the export request block: that one (notIncluded.howToAskForMore) builds a new FILE for you to read, this one opens a VIEW for the user to look at. Either box accepts either block and hands it to the other, so a mistake here costs nothing.',
                         syntax: this._aiViewSyntax(),
                         examples: [
-                            'CORRELATE-VIEW v1\n# paste into Options > Other > "Open a view from AI"\nview: scatter\nx: ADAR\ny: USP18\ntissue: Lung\nwhy: the correlation should still hold inside a single lineage, which is what rules out a tissue artefact',
-                            'CORRELATE-VIEW v1\n# paste into Options > Other > "Open a view from AI"\nview: gene-effect\ngene: ADAR\nmeasure: ge\nwhy: see how the dependency is distributed across tissues before trusting any one group mean',
-                            'CORRELATE-VIEW v1\n# paste into Options > Other > "Open a view from AI"\nview: cell-lines\nsort: retroelement\ntissue: Head and Neck\nwhy: the lines at the top are the ones the retroelement argument rests on'
+                            'CORRELATE-VIEW v1\n# paste into Options > Other > "Paste from AI"\nview: scatter\nx: ADAR\ny: USP18\ntissue: Lung\nwhy: the correlation should still hold inside a single lineage, which is what rules out a tissue artefact',
+                            'CORRELATE-VIEW v1\n# paste into Options > Other > "Paste from AI"\nview: gene-effect\ngene: ADAR\nmeasure: ge\nwhy: see how the dependency is distributed across tissues before trusting any one group mean',
+                            'CORRELATE-VIEW v1\n# paste into Options > Other > "Paste from AI"\nview: cell-lines\nsort: retroelement\ntissue: Head and Neck\nwhy: the lines at the top are the ones the retroelement argument rests on'
                         ],
                         limits: 'Three views for now: scatter (two genes, either measure on either axis), gene-effect (one gene across tissues) and cell-lines (the browser, sorted by a measure). A tissue or disease name must be one the release uses; notIncluded.howToAskForMore lists them under tissueNamesThatResolve.'
                     };
@@ -36336,7 +36332,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // and the time keeps two exports of the same state apart.
         const _reqDriven = exportData.context?.type === 'custom_export';
         const _label = exportData.context?.type === 'correlation_compilation' ? 'compilation'
-            : exportData.context?.type === 'gene_cutoff_table' ? 'cutoff_table'
+            : exportData.context?.type === 'threshold_scan' ? 'threshold_scan'
             : _reqDriven ? 'request' : `${source}_${analysisGene || context.gene1 || 'analysis'}`;
         const _now = new Date();
         const _hhmmss = [_now.getHours(), _now.getMinutes(), _now.getSeconds()].map(x => String(x).padStart(2, '0')).join('');
@@ -36356,7 +36352,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             // nothing on screen: its context says so, and a screenshot of
             // the open view would be a picture of the very results the file
             // just dropped for not describing this cohort.
-            if (!wantCompanionImage || exportData.context?.type === 'custom_export' || exportData.context?.type === 'correlation_compilation' || exportData.context?.type === 'gene_cutoff_table') {
+            if (!wantCompanionImage || exportData.context?.type === 'custom_export' || exportData.context?.type === 'correlation_compilation' || exportData.context?.type === 'threshold_scan') {
                 // no companion image, by choice or deliberately
             } else if (source === 'correlations' || source === 'clusters') {
                 // The network is a vis-network canvas, not a Plotly chart:
@@ -43982,10 +43978,6 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         document.getElementById('customAIExportBtn')?.addEventListener('click', () => {
             document.getElementById('optionsOtherMenu')?.style.setProperty('display', 'none');
             this.openCustomAIExport();
-        });
-        document.getElementById('openAIViewBtn')?.addEventListener('click', () => {
-            document.getElementById('optionsOtherMenu')?.style.setProperty('display', 'none');
-            this.openAIViewDialog();
         });
 
         document.getElementById('showCorrelationDirect')?.addEventListener('click', () => {
@@ -63326,7 +63318,7 @@ ${clone.innerHTML}
             clb:            { title: 'Cell Line Browser', stem: 'cell_line_browser' },
             selection:      { title: 'Selection inspect', stem: 'selection_inspect' },
             umap:           { title: 'UMAP / PCA', stem: 'umap_pca' },
-            cutoff:         { title: 'Genes past a cutoff', stem: 'genes_past_cutoff' }
+            cutoff:         { title: 'Threshold scan', stem: 'threshold_scan' }
         };
     }
 
