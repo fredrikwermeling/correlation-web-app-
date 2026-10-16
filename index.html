@@ -4762,6 +4762,7 @@
                             <span>in at least</span>
                             <input type="text" inputmode="numeric" id="ctMinShare" value="10" style="width:40px; padding:2px 4px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;" title="A gene is listed when at least this share of the cell lines is past the cutoff">
                             <span>% of cell lines</span>
+                            <span id="ctMinShareN" style="color:#6b7280; font-size:11px; min-width:150px;"></span>
                             <span class="clb-sep"></span>
                             <label style="font-weight:600; color:#374151;" title="How much of this cohort a gene must be measured in before it can appear. A share computed on a fraction of the cell lines is mostly noise. Expressed as a share of the cohort so it scales with whatever you have filtered to. Set 0 to see everything.">measured in &ge; <input type="text" inputmode="numeric" id="ctMinPct" value="75" style="width:40px; padding:2px 4px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;"> <span style="font-weight:400; color:#6b7280;">% of lines</span></label>
                         </div>
@@ -5931,7 +5932,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v89_110"></script>
+    <script src="app.js?v=v89_111"></script>
     <script src="tour.js?v=v89_49"></script>
 </body>
 </html>

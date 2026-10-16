@@ -23626,12 +23626,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const pct = isNaN(c.cut) ? null : c.nP[g] / n * 100;
             const meets = covered && pct !== null && pct >= minShare && c.nP[g] > 0;
             const gene = String(c.genes[g]);
-            const row = { g, gene, n, pct, med: c.median[g], meets, covered };
+            const row = { g, gene, n, k: c.nP[g], pct, med: c.median[g], meets, covered };
             if (meets) listed.push(row);
             if (q && gene.toUpperCase().includes(q)) found.push(row);
         }
         const col = c.sortCol || 'pct', asc = !!c.sortAsc;
-        const key = { gene: r => r.gene, n: r => r.n, pct: r => r.pct ?? -1, median: r => r.med }[col] || (r => r.pct ?? -1);
+        const key = { gene: r => r.gene, n: r => r.n, pct: r => r.pct ?? -1, k: r => r.k, median: r => r.med }[col] || (r => r.pct ?? -1);
         const sorter = (a, b) => {
             const x = key(a), y = key(b);
             const d = typeof x === 'string' ? x.localeCompare(y) : x - y;
@@ -23640,6 +23640,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         listed.sort(sorter);
         found.sort((a, b) => (b.meets - a.meets) || sorter(a, b));
         Object.assign(c, { listed, measuredN: measured, nMin, minPct, minShare, search: q });
+        // The share as a number of cell lines, for a gene measured in all of them.
+        const shareN = document.getElementById('ctMinShareN');
+        if (shareN) shareN.textContent = `= at least ${Math.max(1, Math.ceil(N * minShare / 100)).toLocaleString()} of ${N.toLocaleString()} lines`;
         const shown = q ? found : listed;
 
         const th = (k, label, title) => `<th data-ct-sort="${k}" title="${this.esc(title)}" style="padding:6px 8px; border-bottom:2px solid #d1d5db; cursor:pointer; user-select:none; white-space:nowrap; text-align:${k === 'gene' ? 'left' : 'center'};">${label}${col === k ? (asc ? ' ▲' : ' ▼') : ''}</th>`;
@@ -23647,6 +23650,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             th('gene', 'Gene', 'Gene symbol')
             + th('n', 'n', 'Cell lines in the cohort with a value for this gene')
             + th('pct', `% ${this._ctCutWords()}`, `Share of those cell lines with a value ${c.dir === 'above' ? 'higher' : 'lower'} than the cutoff`)
+            + th('k', 'Lines', `Number of cell lines with a value ${c.dir === 'above' ? 'higher' : 'lower'} than the cutoff`)
             + th('median', 'Median', 'Median value across those cell lines');
         const CAP = 500;
         const td = 'padding:3px 8px; border-bottom:1px solid #f3f4f6;';
@@ -23667,6 +23671,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 + `<td style="${pin}">All genes <span style="font-weight:400; color:#9ca3af;">(medians)</span></td>`
                 + `<td style="${pin} text-align:center; color:#6b7280;">${meds.length.toLocaleString()}</td>`
                 + `<td style="${pin} text-align:center; color:${pctColor};" title="Share of genes whose median is ${this._ctCutWords()}">${past === null ? '' : past.toFixed(1)}</td>`
+                + `<td style="${pin}"></td>`
                 + `<td style="${pin} text-align:center;">${isNaN(mm) ? '' : mm.toFixed(2)}</td></tr>`;
         }
         document.getElementById('ctBody').innerHTML = allRow + (shown.slice(0, CAP).map(r =>
@@ -23674,8 +23679,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             + `<td style="${td}"><span class="gene-hover" data-gene="${this.esc(r.gene)}">${this.gi(r.gene)}</span></td>`
             + `<td style="${td} text-align:center;${r.meets ? ' color:#6b7280;' : ''}">${r.n}</td>`
             + `<td style="${td} text-align:center;${r.meets ? ` color:${pctColor};` : ''}">${r.pct === null ? '' : r.pct.toFixed(1)}</td>`
+            + `<td style="${td} text-align:center;${r.meets ? ' color:#6b7280;' : ''}">${r.pct === null ? '' : r.k}</td>`
             + `<td style="${td} text-align:center;">${r.med.toFixed(2)}</td></tr>`).join('')
-            || `<tr><td colspan="4" style="padding:10px; color:#6b7280;">${q ? 'No gene symbol contains that text.' : 'No gene meets the criterion.'}</td></tr>`);
+            || `<tr><td colspan="5" style="padding:10px; color:#6b7280;">${q ? 'No gene symbol contains that text.' : 'No gene meets the criterion.'}</td></tr>`);
         // Same gene card as the network and the other gene lists.
         this.attachGeneTooltips?.(document.getElementById('ctBody'));
         const countEl = document.getElementById('ctCount');
@@ -23790,7 +23796,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
     _ctSortWords() {
         const c = this._ct;
-        const name = { gene: 'gene name', n: 'n', pct: `% ${this._ctCutWords()}`, median: 'median' }[c.sortCol] || `% ${this._ctCutWords()}`;
+        const name = { gene: 'gene name', n: 'n', pct: `% ${this._ctCutWords()}`, k: `lines ${this._ctCutWords()}`, median: 'median' }[c.sortCol] || `% ${this._ctCutWords()}`;
         const dirWord = c.sortCol === 'gene' ? (c.sortAsc ? 'A to Z' : 'Z to A') : (c.sortAsc ? 'lowest first' : 'highest first');
         return `sorted by ${name}, ${dirWord}`;
     }
@@ -23802,12 +23808,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
 
     _ctTableRows() {
-        return (this._ct.listed || []).map(r => [r.gene, r.n, r.pct === null ? '' : +r.pct.toFixed(2), +r.med.toFixed(3)]);
+        return (this._ct.listed || []).map(r => [r.gene, r.n, r.pct === null ? '' : +r.pct.toFixed(2), r.pct === null ? '' : r.k, +r.med.toFixed(3)]);
     }
 
     _ctHeaderCols() {
         const c = this._ct;
-        return ['Gene', 'N', isNaN(c.cut) ? 'Pct' : `Pct_${c.dir}_${c.cut}`, 'Median'];
+        return ['Gene', 'N', isNaN(c.cut) ? 'Pct' : `Pct_${c.dir}_${c.cut}`, isNaN(c.cut) ? 'Lines' : `Lines_${c.dir}_${c.cut}`, 'Median'];
     }
 
     _ctDownloadCsv() {
@@ -23961,7 +23967,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             filters: this._ctFilterParts().join(', '),
             listRule: this._ctListWords(),
             sort: this._ctSortWords(),
-            columns: ['gene', 'n', isNaN(c.cut) ? 'pct' : `pct_${c.dir}_${c.cut}`, 'median'],
+            columns: ['gene', 'n', isNaN(c.cut) ? 'pct' : `pct_${c.dir}_${c.cut}`, isNaN(c.cut) ? 'lines' : `lines_${c.dir}_${c.cut}`, 'median'],
             rows: this._ctTableRows().slice(0, CAP),
             listed: c.listed.length,
             selected: sel ? { gene: sel, values: this._ctValues(c.selectedG, true).map(([id, v]) => [id, +v.toFixed(3)]) } : null
@@ -34543,7 +34549,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const complete = ctab.rows.length === ctab.listed;
             extras = {
                 thresholdScan: { columns: ctab.columns, rows: ctab.rows, genesListed: ctab.listed, rowsIncluded: ctab.rows.length, complete },
-                thresholdScan_readMe: `One row per gene that meets the criterion on screen: ${ctab.listRule}. Rows are ${ctab.sort}. Columns: gene; n, the cell lines in this file's cohort with a value for the gene; the percentage of those with a value strictly ${cutWords}; and the median, all in ${ctab.measure}. ${complete ? `All ${ctab.listed.toLocaleString()} genes meeting the criterion are included.` : `${ctab.listed.toLocaleString()} genes meet the criterion; the first ${ctab.rows.length.toLocaleString()} in the table's order are included and the rest were cut.`} Genes that miss the criterion are not in this list. A cell line without a value for a gene counts in neither n nor the percentage for that gene.`
+                thresholdScan_readMe: `One row per gene that meets the criterion on screen: ${ctab.listRule}. Rows are ${ctab.sort}. Columns: gene; n, the cell lines in this file's cohort with a value for the gene; the percentage of those with a value strictly ${cutWords}; the number of those cell lines; and the median, all in ${ctab.measure}. ${complete ? `All ${ctab.listed.toLocaleString()} genes meeting the criterion are included.` : `${ctab.listed.toLocaleString()} genes meet the criterion; the first ${ctab.rows.length.toLocaleString()} in the table's order are included and the rest were cut.`} Genes that miss the criterion are not in this list. A cell line without a value for a gene counts in neither n nor the percentage for that gene.`
             };
             if (ctab.selected) {
                 extras.thresholdScanSelectedGene = ctab.selected;
