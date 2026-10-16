@@ -8178,6 +8178,7 @@ class CorrelationExplorer {
 
         this.setupCellLineBrowserEvents();
         this.setupHeatmapModal();
+        this.setupCutoffTool();
     }
 
     updateGeneCount() {
@@ -23273,6 +23274,612 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         finally { this._aiCompilation = null; }
     }
 
+    // Genes past a cutoff: every gene's share of cell lines below and above
+    // two values, in a filterable cohort. Cohort filters follow the heatmap's,
+    // the coverage rule follows Find correlates, the histogram grid follows
+    // the correlation compilation.
+    setupCutoffTool() {
+        const modal = document.getElementById('cutoffModal');
+        if (!modal) return;
+        this._ct = {};
+        document.getElementById('showCutoffDirect')?.addEventListener('click', () => this._ctOpen());
+        const close = () => { modal.style.display = 'none'; };
+        document.getElementById('cutoffClose')?.addEventListener('click', close);
+        document.getElementById('ctCloseBtn')?.addEventListener('click', close);
+        let t = null;
+        const debounce = (fn) => () => { clearTimeout(t); t = setTimeout(fn, 350); };
+        document.getElementById('ctMeasure')?.addEventListener('change', (e) => {
+            const d = this._ctDefaults(e.target.value);
+            document.getElementById('ctBelow').value = d.below;
+            document.getElementById('ctAbove').value = d.above;
+            this._ct.sortCol = e.target.value === 'expr' ? 'above' : 'below';
+            this._ct.sortAsc = false;
+            this._ct.selectedG = null;
+            this._ctRecompute();
+        });
+        ['ctBelow', 'ctAbove'].forEach(id => document.getElementById(id)?.addEventListener('input', debounce(() => this._ctRecount())));
+        ['ctMinPct', 'ctListPct', 'ctSearch'].forEach(id => document.getElementById(id)?.addEventListener('input', debounce(() => this._ctRenderTable())));
+        document.getElementById('ctListDir')?.addEventListener('change', () => this._ctRenderTable());
+        ['ctLineage', 'ctSubtype', 'ctDisease'].forEach(id => document.getElementById(id)?.addEventListener('change', () => this._ctRecompute()));
+        const changed = () => { this._renderFilterChips('cutoff'); this._ctRecompute(); };
+        this._setupMutFilterWidget('hotspot', 'ctHotspotFilter', 'ctHotspotDropdown', changed, () => this._ctCohortExcluding('hotspot'));
+        this._setupMutFilterWidget('fusion', 'ctFusionFilter', 'ctFusionDropdown', changed, () => this._ctCohortExcluding('fusion'));
+        this._setupMutFilterWidget('cn', 'ctCnFilter', 'ctCnDropdown', changed, () => this._ctCohortExcluding('cn'));
+        [['ctHotspotFilter', 'ctHotspotLevel'], ['ctFusionFilter', 'ctFusionLevel'], ['ctCnFilter', 'ctCnLevel']].forEach(([inputId, levelId]) => {
+            const input = document.getElementById(inputId), level = document.getElementById(levelId);
+            if (!input || !level) return;
+            const sync = () => { level.style.display = input.value.trim() ? '' : 'none'; };
+            input.addEventListener('input', sync);
+            input.addEventListener('change', sync);
+            level.addEventListener('change', changed);
+        });
+        document.getElementById('ctHead')?.addEventListener('click', (e) => {
+            const th = e.target.closest('[data-ct-sort]');
+            if (!th) return;
+            const col = th.dataset.ctSort;
+            if (this._ct.sortCol === col) this._ct.sortAsc = !this._ct.sortAsc;
+            else { this._ct.sortCol = col; this._ct.sortAsc = col === 'gene'; }
+            this._ctRenderTable();
+        });
+        document.getElementById('ctBody')?.addEventListener('click', (e) => {
+            const tr = e.target.closest('tr[data-g]');
+            if (!tr) return;
+            this._ct.selectedG = +tr.dataset.g;
+            this._ctRenderTable();
+            this._ctRenderPlot();
+        });
+        document.getElementById('ctCsvBtn')?.addEventListener('click', () => this._ctDownloadCsv());
+        document.getElementById('ctCopyDataBtn')?.addEventListener('click', () => this._ctCopyData());
+        document.getElementById('ctCopyGenesBtn')?.addEventListener('click', () => {
+            const genes = (this._ct.listed || []).map(r => r.gene);
+            if (!genes.length) { this.showCopyNotification?.('No genes listed.'); return; }
+            navigator.clipboard?.writeText(genes.join('\n')).then(
+                () => this.showCopyNotification?.(`Copied ${genes.length.toLocaleString()} gene${genes.length === 1 ? '' : 's'}`),
+                () => this.showCopyNotification?.('Could not reach the clipboard.'));
+        });
+        document.getElementById('ctExportImageBtn')?.addEventListener('click', () => {
+            const el = document.getElementById('ctPlot');
+            if (!el?.data) return;
+            const gene = this._ct.genes?.[this._ct.selectedG] || 'gene';
+            this._exportPlotly(el, { w: el._fullLayout?.width || el.offsetWidth, h: el._fullLayout?.height || el.offsetHeight,
+                format: 'png', filename: `genes_past_cutoff_${gene}` });
+        });
+        document.getElementById('ctCopyBtn')?.addEventListener('click', () => {
+            if (document.getElementById('ctPlot')?.data) this.copyPlotToClipboard('ctPlot', 'Histogram');
+        });
+        document.getElementById('ctCompBtn')?.addEventListener('click', () => this._ctOpenCompilation());
+        document.getElementById('ctExportAIBtn')?.addEventListener('click', () => this._ctExportAI());
+    }
+
+    _ctDefaults(measure) {
+        // GE: the app's "clearly essential" level and its mirror. mRNA: not
+        // expressed (log2 TPM+1 below 1) and highly expressed (about 30 TPM).
+        return measure === 'expr' ? { below: 1, above: 5 } : { below: -0.5, above: 0.5 };
+    }
+
+    _ctNum(id) {
+        const raw = String(document.getElementById(id)?.value ?? '').trim().replace(',', '.').replace('−', '-');
+        if (!raw) return NaN;
+        const v = Number(raw);
+        return Number.isFinite(v) ? v : NaN;
+    }
+
+    async _ctOpen() {
+        const modal = document.getElementById('cutoffModal');
+        if (!modal || !this.metadata) return;
+        // Starts fresh on every open.
+        const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
+        const d = this._ctDefaults('ge');
+        set('ctMeasure', 'ge'); set('ctBelow', d.below); set('ctAbove', d.above); set('ctMinPct', 75);
+        set('ctListPct', 0); set('ctListDir', 'below'); set('ctSearch', '');
+        set('ctLineage', ''); set('ctSubtype', ''); set('ctDisease', '');
+        [['ctHotspotFilter', 'ctHotspotLevel', '1+2'], ['ctFusionFilter', 'ctFusionLevel', '1+2'], ['ctCnFilter', 'ctCnLevel', 'altered']].forEach(([i, l, def]) => {
+            set(i, ''); set(l, def);
+            const lv = document.getElementById(l); if (lv) lv.style.display = 'none';
+        });
+        this._ct = { sortCol: 'below', sortAsc: false, selectedG: null };
+        modal.style.display = 'flex';
+        const body = modal.querySelector('.modal-body'); if (body) body.scrollTop = 0;
+        await this._ctRecompute();
+    }
+
+    _ctBaseLines(measure) {
+        return (measure === 'expr' ? this.expressionMetadata?.cellLines : this.metadata?.cellLines || []).slice();
+    }
+
+    _ctPassesAlterations(cl, skip) {
+        const v = (id) => document.getElementById(id)?.value || '';
+        const hot = v('ctHotspotFilter'), fus = v('ctFusionFilter'), cn = v('ctCnFilter');
+        if (skip !== 'hotspot' && hot) {
+            const mm = this._mutCalls(hot);
+            if (!this._mutLevelPasses(v('ctHotspotLevel') || '1+2', mm ? (mm[cl] || 0) : 0)) return false;
+        }
+        if (skip !== 'fusion' && fus) { const has = this._geFusionPasses(cl, fus); if ((v('ctFusionLevel') || '1+2') === '0' ? has : !has) return false; }
+        if (skip !== 'cn' && cn) { const has = this._cellLinePassesCnFilter(cl, cn); if ((v('ctCnLevel') || 'altered') === 'wt' ? has : !has) return false; }
+        return true;
+    }
+
+    _ctPassesGroups(cl) {
+        const lineage = document.getElementById('ctLineage')?.value || '';
+        const subtype = document.getElementById('ctSubtype')?.value || '';
+        const disease = document.getElementById('ctDisease')?.value || '';
+        if (lineage && (this.getCellLineLineage(cl) || 'Not recorded') !== lineage) return false;
+        if (subtype && this.getCellLineSublineage(cl) !== subtype) return false;
+        if (disease && (this.cellLineMetadata?.oncotreeSubtype?.[cl] || '') !== disease) return false;
+        return true;
+    }
+
+    _ctCohortExcluding(kind) {
+        const measure = document.getElementById('ctMeasure')?.value || 'ge';
+        return new Set(this._ctBaseLines(measure).filter(cl => this._ctPassesGroups(cl) && this._ctPassesAlterations(cl, kind)));
+    }
+
+    // Lineage, subtype and disease, scaled to each other as in the heatmap.
+    _ctPopulateSelects(alt) {
+        const sel = document.getElementById('ctLineage');
+        const counts = new Map();
+        for (const cl of alt) { const lin = this.getCellLineLineage(cl) || 'Not recorded'; counts.set(lin, (counts.get(lin) || 0) + 1); }
+        const prev = sel.value;
+        sel.innerHTML = `<option value="">All lineages (${alt.length})</option>`
+            + [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([l, n]) => `<option value="${this.esc(l)}">${this.esc(l)} (${n})</option>`).join('');
+        sel.value = prev && counts.has(prev) ? prev : '';
+        const inLin = sel.value ? alt.filter(cl => (this.getCellLineLineage(cl) || 'Not recorded') === sel.value) : alt;
+        const subSel = document.getElementById('ctSubtype');
+        const diseaseVal = document.getElementById('ctDisease')?.value || '';
+        const { items, total } = this._subtypeOptionsFor('', diseaseVal, inLin);
+        this._fillSubtypeSelect(subSel, items, total);
+        this._populateOncotreeSelect('ctDisease', '', subSel.value || '', inLin);
+    }
+
+    // Filters in words, for the plot subtitle, the CSV and the AI export.
+    _ctFilterParts() {
+        const parts = [];
+        const v = (id) => document.getElementById(id)?.value || '';
+        if (v('ctLineage')) parts.push(`lineage ${v('ctLineage')}`);
+        if (v('ctSubtype')) parts.push(`subtype ${v('ctSubtype')}`);
+        if (v('ctDisease')) parts.push(`disease ${v('ctDisease')}`);
+        const hot = v('ctHotspotFilter');
+        if (hot) {
+            const lvl = v('ctHotspotLevel') || '1+2';
+            parts.push(this._mutFilterPhrase(hot, lvl, this._filterIsWildType('hotspot', lvl) ? 'wild-type' : 'hotspot-mutated'));
+        }
+        const fus = this._stripFusionFilterDecoration(v('ctFusionFilter'));
+        if (fus) parts.push(`${fus} ${this._filterIsWildType('fusion', v('ctFusionLevel') || '1+2') ? 'not fused' : 'fused'}`);
+        const cnRaw = v('ctCnFilter');
+        if (cnRaw) {
+            const label = this._stripCnFilterDecoration(cnRaw).replace(/_(amp|del)$/, (_, k) => k === 'amp' ? ' amp' : ' del');
+            parts.push(`${label} ${this._filterIsWildType('cn', v('ctCnLevel') || 'altered') ? 'absent' : 'present'}`);
+        }
+        return parts;
+    }
+
+    // Cohort and per-gene medians; reruns when the cell lines change.
+    async _ctRecompute() {
+        const token = (this._ctToken = (this._ctToken || 0) + 1);
+        const measure = document.getElementById('ctMeasure')?.value || 'ge';
+        const status = document.getElementById('ctStatus');
+        if (measure === 'expr' && !this.expressionLoaded) {
+            if (status) status.textContent = 'Loading mRNA expression...';
+            try { await this.loadExpressionData(); } catch (e) { /* reported below */ }
+            if (!this.expressionLoaded) { if (status) status.textContent = 'mRNA expression could not be loaded.'; return; }
+        }
+        if (token !== this._ctToken) return;
+        const alt = this._ctBaseLines(measure).filter(cl => this._ctPassesAlterations(cl));
+        this._ctPopulateSelects(alt);
+        const cohort = alt.filter(cl => this._ctPassesGroups(cl));
+        const ids = measure === 'expr' ? this.expressionMetadata.cellLines : this.metadata.cellLines;
+        const stride = measure === 'expr' ? this.expressionMetadata.nCellLines : this.nCellLines;
+        const data = measure === 'expr' ? this.expressionData : this.geneEffects;
+        const genes = measure === 'expr' ? this.expressionMetadata.genes : this.metadata.genes;
+        const pos = new Map(ids.map((c, i) => [c, i]));
+        const colIdx = cohort.map(c => pos.get(c)).filter(i => i !== undefined);
+        const cols = Int32Array.from(colIdx);
+        if (status) status.textContent = `Computing ${genes.length.toLocaleString()} genes...`;
+        const median = new Float32Array(genes.length);
+        const nValid = new Int32Array(genes.length);
+        const buf = new Float32Array(cols.length);
+        for (let g = 0; g < genes.length; g++) {
+            if (g % 2500 === 2499) { await new Promise(r => setTimeout(r, 0)); if (token !== this._ctToken) return; }
+            const off = g * stride;
+            let m = 0;
+            for (let j = 0; j < cols.length; j++) { const v = data[off + cols[j]]; if (v === v && v !== -999) buf[m++] = v; }
+            nValid[g] = m;
+            if (m) { const s = buf.subarray(0, m).sort(); median[g] = m % 2 ? s[(m - 1) >> 1] : (s[m / 2 - 1] + s[m / 2]) / 2; }
+            else median[g] = NaN;
+        }
+        Object.assign(this._ct, { measure, cohort: cohort.filter(c => pos.has(c)), cols, stride, data, genes, median, nValid });
+        if (status) status.textContent = '';
+        this._renderFilterChips?.('cutoff');
+        this._ctRecount();
+    }
+
+    // Counts past the two cutoffs; reruns when a cutoff changes.
+    _ctRecount() {
+        const c = this._ct;
+        if (!c?.genes) return;
+        const below = this._ctNum('ctBelow'), above = this._ctNum('ctAbove');
+        const nB = new Int32Array(c.genes.length), nA = new Int32Array(c.genes.length);
+        const { data, cols, stride } = c;
+        const doB = !isNaN(below), doA = !isNaN(above);
+        for (let g = 0; g < c.genes.length; g++) {
+            if (!c.nValid[g]) continue;
+            const off = g * stride;
+            let b = 0, a = 0;
+            for (let j = 0; j < cols.length; j++) {
+                const v = data[off + cols[j]];
+                if (v !== v || v === -999) continue;
+                if (doB && v < below) b++;
+                if (doA && v > above) a++;
+            }
+            nB[g] = b; nA[g] = a;
+        }
+        Object.assign(c, { below, above, nB, nA });
+        this._ctRenderTable();
+        this._ctRenderPlot();
+    }
+
+    _ctFmt(v) { return String(Math.round(v * 1000) / 1000).replace('-', '−'); }
+
+    _ctRenderTable() {
+        const c = this._ct;
+        if (!c?.nB) return;
+        const N = c.cohort.length;
+        const minPct = Math.max(0, Math.min(100, this.numInput('ctMinPct', 75) || 0));
+        const nMin = minPct > 0 ? Math.ceil(N * minPct / 100) : 0;
+        const listPct = Math.max(0, Math.min(100, this.numInput('ctListPct', 0) || 0));
+        const dir = document.getElementById('ctListDir')?.value || 'below';
+        const q = (document.getElementById('ctSearch')?.value || '').trim().toUpperCase();
+        const rows = [];
+        let measured = 0;
+        for (let g = 0; g < c.genes.length; g++) {
+            const n = c.nValid[g];
+            if (!n || n < nMin) continue;
+            measured++;
+            const pb = isNaN(c.below) ? null : c.nB[g] / n * 100;
+            const pa = isNaN(c.above) ? null : c.nA[g] / n * 100;
+            if (listPct > 0) {
+                const okB = pb !== null && pb >= listPct, okA = pa !== null && pa >= listPct;
+                if (dir === 'below' ? !okB : dir === 'above' ? !okA : !(okB || okA)) continue;
+            }
+            const gene = String(c.genes[g]);
+            if (q && !gene.toUpperCase().includes(q)) continue;
+            rows.push({ g, gene, n, pb, pa, med: c.median[g] });
+        }
+        const col = c.sortCol || 'below', asc = !!c.sortAsc;
+        const key = { gene: r => r.gene, n: r => r.n, below: r => r.pb ?? -1, above: r => r.pa ?? -1, median: r => r.med }[col] || (r => r.pb ?? -1);
+        rows.sort((a, b) => {
+            const x = key(a), y = key(b);
+            const d = typeof x === 'string' ? x.localeCompare(y) : x - y;
+            return (asc ? d : -d) || a.gene.localeCompare(b.gene);
+        });
+        Object.assign(c, { listed: rows, measuredN: measured, nMin, minPct, listPct, listDir: dir, search: q });
+        if (c.selectedG == null && rows.length) c.selectedG = rows[0].g;
+
+        const th = (k, label, title) => `<th data-ct-sort="${k}" title="${this.esc(title)}" style="padding:6px 8px; border-bottom:2px solid #d1d5db; cursor:pointer; user-select:none; white-space:nowrap; text-align:${k === 'gene' ? 'left' : 'center'};">${label}${col === k ? (asc ? ' ▲' : ' ▼') : ''}</th>`;
+        document.getElementById('ctHead').innerHTML =
+            th('gene', 'Gene', 'Gene symbol')
+            + th('n', 'n', 'Cell lines in the cohort with a value for this gene')
+            + th('below', isNaN(c.below) ? '% below' : `% below ${this._ctFmt(c.below)}`, 'Share of those cell lines with a value lower than the Below cutoff')
+            + th('above', isNaN(c.above) ? '% above' : `% above ${this._ctFmt(c.above)}`, 'Share of those cell lines with a value higher than the Above cutoff')
+            + th('median', 'Median', 'Median value across those cell lines');
+        const CAP = 500;
+        const td = 'padding:3px 8px; border-bottom:1px solid #f3f4f6;';
+        document.getElementById('ctBody').innerHTML = rows.slice(0, CAP).map(r =>
+            `<tr data-g="${r.g}" style="cursor:pointer;${r.g === c.selectedG ? ' background:#ecfdf5;' : ''}">`
+            + `<td style="${td}">${this.gi(r.gene)}</td>`
+            + `<td style="${td} text-align:center; color:#6b7280;">${r.n}</td>`
+            + `<td style="${td} text-align:center; color:#b91c1c;">${r.pb === null ? '' : r.pb.toFixed(1)}</td>`
+            + `<td style="${td} text-align:center; color:#1d4ed8;">${r.pa === null ? '' : r.pa.toFixed(1)}</td>`
+            + `<td style="${td} text-align:center;">${r.med.toFixed(2)}</td></tr>`).join('')
+            || `<tr><td colspan="5" style="padding:10px; color:#6b7280;">No gene passes these settings.</td></tr>`;
+        const countEl = document.getElementById('ctCount');
+        if (countEl) countEl.textContent = `${rows.length.toLocaleString()} of ${measured.toLocaleString()} genes, in ${N.toLocaleString()} cell lines`
+            + (rows.length > CAP ? `; the first ${CAP} shown, .csv and Copy data carry all` : '');
+    }
+
+    // Bars of 0.1 (GE) or 0.25 (mRNA) with edges on the lower cutoff, y as %
+    // of the cell lines; bars past the cutoffs in red / blue, dashed lines at
+    // the cutoffs labelled with the share. ax is the axis suffix ('' or '2'...).
+    _ctHistParts(values, ax, fs = 11, labels = true) {
+        const c = this._ct;
+        const size = c.measure === 'expr' ? 0.25 : 0.1;
+        const n = values.length;
+        let lo = Infinity, hi = -Infinity;
+        for (const v of values) { if (v < lo) lo = v; if (v > hi) hi = v; }
+        const anchor = !isNaN(c.below) ? c.below : (!isNaN(c.above) ? c.above : 0);
+        const start = anchor - Math.ceil((anchor - lo) / size - 1e-9) * size;
+        const nb = Math.max(1, Math.floor((hi - start) / size + 1e-9) + 1);
+        const counts = new Array(nb).fill(0);
+        let b = 0, a = 0;
+        for (const v of values) {
+            counts[Math.max(0, Math.min(nb - 1, Math.floor((v - start) / size + 1e-9)))]++;
+            if (v < c.below) b++;
+            if (v > c.above) a++;
+        }
+        const x = [], y = [], col = [], txt = [];
+        for (let i = 0; i < nb; i++) {
+            const l = start + i * size, mid = l + size / 2, pct = counts[i] / n * 100;
+            x.push(mid); y.push(pct);
+            col.push(!isNaN(c.below) && mid < c.below ? '#dc2626' : !isNaN(c.above) && mid > c.above ? '#3b82f6' : '#9ca3af');
+            txt.push(`${l.toFixed(2)} to ${(l + size).toFixed(2)}: ${pct.toFixed(1)}% (${counts[i]} line${counts[i] === 1 ? '' : 's'})`);
+        }
+        const ymax = Math.max(1, ...y);
+        const shapes = [], annotations = [];
+        const mark = (v, color, text, xanchor) => {
+            shapes.push({ type: 'line', xref: 'x' + ax, yref: 'y' + ax, x0: v, x1: v, y0: 0, y1: ymax * 1.12, line: { color, width: 1.5, dash: 'dash' } });
+            if (labels) annotations.push({ xref: 'x' + ax, yref: 'y' + ax, x: v, y: ymax * 1.12, text, showarrow: false, xanchor, yanchor: 'bottom', font: { size: fs, color }, bgcolor: 'rgba(255,255,255,0.85)' });
+        };
+        const pb = n ? b / n * 100 : 0, pa = n ? a / n * 100 : 0;
+        if (!isNaN(c.below)) mark(c.below, '#dc2626', `${pb.toFixed(1)}% below ${this._ctFmt(c.below)}`, 'right');
+        if (!isNaN(c.above)) mark(c.above, '#2563eb', `${pa.toFixed(1)}% above ${this._ctFmt(c.above)}`, 'left');
+        const trace = { type: 'bar', x, y, width: size, marker: { color: col, line: { color: '#ffffff', width: 0.5 } },
+            hovertext: txt, hoverinfo: 'text', xaxis: 'x' + ax, yaxis: 'y' + ax, showlegend: false };
+        return { traces: [trace], shapes, annotations, ymax, start, end: start + nb * size, n, pb, pa };
+    }
+
+    _ctValues(g, withIds = false) {
+        const c = this._ct;
+        const ids = c.measure === 'expr' ? this.expressionMetadata.cellLines : this.metadata.cellLines;
+        const out = [], off = g * c.stride;
+        for (let j = 0; j < c.cols.length; j++) {
+            const v = c.data[off + c.cols[j]];
+            if (v === v && v !== -999) out.push(withIds ? [ids[c.cols[j]], v] : v);
+        }
+        return out;
+    }
+
+    _ctMeasureWord(full = true) {
+        return this._ct.measure === 'expr' ? (full ? 'mRNA expression (log2 TPM+1)' : 'mRNA') : (full ? 'gene effect (Chronos)' : 'GE');
+    }
+
+    _ctRenderPlot() {
+        const el = document.getElementById('ctPlot');
+        const c = this._ct;
+        if (!el || !c?.genes) return;
+        const g = c.selectedG;
+        const vals = g == null ? [] : this._ctValues(g);
+        if (!vals.length) {
+            Plotly.purge(el);
+            el.innerHTML = '<div style="padding:40px; color:#9ca3af; text-align:center;">Click a gene in the table to see its histogram.</div>';
+            return;
+        }
+        if (!el.data) el.innerHTML = '';
+        const gene = c.genes[g];
+        const p = this._ctHistParts(vals, '');
+        const filt = this._ctFilterParts();
+        const layout = {
+            title: { text: `<b><i>${this.esc(gene)}</i> ${c.measure === 'expr' ? 'mRNA expression' : 'gene effect'}</b><br><span style="font-size:11px; color:#6b7280;">n = ${p.n.toLocaleString()} cell lines${filt.length ? ', ' + this.esc(filt.join(', ')) : ''}</span>`, font: { size: 14 }, y: 0.96 },
+            xaxis: { title: { text: `<i>${this.esc(gene)}</i> ${this._ctMeasureWord()}` }, zeroline: c.measure !== 'expr', zerolinecolor: '#9ca3af', gridcolor: '#eeeeee' },
+            yaxis: { title: { text: '% of cell lines' }, range: [0, p.ymax * 1.3], gridcolor: '#eeeeee' },
+            shapes: p.shapes, annotations: p.annotations, bargap: 0,
+            margin: { l: 60, r: 20, t: 70, b: 55 }, height: 440,
+            paper_bgcolor: '#ffffff', plot_bgcolor: '#fafafa', font: { family: 'Open Sans, sans-serif' }
+        };
+        Plotly.react(el, p.traces, layout, { displayModeBar: false, responsive: true });
+    }
+
+    _ctSortWords() {
+        const c = this._ct;
+        const name = { gene: 'gene name', n: 'n', below: `% below ${this._ctFmt(c.below)}`, above: `% above ${this._ctFmt(c.above)}`, median: 'median' }[c.sortCol] || '% below';
+        return `sorted by ${name}, ${c.sortAsc ? 'lowest first' : 'highest first'}`.replace('lowest first', c.sortCol === 'gene' ? 'A to Z' : 'lowest first').replace('highest first', c.sortCol === 'gene' ? 'Z to A' : 'highest first');
+    }
+
+    _ctListWords() {
+        const c = this._ct;
+        const parts = [`measured in at least ${c.minPct}% of the cell lines (${c.nMin.toLocaleString()} or more)`];
+        const b = this._ctFmt(c.below), a = this._ctFmt(c.above);
+        if (c.listPct > 0) parts.push(`at least ${c.listPct}% of lines ${c.listDir === 'either' ? `below ${b} or above ${a}` : c.listDir === 'above' ? `above ${a}` : `below ${b}`}`);
+        if (c.search) parts.push(`symbol containing "${c.search}"`);
+        return parts.join('; ');
+    }
+
+    _ctTableRows() {
+        return (this._ct.listed || []).map(r => [r.gene, r.n, r.pb === null ? '' : +r.pb.toFixed(2), r.pa === null ? '' : +r.pa.toFixed(2), +r.med.toFixed(3)]);
+    }
+
+    _ctHeaderCols() {
+        const c = this._ct;
+        return ['Gene', 'N', isNaN(c.below) ? 'Pct_below' : `Pct_below_${c.below}`, isNaN(c.above) ? 'Pct_above' : `Pct_above_${c.above}`, 'Median'];
+    }
+
+    _ctDownloadCsv() {
+        const c = this._ct;
+        if (!c?.listed) return;
+        const filt = this._ctFilterParts();
+        let csv = '# Genes past a cutoff\n';
+        csv += `# Measure: ${this._ctMeasureWord()}\n`;
+        csv += `# Below cutoff: ${isNaN(c.below) ? 'none' : c.below} (share of cell lines with a lower value)\n`;
+        csv += `# Above cutoff: ${isNaN(c.above) ? 'none' : c.above} (share of cell lines with a higher value)\n`;
+        csv += `# Cell lines: ${c.cohort.length}${filt.length ? ' (' + filt.join(', ') + ')' : ' (all with data)'}\n`;
+        csv += `# Genes listed: ${c.listed.length} (${this._ctListWords()}), ${this._ctSortWords()}\n`;
+        csv += `# DepMap release: ${DEPMAP_VERSION}\n`;
+        csv += this._ctHeaderCols().join(',') + '\n';
+        csv += this._ctTableRows().map(r => r.join(',')).join('\n') + '\n';
+        const stem = `genes_past_cutoff_${c.measure === 'expr' ? 'mrna' : 'ge'}${this._csvSlug(filt.join('_'))}`;
+        this.downloadFile(csv, `${stem}_${new Date().toISOString().slice(0, 10)}.csv`, 'text/csv');
+    }
+
+    _ctCopyData() {
+        const c = this._ct;
+        if (!c?.listed?.length) { this.showCopyNotification?.('No genes listed.'); return; }
+        const filt = this._ctFilterParts();
+        const desc = `Genes past a cutoff, ${this._ctMeasureWord()}, ${c.cohort.length} cell lines${filt.length ? ' (' + filt.join(', ') + ')' : ''}, ${this._ctSortWords()}`;
+        const tsv = [desc, this._ctHeaderCols().join('\t'), ...this._ctTableRows().map(r => r.join('\t'))].join('\n');
+        navigator.clipboard?.writeText(tsv).then(
+            () => this.showCopyNotification?.(`Copied ${c.listed.length.toLocaleString()} rows, paste into a spreadsheet`),
+            () => this.showCopyNotification?.('Could not reach the clipboard.'));
+    }
+
+    // Histograms of the table's top genes, in a grid like the correlation
+    // compilation. Fresh on every open.
+    _ctOpenCompilation() {
+        const status = document.getElementById('ctStatus');
+        if (!this._ct?.listed?.length) { if (status) status.textContent = 'No genes in the table.'; return; }
+        let modal = document.getElementById('ctCompModal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'ctCompModal';
+            modal.className = 'modal-overlay';
+            modal.style.zIndex = '1390';
+            const num = 'style="width:38px; font-size:11px; padding:1px 4px; border:1px solid #d1d5db; border-radius:4px;"';
+            const btn = 'class="btn btn-outline btn-sm mobile-hide" style="font-size:11px;"';
+            modal.innerHTML = `<div class="modal" style="max-width:min(97vw,1500px); width:97vw;">
+                <div class="modal-header"><h3>Histogram compilation</h3><button class="modal-close" id="ctCompClose" title="Close">&times;</button></div>
+                <div class="modal-body" style="font-size:12px; color:#374151;">
+                    <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
+                        <label title="Rows and panels per row, up to 8 each">Grid <input type="number" id="ctCompRows" min="1" max="8" ${num}> rows &times; <input type="number" id="ctCompCols" min="1" max="8" ${num}> columns</label>
+                        <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;" title="All panels on one x range; untick to fit each panel to its own data"><input type="checkbox" id="ctCompSameX" checked> Same x axis</label>
+                        <span id="ctCompNote" style="color:#6b7280; font-size:11px;"></span>
+                    </div>
+                    <div><div id="ctCompPlot"></div></div>
+                </div>
+                <div class="modal-footer" style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                    <span class="mobile-hide" style="font-size:10px; color:#9ca3af;">Export:</span>
+                    <button ${btn} id="ctCompExport" title="Export the grid, choose PNG / SVG / TIFF / PDF / PowerPoint in the popup">Export image...</button>
+                    <button ${btn} id="ctCompCopy" title="Copy the grid as an image to the clipboard">Copy</button>
+                    <button class="btn btn-secondary btn-sm" id="ctCompCloseBtn" style="margin-left:auto;">Close</button>
+                </div>
+            </div>`;
+            document.body.appendChild(modal);
+            const close = () => modal.classList.remove('active');
+            modal.querySelector('#ctCompClose').onclick = close;
+            modal.querySelector('#ctCompCloseBtn').onclick = close;
+            modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+            const onGrid = () => {
+                const st = this._ctComp;
+                const clamp = (id, cur) => { const el = modal.querySelector(id); const v = Math.max(1, Math.min(8, parseInt(el.value, 10) || cur)); el.value = v; return v; };
+                st.rows = clamp('#ctCompRows', st.rows); st.cols = clamp('#ctCompCols', st.cols);
+                this._ctDrawCompilation();
+            };
+            modal.querySelector('#ctCompRows').onchange = onGrid;
+            modal.querySelector('#ctCompCols').onchange = onGrid;
+            modal.querySelector('#ctCompSameX').onchange = (e) => { this._ctComp.sameX = e.target.checked; this._ctDrawCompilation(); };
+            modal.querySelector('#ctCompCopy').onclick = () => { const el = document.getElementById('ctCompPlot'); if (el?.data) this.copyPlotToClipboard(el, 'Histogram compilation'); };
+            modal.querySelector('#ctCompExport').onclick = () => {
+                const el = document.getElementById('ctCompPlot');
+                if (!el?.data) return;
+                this._exportPlotly(el, { w: el._fullLayout?.width || el.offsetWidth, h: el._fullLayout?.height || el.offsetHeight,
+                    format: 'png', filename: `genes_past_cutoff_compilation_${this._ctComp.rows}x${this._ctComp.cols}` });
+            };
+        }
+        this._ctComp = { rows: 2, cols: 5, sameX: true };
+        modal.querySelector('#ctCompRows').value = 2;
+        modal.querySelector('#ctCompCols').value = 5;
+        modal.querySelector('#ctCompSameX').checked = true;
+        modal.classList.add('active');
+        this._ctDrawCompilation();
+    }
+
+    _ctDrawCompilation() {
+        const st = this._ctComp, c = this._ct;
+        const rows = (c.listed || []).slice(0, st.rows * st.cols);
+        const note = document.getElementById('ctCompNote');
+        if (note) note.textContent = `The first ${rows.length} genes of the table, ${this._ctSortWords()}; ${c.cohort.length.toLocaleString()} cell lines.`;
+        const el = document.getElementById('ctCompPlot');
+        if (el && rows.length) this._ctRenderGrid(el, rows, Math.min(st.cols, rows.length), st.sameX);
+    }
+
+    _ctRenderGrid(el, rows, cols, sameX) {
+        const c = this._ct;
+        const nr = Math.ceil(rows.length / cols);
+        const host = el.parentElement;
+        const avail = Math.max(420, (host?.clientWidth || 900) - 10);
+        const panelW = Math.max(150, Math.min(cols === 1 ? 440 : cols === 2 ? 380 : 300, Math.floor((avail - 72) / cols) - 46));
+        const panelH = Math.round(panelW * 0.68);
+        const gapX = 46, gapY = 78, mL = 56, mR = 16, mT = 52, mB = 44;
+        const W = mL + mR + cols * panelW + (cols - 1) * gapX;
+        const H = mT + mB + nr * panelH + (nr - 1) * gapY;
+        const plotW = W - mL - mR, plotH = H - mT - mB;
+        // Small panels: the shares go in the panel title, not on the lines.
+        const parts = rows.map((r, i) => this._ctHistParts(this._ctValues(r.g), i === 0 ? '' : String(i + 1), 9, false));
+        const gx0 = Math.min(...parts.map(p => p.start)), gx1 = Math.max(...parts.map(p => p.end));
+        const layout = { width: W, height: H, margin: { l: mL, r: mR, t: mT, b: mB, autoexpand: false }, showlegend: false, bargap: 0,
+            paper_bgcolor: '#ffffff', plot_bgcolor: '#fafafa', font: { family: 'Open Sans, sans-serif', size: 10 }, shapes: [], annotations: [] };
+        const traces = [];
+        rows.forEach((r, i) => {
+            const ax = i === 0 ? '' : String(i + 1), p = parts[i];
+            const col = i % cols, row = Math.floor(i / cols);
+            const x0 = (col * (panelW + gapX)) / plotW, x1 = (col * (panelW + gapX) + panelW) / plotW;
+            const yTop = 1 - (row * (panelH + gapY)) / plotH, yBot = 1 - (row * (panelH + gapY) + panelH) / plotH;
+            layout['xaxis' + ax] = { domain: [x0, x1], anchor: 'y' + ax, tickfont: { size: 9 }, gridcolor: '#eeeeee',
+                zeroline: c.measure !== 'expr', zerolinecolor: '#9ca3af',
+                title: { text: `<i>${this.esc(r.gene)}</i> ${this._ctMeasureWord(false)}`, font: { size: 10 }, standoff: 4 },
+                ...(sameX ? { range: [gx0, gx1] } : {}) };
+            layout['yaxis' + ax] = { domain: [yBot, yTop], anchor: 'x' + ax, range: [0, p.ymax * 1.3], tickfont: { size: 9 }, gridcolor: '#eeeeee',
+                ...(col === 0 ? { title: { text: '% of cell lines', font: { size: 10 } } } : {}) };
+            traces.push(...p.traces);
+            layout.shapes.push(...p.shapes);
+            layout.annotations.push(...p.annotations, { xref: 'paper', yref: 'paper', x: (x0 + x1) / 2, y: yTop, yshift: 3, xanchor: 'center', yanchor: 'bottom', showarrow: false,
+                text: `<b><i>${this.esc(r.gene)}</i></b> <span style="color:#6b7280; font-size:9px;">n=${p.n}</span>`
+                    + (isNaN(c.below) ? '' : ` <span style="color:#dc2626; font-size:9px;">${p.pb.toFixed(1)}% below</span>`)
+                    + (isNaN(c.above) ? '' : ` <span style="color:#2563eb; font-size:9px;">${p.pa.toFixed(1)}% above</span>`), font: { size: 11 } });
+        });
+        const filt = this._ctFilterParts();
+        const cuts = [isNaN(c.below) ? '' : `<span style="color:#dc2626;">below ${this._ctFmt(c.below)}</span>`, isNaN(c.above) ? '' : `<span style="color:#2563eb;">above ${this._ctFmt(c.above)}</span>`].filter(Boolean).join(', ');
+        layout.annotations.push({ xref: 'paper', yref: 'paper', x: 0, y: 1, yshift: 30, xanchor: 'left', yanchor: 'bottom', showarrow: false, font: { size: 11, color: '#374151' },
+            text: `${c.measure === 'expr' ? 'mRNA expression' : 'Gene effect'}, share of cell lines ${cuts || 'past the cutoffs'}; ${c.cohort.length.toLocaleString()} cell lines${filt.length ? ' (' + this.esc(filt.join(', ')) + ')' : ''}` });
+        Plotly.react(el, traces, layout, { displayModeBar: false, responsive: false });
+    }
+
+    async _ctExportAI() {
+        const c = this._ct;
+        const status = document.getElementById('ctStatus');
+        if (!c?.listed?.length) { if (status) status.textContent = 'No genes in the table.'; return; }
+        const CAP = 2000;
+        const sel = c.selectedG == null ? null : c.genes[c.selectedG];
+        this._aiCutoff = {
+            measure: this._ctMeasureWord(),
+            below: isNaN(c.below) ? null : c.below,
+            above: isNaN(c.above) ? null : c.above,
+            cohortN: c.cohort.length,
+            filters: this._ctFilterParts().join(', '),
+            listRule: this._ctListWords(),
+            sort: this._ctSortWords(),
+            columns: ['gene', 'n', isNaN(c.below) ? 'pctBelow' : `pctBelow_${c.below}`, isNaN(c.above) ? 'pctAbove' : `pctAbove_${c.above}`, 'median'],
+            rows: this._ctTableRows().slice(0, CAP),
+            listed: c.listed.length,
+            selected: sel ? { gene: sel, values: this._ctValues(c.selectedG, true).map(([id, v]) => [id, +v.toFixed(3)]) } : null
+        };
+        const geneList = [...new Set([...(sel ? [sel] : []), ...c.listed.slice(0, 30).map(r => r.gene)])];
+        const q = document.getElementById('aiQuestion'); if (q) q.value = '';
+        const custom = { active: true, cohort: 'list', cohortList: c.cohort.slice(), genes: 'list', geneList, geneCap: 0, scanTop: 30,
+            layers: { drugResponse: false, fullCopyNumber: false, viralTransformation: false, identityWarnings: false, derivativePairs: false }, drugFilter: [], question: '' };
+        try { await this.exportFullAIAnalysis({ custom, statusId: 'ctStatus', cutoffTable: true }); }
+        finally { this._aiCutoff = null; }
+    }
+
+    _methodsCutoff() {
+        const title = 'Genes past a cutoff';
+        const c = this._ct;
+        if (!c?.listed) return this._methodsNotReady(title, 'Open Genes past a cutoff under Options, Other first.');
+        const kind = c.measure === 'expr' ? 'expr' : 'ge';
+        const filt = this._ctFilterParts();
+        const N = c.cohort.length;
+        const cohortWords = filt.length
+            ? `${this._mNum(N)} cell lines (${this._mListOr(filt, '')})`
+            : `all ${this._mNum(N)} cell lines with ${kind === 'expr' ? 'mRNA expression' : 'CRISPR gene effect'} data`;
+        const cut = [];
+        if (!isNaN(c.below)) cut.push(`the percentage of cell lines with a value below ${c.below}`);
+        if (!isNaN(c.above)) cut.push(`the percentage with a value above ${c.above}`);
+        const size = kind === 'expr' ? 0.25 : 0.1;
+        const condensed = this._mSentences([
+            this._methodsDataSentence(kind),
+            `For each gene, ${this._mListOr(cut, 'no cutoff')} ${cut.length > 1 ? 'were' : 'was'} calculated across ${cohortWords}, counting only cell lines with a value for that gene.`,
+            c.nMin ? `Genes measured in fewer than ${this._mNum(c.nMin)} of these cell lines (${c.minPct}%) were excluded.` : '',
+            c.listPct > 0 ? `Genes with at least ${c.listPct}% of cell lines ${c.listDir === 'either' ? 'below or above' : c.listDir} the cutoff were listed.` : '',
+            this._methodsCitation()
+        ]);
+        const long = this._mBlocks([
+            this._methodsHeaderBlock(title, kind),
+            `WHAT WAS COUNTED\n   For every gene, the cell lines in the cohort with a value for it (n), the percentage of those with a value strictly below ${isNaN(c.below) ? '(no lower cutoff set)' : c.below}, the percentage strictly above ${isNaN(c.above) ? '(no upper cutoff set)' : c.above}, and the median value. A cell line without a value for a gene is left out of that gene's n rather than counted on either side.`,
+            `THE COHORT\n   ${this._mNum(N)} cell lines. Filters: ${this._mListOr(filt, 'none, every cell line with data')}.`,
+            `THE TABLE\n   ${this._mNum(c.listed.length)} of ${this._mNum(c.measuredN)} genes listed: ${this._ctListWords()}. Rows are ${this._ctSortWords()}.`,
+            `THE HISTOGRAM\n   One gene's values across the cohort in bins of ${size}, with bin edges placed on the lower cutoff. The y axis is the percentage of the cell lines with a value. Bars below the lower cutoff are red, bars above the upper cutoff blue, and dashed lines mark the cutoffs with the share past each.`,
+            'WHAT THIS DOES NOT SAY\nA share of cell lines past a cutoff describes a distribution; no test was run and no p-value exists in this view. Where a cutoff is drawn is a convention, and a gene just short of it can behave much like one just past it.'
+        ]);
+        return { title, condensed, long };
+    }
+
     // A small editor at an axis title: the gene and what is measured for it.
     // It writes into the same X / Y controls above the plot and redraws
     // through them, so the plot and the controls can never disagree.
@@ -33841,6 +34448,31 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             context.plotDescribesWhat = `A compilation of ${comp.panels.length} correlation plots sharing one cohort, set by the filters of the correlation plot${comp.filters ? ' (' + comp.filters + ')' : ''}${comp.highlighted.length ? `, with ${comp.highlighted.length} cell line(s) highlighted` : ''}${comp.colorBy ? `, coloured by ${comp.colorBy}` : ''}. Panels: ` + comp.panels.map(p => `${p.panel}) ${p.x.gene} vs ${p.y.gene}, r=${p.r}, n=${p.n}`).join('; ') + '.';
             description = `${comp.panels.length} correlation plots (${comp.grid} compilation) across ${cellLines.length.toLocaleString()} cell lines.`;
         }
+        // The cutoff table describes every gene's share of lines past two
+        // values, not whatever view is open behind it.
+        const ctab = opts.cutoffTable ? this._aiCutoff : null;
+        if (ctab) {
+            const cutWords = [ctab.below !== null ? `below ${ctab.below}` : '', ctab.above !== null ? `above ${ctab.above}` : ''].filter(Boolean).join(' and ');
+            const pctCols = [ctab.below !== null ? `the percentage of those with a value strictly below ${ctab.below}` : '', ctab.above !== null ? `the percentage strictly above ${ctab.above}` : ''].filter(Boolean).join('; ');
+            const complete = ctab.rows.length === ctab.listed;
+            extras = {
+                cutoffTable: { columns: ctab.columns, rows: ctab.rows, genesListed: ctab.listed, rowsIncluded: ctab.rows.length, complete },
+                cutoffTable_readMe: `One row per gene, as listed in the table on screen (${ctab.sort}). Columns: gene; n, the cell lines in this file's cohort with a value for the gene; ${pctCols || 'no percentage (no cutoff was set)'}; and the median, all in ${ctab.measure}. Which genes are listed: ${ctab.listRule}. ${complete ? `All ${ctab.listed.toLocaleString()} listed genes are included.` : `The table listed ${ctab.listed.toLocaleString()} genes; the first ${ctab.rows.length.toLocaleString()} in its order are included and the rest were cut.`} A cell line without a value for a gene counts in neither n nor the percentages for that gene.`
+            };
+            if (ctab.selected) {
+                extras.cutoffSelectedGene = ctab.selected;
+                extras.cutoffSelectedGene_readMe = `The gene whose histogram was open (${ctab.selected.gene}): its value in every cell line of the cohort that has one, as [cell line ID, value], ${ctab.measure}. The histogram's bars and percentages are computed from exactly these values.`;
+            }
+            cellLineGroups = {};
+            context = {
+                type: 'gene_cutoff_table', plotType: 'table of genes by share of cell lines past a cutoff, with a histogram of one gene', stratification: 'none',
+                measure: ctab.measure, cutoffBelow: ctab.below, cutoffAbove: ctab.above,
+                cohortFilters: ctab.filters || 'none', geneListRule: ctab.listRule,
+                inputGenes: ctab.rows.slice(0, 30).map(r => r[0])
+            };
+            context.plotDescribesWhat = `A table of every gene's share of cell lines with ${ctab.measure} ${cutWords || 'past the cutoffs'}, across ${ctab.cohortN.toLocaleString()} cell lines${ctab.filters ? ' (' + ctab.filters + ')' : ' (every line with data)'}${ctab.selected ? `, with a histogram of ${ctab.selected.gene}` : ''}. The matrices in this file carry the first 30 listed genes${ctab.selected ? ' and the histogram gene' : ''}; the table itself is extras.cutoffTable.`;
+            description = `Genes past a cutoff (${ctab.measure}, ${cutWords || 'no cutoff'}) across ${ctab.cohortN.toLocaleString()} cell lines.`;
+        }
         function genesInCompilation(c) { return [...new Set(c.panels.flatMap(p => [p.x.gene, p.y.gene]))]; }
         context.description = description;
         // Record the visible-title cross-check in the export; warn on mismatch.
@@ -35704,6 +36336,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // and the time keeps two exports of the same state apart.
         const _reqDriven = exportData.context?.type === 'custom_export';
         const _label = exportData.context?.type === 'correlation_compilation' ? 'compilation'
+            : exportData.context?.type === 'gene_cutoff_table' ? 'cutoff_table'
             : _reqDriven ? 'request' : `${source}_${analysisGene || context.gene1 || 'analysis'}`;
         const _now = new Date();
         const _hhmmss = [_now.getHours(), _now.getMinutes(), _now.getSeconds()].map(x => String(x).padStart(2, '0')).join('');
@@ -35723,7 +36356,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             // nothing on screen: its context says so, and a screenshot of
             // the open view would be a picture of the very results the file
             // just dropped for not describing this cohort.
-            if (!wantCompanionImage || exportData.context?.type === 'custom_export' || exportData.context?.type === 'correlation_compilation') {
+            if (!wantCompanionImage || exportData.context?.type === 'custom_export' || exportData.context?.type === 'correlation_compilation' || exportData.context?.type === 'gene_cutoff_table') {
                 // no companion image, by choice or deliberately
             } else if (source === 'correlations' || source === 'clusters') {
                 // The network is a vis-network canvas, not a Plotly chart:
@@ -45103,6 +45736,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 fusion:  { geneId: 'hmFusionFilter', levelId: 'hmFusionLevel', options: opts(FUS, ['1+2', '0']) },
                 cn:      { geneId: 'hmCnFilter', levelId: 'hmCnLevel', options: opts(CN, ['altered', 'wt']) },
                 apply: () => this._hmRedraw(),
+            },
+            cutoff: {
+                chips: 'ctActiveFilters',
+                hotspot: { geneId: 'ctHotspotFilter', levelId: 'ctHotspotLevel', options: opts(HOT, ['1+2', '1', '2', '0']) },
+                fusion:  { geneId: 'ctFusionFilter', levelId: 'ctFusionLevel', options: opts(FUS, ['1+2', '0']) },
+                cn:      { geneId: 'ctCnFilter', levelId: 'ctCnLevel', options: opts(CN, ['altered', 'wt']) },
+                apply: () => this._ctRecompute(),
             },
         };
         return ctx;
@@ -62685,7 +63325,8 @@ ${clone.innerHTML}
             heatmap:        { title: 'Gene set heatmap', stem: 'heatmap' },
             clb:            { title: 'Cell Line Browser', stem: 'cell_line_browser' },
             selection:      { title: 'Selection inspect', stem: 'selection_inspect' },
-            umap:           { title: 'UMAP / PCA', stem: 'umap_pca' }
+            umap:           { title: 'UMAP / PCA', stem: 'umap_pca' },
+            cutoff:         { title: 'Genes past a cutoff', stem: 'genes_past_cutoff' }
         };
     }
 
@@ -62713,6 +63354,7 @@ ${clone.innerHTML}
                 case 'clb': return this._methodsCellLineBrowser();
                 case 'selection': return this._methodsSelectionInspect();
                 case 'umap': return this._methodsUmap();
+                case 'cutoff': return this._methodsCutoff();
                 default: return this._methodsNotReady(title, 'No description has been written for this view.');
             }
         } catch (err) {
@@ -63667,7 +64309,7 @@ const MODAL_IDS = [
     'referenceDataModal', 'inspectModal', 'geneEffectModal', 'corrAnalysisModal',
     'exportOptionsModal', 'infographicModal', 'changelogModal', 'inspectCorrelatesModal',
     'collectionsInfoModal', 'selectionInspectModal', 'enrichrModal',
-    'clbWikiModal', 'clbInfoModal', 'cellLineBrowserModal', 'exportPreviewModal', 'heatmapModal',
+    'clbWikiModal', 'clbInfoModal', 'cellLineBrowserModal', 'exportPreviewModal', 'heatmapModal', 'cutoffModal',
     // Methods opens over whichever view raised it, same as the AI dialog below.
     'methodsModal',
     // The AI export dialog opens over whichever view raised it, so being able

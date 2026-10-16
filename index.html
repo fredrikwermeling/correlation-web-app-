@@ -2913,6 +2913,7 @@
                                 <button class="options-menu-item" id="showGeneEffectDirect">Gene Effect</button>
                                 <button class="options-menu-item" id="showCorrelationDirect">Correlation</button>
                                 <button class="options-menu-item" id="showHeatmapDirect" title="Show a gene set across the cell lines currently listed, as a heatmap">Gene set heatmap</button>
+                                <button class="options-menu-item" id="showCutoffDirect" title="Every gene's share of cell lines below and above a value, in gene effect or mRNA, with a histogram per gene">Genes past a cutoff</button>
                                 <button class="options-menu-item" id="customAIExportBtn" title="Build a file for a language model with exactly the data you choose, including layers the standard export leaves out. An assistant reading a standard export can write the settings for you.">Custom export for AI</button>
                                 <button class="options-menu-item" id="openAIViewBtn" title="An assistant that has read an export can describe a plot to look at. Paste what it wrote and the app opens that view with those settings, instead of you rebuilding it by hand.">Open a view from AI</button>
                                 <label class="options-menu-item" for="restoreFromExportInput" title="Open a Correlate metadata file (.correlate.json, saved alongside every image export) to recreate the figure. Older SVG/PNG exports with embedded settings also work.">Open saved figure</label>
@@ -4147,20 +4148,20 @@
                             <input type="text" id="geHotspotFilter" class="form-control" placeholder="Hotspot gene..." autocomplete="off" style="width: 140px; font-size: 11px; padding: 3px 6px;" title="Hotspot filter, only show cell lines mutated in this gene">
                             <div id="geHotspotDropdown" style="display:none; position:absolute; top:100%; left:0; min-width:240px; max-height:300px; overflow-y:auto; background:#fff; border:1px solid #d1d5db; border-radius:5px; box-shadow:0 6px 16px rgba(0,0,0,0.18); z-index:1450; font-size:11px;"></div>
                         </div>
-                        <select id="geHotspotLevel" class="form-control" style="width:96px; font-size:11px; padding:3px 4px; display:none;" title="Keep the cell lines carrying this mutation, or only those without it" style="display:none;"><option value="1+2" selected>Mutated (1+2)</option><option value="1">Only 1 mut</option><option value="2">Only 2 mut</option><option value="0">Only WT</option></select>
+                        <select id="geHotspotLevel" class="form-control" style="width:112px; font-size:11px; padding:3px 4px; display:none;" title="Keep the cell lines carrying this mutation, or only those without it" style="display:none;"><option value="1+2" selected>Mutated (1+2)</option><option value="1">Only 1 mut</option><option value="2">Only 2 mut</option><option value="0">Only WT</option></select>
 <button id="geGridHotspotBtn" class="btn btn-outline btn-sm clb-icon-btn" type="button" title="Mutation grid for the cell lines shown, click a gene to require it mutated or wild-type">&#9638;</button>
                         <span id="geHotspotBiasWarning" class="mobile-hide" style="display: none; font-size: 9px; color: #92400e;" title="Filtering on a gene&#39;s status, mutated or wild-type, can introduce bias: these alterations are often concentrated in particular cancer types, so the two groups may differ by cancer type as much as by the alteration.">&#9888;</span>
                         <div id="geFusionFilterWrap" class="filter-input-wrap" style="position:relative; display:none; width:150px;">
                             <input type="text" id="geFusionFilter" class="form-control" placeholder="Fusion / gene..." autocomplete="off" style="width: 140px; font-size: 11px; padding: 3px 6px;" title="Fusion filter, driver pairs (★) and validated fusion genes">
                             <div id="geFusionDropdown" style="display:none; position:absolute; top:100%; left:0; min-width:280px; max-height:300px; overflow-y:auto; background:#fff; border:1px solid #d1d5db; border-radius:5px; box-shadow:0 6px 16px rgba(0,0,0,0.18); z-index:1450; font-size:11px;"></div>
                         </div>
-                        <select id="geFusionLevel" class="form-control" style="width:96px; font-size:11px; padding:3px 4px; display:none;" title="Keep the cell lines carrying this fusion, or only those without it" style="display:none;"><option value="altered" selected>Fused</option><option value="wt">Only WT</option></select>
+                        <select id="geFusionLevel" class="form-control" style="width:112px; font-size:11px; padding:3px 4px; display:none;" title="Keep the cell lines carrying this fusion, or only those without it" style="display:none;"><option value="altered" selected>Fused</option><option value="wt">Only WT</option></select>
 <button id="geGridFusionBtn" class="btn btn-outline btn-sm clb-icon-btn" type="button" title="Fusion grid for the cell lines shown, click a gene to require it fused or not fused">&#9638;</button>
                         <div id="geCnFilterWrap" class="filter-input-wrap" style="position:relative; display:none; width:150px;">
                             <input type="text" id="geCnFilter" class="form-control" placeholder="Amp / deletion..." autocomplete="off" style="width: 140px; font-size: 11px; padding: 3px 6px;" title="Focal copy-number filter: amplifications (▲) and deletions (▼) from the curated panel. Deletions include single-copy loss, not only homozygous.">
                             <div id="geCnDropdown" style="display:none; position:absolute; top:100%; left:0; min-width:280px; max-height:300px; overflow-y:auto; background:#fff; border:1px solid #d1d5db; border-radius:5px; box-shadow:0 6px 16px rgba(0,0,0,0.18); z-index:1450; font-size:11px;"></div>
                         </div>
-                        <select id="geCnLevel" class="form-control" style="width:96px; font-size:11px; padding:3px 4px; display:none;" title="Keep the cell lines carrying this copy-number event, or only those without it" style="display:none;"><option value="altered" selected>With event</option><option value="wt">Only WT</option></select>
+                        <select id="geCnLevel" class="form-control" style="width:112px; font-size:11px; padding:3px 4px; display:none;" title="Keep the cell lines carrying this copy-number event, or only those without it" style="display:none;"><option value="altered" selected>With event</option><option value="wt">Only WT</option></select>
 <button id="geGridCnBtn" class="btn btn-outline btn-sm clb-icon-btn" type="button" title="Copy-number grid for the cell lines shown, click a gene to require the event present or absent">&#9638;</button>
                         <span class="mobile-hide" style="display:inline-flex; align-items:center; gap:8px;">
                             <span style="font-size:10px; color:#6b7280; white-space:nowrap;" title="Minimum cell lines per tissue group to display">Min n:</span>
@@ -4741,6 +4742,98 @@
     <!-- Gene set x cell line heatmap. Controls stay in a single row that wraps
          as a unit, so picking Custom never shoves a sibling control sideways;
          the gene textarea it reveals sits on its own row below instead. -->
+    <!-- Genes past a cutoff: each gene's share of cell lines below / above a value -->
+    <div id="cutoffModal" class="modal-overlay" style="z-index:1380;">
+        <div class="modal" id="cutoffModalInner" style="max-width:min(96vw,1280px); width:96vw;">
+            <div class="modal-header">
+                <h3>Genes past a cutoff</h3>
+                <button id="cutoffClose" class="modal-close" title="Close">&times;</button>
+            </div>
+            <div class="modal-body" style="font-size:12px; color:#374151;">
+                <div class="clb-toolbar" style="margin-bottom:8px; border-top:1px solid var(--gray-200);">
+                    <div class="clb-row">
+                        <span class="clb-row-label">Cutoff</span>
+                        <div class="clb-row-items">
+                            <select id="ctMeasure" style="width:180px;" title="CRISPR gene effect (Chronos) or mRNA expression (log2 TPM+1)">
+                                <option value="ge" selected>CRISPR gene effect</option>
+                                <option value="expr">mRNA expression</option>
+                            </select>
+                            <label style="font-weight:600; color:#b91c1c;" title="Share of cell lines with a value lower than this. Leave empty to skip.">Below <input type="text" inputmode="decimal" id="ctBelow" style="width:52px; margin-left:4px; padding:2px 4px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;"></label>
+                            <label style="font-weight:600; color:#1d4ed8;" title="Share of cell lines with a value higher than this. Leave empty to skip.">Above <input type="text" inputmode="decimal" id="ctAbove" style="width:52px; margin-left:4px; padding:2px 4px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;"></label>
+                            <span class="clb-sep"></span>
+                            <label style="font-weight:600; color:#374151;" title="How much of this cohort a gene must be measured in before it can appear. A share computed on a fraction of the cell lines is mostly noise. Expressed as a share of the cohort so it scales with whatever you have filtered to. Set 0 to see everything.">measured in &ge; <input type="text" inputmode="numeric" id="ctMinPct" value="75" style="width:40px; padding:2px 4px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;"> <span style="font-weight:400; color:#6b7280;">% of lines</span></label>
+                        </div>
+                    </div>
+                    <div class="clb-row clb-row-alt">
+                        <span class="clb-row-label">Cell lines</span>
+                        <div class="clb-row-items">
+                            <select id="ctLineage" style="width:180px;" title="Only cell lines of this lineage"><option value="">All lineages</option></select>
+                            <select id="ctSubtype" style="width:200px;" title="Narrows further to one subtype, within whatever lineage is chosen"><option value="">All subtypes</option></select>
+                            <select id="ctDisease" style="width:210px;" title="Narrows further to one Oncotree disease, within whatever lineage is chosen"><option value="">All diseases</option></select>
+                            <span style="flex-basis:100%; height:0;"></span>
+                            <div class="filter-input-wrap" style="position:relative; width:130px;">
+                                <input type="text" id="ctHotspotFilter" class="form-control" placeholder="Hotspot gene..." autocomplete="off" style="width:124px; font-size:11px; padding:3px 6px;" title="Only cell lines mutated (or wild-type) in this gene">
+                                <div id="ctHotspotDropdown" style="display:none; position:absolute; top:100%; left:0; min-width:260px; max-height:300px; overflow-y:auto; background:#fff; border:1px solid #d1d5db; border-radius:5px; box-shadow:0 6px 16px rgba(0,0,0,0.18); z-index:1450; font-size:11px;"></div>
+                            </div>
+                            <select id="ctHotspotLevel" class="form-control" style="width:112px; font-size:11px; padding:3px 4px; display:none;" title="Keep the cell lines carrying this mutation, or only those without it"><option value="1+2" selected>Mutated (1+2)</option><option value="1">Only 1 mut</option><option value="2">Only 2 mut</option><option value="0">Only WT</option></select>
+                            <div class="filter-input-wrap" style="position:relative; width:130px;">
+                                <input type="text" id="ctFusionFilter" class="form-control" placeholder="Fusion / gene..." autocomplete="off" style="width:124px; font-size:11px; padding:3px 6px;" title="Fusion filter, driver pairs (&#9733;) and validated fusion genes">
+                                <div id="ctFusionDropdown" style="display:none; position:absolute; top:100%; left:0; min-width:260px; max-height:300px; overflow-y:auto; background:#fff; border:1px solid #d1d5db; border-radius:5px; box-shadow:0 6px 16px rgba(0,0,0,0.18); z-index:1450; font-size:11px;"></div>
+                            </div>
+                            <select id="ctFusionLevel" class="form-control" style="width:112px; font-size:11px; padding:3px 4px; display:none;" title="Keep the cell lines carrying this fusion, or only those without it"><option value="1+2" selected>Fused</option><option value="0">Only WT</option></select>
+                            <div class="filter-input-wrap" style="position:relative; width:130px;">
+                                <input type="text" id="ctCnFilter" class="form-control" placeholder="Amp / deletion..." autocomplete="off" style="width:124px; font-size:11px; padding:3px 6px;" title="Focal copy-number filter: amplifications and deletions from the curated panel">
+                                <div id="ctCnDropdown" style="display:none; position:absolute; top:100%; left:0; min-width:260px; max-height:300px; overflow-y:auto; background:#fff; border:1px solid #d1d5db; border-radius:5px; box-shadow:0 6px 16px rgba(0,0,0,0.18); z-index:1450; font-size:11px;"></div>
+                            </div>
+                            <select id="ctCnLevel" class="form-control" style="width:112px; font-size:11px; padding:3px 4px; display:none;" title="Keep the cell lines carrying this copy-number event, or only those without it"><option value="altered" selected>With event</option><option value="wt">Only WT</option></select>
+                            <span id="ctActiveFilters"></span>
+                        </div>
+                    </div>
+                    <div class="clb-row">
+                        <span class="clb-row-label">List</span>
+                        <div class="clb-row-items">
+                            <span>Genes with at least</span>
+                            <input type="text" inputmode="numeric" id="ctListPct" value="0" style="width:40px; padding:2px 4px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;" title="0 lists every gene">
+                            <span>% of lines</span>
+                            <select id="ctListDir" style="width:130px;"><option value="below" selected>below</option><option value="above">above</option><option value="either">below or above</option></select>
+                            <span class="clb-sep"></span>
+                            <input type="text" id="ctSearch" placeholder="Gene symbol..." autocomplete="off" style="width:130px; padding:2px 6px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;">
+                            <span id="ctCount" style="color:#6b7280; font-size:11px;"></span>
+                        </div>
+                    </div>
+                </div>
+                <div style="display:flex; gap:14px; align-items:flex-start; flex-wrap:wrap;">
+                    <div style="flex:1 1 430px; min-width:0;">
+                        <div style="max-height:60vh; overflow-y:auto; border:1px solid #e5e7eb; border-radius:4px;">
+                            <table id="ctTable" style="width:100%; border-collapse:collapse; font-size:11px;">
+                                <thead style="position:sticky; top:0; background:#fff;" class="sticky-head"><tr id="ctHead"></tr></thead>
+                                <tbody id="ctBody"></tbody>
+                            </table>
+                        </div>
+                        <div style="font-size:10px; color:#9ca3af; margin-top:4px;">Click a gene to see its histogram. Click a column header to sort.</div>
+                    </div>
+                    <div style="flex:1 1 480px; min-width:0;">
+                        <div id="ctPlot" style="width:100%; height:440px;"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" style="justify-content:flex-start; flex-wrap:wrap; gap:6px;">
+                <span class="mobile-hide" style="font-size:10px; color:#9ca3af;">Table:</span>
+                <button id="ctCsvBtn" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px;" title="Every gene listed, with its counts, as a spreadsheet">.csv</button>
+                <button id="ctCopyDataBtn" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px;" title="The table, tab separated, ready to paste into Excel or GraphPad">Copy data</button>
+                <button id="ctCopyGenesBtn" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px;" title="Copy the genes listed, one per line, in the table's order">Copy genes</button>
+                <span class="mobile-hide" style="font-size:10px; color:#9ca3af; margin-left:6px;">Chart:</span>
+                <button id="ctExportImageBtn" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px;" title="Export the histogram, choose PNG / SVG / TIFF / PDF / PowerPoint in the popup">Export image...</button>
+                <button id="ctCopyBtn" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px;" title="Copy the histogram as an image to the clipboard">Copy</button>
+                <button id="ctCompBtn" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px;" title="Histograms of the top genes in the table, side by side">Compilation</button>
+                <button class="btn btn-outline btn-sm mobile-hide" style="font-size:11px;" onclick="app.openMethods('cutoff')" title="Write out how this table was made, as a methods paragraph and as a plain walk-through">Methods</button>
+                <button id="ctExportAIBtn" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px;" title="Package the table, the cohort and the histogram's values for a language model">Export for AI</button>
+                <span id="ctStatus" style="font-size:11px; color:#6b7280;"></span>
+                <button class="btn btn-secondary btn-sm" id="ctCloseBtn" style="margin-left:auto;">Close</button>
+            </div>
+        </div>
+    </div>
+
     <div id="heatmapModal" class="modal-overlay" style="z-index:1380;">
         <div class="modal" style="max-width:min(96vw,1180px);">
             <div class="modal-header">
@@ -4828,17 +4921,17 @@
                                 <input type="text" id="hmHotspotFilter" class="form-control" placeholder="Hotspot gene..." autocomplete="off" style="width:124px; font-size:11px; padding:3px 6px;" title="Only show cell lines mutated (or wild-type) in this gene">
                                 <div id="hmHotspotDropdown" style="display:none; position:absolute; top:100%; left:0; min-width:240px; max-height:300px; overflow-y:auto; background:#fff; border:1px solid #d1d5db; border-radius:5px; box-shadow:0 6px 16px rgba(0,0,0,0.18); z-index:1450; font-size:11px;"></div>
                             </div>
-                            <select id="hmHotspotLevel" class="form-control" style="width:96px; font-size:11px; padding:3px 4px; display:none;" title="Keep the cell lines carrying this mutation, or only those without it"><option value="1+2" selected>Mutated (1+2)</option><option value="1">Only 1 mut</option><option value="2">Only 2 mut</option><option value="0">Only WT</option></select>
+                            <select id="hmHotspotLevel" class="form-control" style="width:112px; font-size:11px; padding:3px 4px; display:none;" title="Keep the cell lines carrying this mutation, or only those without it"><option value="1+2" selected>Mutated (1+2)</option><option value="1">Only 1 mut</option><option value="2">Only 2 mut</option><option value="0">Only WT</option></select>
                             <div id="hmFusionFilterWrap" class="filter-input-wrap" style="position:relative; width:130px;">
                                 <input type="text" id="hmFusionFilter" class="form-control" placeholder="Fusion / gene..." autocomplete="off" style="width:124px; font-size:11px; padding:3px 6px;" title="Fusion filter, driver pairs (★) and validated fusion genes">
                                 <div id="hmFusionDropdown" style="display:none; position:absolute; top:100%; left:0; min-width:280px; max-height:300px; overflow-y:auto; background:#fff; border:1px solid #d1d5db; border-radius:5px; box-shadow:0 6px 16px rgba(0,0,0,0.18); z-index:1450; font-size:11px;"></div>
                             </div>
-                            <select id="hmFusionLevel" class="form-control" style="width:96px; font-size:11px; padding:3px 4px; display:none;" title="Keep the cell lines carrying this fusion, or only those without it"><option value="1+2" selected>Fused</option><option value="0">Only WT</option></select>
+                            <select id="hmFusionLevel" class="form-control" style="width:112px; font-size:11px; padding:3px 4px; display:none;" title="Keep the cell lines carrying this fusion, or only those without it"><option value="1+2" selected>Fused</option><option value="0">Only WT</option></select>
                             <div id="hmCnFilterWrap" class="filter-input-wrap" style="position:relative; width:130px;">
                                 <input type="text" id="hmCnFilter" class="form-control" placeholder="Amp / deletion..." autocomplete="off" style="width:124px; font-size:11px; padding:3px 6px;" title="Focal copy-number filter: amplifications and deletions from the curated panel">
                                 <div id="hmCnDropdown" style="display:none; position:absolute; top:100%; left:0; min-width:280px; max-height:300px; overflow-y:auto; background:#fff; border:1px solid #d1d5db; border-radius:5px; box-shadow:0 6px 16px rgba(0,0,0,0.18); z-index:1450; font-size:11px;"></div>
                             </div>
-                            <select id="hmCnLevel" class="form-control" style="width:96px; font-size:11px; padding:3px 4px; display:none;" title="Keep the cell lines carrying this copy-number event, or only those without it"><option value="altered" selected>With event</option><option value="wt">Only WT</option></select>
+                            <select id="hmCnLevel" class="form-control" style="width:112px; font-size:11px; padding:3px 4px; display:none;" title="Keep the cell lines carrying this copy-number event, or only those without it"><option value="altered" selected>With event</option><option value="wt">Only WT</option></select>
                             <span class="clb-sep"></span>
                             <label style="display:flex; align-items:center; gap:4px; font-size:12px; color:#374151; cursor:pointer;" title="Cell lines with no value for any gene shown are left out of the grid by default; switch off to include them, their columns are all gray">
                                 <input type="checkbox" id="hmHideNoData" checked style="margin:0;"> Hide lines without data
@@ -5855,7 +5948,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v89_107"></script>
+    <script src="app.js?v=v89_108"></script>
     <script src="tour.js?v=v89_49"></script>
 </body>
 </html>
