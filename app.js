@@ -14834,7 +14834,7 @@ class CorrelationExplorer {
         // Same marking as the Clusters tab: when a design run expands the set,
         // * points out the genes that came from the expansion rather than the
         // user's own list (the added genes are the few worth flagging).
-        const listMark = (g) => (this.results.mode === 'design' && this.results.geneList && !this.results.geneList.includes(g)) ? '*' : '';
+        const listMark = (g) => (this.results.mode === 'design' && this.results.geneList && !this.results.geneList.includes(g)) ? this._addedMark() : '';
 
         const addRow = (c, muted) => {
             const tr = document.createElement('tr');
@@ -14885,6 +14885,12 @@ class CorrelationExplorer {
                 hotspotSelect.dispatchEvent(new Event('change'));
             }
         }, 300);
+    }
+
+    // The * after a gene added by expanding the set. Spaced so an italic
+    // gene name does not run into it.
+    _addedMark() {
+        return '<span style="margin-left:0.25em;">*</span>';
     }
 
     attachGeneTooltips(container) {
@@ -15044,7 +15050,7 @@ class CorrelationExplorer {
                 const geneStat = this.geneStats?.get(c.gene);
 
                 let rowHtml = `
-                    <td class="gene-hover" data-gene="${c.gene}">${this.gi(c.gene)}${!c.inGeneList && this.results.mode === 'design' ? '*' : ''}</td>
+                    <td class="gene-hover" data-gene="${c.gene}">${this.gi(c.gene)}${!c.inGeneList && this.results.mode === 'design' ? this._addedMark() : ''}</td>
                     <td>${c.cluster}</td>
                 `;
                 if (hasCorrCol) {
@@ -15113,7 +15119,7 @@ class CorrelationExplorer {
                     }
                     const tr = document.createElement('tr');
                     tr.style.opacity = '0.55';
-                    let rowHtml = `<td class="gene-hover" data-gene="${gene}">${this.gi(gene)}${this.results.mode === 'design' && this.results.geneList && !this.results.geneList.includes(gene) ? '*' : ''}</td><td>&ndash;</td>`;
+                    let rowHtml = `<td class="gene-hover" data-gene="${gene}">${this.gi(gene)}${this.results.mode === 'design' && this.results.geneList && !this.results.geneList.includes(gene) ? this._addedMark() : ''}</td><td>&ndash;</td>`;
                     rowHtml += `<td style="text-align: center; color: #b45309; font-weight: 600;">Below cutoff</td>`;
                     rowHtml += `<td>${meanTxt}</td><td>${sdTxt}</td>`;
                     if (isFiltered) rowHtml += `<td>&ndash;</td><td>&ndash;</td>`;
