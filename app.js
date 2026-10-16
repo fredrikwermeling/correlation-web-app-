@@ -4284,6 +4284,10 @@ class CorrelationExplorer {
             ? filters.map(([gene, state]) => ({ gene, state, kind: this._oncoprintFilterKinds?.[gene] || filterKind }))
             : null;
         this._recordGridFilterOrigin();
+        if (document.getElementById('cutoffModal')?.style.display === 'flex' && this._ct?.genes) {
+            clearTimeout(this._ctGridTimer);
+            this._ctGridTimer = setTimeout(() => this._ctRecompute(), 300);
+        }
 
         // Show which grid picks are in force. The controls STAY interactive:
         // graying them out here read as the hotspot filter being broken, and
@@ -4425,6 +4429,7 @@ class CorrelationExplorer {
             if (vis('inspectModal') && this.currentInspect) this.updateInspectPlot();
             if (vis('geneEffectModal') && this.currentGeneEffect) this._rerenderCurrentGEView?.();
             if (vis('corrAnalysisModal') && this._corrAnalysisData) this.switchCorrAnalysisView(this._caView || 'tissue');
+            if (vis('cutoffModal') && this._ct?.genes) this._ctRecompute();
         } catch (e) { /* keep the filter applied even if a redraw fails */ }
 
         // In mutation mode the table is NOT re-run automatically: the silent
@@ -20048,6 +20053,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // The chip strip mirrors these controls, redrawn from the same place the
         // plot is, so it can never describe a different cohort from the one shown.
         this._renderFilterChips('scatter');
+        if (this._compBorrowed) this._compRedrawSoon();
         if (!this.currentInspect) return;
 
         // Re-order the Tissue filter by the active mutation/fusion/CN cohort
@@ -22629,7 +22635,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // so it is reset in place rather than replaced.
         const st = this._compState = this._compState || {};
         for (const k of Object.keys(st)) delete st[k];
-        Object.assign(st, { rows: 2, cols: 5, panels: [], showLine: true, sameRange: true, minPct: 75, lastFill: null });
+        Object.assign(st, { rows: 2, cols: 5, panels: [], showLine: true, sameRange: true, splitSign: true, minPct: 75, lastFill: null });
         this._compLast = null;
         const ci = this.currentInspect;
         if (ci?.gene1) st.panels[0] = { xg: ci.gene1, xt: ci.xType || 'ge', yg: ci.gene2, yt: ci.yType || 'ge' };
@@ -22646,6 +22652,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:6px;">
                         <label title="Rows and panels per row, up to 8 each">Grid <input type="number" id="compRows" min="1" max="8" style="width:38px; font-size:11px; padding:1px 4px; border:1px solid #d1d5db; border-radius:4px;"> rows × <input type="number" id="compCols" min="1" max="8" style="width:38px; font-size:11px; padding:1px 4px; border:1px solid #d1d5db; border-radius:4px;"> columns</label>
                         <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;" title="Every panel on the same x and y range (per measure), so they line up; a panel can be set to fit its own data in its editor"><input type="checkbox" id="compSameRange" checked> Same axis ranges</label>
+                        <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;" title="Panels with a positive correlation share one set of ranges and panels with a negative correlation another"><input type="checkbox" id="compSplitSign" checked> separate for + and \u2212 r</label>
                         <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" id="compShowLine" checked> Regression line</label>
                         <span id="compCohortNote" style="color:#6b7280; font-size:11px;"></span>
                     </div>
@@ -22659,20 +22666,22 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                         <span style="display:inline-flex; gap:4px; align-items:center; white-space:nowrap;"><label title="Typed names and cell lines clicked in the plots">Highlight <input type="text" id="compHl" placeholder="cell lines, comma separated" autocomplete="off" style="width:130px; font-size:11px; padding:2px 6px; border:1px solid #d1d5db; border-radius:4px;"></label>
                         <button type="button" class="btn btn-outline btn-sm" id="compHlCopy" style="font-size:10px; padding:1px 6px;" title="Copy the highlighted cell line names">Copy</button>
                         <button type="button" class="btn btn-outline btn-sm" id="compHlClear" style="font-size:10px; padding:1px 6px;" title="Remove all highlighted and clicked cell lines">Clear</button></span>
+                        <span style="flex-basis:100%; height:0;"></span>
+                        <span id="compAltFilters" style="display:flex; gap:8px; align-items:flex-start; flex-wrap:wrap;"></span>
                     </div>
-                    <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-bottom:6px;">
-                        <span>Top correlates of</span>
-                        <input type="text" id="compTopGene" placeholder="gene" autocomplete="off" style="width:90px; font-size:12px; padding:2px 6px; border:1px solid #d1d5db; border-radius:4px;">
+                    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:6px; padding:7px 10px; background:#f3faee; border:1px solid #b2dd95; border-radius:6px;">
+                        <span style="font-size:13px; font-weight:600; color:#374151;">Top correlates of</span>
+                        <input type="text" id="compTopGene" class="form-control" placeholder="Gene symbol" autocomplete="off" style="width:130px; font-size:13px; padding:6px 10px;">
                         ${sel('compTopMode', 'What is correlated', '<option value="ge:ge">GE vs GE</option><option value="ge:expr">GE vs mRNA</option><option value="expr:expr">mRNA vs mRNA</option>')}
                         <label title="How much of this cohort a gene must be measured in before it can appear. A correlation computed on a fraction of the cell lines is mostly noise, and it rises to the top of the list precisely because small samples give large numbers. Expressed as a share of the cohort so it scales with whatever you have filtered to. Set 0 to see everything.">measured in ≥ <input type="text" inputmode="numeric" id="compMinPct" style="width:40px; font-size:11px; padding:1px 4px; border:1px solid #d1d5db; border-radius:4px;"> <span style="color:#6b7280;">% of lines</span></label>
-                        <button type="button" class="btn btn-outline btn-sm" id="compTopFill" style="font-size:11px; padding:2px 10px; color:#5d9239; border-color:#6ba544;" title="Fill every panel: this gene on X, the genes that correlate most strongly with it (either direction) on Y, in the shared cohort">Fill</button>
+                        <button type="button" class="btn btn-primary btn-sm" id="compTopFill" style="font-size:12px; padding:4px 14px; font-weight:600;" title="Fill every panel: this gene on X, the genes that correlate most strongly with it (either direction) on Y, in the shared cohort">Fill</button>
                     </div>
                     <div style="display:flex; gap:5px; align-items:center; flex-wrap:wrap; margin-bottom:6px;">
                         <span style="font-size:11px; color:#6b7280;">Panels:</span>
                         <span id="compChips" style="display:contents;"></span>
                         <button type="button" class="btn btn-outline btn-sm" id="compClearAll" style="font-size:10px; padding:1px 8px;">Clear all</button>
                     </div>
-                    <div style="color:#9ca3af; font-size:11px; margin-bottom:6px;">Click a panel, or its title in the plot, to change it. Click a point to label or unlabel that cell line in every panel.</div>
+                    <div id="compHint" style="color:#6b7280; font-size:12px; margin-bottom:6px;"></div>
                     <div id="compilationPlot"></div>
                 </div>
                 <div class="modal-footer" style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
@@ -22685,7 +22694,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     <button class="btn btn-outline btn-sm" id="compClose2" style="margin-left:auto;">Close</button>
                 </div></div>`;
             document.body.appendChild(modal);
-            const close = () => { modal.classList.remove('active'); document.getElementById('compPanelPop')?.remove(); };
+            const close = () => { modal.classList.remove('active'); document.getElementById('compPanelPop')?.remove(); this._compReturnAltFilters(); };
             modal.querySelector('#compClose').onclick = close;
             modal.querySelector('#compClose2').onclick = close;
             modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
@@ -22700,7 +22709,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             };
             modal.querySelector('#compRows').onchange = onGrid;
             modal.querySelector('#compCols').onchange = onGrid;
-            modal.querySelector('#compSameRange').onchange = (e) => { st.sameRange = e.target.checked; this._compRedrawFigureOnly(); };
+            modal.querySelector('#compSameRange').onchange = (e) => { st.sameRange = e.target.checked; modal.querySelector('#compSplitSign').disabled = !e.target.checked; this._compRedrawFigureOnly(); };
+            modal.querySelector('#compSplitSign').onchange = (e) => { st.splitSign = e.target.checked; this._compRedrawFigureOnly(); };
             modal.querySelector('#compShowLine').onchange = (e) => { st.showLine = e.target.checked; this._compRedrawFigureOnly(); };
             modal.querySelector('#compMinPct').onchange = (e) => { st.minPct = Math.max(0, Math.min(100, parseFloat(e.target.value) || 0)); };
             modal.querySelector('#compTopFill').onclick = () => this._compFillTop();
@@ -22773,12 +22783,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 drive('scatterCellSearch', '', 'input');
                 this.clickedCells?.clear();
                 this.updateInspectPlot?.();
-                Object.assign(st, { rows: 2, cols: 5, panels: [], showLine: true, sameRange: true, minPct: 75, lastFill: null });
+                Object.assign(st, { rows: 2, cols: 5, panels: [], showLine: true, sameRange: true, splitSign: true, minPct: 75, lastFill: null });
                 const c0 = this.currentInspect;
                 if (c0?.gene1) st.panels[0] = { xg: c0.gene1, xt: c0.xType || 'ge', yg: c0.gene2, yt: c0.yType || 'ge' };
                 modal.querySelector('#compRows').value = 2; modal.querySelector('#compCols').value = 5;
                 modal.querySelector('#compShowLine').checked = true;
                 modal.querySelector('#compSameRange').checked = true;
+                modal.querySelector('#compSplitSign').checked = true; modal.querySelector('#compSplitSign').disabled = false;
                 modal.querySelector('#compMinPct').value = 75;
                 modal.querySelector('#compTopGene').value = '';
                 this._compSyncControls();
@@ -22787,9 +22798,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             };
         }
         modal.classList.add('active');
+        this._compBorrowAltFilters();
         modal.querySelector('#compRows').value = st.rows; modal.querySelector('#compCols').value = st.cols;
         modal.querySelector('#compShowLine').checked = st.showLine !== false;
         modal.querySelector('#compSameRange').checked = st.sameRange !== false;
+        modal.querySelector('#compSplitSign').checked = st.splitSign !== false;
+        modal.querySelector('#compSplitSign').disabled = st.sameRange === false;
         modal.querySelector('#compMinPct').value = st.minPct ?? 75;
         modal.querySelector('#compTopGene').value = '';
         modal.querySelector('#compTopMode').value = 'ge:ge';
@@ -22828,6 +22842,41 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (hl && document.activeElement !== hl) hl.value = this._compHighlightNames().join(', ');
     }
 
+    // The correlation plot's own hotspot / copy-number / fusion filters, with
+    // their grid (oncoprint) buttons and chips, sit in the compilation while
+    // it is open, so every filter keeps its one wiring. Put back on close.
+    _compBorrowAltFilters() {
+        const host = document.getElementById('compAltFilters');
+        if (!host || this._compBorrowed) return;
+        this._compBorrowed = [];
+        ['mutationFilterBox', 'scatterCnFilterBox', 'translocationFilterBox', 'scatterActiveFilters'].forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            const mark = document.createComment('comp-borrowed:' + id);
+            el.parentNode.insertBefore(mark, el);
+            this._compBorrowed.push({ el, mark, display: el.style.display });
+            if (id !== 'scatterActiveFilters') el.style.display = '';
+            host.appendChild(el);
+        });
+    }
+
+    _compReturnAltFilters() {
+        for (const { el, mark, display } of (this._compBorrowed || [])) {
+            mark.parentNode?.insertBefore(el, mark);
+            mark.remove();
+            if (el.id !== 'scatterActiveFilters') el.style.display = display;
+        }
+        this._compBorrowed = null;
+    }
+
+    // Any change to the correlation plot's cohort redraws an open compilation.
+    _compRedrawSoon() {
+        clearTimeout(this._compRedrawTimer);
+        this._compRedrawTimer = setTimeout(() => {
+            if (document.getElementById('compilationModal')?.classList.contains('active')) this.drawCompilation();
+        }, 150);
+    }
+
     // Typed highlights plus clicked cell lines, once each.
     _compHighlightNames() {
         const typed = (document.getElementById('scatterCellSearch')?.value || '').split(/[,\n]+/).map(t => t.trim()).filter(Boolean);
@@ -22849,6 +22898,25 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // One small chip per panel; the panel is edited in a pop-up, so the grid
     // of panels is the main thing on screen.
     _compRenderEditor() {
+        // Until the grid is filled, say what to type, as the Gene Effect and
+        // correlation views do; after that, how to work the panels.
+        const hint = document.getElementById('compHint');
+        if (hint) {
+            if (this._compState?.lastFill) {
+                hint.style.color = '#9ca3af'; hint.style.fontSize = '11px';
+                hint.innerHTML = 'Click a panel, or its title in the plot, to change it. Click a point to label or unlabel that cell line in every panel.';
+            } else {
+                hint.style.color = '#6b7280'; hint.style.fontSize = '12px';
+                hint.innerHTML = 'Type a gene name in <b>Top correlates of</b> and click <b>Fill</b>, or click a panel to choose its genes. '
+                    + '<span style="color:#9ca3af;">Try: ' + ['BRAF', 'TP53', 'MYC', 'KRAS'].map(g => `<a href="#" data-comp-try="${g}" style="color:#6b7280; font-weight:600; text-decoration:none;">${g}</a>`).join(', ') + '</span>';
+                hint.querySelectorAll('[data-comp-try]').forEach(a => a.onclick = (e) => {
+                    e.preventDefault();
+                    const box = document.getElementById('compTopGene');
+                    if (box) box.value = a.dataset.compTry;
+                    this._compFillTop();
+                });
+            }
+        }
         const st = this._compState, box = document.getElementById('compChips');
         if (!box) return;
         const word = (t) => t === 'expr' ? 'mRNA' : t === 'cn' ? 'CN' : 'GE';
@@ -23089,6 +23157,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Shared ranges: one x range and one y range per measure, over every
         // panel that is not set to fit its own data, so the panels line up.
         const same = this._compState?.sameRange !== false;
+        // Optionally one set for positive r and one for negative r.
+        const split = this._compState?.splitSign !== false;
+        const sg = (res) => split ? ((res.stats?.correlation ?? 0) < 0 ? '-' : '+') : '';
         const span = {};
         const grow = (key, vals) => {
             if (!vals.length) return;
@@ -23097,8 +23168,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         };
         if (same) panels.forEach(({ p, res }) => {
             if (!res.data?.length || p?.fit) return;
-            grow('x:' + p.xt, res.data.map(q => q.x));
-            grow('y:' + p.yt, res.data.map(q => q.y));
+            grow(sg(res) + 'x:' + p.xt, res.data.map(q => q.x));
+            grow(sg(res) + 'y:' + p.yt, res.data.map(q => q.y));
         });
         const rangeFor = (key, withZero) => {
             const r = span[key];
@@ -23117,7 +23188,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             layout['yaxis' + ax] = { domain: [y0, y1], anchor: 'x' + ax, rangemode: p?.y0 === false ? 'normal' : 'tozero', tickfont: { size: 9 }, zeroline: true, zerolinecolor: '#000', zerolinewidth: 1, gridcolor: '#eee',
                 title: { text: p?.yg ? this._compShortLabel(p.yg, p.yt) : '', font: { size: 11 }, standoff: 4 } };
             if (same && res.data?.length && !p?.fit) {
-                const rx = rangeFor('x:' + p.xt, p.x0 !== false), ry = rangeFor('y:' + p.yt, p.y0 !== false);
+                const rx = rangeFor(sg(res) + 'x:' + p.xt, p.x0 !== false), ry = rangeFor(sg(res) + 'y:' + p.yt, p.y0 !== false);
                 if (rx) { layout['xaxis' + ax].range = rx; layout['xaxis' + ax].autorange = false; }
                 if (ry) { layout['yaxis' + ax].range = ry; layout['yaxis' + ax].autorange = false; }
             }
@@ -23302,7 +23373,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         ['ctMinShare', 'ctMinPct', 'ctSearch'].forEach(id => document.getElementById(id)?.addEventListener('input', debounce(() => this._ctRenderTable())));
         ['ctXmin', 'ctXmax'].forEach(id => document.getElementById(id)?.addEventListener('input', debounce(() => this._ctRenderPlot())));
         document.getElementById('ctZero')?.addEventListener('change', () => this._ctRenderPlot());
-        document.getElementById('ctAllGenes')?.addEventListener('click', () => { this._ct.selectedG = null; this._ctRenderTable(); this._ctRenderPlot(); });
+        [['ctGridHotspotBtn', 'hotspot'], ['ctGridFusionBtn', 'fusion'], ['ctGridCnBtn', 'cn']].forEach(([id, kind]) =>
+            document.getElementById(id)?.addEventListener('click', () => this.showOncoprint(null, kind)));
         ['ctLineage', 'ctSubtype', 'ctDisease'].forEach(id => document.getElementById(id)?.addEventListener('change', () => this._ctRecompute()));
         const changed = () => { this._renderFilterChips('cutoff'); this._ctRecompute(); };
         this._setupMutFilterWidget('hotspot', 'ctHotspotFilter', 'ctHotspotDropdown', changed, () => this._ctCohortExcluding('hotspot'));
@@ -23327,7 +23399,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         document.getElementById('ctBody')?.addEventListener('click', (e) => {
             const tr = e.target.closest('tr[data-g]');
             if (!tr) return;
-            this._ct.selectedG = +tr.dataset.g;
+            this._ct.selectedG = tr.dataset.g === 'all' ? null : +tr.dataset.g;
             this._ctRenderTable();
             this._ctRenderPlot();
         });
@@ -23401,6 +23473,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
         if (skip !== 'fusion' && fus) { const has = this._geFusionPasses(cl, fus); if ((v('ctFusionLevel') || '1+2') === '0' ? has : !has) return false; }
         if (skip !== 'cn' && cn) { const has = this._cellLinePassesCnFilter(cl, cn); if ((v('ctCnLevel') || 'altered') === 'wt' ? has : !has) return false; }
+        // Grid (oncoprint) picks: the shared set, as the correlation plot reads it.
+        if (this._activeOncoprintFilters?.length && !this._cellLinePassesOncoprintFilters(cl)) return false;
         return true;
     }
 
@@ -23455,6 +23529,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const label = this._stripCnFilterDecoration(cnRaw).replace(/_(amp|del)$/, (_, k) => k === 'amp' ? ' amp' : ' del');
             parts.push(`${label} ${this._filterIsWildType('cn', v('ctCnLevel') || 'altered') ? 'absent' : 'present'}`);
         }
+        (this._activeOncoprintFilters || []).forEach(f => parts.push(`${f.gene} ${this._gridStateWord(f.state)} (grid)`));
         return parts;
     }
 
@@ -23577,13 +23652,30 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const td = 'padding:3px 8px; border-bottom:1px solid #f3f4f6;';
         const pctColor = c.dir === 'above' ? '#1d4ed8' : '#b91c1c';
         const miss = (r) => !r.covered ? `measured in fewer than ${minPct}% of the cell lines` : `fewer than ${minShare}% of lines ${this._ctCutWords()}`;
-        document.getElementById('ctBody').innerHTML = shown.slice(0, CAP).map(r =>
+        // Pinned first row: every gene's median, the histogram shown by default.
+        let allRow = '';
+        {
+            const meds = [];
+            for (let i = 0; i < c.genes.length; i++) if (c.nValid[i] && c.nValid[i] >= nMin) meds.push(c.median[i]);
+            const past = isNaN(c.cut) ? null : meds.filter(m => c.dir === 'above' ? m > c.cut : m < c.cut).length / (meds.length || 1) * 100;
+            const sorted = Float32Array.from(meds).sort();
+            const mm = sorted.length ? (sorted.length % 2 ? sorted[(sorted.length - 1) >> 1] : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2) : NaN;
+            // Sticks under the header so it stays reachable while scrolling.
+            const head = document.getElementById('ctHead')?.offsetHeight || 31;
+            const pin = `${td} position:sticky; top:${head}px; z-index:1; background:${c.selectedG == null ? '#ecfdf5' : '#f9fafb'}; border-bottom:1px solid #e5e7eb;`;
+            allRow = `<tr data-g="all" style="cursor:pointer; font-weight:600;" title="The histogram of every gene's median">`
+                + `<td style="${pin}">All genes <span style="font-weight:400; color:#9ca3af;">(medians)</span></td>`
+                + `<td style="${pin} text-align:center; color:#6b7280;">${meds.length.toLocaleString()}</td>`
+                + `<td style="${pin} text-align:center; color:${pctColor};" title="Share of genes whose median is ${this._ctCutWords()}">${past === null ? '' : past.toFixed(1)}</td>`
+                + `<td style="${pin} text-align:center;">${isNaN(mm) ? '' : mm.toFixed(2)}</td></tr>`;
+        }
+        document.getElementById('ctBody').innerHTML = allRow + (shown.slice(0, CAP).map(r =>
             `<tr data-g="${r.g}" style="cursor:pointer;${r.g === c.selectedG ? ' background:#ecfdf5;' : ''}${r.meets ? '' : ' color:#9ca3af;'}"${r.meets ? '' : ` title="Not in the list: ${this.esc(miss(r))}"`}>`
             + `<td style="${td}"><span class="gene-hover" data-gene="${this.esc(r.gene)}">${this.gi(r.gene)}</span></td>`
             + `<td style="${td} text-align:center;${r.meets ? ' color:#6b7280;' : ''}">${r.n}</td>`
             + `<td style="${td} text-align:center;${r.meets ? ` color:${pctColor};` : ''}">${r.pct === null ? '' : r.pct.toFixed(1)}</td>`
             + `<td style="${td} text-align:center;">${r.med.toFixed(2)}</td></tr>`).join('')
-            || `<tr><td colspan="4" style="padding:10px; color:#6b7280;">${q ? 'No gene symbol contains that text.' : 'No gene meets the criterion.'}</td></tr>`;
+            || `<tr><td colspan="4" style="padding:10px; color:#6b7280;">${q ? 'No gene symbol contains that text.' : 'No gene meets the criterion.'}</td></tr>`);
         // Same gene card as the network and the other gene lists.
         this.attachGeneTooltips?.(document.getElementById('ctBody'));
         const countEl = document.getElementById('ctCount');
@@ -23663,8 +23755,6 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const c = this._ct;
         if (!el || !c?.genes) return;
         const g = c.selectedG;
-        const allBtn = document.getElementById('ctAllGenes');
-        if (allBtn) allBtn.disabled = g == null;
         let vals, unit, titleTop, xTitle, sub;
         const filt = this._ctFilterParts();
         const cohortWords = `${c.cohort.length.toLocaleString()} cell lines${filt.length ? ', ' + this.esc(filt.join(', ')) : ''}`;

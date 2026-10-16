@@ -4778,16 +4778,19 @@
                                 <div id="ctHotspotDropdown" style="display:none; position:absolute; top:100%; left:0; min-width:260px; max-height:300px; overflow-y:auto; background:#fff; border:1px solid #d1d5db; border-radius:5px; box-shadow:0 6px 16px rgba(0,0,0,0.18); z-index:1450; font-size:11px;"></div>
                             </div>
                             <select id="ctHotspotLevel" class="form-control" style="width:112px; font-size:11px; padding:3px 4px; display:none;" title="Keep the cell lines carrying this mutation, or only those without it"><option value="1+2" selected>Mutated (1+2)</option><option value="1">Only 1 mut</option><option value="2">Only 2 mut</option><option value="0">Only WT</option></select>
+                            <button id="ctGridHotspotBtn" class="btn btn-outline btn-sm clb-icon-btn" type="button" title="Mutation grid, click a gene to require it mutated or wild-type">&#9638;</button>
                             <div class="filter-input-wrap" style="position:relative; width:130px;">
                                 <input type="text" id="ctFusionFilter" class="form-control" placeholder="Fusion / gene..." autocomplete="off" style="width:124px; font-size:11px; padding:3px 6px;" title="Fusion filter, driver pairs (&#9733;) and validated fusion genes">
                                 <div id="ctFusionDropdown" style="display:none; position:absolute; top:100%; left:0; min-width:260px; max-height:300px; overflow-y:auto; background:#fff; border:1px solid #d1d5db; border-radius:5px; box-shadow:0 6px 16px rgba(0,0,0,0.18); z-index:1450; font-size:11px;"></div>
                             </div>
                             <select id="ctFusionLevel" class="form-control" style="width:112px; font-size:11px; padding:3px 4px; display:none;" title="Keep the cell lines carrying this fusion, or only those without it"><option value="1+2" selected>Fused</option><option value="0">Only WT</option></select>
+                            <button id="ctGridFusionBtn" class="btn btn-outline btn-sm clb-icon-btn" type="button" title="Fusion grid, click a gene to require it fused or not fused">&#9638;</button>
                             <div class="filter-input-wrap" style="position:relative; width:130px;">
                                 <input type="text" id="ctCnFilter" class="form-control" placeholder="Amp / deletion..." autocomplete="off" style="width:124px; font-size:11px; padding:3px 6px;" title="Focal copy-number filter: amplifications and deletions from the curated panel">
                                 <div id="ctCnDropdown" style="display:none; position:absolute; top:100%; left:0; min-width:260px; max-height:300px; overflow-y:auto; background:#fff; border:1px solid #d1d5db; border-radius:5px; box-shadow:0 6px 16px rgba(0,0,0,0.18); z-index:1450; font-size:11px;"></div>
                             </div>
                             <select id="ctCnLevel" class="form-control" style="width:112px; font-size:11px; padding:3px 4px; display:none;" title="Keep the cell lines carrying this copy-number event, or only those without it"><option value="altered" selected>With event</option><option value="wt">Only WT</option></select>
+                            <button id="ctGridCnBtn" class="btn btn-outline btn-sm clb-icon-btn" type="button" title="Copy-number grid, click a gene to require the event present or absent">&#9638;</button>
                             <span id="ctActiveFilters"></span>
                         </div>
                     </div>
@@ -4808,8 +4811,6 @@
                     </div>
                     <div style="flex:1 1 480px; min-width:0;">
                         <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; font-size:11px; color:#374151; margin-bottom:4px;">
-                            <button type="button" class="btn btn-outline btn-sm" id="ctAllGenes" style="font-size:10px; padding:1px 8px;" title="Back to the median of every gene" disabled>All genes</button>
-                            <span class="clb-sep"></span>
                             <span title="Leave empty to fit the data">x axis from</span>
                             <input type="text" inputmode="decimal" id="ctXmin" placeholder="auto" style="width:46px; padding:1px 4px; border:1px solid #d1d5db; border-radius:4px; font-size:11px;">
                             <span>to</span>
@@ -5930,7 +5931,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v89_109"></script>
+    <script src="app.js?v=v89_110"></script>
     <script src="tour.js?v=v89_49"></script>
 </body>
 </html>
