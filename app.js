@@ -23598,7 +23598,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         this._ctRenderPlot();
     }
 
-    _ctFmt(v) { return String(Math.round(v * 1000) / 1000).replace('-', '−'); }
+    // Gene effect is a signed scale, so its values carry + as well as −.
+    _ctFmt(v) {
+        const r = Math.round(v * 1000) / 1000;
+        return (this._ct?.measure !== 'expr' && r > 0 ? '+' : '') + String(r).replace('-', '−');
+    }
+
+    _ctSigned(v, dp = 2) {
+        if (!Number.isFinite(v)) return '';
+        return (this._ct?.measure !== 'expr' && v > 0 ? '+' : '') + v.toFixed(dp).replace('-', '−');
+    }
 
     // "below −0.5", the criterion in words.
     _ctCutWords() {
@@ -23672,7 +23681,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 + `<td style="${pin} text-align:center; color:#6b7280;">${meds.length.toLocaleString()}</td>`
                 + `<td style="${pin} text-align:center; color:${pctColor};" title="Share of genes whose median is ${this._ctCutWords()}">${past === null ? '' : past.toFixed(1)}</td>`
                 + `<td style="${pin}"></td>`
-                + `<td style="${pin} text-align:center;">${isNaN(mm) ? '' : mm.toFixed(2)}</td></tr>`;
+                + `<td style="${pin} text-align:center;">${this._ctSigned(mm)}</td></tr>`;
         }
         document.getElementById('ctBody').innerHTML = allRow + (shown.slice(0, CAP).map(r =>
             `<tr data-g="${r.g}" style="cursor:pointer;${r.g === c.selectedG ? ' background:#ecfdf5;' : ''}${r.meets ? '' : ' color:#9ca3af;'}"${r.meets ? '' : ` title="Not in the list: ${this.esc(miss(r))}"`}>`
@@ -23680,12 +23689,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             + `<td style="${td} text-align:center;${r.meets ? ' color:#6b7280;' : ''}">${r.n}</td>`
             + `<td style="${td} text-align:center;${r.meets ? ` color:${pctColor};` : ''}">${r.pct === null ? '' : r.pct.toFixed(1)}</td>`
             + `<td style="${td} text-align:center;${r.meets ? ' color:#6b7280;' : ''}">${r.pct === null ? '' : r.k}</td>`
-            + `<td style="${td} text-align:center;">${r.med.toFixed(2)}</td></tr>`).join('')
+            + `<td style="${td} text-align:center;">${this._ctSigned(r.med)}</td></tr>`).join('')
             || `<tr><td colspan="5" style="padding:10px; color:#6b7280;">${q ? 'No gene symbol contains that text.' : 'No gene meets the criterion.'}</td></tr>`);
         // Same gene card as the network and the other gene lists.
         this.attachGeneTooltips?.(document.getElementById('ctBody'));
         const countEl = document.getElementById('ctCount');
-        if (countEl) countEl.textContent = `${listed.length.toLocaleString()} of ${measured.toLocaleString()} genes, in ${N.toLocaleString()} cell lines`
+        if (countEl) countEl.textContent = `${listed.length.toLocaleString()} of ${measured.toLocaleString()} genes ${this._ctCutWords()} in at least ${minShare}% of ${N.toLocaleString()} cell lines`
             + (!q && listed.length > CAP ? `; the first ${CAP} shown, .csv and Copy data carry all` : '');
     }
 
