@@ -22642,11 +22642,18 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                         <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" id="compShowLine" checked> Regression line</label>
                         <span id="compCohortNote" style="color:#6b7280; font-size:11px;"></span>
                     </div>
-                    <div id="compEditor" style="display:grid; gap:6px; margin-bottom:8px;"></div>
-                    <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
-                        <button type="button" class="btn btn-sm" id="compDraw" style="background:#6ba544; color:#fff; font-size:12px; padding:3px 14px;">Draw</button>
-                        <span style="color:#9ca3af; font-size:11px;">Filters, highlights and colours come from the correlation plot; change them there and press Draw again. Click a point to label or unlabel that cell line in every panel.</span>
+                    <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin-bottom:8px;">
+                        <span>Top correlates of</span>
+                        <input type="text" id="compTopGene" placeholder="gene" autocomplete="off" style="width:90px; font-size:12px; padding:2px 6px; border:1px solid #d1d5db; border-radius:4px;">
+                        <select id="compTopMode" style="font-size:12px; padding:2px 4px; border:1px solid #d1d5db; border-radius:4px;">
+                            <option value="ge:ge">GE vs GE</option>
+                            <option value="ge:expr">GE vs mRNA</option>
+                            <option value="expr:expr">mRNA vs mRNA</option>
+                        </select>
+                        <button type="button" class="btn btn-outline btn-sm" id="compTopFill" style="font-size:11px; padding:2px 10px; color:#5d9239; border-color:#6ba544;" title="Fill every panel: this gene on X, the genes that correlate most strongly with it (either direction) on Y, in the shared cohort">Fill</button>
                     </div>
+                    <div id="compEditor" style="display:grid; gap:6px; margin-bottom:6px;"></div>
+                    <div style="color:#9ca3af; font-size:11px; margin-bottom:8px;">Filters, highlights and colours come from the correlation plot. Click a point to label or unlabel that cell line in every panel.</div>
                     <div id="compilationPlot"></div>
                 </div>
                 <div class="modal-footer" style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
@@ -22663,7 +22670,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             modal.querySelector('#compClose2').onclick = close;
             modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
             modal.querySelectorAll('.comp-n').forEach(b => b.onclick = () => { this._compReadEditor(); st.n = +b.dataset.n; this._compRenderEditor(); this.drawCompilation(); });
-            modal.querySelector('#compDraw').onclick = () => { this._compReadEditor(); this.drawCompilation(); };
+            modal.querySelector('#compTopFill').onclick = () => this._compFillTop();
+            modal.querySelector('#compTopGene').addEventListener('keydown', (e) => { if (e.key === 'Enter') this._compFillTop(); });
             // Copy and export use a packed copy without the empty panels.
             const noPanels = () => { const s2 = document.getElementById('compStatus'); if (s2) s2.textContent = 'Draw at least one panel first.'; };
             modal.querySelector('#compCopy').onclick = async () => {
@@ -22730,7 +22738,17 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 this.drawCompilation();
             } });
         });
-        ed.querySelectorAll('input').forEach(el => el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { this._compReadEditor(); this.drawCompilation(); } }));
+        // Redraw on its own: at once for a measure or the 0 box, after a short
+        // pause for a gene name so a half-typed one is not drawn as missing.
+        const schedule = (ms) => {
+            clearTimeout(this._compAutoTimer);
+            this._compAutoTimer = setTimeout(() => { this._compReadEditor(); this.drawCompilation(); }, ms);
+        };
+        ed.querySelectorAll('input[type="text"]').forEach(el => {
+            el.addEventListener('input', () => schedule(800));
+            el.addEventListener('keydown', (e) => { if (e.key === 'Enter') schedule(0); });
+        });
+        ed.querySelectorAll('select, input[type="checkbox"]').forEach(el => el.addEventListener('change', () => schedule(0)));
     }
 
     _compReadEditor() {
@@ -22777,11 +22795,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const st = this._compState, n = st.n;
         const plotEl = document.getElementById('compilationPlot');
         if (!plotEl) return;
+        // A newer draw supersedes this one (auto-redraw can start several).
+        const token = (this._compDrawToken = (this._compDrawToken || 0) + 1);
         const status = document.getElementById('compStatus');
         if (status) status.textContent = 'Drawing...';
         try { await this._ensureAliasTables?.(); } catch (e) { /* names still shown without the alias */ }
         const panels = [];
         for (let i = 0; i < n * n; i++) panels.push({ p: st.panels[i], res: await this._compPanelData(st.panels[i]) });
+        if (token !== this._compDrawToken) return;
         this._compLast = panels;
         await this._compRenderFigure(plotEl, panels, n);
         // Click a point: label or unlabel that cell line, in every panel and
@@ -22926,6 +22947,71 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         document.body.appendChild(el);
         await this._compRenderFigure(el, drawn, Math.min(this._compState.n, drawn.length));
         return el;
+    }
+
+    // Rank every gene of the target measure by correlation with one gene, in
+    // the correlation plot's cohort; strongest first, either direction.
+    async _compTopCorrelates(gene, tx, ty, k) {
+        if ((tx === 'expr' || ty === 'expr') && !this.expressionLoaded) await this.loadExpressionData?.();
+        let ids = this._computeInspectFilteredIdsFromDOM();
+        if (!Array.isArray(ids)) ids = this.metadata.cellLines.slice();
+        const pos = new Map(this.metadata.cellLines.map((c, i) => [c, i]));
+        const idx = ids.map(c => pos.get(c)).filter(i => i !== undefined);
+        const nCL = this.nCellLines, nE = this.expressionMetadata?.nCellLines, emap = this.expressionCellLineMap;
+        const eIdx = idx.map(i => { const e = emap?.[i]; return (e === undefined || e === -1) ? -1 : e; });
+        const row = (t, gi, out) => {
+            for (let j = 0; j < idx.length; j++) {
+                out[j] = t === 'ge' ? this.geneEffects[gi * nCL + idx[j]] : (eIdx[j] < 0 ? NaN : this.expressionData[gi * nE + eIdx[j]]);
+            }
+            return out;
+        };
+        const xi = tx === 'ge' ? this.geneIndex.get(gene) : this.expressionGeneIndex?.get(gene);
+        if (xi === undefined) return { error: `${gene} has no ${tx === 'ge' ? 'gene-effect' : 'expression'} data` };
+        const x = row(tx, xi, new Float64Array(idx.length));
+        const y = new Float64Array(idx.length);
+        const genes = ty === 'ge' ? this.metadata.genes : this.expressionMetadata.genes;
+        const out = [];
+        for (let g = 0; g < genes.length; g++) {
+            if (tx === ty && g === xi) continue;
+            row(ty, g, y);
+            let n = 0, sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0;
+            for (let j = 0; j < x.length; j++) {
+                const a = x[j], b = y[j];
+                if (isNaN(a) || isNaN(b)) continue;
+                n++; sx += a; sy += b; sxx += a * a; syy += b * b; sxy += a * b;
+            }
+            if (n < 10) continue;
+            const den = Math.sqrt((n * sxx - sx * sx) * (n * syy - sy * sy));
+            if (!(den > 0)) continue;
+            out.push({ gene: String(genes[g]).toUpperCase(), r: (n * sxy - sx * sy) / den });
+        }
+        out.sort((a, b) => Math.abs(b.r) - Math.abs(a.r));
+        return { top: out.slice(0, k) };
+    }
+
+    async _compFillTop() {
+        const st = this._compState;
+        const status = document.getElementById('compStatus');
+        const box = document.getElementById('compTopGene');
+        let gene = (box?.value || '').trim().toUpperCase();
+        if (!gene) { if (status) status.textContent = 'Type a gene for the top correlates first.'; return; }
+        const [tx, ty] = (document.getElementById('compTopMode')?.value || 'ge:ge').split(':');
+        if (tx === 'expr' && !this.expressionLoaded) await this.loadExpressionData?.();
+        const has = (g) => tx === 'ge' ? this.geneIndex.has(g) : !!this.expressionGeneIndex?.has(g);
+        if (!has(gene)) {
+            try { await this._ensureAliasTables?.(); } catch (e) { /* fall through to the notice */ }
+            const known = this._knownAliasFor?.(gene);
+            if (known && has(known.rep)) { gene = known.rep; if (box) box.value = gene; }
+            else { this.geneNotFound(gene, tx === 'ge' ? 'the gene-effect data' : 'the expression data'); return; }
+        }
+        if (status) status.textContent = `Ranking correlates of ${gene}...`;
+        await new Promise(r => setTimeout(r, 30));
+        const res = await this._compTopCorrelates(gene, tx, ty, st.n * st.n);
+        if (res.error) { if (status) status.textContent = res.error; return; }
+        st.panels = res.top.map(t => ({ xg: gene, xt: tx, yg: t.gene, yt: ty, x0: true, y0: true }));
+        if (status) status.textContent = '';
+        this._compRenderEditor();
+        this.drawCompilation();
     }
 
     async _compExportAI() {
