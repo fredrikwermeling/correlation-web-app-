@@ -23405,7 +23405,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         document.getElementById('ctBody')?.addEventListener('click', (e) => {
             const tr = e.target.closest('tr[data-g]');
             if (!tr) return;
-            this._ct.selectedG = tr.dataset.g === 'all' ? null : +tr.dataset.g;
+            this._ct.selectedG = +tr.dataset.g;
+            this._ct.autoSel = false;
             this._ctRenderTable();
             this._ctRenderPlot();
         });
@@ -23655,6 +23656,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         listed.sort(sorter);
         found.sort((a, b) => (b.meets - a.meets) || sorter(a, b));
         Object.assign(c, { listed, measuredN: measured, nMin, minPct, minShare, search: q });
+        // The chart follows the table's first gene until a gene is clicked.
+        const prevSel = c.selectedG;
+        if (c.selectedG == null || c.autoSel) { c.selectedG = listed.length ? listed[0].g : null; c.autoSel = true; }
+        if (c.selectedG !== prevSel) setTimeout(() => this._ctRenderPlot(), 0);
         // The share as a number of cell lines, for a gene measured in all of them.
         const shareN = document.getElementById('ctMinShareN');
         if (shareN) shareN.textContent = `= at least ${Math.max(1, Math.ceil(N * minShare / 100)).toLocaleString()} of ${N.toLocaleString()} lines`;
@@ -23671,15 +23676,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const td = 'padding:3px 8px; border-bottom:1px solid #f3f4f6;';
         const pctColor = c.dir === 'above' ? '#1d4ed8' : '#b91c1c';
         const miss = (r) => !r.covered ? `measured in fewer than ${minPct}% of the cell lines` : `fewer than ${minShare}% of lines ${this._ctCutWords()}`;
-        // Pinned first row: back to the overview plot of every gene.
-        const head = document.getElementById('ctHead')?.offsetHeight || 31;
-        const pin = `${td} position:sticky; top:${head}px; z-index:1; background:${c.selectedG == null ? '#ecfdf5' : '#f9fafb'}; border-bottom:1px solid #e5e7eb;`;
-        const allRow = `<tr data-g="all" style="cursor:pointer; font-weight:600;" title="Every gene by its share of cell lines ${this.esc(this._ctCutWords())}">`
-            + `<td style="${pin}">All genes <span style="font-weight:400; color:#9ca3af;">(overview)</span></td>`
-            + `<td style="${pin} text-align:center; color:#6b7280;">${measured.toLocaleString()}</td>`
-            + `<td style="${pin} text-align:center; color:${pctColor};" title="Share of these genes that meet the criterion">${measured ? (listed.length / measured * 100).toFixed(1) : ''}</td>`
-            + `<td style="${pin}"></td><td style="${pin}"></td></tr>`;
-        document.getElementById('ctBody').innerHTML = allRow + (shown.slice(0, CAP).map(r =>
+        document.getElementById('ctBody').innerHTML = (shown.slice(0, CAP).map(r =>
             `<tr data-g="${r.g}" style="cursor:pointer;${r.g === c.selectedG ? ' background:#ecfdf5;' : ''}${r.meets ? '' : ' color:#9ca3af;'}"${r.meets ? '' : ` title="Not in the list: ${this.esc(miss(r))}"`}>`
             + `<td style="${td}"><span class="gene-hover" data-gene="${this.esc(r.gene)}">${this.gi(r.gene)}</span></td>`
             + `<td style="${td} text-align:center;${r.meets ? ' color:#6b7280;' : ''}">${r.n}</td>`
@@ -23692,8 +23689,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const countEl = document.getElementById('ctCount');
         if (countEl) countEl.textContent = `${listed.length.toLocaleString()} of ${measured.toLocaleString()} genes ${this._ctCutWords()} in at least ${minShare}% of ${N.toLocaleString()} cell lines`
             + (!q && listed.length > CAP ? `; the first ${CAP} shown, .csv and Copy data carry all` : '');
-        // The overview's line sits on the criterion, so it moves with it.
-        if (c.selectedG == null) this._ctRenderPlot();
+
     }
 
     // Bars of 0.1 (GE) or 0.25 (mRNA) with an edge on the cutoff, y as % of
@@ -23765,58 +23761,17 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         return hi > lo ? [lo - pad, hi + pad] : null;
     }
 
-    // With no gene picked: how many genes have each share of cell lines past
-    // the cutoff, with a line at the criterion, so the bars right of it are
-    // exactly the genes in the table.
-    _ctRenderSharePlot(el) {
-        const c = this._ct;
-        const minShare = c.minShare ?? 10;
-        const pct = [];
-        for (let g = 0; g < c.genes.length; g++) {
-            const n = c.nValid[g];
-            if (n && n >= (c.nMin || 0) && !isNaN(c.cut)) pct.push(c.nP[g] / n * 100);
-        }
-        if (!pct.length) { Plotly.purge(el); return; }
-        const size = 1;
-        const start = minShare - Math.ceil(minShare / size) * size;
-        const top = Math.max(...pct);
-        const nb = Math.max(1, Math.floor((top - start) / size + 1e-9) + 1);
-        const counts = new Array(nb).fill(0);
-        for (const v of pct) counts[Math.max(0, Math.min(nb - 1, Math.floor((v - start) / size + 1e-9)))]++;
-        const pastColor = c.dir === 'above' ? '#3b82f6' : '#dc2626';
-        const x = [], y = [], col = [], txt = [];
-        counts.forEach((k, i) => {
-            if (!k) return;
-            const l = Math.max(0, start + i * size), h = start + (i + 1) * size;
-            x.push((l + h) / 2); y.push(k);
-            col.push(start + i * size >= minShare - 1e-9 ? pastColor : '#9ca3af');
-            txt.push(`${l.toFixed(1)} to ${h.toFixed(1)}% of lines ${this._ctCutWords()}: ${k.toLocaleString()} gene${k === 1 ? '' : 's'}`);
-        });
-        const listed = (c.listed || []).length;
-        const filt = this._ctFilterParts();
-        const mName = c.measure === 'expr' ? 'mRNA expression' : 'gene effect';
-        const layout = {
-            title: { text: `<b>Genes by % of cell lines ${this._ctCutWords()}</b><br><span style="font-size:11px; color:#6b7280;">${pct.length.toLocaleString()} genes, ${mName}, ${c.cohort.length.toLocaleString()} cell lines${filt.length ? ', ' + this.esc(filt.join(', ')) : ''}</span>`, font: { size: 14 }, y: 0.96 },
-            xaxis: { title: { text: `% of cell lines ${this._ctCutWords()}` }, range: [0, Math.max(top, minShare) * 1.05 + 1], gridcolor: '#eeeeee', zeroline: false },
-            yaxis: { title: { text: 'Genes (log scale)' }, type: 'log', dtick: 1, gridcolor: '#eeeeee' },
-            shapes: [{ type: 'line', xref: 'x', yref: 'paper', x0: minShare, x1: minShare, y0: 0, y1: 1, line: { color: pastColor, width: 1.5, dash: 'dash' } }],
-            annotations: [{ xref: 'x', yref: 'paper', x: minShare, y: 0.98, xanchor: 'left', yanchor: 'top', showarrow: false, bgcolor: 'rgba(255,255,255,0.85)',
-                font: { size: 11, color: pastColor }, text: `&nbsp;at least ${minShare}%: ${listed.toLocaleString()} gene${listed === 1 ? '' : 's'} \u2192` }],
-            bargap: 0.05, margin: { l: 60, r: 20, t: 70, b: 55 }, height: 440,
-            paper_bgcolor: '#ffffff', plot_bgcolor: '#fafafa', font: { family: 'Open Sans, sans-serif' }
-        };
-        const trace = { type: 'bar', x, y, width: size * 0.95, marker: { color: col }, hovertext: txt, hoverinfo: 'text', showlegend: false };
-        Plotly.react(el, [trace], layout, { displayModeBar: false, responsive: true });
-    }
-
     _ctRenderPlot() {
         const el = document.getElementById('ctPlot');
         const c = this._ct;
         if (!el || !c?.genes) return;
         const g = c.selectedG;
-        // The x-axis controls set the value scale, which the share plot has not.
-        ['ctXmin', 'ctXmax', 'ctZero'].forEach(id => { const x = document.getElementById(id); if (x) x.disabled = g == null; });
-        if (g == null) { this._ctRenderSharePlot(el); return; }
+        if (g == null) {
+            Plotly.purge(el);
+            el.innerHTML = '<div style="padding:40px; color:#9ca3af; text-align:center;">No gene meets the criterion.</div>';
+            return;
+        }
+        if (!el.data) el.innerHTML = '';
         const filt = this._ctFilterParts();
         const cohortWords = `${c.cohort.length.toLocaleString()} cell lines${filt.length ? ', ' + this.esc(filt.join(', ')) : ''}`;
         const mName = c.measure === 'expr' ? 'mRNA expression' : 'gene effect';
@@ -24048,7 +24003,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             `WHAT WAS COUNTED\n   For every gene, the cell lines in the cohort with a value for it (n), the percentage of those with a value strictly ${c.dir} ${c.cut}, and the median value. A cell line without a value for a gene is left out of that gene's n.`,
             `THE COHORT\n   ${this._mNum(N)} cell lines. Filters: ${this._mListOr(filt, 'none, every cell line with data')}.`,
             `THE TABLE\n   ${this._mNum(c.listed.length)} of ${this._mNum(c.measuredN)} genes listed: those with ${this._ctListWords()}. Rows are ${this._ctSortWords()}.`,
-            `THE HISTOGRAMS\n   With no gene chosen: the number of genes (log scale) at each share of cell lines ${c.dir} the cutoff, in 1% bins, for every gene measured in enough cell lines. A dashed line marks the criterion of ${c.minShare}%; the genes right of it are the genes listed. With a gene chosen: that gene's values across the cohort, as a percentage of cell lines, in bins of ${size} with an edge on the cutoff; bars past the cutoff are coloured and a dashed line marks it with the share past it.`,
+            `THE HISTOGRAM\n   One gene's values across the cohort (the first gene in the table unless another was clicked), as a percentage of cell lines, in bins of ${size} with an edge on the cutoff. Bars past the cutoff are coloured, and a dashed line marks the cutoff with the share past it.`,
             'WHAT THIS DOES NOT SAY\nA share of cell lines past a cutoff describes a distribution; no test was run and no p-value exists in this view. Where a cutoff is drawn is a convention, and a gene just short of it can behave much like one just past it.'
         ]);
         return { title, condensed, long };
@@ -34608,7 +34563,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 cohortFilters: ctab.filters || 'none', geneCriterion: ctab.listRule,
                 inputGenes: ctab.rows.slice(0, 30).map(r => r[0])
             };
-            context.plotDescribesWhat = `A threshold scan: every gene's share of cell lines with ${ctab.measure} ${cutWords}, across ${ctab.cohortN.toLocaleString()} cell lines${ctab.filters ? ' (' + ctab.filters + ')' : ' (every line with data)'}, listing the genes with ${ctab.listRule}${ctab.selected ? `, with a histogram of ${ctab.selected.gene}` : ', with a histogram of how many genes have each share of cell lines past the cutoff'}. The matrices in this file carry the first 30 listed genes${ctab.selected ? ' and the histogram gene' : ''}; the table itself is extras.thresholdScan.`;
+            context.plotDescribesWhat = `A threshold scan: every gene's share of cell lines with ${ctab.measure} ${cutWords}, across ${ctab.cohortN.toLocaleString()} cell lines${ctab.filters ? ' (' + ctab.filters + ')' : ' (every line with data)'}, listing the genes with ${ctab.listRule}${ctab.selected ? `, with a histogram of ${ctab.selected.gene}` : ''}. The matrices in this file carry the first 30 listed genes${ctab.selected ? ' and the histogram gene' : ''}; the table itself is extras.thresholdScan.`;
             description = `Threshold scan (${ctab.measure}, ${cutWords}) across ${ctab.cohortN.toLocaleString()} cell lines.`;
         }
         function genesInCompilation(c) { return [...new Set(c.panels.flatMap(p => [p.x.gene, p.y.gene]))]; }
