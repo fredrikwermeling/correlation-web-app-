@@ -12236,7 +12236,11 @@ class CorrelationExplorer {
                     }
                 }
                 this._handleGEGateShapeRelayout(relayoutData);
+                // Font changes from Settings change the header's height.
+                clearTimeout(this._geFitTimer);
+                this._geFitTimer = setTimeout(() => this._geFitHeader(plotEl), 50);
             });
+            this._geFitHeader(plotEl);
         });
         // Hover a dot for the cell line's executive summary; single-click toggles
         // its name label, double-click opens its Wiki, Shift-click opens the browser.
@@ -12253,6 +12257,27 @@ class CorrelationExplorer {
 
         // Show chart width and Y range controls
         this.updateShowAllButton();
+    }
+
+    // Puts the title just above the stats as they actually render. Their line
+    // height depends on the browser's fonts and on text settings, and the
+    // estimate used for the layout let the stats run up into a wrapped title.
+    _geFitHeader(plotEl) {
+        const anns = plotEl?.layout?.annotations || [];
+        const ti = anns.findIndex(a => a._tsRole === 'title');
+        const si = anns.findIndex(a => a._tsRole === 'subtitle');
+        if (ti < 0 || si < 0 || this._geUserTitlePos) return;
+        const tN = plotEl.querySelector(`.annotation[data-index="${ti}"]`);
+        const sN = plotEl.querySelector(`.annotation[data-index="${si}"]`);
+        if (!tN || !sN) return;
+        const sH = sN.getBoundingClientRect().height, tH = tN.getBoundingClientRect().height;
+        if (!sH || !tH) return;
+        const titleShift = Math.ceil((anns[si].yshift || 0) + sH + 8);
+        const top = Math.ceil(titleShift + tH + 12);
+        const upd = {};
+        if (Math.abs((anns[ti].yshift || 0) - titleShift) > 1) upd[`annotations[${ti}].yshift`] = titleShift;
+        if ((plotEl.layout.margin?.t || 0) < top - 1) upd['margin.t'] = top;
+        if (Object.keys(upd).length) Plotly.relayout(plotEl, upd);
     }
 
     // Mutation-analysis inspect ALT view: the same gene re-plotted by tissue
