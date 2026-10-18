@@ -4772,8 +4772,7 @@
                             <input type="text" inputmode="decimal" id="ctCut" style="width:52px; padding:2px 4px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;" title="The cutoff value">
                             <span>in at least</span>
                             <input type="text" inputmode="numeric" id="ctMinShare" value="10" style="width:40px; padding:2px 4px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;" title="A gene is listed when at least this share of the cell lines is past the cutoff">
-                            <span>% of</span>
-                            <select id="ctScope" style="width:150px;" title="Count the share over all cell lines, or within each tissue (a gene qualifies when one tissue reaches it)"><option value="overall" selected>all cell lines</option><option value="tissue">one tissue's lines</option></select>
+                            <span id="ctShareOf">% of cell lines</span>
                             <span id="ctMinShareN" style="color:#6b7280; font-size:11px; min-width:150px;"></span>
                             </span>
                             <span class="clb-sep"></span>
@@ -4813,6 +4812,7 @@
                     <div style="flex:1 1 430px; min-width:0;">
                         <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px; flex-wrap:wrap;">
                             <input type="text" id="ctSearch" placeholder="Search gene..." autocomplete="off" style="width:150px; padding:2px 6px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;" title="Finds a gene even when it misses the criterion; those rows are grey">
+                            <button type="button" class="btn btn-outline btn-sm" id="ctTissueMode" style="font-size:11px; padding:2px 10px;" title="Find the genes where one tissue stands out: the share of its cell lines past the cutoff compared with the share in all other cell lines">Tissue differences</button>
                             <span id="ctCount" style="color:#6b7280; font-size:11px;"></span>
                         </div>
                         <div style="max-height:56vh; overflow-y:auto; border:1px solid #e5e7eb; border-radius:4px;">
@@ -5952,7 +5952,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v89_117"></script>
+    <script src="app.js?v=v89_118"></script>
     <script src="tour.js?v=v89_49"></script>
 </body>
 </html>

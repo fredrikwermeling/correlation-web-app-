@@ -23381,10 +23381,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         ['ctMinShare', 'ctMinPct', 'ctSearch'].forEach(id => document.getElementById(id)?.addEventListener('input', debounce(() => this._ctRenderTable())));
         ['ctXmin', 'ctXmax'].forEach(id => document.getElementById(id)?.addEventListener('input', debounce(() => this._ctRenderPlot())));
         document.getElementById('ctZero')?.addEventListener('change', () => this._ctRenderPlot());
-        document.getElementById('ctScope')?.addEventListener('change', (e) => {
-            this._ct.sortCol = e.target.value === 'tissue' ? 'ttd' : 'pct';
+        // Off by default: switches the table to the tissue comparison.
+        document.getElementById('ctTissueMode')?.addEventListener('click', () => {
+            const on = !this._ct.tissueMode;
+            this._ct.tissueMode = on;
+            this._ct.sortCol = on ? 'ttd' : 'pct';
             this._ct.sortAsc = false;
+            this._ctSyncTissueMode();
             this._ctRenderTable();
+            // The by-tissue chart is the one that shows the difference.
+            setView(on ? 'tissue' : 'hist');
         });
         const setView = (v) => {
             this._ct.view = v;
@@ -23468,7 +23474,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Starts fresh on every open.
         const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
         set('ctMeasure', 'ge'); set('ctDir', 'below'); set('ctCut', this._ctDefault('ge', 'below'));
-        set('ctMinShare', 10); set('ctMinPct', 75); set('ctSearch', ''); set('ctScope', 'overall');
+        set('ctMinShare', 10); set('ctMinPct', 75); set('ctSearch', '');
         const vh = document.getElementById('ctViewHist'), vt = document.getElementById('ctViewTissue');
         if (vh) vh.className = 'btn btn-success btn-sm';
         if (vt) vt.className = 'btn btn-secondary btn-sm';
@@ -23479,10 +23485,19 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             set(i, ''); set(l, def);
             const lv = document.getElementById(l); if (lv) lv.style.display = 'none';
         });
-        this._ct = { sortCol: 'pct', sortAsc: false, selectedG: null };
+        this._ct = { sortCol: 'pct', sortAsc: false, selectedG: null, tissueMode: false };
+        this._ctSyncTissueMode();
         modal.style.display = 'flex';
         const body = modal.querySelector('.modal-body'); if (body) body.scrollTop = 0;
         await this._ctRecompute();
+    }
+
+    _ctSyncTissueMode() {
+        const on = !!this._ct?.tissueMode;
+        const b = document.getElementById('ctTissueMode');
+        if (b) b.className = `btn btn-sm ${on ? 'btn-success' : 'btn-outline'}`;
+        const of = document.getElementById('ctShareOf');
+        if (of) of.textContent = on ? "% of one tissue's lines" : '% of cell lines';
     }
 
     _ctBaseLines(measure) {
@@ -23673,7 +23688,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const minShare = Math.max(0, Math.min(100, this.numInput('ctMinShare', 10) || 0));
         const q = (document.getElementById('ctSearch')?.value || '').trim().toUpperCase();
         // The share is counted over all cell lines, or within one tissue.
-        const scope = document.getElementById('ctScope')?.value === 'tissue' ? 'tissue' : 'overall';
+        const scope = c.tissueMode ? 'tissue' : 'overall';
         // Listed = the genes meeting the criterion; a search also shows
         // matching genes that miss it, greyed, so a gene can always be found.
         const listed = [], found = [];
@@ -23720,9 +23735,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             + th('n', 'n', 'Cell lines in the cohort with a value for this gene')
             + th('pct', `% ${this._ctCutWords()}`, `Share of those cell lines with a value ${c.dir === 'above' ? 'higher' : 'lower'} than the cutoff`)
             + th('k', 'Lines', `Number of cell lines with a value ${c.dir === 'above' ? 'higher' : 'lower'} than the cutoff`)
-            + th('tt', 'Top tissue', 'The tissue that stands out most: the largest share of its cell lines past the cutoff compared with all other lines, among tissues with at least 10 lines measured for the gene')
-            + th('ttp', '% there', 'Share of that tissue\'s cell lines past the cutoff')
-            + th('ttd', '\u0394 vs rest', 'That share minus the share in all other cell lines, in percentage points')
+            + (scope === 'tissue'
+                ? th('tt', 'Tissue that stands out', 'The tissue (at least 10 cell lines measured) whose share of lines past the cutoff differs most from the share in all other cell lines')
+                  + th('ttd', 'Difference', 'The tissue\'s share minus the share in all other cell lines, in percentage points')
+                : '')
             + th('median', 'Median', 'Median value across those cell lines');
         const CAP = 500;
         const td = 'padding:3px 8px; border-bottom:1px solid #f3f4f6;';
@@ -23734,11 +23750,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             + `<td style="${td} text-align:center;${r.meets ? ' color:#6b7280;' : ''}">${r.n}</td>`
             + `<td style="${td} text-align:center;${r.meets ? ` color:${pctColor};` : ''}">${r.pct === null ? '' : r.pct.toFixed(1)}</td>`
             + `<td style="${td} text-align:center;${r.meets ? ' color:#6b7280;' : ''}">${r.pct === null ? '' : r.k}</td>`
-            + `<td style="${td} max-width:130px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${r.tt ? this.esc(`${r.tt.name}: ${r.tt.pct.toFixed(1)}% of ${r.tt.n} lines`) : ''}">${r.tt ? this.esc(r.tt.name) : ''}</td>`
-            + `<td style="${td} text-align:center;${r.meets ? ` color:${pctColor};` : ''}">${r.tt ? r.tt.pct.toFixed(1) : ''}</td>`
-            + `<td style="${td} text-align:center;">${r.tt ? (r.tt.diff > 0 ? '+' : '') + r.tt.diff.toFixed(1).replace('-', '\u2212') : ''}</td>`
+            + (scope === 'tissue'
+                ? `<td style="${td} white-space:nowrap;" title="${r.tt ? this.esc(`${r.tt.name}: ${r.tt.pct.toFixed(1)}% of ${r.tt.n} lines ${this._ctCutWords()}, against ${(r.tt.pct - r.tt.diff).toFixed(1)}% of the other cell lines`) : ''}">${r.tt ? `${this.esc(r.tt.name)}: <span style="color:${r.meets ? pctColor : 'inherit'};">${r.tt.pct.toFixed(0)}%</span> vs ${(r.tt.pct - r.tt.diff).toFixed(0)}% elsewhere` : ''}</td>`
+                  + `<td style="${td} text-align:center;">${r.tt ? (r.tt.diff > 0 ? '+' : '') + r.tt.diff.toFixed(1).replace('-', '\u2212') : ''}</td>`
+                : '')
             + `<td style="${td} text-align:center;">${this._ctSigned(r.med)}</td></tr>`).join('')
-            || `<tr><td colspan="8" style="padding:10px; color:#6b7280;">${q ? 'No gene symbol contains that text.' : 'No gene meets the criterion.'}</td></tr>`);
+            || `<tr><td colspan="${scope === 'tissue' ? 7 : 5}" style="padding:10px; color:#6b7280;">${q ? 'No gene symbol contains that text.' : 'No gene meets the criterion.'}</td></tr>`);
         // Same gene card as the network and the other gene lists.
         this.attachGeneTooltips?.(document.getElementById('ctBody'));
         const countEl = document.getElementById('ctCount');
@@ -23916,8 +23933,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     _ctSortWords() {
         const c = this._ct;
         const name = { gene: 'gene name', n: 'n', pct: `% ${this._ctCutWords()}`, k: `lines ${this._ctCutWords()}`, median: 'median',
-            tt: 'top tissue', ttp: `% ${this._ctCutWords()} in the top tissue`, ttd: 'the top tissue\'s difference from the rest' }[c.sortCol] || `% ${this._ctCutWords()}`;
-        if (c.sortCol === 'tt') return `sorted by top tissue, ${c.sortAsc ? 'A to Z' : 'Z to A'}`;
+            ttd: 'how much the tissue that stands out differs from the other cell lines' }[c.sortCol] || `% ${this._ctCutWords()}`;
+        if (c.sortCol === 'tt') return `sorted by the tissue that stands out, ${c.sortAsc ? 'A to Z' : 'Z to A'}`;
         const dirWord = c.sortCol === 'gene' ? (c.sortAsc ? 'A to Z' : 'Z to A') : (c.sortAsc ? 'lowest first' : 'highest first');
         return `sorted by ${name}, ${dirWord}`;
     }
@@ -23930,13 +23947,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
 
     _ctTableRows() {
+        const t = this._ct.tissueMode;
         return (this._ct.listed || []).map(r => [r.gene, r.n, r.pct === null ? '' : +r.pct.toFixed(2), r.pct === null ? '' : r.k,
-            r.tt ? r.tt.name : '', r.tt ? +r.tt.pct.toFixed(2) : '', r.tt ? r.tt.n : '', r.tt ? +r.tt.diff.toFixed(2) : '', +r.med.toFixed(3)]);
+            ...(t ? [r.tt ? r.tt.name : '', r.tt ? r.tt.n : '', r.tt ? +r.tt.pct.toFixed(2) : '', r.tt ? +(r.tt.pct - r.tt.diff).toFixed(2) : '', r.tt ? +r.tt.diff.toFixed(2) : ''] : []),
+            +r.med.toFixed(3)]);
     }
 
     _ctHeaderCols() {
         const c = this._ct;
-        return ['Gene', 'N', isNaN(c.cut) ? 'Pct' : `Pct_${c.dir}_${c.cut}`, isNaN(c.cut) ? 'Lines' : `Lines_${c.dir}_${c.cut}`, 'Top_tissue', 'Pct_top_tissue', 'N_top_tissue', 'Diff_vs_rest_pp', 'Median'];
+        return ['Gene', 'N', isNaN(c.cut) ? 'Pct' : `Pct_${c.dir}_${c.cut}`, isNaN(c.cut) ? 'Lines' : `Lines_${c.dir}_${c.cut}`,
+            ...(c.tissueMode ? ['Tissue', 'N_tissue', 'Pct_tissue', 'Pct_other_lines', 'Difference_points'] : []), 'Median'];
     }
 
     _ctDownloadCsv() {
@@ -24090,7 +24110,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             filters: this._ctFilterParts().join(', '),
             listRule: this._ctListWords(),
             sort: this._ctSortWords(),
-            columns: ['gene', 'n', isNaN(c.cut) ? 'pct' : `pct_${c.dir}_${c.cut}`, isNaN(c.cut) ? 'lines' : `lines_${c.dir}_${c.cut}`, 'topTissue', 'pctTopTissue', 'nTopTissue', 'diffVsRestPctPoints', 'median'],
+            columns: ['gene', 'n', isNaN(c.cut) ? 'pct' : `pct_${c.dir}_${c.cut}`, isNaN(c.cut) ? 'lines' : `lines_${c.dir}_${c.cut}`, ...(c.tissueMode ? ['tissue', 'nTissue', 'pctTissue', 'pctOtherLines', 'differencePoints'] : []), 'median'],
             rows: this._ctTableRows().slice(0, CAP),
             listed: c.listed.length,
             selected: sel ? { gene: sel, values: this._ctValues(c.selectedG, true).map(([id, v]) => [id, +v.toFixed(3)]) } : null
@@ -24122,7 +24142,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         ]);
         const long = this._mBlocks([
             this._methodsHeaderBlock(title, kind),
-            `WHAT WAS COUNTED\n   For every gene, the cell lines in the cohort with a value for it (n), the percentage of those with a value strictly ${c.dir} ${c.cut}, and the median value. A cell line without a value for a gene is left out of that gene's n.\n   For each gene, the top tissue is the tissue (at least 10 cell lines measured for the gene) whose share of lines past the cutoff exceeds the share among all other cell lines by the most; the table gives that share and the difference in percentage points.`,
+            `WHAT WAS COUNTED\n   For every gene, the cell lines in the cohort with a value for it (n), the percentage of those with a value strictly ${c.dir} ${c.cut}, and the median value. A cell line without a value for a gene is left out of that gene's n.${c.tissueMode ? '\n   Tissue differences were switched on: for each gene, the tissue (at least 10 cell lines measured for the gene) whose share of lines past the cutoff exceeds the share among all other cell lines by the most, with both shares and the difference in percentage points; a gene was listed when that tissue reached the criterion, and the table is sorted by the difference unless re-sorted.' : ''}`,
             `THE COHORT\n   ${this._mNum(N)} cell lines. Filters: ${this._mListOr(filt, 'none, every cell line with data')}.`,
             `THE TABLE\n   ${this._mNum(c.listed.length)} of ${this._mNum(c.measuredN)} genes listed: those with ${this._ctListWords()}. Rows are ${this._ctSortWords()}.`,
             `THE CHART\n   One gene (the first in the table unless another was clicked). As a histogram: its values across the cohort as a percentage of cell lines, in bins of ${size} with an edge on the cutoff; bars past the cutoff are coloured and a dashed line marks the cutoff with the share past it. By tissue: one row per tissue, one dot per cell line, the share past the cutoff at the right, tissues ordered by that share; rows can hold fewer than 10 lines.`,
@@ -34672,7 +34692,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const complete = ctab.rows.length === ctab.listed;
             extras = {
                 thresholdScan: { columns: ctab.columns, rows: ctab.rows, genesListed: ctab.listed, rowsIncluded: ctab.rows.length, complete },
-                thresholdScan_readMe: `One row per gene that meets the criterion on screen: ${ctab.listRule}. Rows are ${ctab.sort}. Columns: gene; n, the cell lines in this file's cohort with a value for the gene; the percentage of those with a value strictly ${cutWords}; the number of those cell lines; the top tissue (the tissue whose share of lines past the cutoff exceeds the share in all other lines by the most, among tissues with at least 10 lines measured for the gene), that tissue's share, its n, and the difference from the other lines in percentage points; and the median, all in ${ctab.measure}. ${complete ? `All ${ctab.listed.toLocaleString()} genes meeting the criterion are included.` : `${ctab.listed.toLocaleString()} genes meet the criterion; the first ${ctab.rows.length.toLocaleString()} in the table's order are included and the rest were cut.`} Genes that miss the criterion are not in this list. A cell line without a value for a gene counts in neither n nor the percentage for that gene.`
+                thresholdScan_readMe: `One row per gene that meets the criterion on screen: ${ctab.listRule}. Rows are ${ctab.sort}. Columns: gene; n, the cell lines in this file's cohort with a value for the gene; the percentage of those with a value strictly ${cutWords}; the number of those cell lines; ${ctab.columns.includes('tissue') ? 'the tissue that stands out (the tissue, among those with at least 10 lines measured for the gene, whose share of lines past the cutoff exceeds the share in all other cell lines by the most), its n, its share, the share in all other cell lines and the difference in percentage points; ' : ''}and the median, all in ${ctab.measure}. ${complete ? `All ${ctab.listed.toLocaleString()} genes meeting the criterion are included.` : `${ctab.listed.toLocaleString()} genes meet the criterion; the first ${ctab.rows.length.toLocaleString()} in the table's order are included and the rest were cut.`} Genes that miss the criterion are not in this list. A cell line without a value for a gene counts in neither n nor the percentage for that gene.`
             };
             if (ctab.selected) {
                 extras.thresholdScanSelectedGene = ctab.selected;
