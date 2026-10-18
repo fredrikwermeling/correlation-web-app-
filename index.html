@@ -4812,10 +4812,11 @@
                     <div style="flex:1 1 430px; min-width:0;">
                         <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px; flex-wrap:wrap;">
                             <input type="text" id="ctSearch" placeholder="Search gene..." autocomplete="off" style="width:150px; padding:2px 6px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;" title="Finds a gene even when it misses the criterion; those rows are grey">
-                            <button type="button" class="btn btn-outline btn-sm" id="ctTissueMode" style="font-size:11px; padding:2px 10px;" title="Find the genes where one tissue stands out: the share of its cell lines past the cutoff compared with the share in all other cell lines">Tissue differences</button>
+                            <button type="button" class="btn btn-outline btn-sm" id="ctTissueMode" style="font-size:11px; padding:2px 10px;" title="Find the genes where one tissue stands out: the tissue whose median lies furthest from the median of all cell lines">Tissue differences</button>
+                            <select id="ctFocus" style="width:190px; font-size:11px;" disabled title="Compare one tissue, subtype or disease with all cell lines, instead of the tissue that stands out most for each gene"><option value="">Most different tissue</option></select>
                             <span id="ctCount" style="color:#6b7280; font-size:11px;"></span>
                         </div>
-                        <div style="max-height:56vh; overflow-y:auto; border:1px solid #e5e7eb; border-radius:4px;">
+                        <div style="max-height:56vh; overflow:auto; border:1px solid #e5e7eb; border-radius:4px;">
                             <table id="ctTable" style="width:100%; border-collapse:collapse; font-size:11px;">
                                 <thead style="position:sticky; top:0; background:#fff;" class="sticky-head"><tr id="ctHead"></tr></thead>
                                 <tbody id="ctBody"></tbody>
@@ -5952,7 +5953,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v90_1"></script>
+    <script src="app.js?v=v90_2"></script>
     <script src="tour.js?v=v89_49"></script>
 </body>
 </html>
