@@ -751,6 +751,12 @@
             font-family: inherit;
         }
 
+        /* The input a view cannot work without (a gene to look up, a gene
+           set, a cutoff): lightly tinted so it is the first thing found. */
+        .main-input, .control-box-compact.main-input {
+            background: #f3faee; border: 1px solid #b2dd95; border-radius: 6px; padding: 6px 10px;
+        }
+
         .form-control:focus {
             border-color: var(--green-500);
             box-shadow: 0 0 0 3px rgba(122, 185, 80, 0.15);
@@ -3044,7 +3050,7 @@
                             <!-- Floating popout; JS moves it to <body> and positions it. -->
                             <div id="mutSubTypeInfo" style="display:none;"></div>
                         </div>
-                        <div id="hotspotAnalysisControls">
+                        <div id="hotspotAnalysisControls" class="main-input">
                             <label class="form-label" style="color: #5d9239; font-weight: 600;">Hotspot Mutation (required):</label>
                             <div style="display: flex; gap: 6px; align-items: center;">
                                 <select id="mutationHotspotSelect" class="form-control" style="flex: 1;">
@@ -3215,7 +3221,7 @@
 
                     <!-- Paste/Type panel -->
                     <div class="input-panel active" id="input-paste">
-                        <div class="form-group">
+                        <div class="form-group main-input">
                             <label class="form-label">Gene symbols (one per line):</label>
                             <div id="designModeHint" style="display: none; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 4px; padding: 6px 10px; margin-bottom: 8px; font-size: 11px; color: #92400e;">
                                 <strong>Expand my set:</strong> enter fewer than 20 genes for best results
@@ -3793,7 +3799,7 @@
                 <div class="inspect-layout">
                     <div class="inspect-controls">
                         <!-- Row 1: Genes (full width) -->
-                        <div class="control-box-compact" style="grid-column: span 2; padding: 4px 8px;">
+                        <div class="control-box-compact main-input" style="grid-column: span 2; padding: 4px 8px;">
                             <span class="control-label" style="margin-bottom: 2px;">Genes (X/Y)</span>
                             <div style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap;">
                                 <input type="text" id="inspectGeneX" class="form-control" style="flex: 1 1 70px; min-width: 60px; font-size: 12px; padding: 3px 8px;" placeholder="X gene">
@@ -4101,6 +4107,7 @@
                 <div id="geSearchBar" style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #e5e7eb;">
                     <!-- Row 1: Gene Effect + Mutation + Analyze -->
                     <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 8px; flex-wrap: wrap;">
+                        <div class="main-input" style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
                         <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
                             <label id="geneEffectLabel" style="font-size: 13px; font-weight: 600; color: #374151; white-space: nowrap;">Gene Effect:</label>
                             <input type="text" id="geneEffectSearch" class="form-control" placeholder="Gene symbol" style="width: 130px; font-size: 13px; padding: 6px 10px;">
@@ -4116,6 +4123,7 @@
                             </div>
                         </span>
                         <button class="btn btn-success btn-sm" id="geneEffectSearchBtn" style="padding: 6px 16px;">Analyze</button>
+                        </div>
                         <span id="geneEffectCurrentGene" style="font-weight: 600; color: #5d9239;"></span>
                         <span class="ge-view-sep" style="border-left: 1px solid #d1d5db; height: 20px; margin: 0 4px;"></span>
                         <label id="geViewLabel" style="font-size: 13px; font-weight: 600; color: #374151; white-space: nowrap;">View:</label>
@@ -4509,6 +4517,7 @@
                 <div id="caSearchBar" style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px solid #e5e7eb;">
                     <!-- Row 1: Gene inputs + Analyze -->
                     <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 10px; flex-wrap: wrap;">
+                        <div class="main-input" style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
                         <div style="display: flex; align-items: center; gap: 6px;">
                             <label style="font-size: 13px; font-weight: 600; color: #374151; white-space: nowrap;">Gene 1:</label>
                             <input type="text" id="caGene1Search" class="form-control" placeholder="Gene symbol" style="width: 110px; font-size: 13px; padding: 6px 10px;">
@@ -4518,6 +4527,7 @@
                             <input type="text" id="caGene2Search" class="form-control" placeholder="Gene symbol" style="width: 110px; font-size: 13px; padding: 6px 10px;">
                         </div>
                         <button class="btn btn-success btn-sm" id="caAnalyzeBtn" style="padding: 6px 16px;">Analyze</button>
+                        </div>
                         <span id="corrAnalysisGenes" style="font-weight: 600; color: #5d9239; font-size: 13px;"></span>
                     </div>
                     <!-- Row 2: Filters + View (same layout as gene effect) -->
@@ -4753,6 +4763,7 @@
                     <div class="clb-row">
                         <span class="clb-row-label">Scan</span>
                         <div class="clb-row-items">
+                            <span class="main-input" style="display:inline-flex; gap:6px; align-items:center; flex-wrap:wrap; padding:4px 8px;">
                             <select id="ctMeasure" style="width:180px;" title="CRISPR gene effect (Chronos) or mRNA expression (log2 TPM+1)">
                                 <option value="ge" selected>CRISPR gene effect</option>
                                 <option value="expr">mRNA expression</option>
@@ -4764,6 +4775,7 @@
                             <span>% of</span>
                             <select id="ctScope" style="width:150px;" title="Count the share over all cell lines, or within each tissue (a gene qualifies when one tissue reaches it)"><option value="overall" selected>all cell lines</option><option value="tissue">one tissue's lines</option></select>
                             <span id="ctMinShareN" style="color:#6b7280; font-size:11px; min-width:150px;"></span>
+                            </span>
                             <span class="clb-sep"></span>
                             <label style="font-weight:600; color:#374151;" title="How much of this cohort a gene must be measured in before it can appear. A share computed on a fraction of the cell lines is mostly noise. Expressed as a share of the cohort so it scales with whatever you have filtered to. Set 0 to see everything.">measured in &ge; <input type="text" inputmode="numeric" id="ctMinPct" value="75" style="width:40px; padding:2px 4px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;"> <span style="font-weight:400; color:#6b7280;">% of lines</span></label>
                         </div>
@@ -4856,11 +4868,13 @@
                     <div class="clb-row">
                         <span class="clb-row-label">Gene set</span>
                         <div class="clb-row-items">
+                            <span class="main-input" style="display:inline-flex; gap:6px; align-items:center; padding:4px 8px;">
                             <select id="hmPreset" style="width:230px;"></select>
                             <select id="hmDataType" style="width:180px;" title="mRNA expression (log2 TPM+1) or CRISPR gene effect (Chronos)">
                                 <option value="ge" selected>CRISPR gene effect</option>
                                 <option value="expr">mRNA expression</option>
                             </select>
+                            </span>
                             <select id="hmScale" style="width:200px;" title="How the colours are computed. As measured: the actual gene effect on one fixed scale (orange saturates at -2, purple at +1), the default for gene effect. Relative to panel median: each cell minus its gene's median across the whole panel, in the data's own units, blue-green and brown for gene effect. Z-score: each gene divided by its own spread, which can turn a tiny difference into a large number for a flat gene">
                                 <option value="raw" selected>As measured, fixed scale</option>
                                 <option value="med">Relative to panel median</option>
@@ -5938,7 +5952,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v89_116"></script>
+    <script src="app.js?v=v89_117"></script>
     <script src="tour.js?v=v89_49"></script>
 </body>
 </html>

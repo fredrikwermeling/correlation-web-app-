@@ -11916,20 +11916,22 @@ class CorrelationExplorer {
         // itself and the stats spread out. They are stacked just above the plot and
         // grow up into the top margin, so the heading never overlaps the graph
         // (on screen and in exports, which use the same layout).
-        const _geChartH = Math.round(400 * (this.geChartHeightRatio || 1));
         const _subBlockPx = titleParts.nSub * titleParts.subFont * 1.4;
         const _titleBlockPx = titleParts.nTitle * titleParts.titleFont * 1.4;
         const _geBotM = _gePhone ? 64 : 75;
         // Top margin grows to fit the whole header block above the plot.
         const _geTopM = Math.max(_gePhone ? 120 : 180, Math.ceil(12 + _subBlockPx + 4 + _titleBlockPx + 10));
-        const _gePlotHpx = Math.max(60, _geChartH - _geTopM - _geBotM);
-        const _subBottomY = 1 + 10 / _gePlotHpx;                         // stats bottom just above the plot
-        const _titleBottomY = 1 + (10 + _subBlockPx + 4) / _gePlotHpx;   // title bottom above the stats
+        // Offsets in pixels from the plot top (yshift), not paper fractions: an
+        // export at another height rescales paper units but not font sizes,
+        // which slid the title down onto the stats.
+        const _subShift = 10;
+        const _titleShift = 10 + _subBlockPx + 4;
         const geTitleAnn = {
             text: titleParts.titleHtml,
             xref: 'paper', yref: 'paper',
             x: this._geUserTitlePos ? this._geUserTitlePos.x : geTitleX,
-            y: this._geUserTitlePos ? this._geUserTitlePos.y : _titleBottomY,
+            y: this._geUserTitlePos ? this._geUserTitlePos.y : 1,
+            yshift: _titleShift,
             xanchor: this._geUserTitlePos ? 'auto' : 'center',
             yanchor: this._geUserTitlePos ? 'auto' : 'bottom',
             showarrow: false,
@@ -11939,7 +11941,7 @@ class CorrelationExplorer {
         const geSubtitleAnn = titleParts.subtitleHtml ? {
             text: titleParts.subtitleHtml,
             xref: 'paper', yref: 'paper',
-            x: geTitleX, y: _subBottomY,
+            x: geTitleX, y: 1, yshift: _subShift,
             xanchor: 'center', yanchor: 'bottom',
             showarrow: false,
             font: { size: titleParts.subFont },
@@ -22675,7 +22677,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                         <span style="flex-basis:100%; height:0;"></span>
                         <span id="compAltFilters" style="display:flex; gap:8px; align-items:flex-start; flex-wrap:wrap;"></span>
                     </div>
-                    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:6px; padding:7px 10px; background:#f3faee; border:1px solid #b2dd95; border-radius:6px;">
+                    <div class="main-input" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:6px; padding:7px 10px;">
                         <span style="font-size:13px; font-weight:600; color:#374151;">Top correlates of</span>
                         <input type="text" id="compTopGene" class="form-control" placeholder="Gene symbol" autocomplete="off" style="width:130px; font-size:13px; padding:6px 10px;">
                         ${sel('compTopMode', 'What is correlated', '<option value="ge:ge">GE vs GE</option><option value="ge:expr">GE vs mRNA</option><option value="expr:expr">mRNA vs mRNA</option>')}
