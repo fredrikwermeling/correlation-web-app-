@@ -22806,7 +22806,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 } finally { el.remove(); }
             };
             modal.querySelector('#compExportAI').onclick = () => this._compExportAI();
-            modal.querySelector('#compGroups').onclick = (e) => this.showColorByGroupPicker(e.currentTarget, () => { this._compSyncControls(); this._compRedrawFigureOnly(); });
+            modal.querySelector('#compGroups').onclick = (e) => {
+                const seen = new Set();
+                const pts = (this._compLast || []).flatMap(x => x.res?.data || []).filter(d => !seen.has(d.cellLineId) && seen.add(d.cellLineId));
+                this.showColorByGroupPicker(e.currentTarget, () => { this._compSyncControls(); this._compRedrawFigureOnly(); }, pts.length ? pts : undefined);
+            };
             modal.querySelector('#compReset').onclick = () => {
                 drive('scatterCancerFilter', '');
                 drive('scatterSubtypeFilter', '');
@@ -43281,14 +43285,17 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // too long to color all at once.
     // anchorEl / afterApply let another view (the compilation) open the same
     // picker next to its own button and redraw itself after a choice.
-    showColorByGroupPicker(anchorEl, afterApply) {
+    // points: the cell lines to list groups from; defaults to the correlation
+    // plot's. The compilation passes its own, since its panels can be filled
+    // while that plot is still empty.
+    showColorByGroupPicker(anchorEl, afterApply, points) {
         document.getElementById('colorByGroupPanel')?.remove();
         const mode = document.getElementById('colorByCategory')?.value;
         if (mode !== 'tissue' && mode !== 'subtype' && mode !== 'disease' && mode !== 'medium') return;
 
         // Only what is on the plot: offering a subtype that every active filter
         // has already excluded gives a choice that cannot change anything.
-        const data = this.currentInspect?.filteredData || this.currentInspect?.data || [];
+        const data = points || this.currentInspect?.filteredData || this.currentInspect?.data || [];
         const counts = {};
         // In subtype mode, remember which tissue each subtype belongs to so the
         // list can be shown as a tree. A flat list of 70+ subtypes gives no clue
