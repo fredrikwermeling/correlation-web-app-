@@ -23401,7 +23401,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             ['ctXmin', 'ctXmax'].forEach(id => { document.getElementById(id).value = ''; });
             this._ctRecompute();
         });
-        document.getElementById('ctDir')?.addEventListener('change', () => { resetCut(); this._ctRecount(); });
+        document.getElementById('ctDir')?.addEventListener('change', (e) => {
+            resetCut();
+            // Lowest median first for "below", highest first for "above".
+            if (!this._ct.tissueMode) { this._ct.sortCol = 'median'; this._ct.sortAsc = e.target.value !== 'above'; }
+            this._ctRecount();
+        });
         document.getElementById('ctCut')?.addEventListener('input', debounce(() => this._ctRecount()));
         ['ctMinShare', 'ctMinPct', 'ctSearch'].forEach(id => document.getElementById(id)?.addEventListener('input', debounce(() => this._ctRenderTable())));
         ['ctXmin', 'ctXmax'].forEach(id => document.getElementById(id)?.addEventListener('input', debounce(() => this._ctRenderPlot())));
@@ -23415,8 +23420,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         document.getElementById('ctTissueMode')?.addEventListener('click', () => {
             const on = !this._ct.tissueMode;
             this._ct.tissueMode = on;
-            this._ct.sortCol = on ? 'ttd' : 'pct';
-            this._ct.sortAsc = false;
+            this._ct.sortCol = on ? 'ttd' : 'median';
+            this._ct.sortAsc = on ? false : (this._ct.dir !== 'above');
             this._ctSyncTissueMode();
             this._ctRenderTable();
             // The by-tissue chart is the one that shows the difference.
@@ -23515,7 +23520,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             set(i, ''); set(l, def);
             const lv = document.getElementById(l); if (lv) lv.style.display = 'none';
         });
-        this._ct = { sortCol: 'pct', sortAsc: false, selectedG: null, tissueMode: false };
+        this._ct = { sortCol: 'median', sortAsc: true, selectedG: null, tissueMode: false };
         this._ctSyncTissueMode();
         modal.style.display = 'flex';
         const body = modal.querySelector('.modal-body'); if (body) body.scrollTop = 0;
@@ -23838,7 +23843,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const shareN = document.getElementById('ctMinShareN');
         if (shareN) shareN.textContent = scope === 'tissue'
             ? 'among tissues with at least 10 lines'
-            : `= at least ${Math.max(1, Math.ceil(N * minShare / 100)).toLocaleString()} of ${N.toLocaleString()} lines`;
+            : `(${Math.max(1, Math.ceil(N * minShare / 100)).toLocaleString()} of ${N.toLocaleString()})`;
         const shown = q ? found : listed;
 
         const th = (k, label, title) => `<th data-ct-sort="${k}" title="${this.esc(title)}" style="padding:6px 8px; border-bottom:2px solid #d1d5db; cursor:pointer; user-select:none; white-space:nowrap; text-align:${k === 'gene' ? 'left' : 'center'};">${label}${col === k ? (asc ? ' ▲' : ' ▼') : ''}</th>`;
