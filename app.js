@@ -47681,7 +47681,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             top: [...geneVals].reverse().map(g => g.gene)
         };
 
-        const hmBtn = (listKey) => `<button class="clb-heatmap-btn" data-list="${listKey}" title="Open the top genes from this list in the heatmap, on the browser's currently filtered cell lines">Open in heatmap</button>`;
+        const hmBtn = (listKey) => this._hasHeatmap() ? `<button class="clb-heatmap-btn" data-list="${listKey}" title="Open the top genes from this list in the heatmap, on the browser's currently filtered cell lines">Open in heatmap</button>` : '';
 
         let gl = `<div class="clb-detail-section"><strong>Most Depleted (Bottom ${N})</strong> <button class="clb-enrichr-btn" data-list="bottom">Enrichr</button> ${hmBtn('bottom')}`;
         gl += `<div style="font-size:11px;">`;
@@ -51401,7 +51401,7 @@ ${clone.innerHTML}
             <div style="display:flex; gap:5px; flex-wrap:wrap;">
                 <button class="btn btn-outline btn-sm" id="ge${side}Network" style="font-size:10px; padding:3px 7px; flex:1;" title="Build a correlation network from the genes listed">Network</button>
                 <button class="btn btn-outline btn-sm" id="ge${side}Enrichr" aria-haspopup="true" style="font-size:10px; padding:3px 7px; flex:1;" title="Send the genes listed to Enrichr for pathway enrichment">Enrichr &#9662;</button>
-                <button class="btn btn-outline btn-sm" id="ge${side}Heatmap" aria-haspopup="true" style="font-size:10px; padding:3px 7px; flex:1 1 100%;" title="Open the heatmap on the genes listed">Open in heatmap &#9662;</button>
+                ${this._hasHeatmap() ? `<button class="btn btn-outline btn-sm" id="ge${side}Heatmap" aria-haspopup="true" style="font-size:10px; padding:3px 7px; flex:1 1 100%;" title="Open the heatmap on the genes listed">Open in heatmap &#9662;</button>` : ''}
             </div>`, '', 'phone-collapse-card');
 
         const sidebar = document.getElementById('selectionInspectSidebar');
@@ -53502,10 +53502,10 @@ ${clone.innerHTML}
                     : 'Opens ready for a gene; the setting applies as soon as you pick one.',
                   b('ge-hl', 'Highlight', 'Mark these cell lines in red on the gene-effect charts', true)
                 + b('ge-only', 'Only these', 'Narrow the gene-effect charts to these cell lines'))}
-            ${row('Heatmap',
+            ${this._hasHeatmap() ? row('Heatmap',
                   'Opens on a starter gene set; switch it to any preset or your own genes there.',
                   b('hm-hl', 'Highlight', 'Mark these cell lines above the heatmap columns, leaving the rest in place', true)
-                + b('hm-only', 'Only these', 'Draw the heatmap on just these cell lines'))}
+                + b('hm-only', 'Only these', 'Draw the heatmap on just these cell lines')) : ''}
             ${row('Mutation analysis',
                   'Splits these cell lines into altered and wild-type for a gene you pick.',
                   b('cohort-mutation', 'Only these', 'Use these cell lines as the cohort and open the mutation analysis'))}
@@ -58451,7 +58451,12 @@ ${clone.innerHTML}
     // here. Rendering follows the oncoprint's pattern: a frozen label canvas
     // beside a horizontally-scrolling grid canvas, both painted at device
     // resolution from the same logical-coordinate functions the exports use.
+    // The heatmap and the threshold scan are V2-only: the V1 build strips
+    // their markup, and the buttons app.js draws for them check this first.
+    _hasHeatmap() { return !!document.getElementById('heatmapModal'); }
+
     setupHeatmapModal() {
+        if (!this._hasHeatmap()) return;
         this._hmBuildPresetOptions();
         document.getElementById('showHeatmapDirect')?.addEventListener('click', () => this._hmOpenModal());
         document.getElementById('clbHeatmapBtn')?.addEventListener('click', () => this._hmOpenModal());
@@ -63471,6 +63476,7 @@ ${clone.innerHTML}
     // dropped, the same contract the network/scatter restores follow.
     async _hmRestoreView(state) {
         if (!state || typeof state !== 'object') return;
+        if (!this._hasHeatmap()) { this.showStatus?.('info', 'This file is a gene set heatmap view, which this version of Correlate does not include.'); return; }
         this._hmOpenModal();
 
         const set = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
