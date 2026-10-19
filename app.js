@@ -23412,6 +23412,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         ['ctXmin', 'ctXmax'].forEach(id => document.getElementById(id)?.addEventListener('input', debounce(() => this._ctRenderPlot())));
         document.getElementById('ctZero')?.addEventListener('change', () => this._ctRenderPlot());
         document.getElementById('ctFocus')?.addEventListener('change', () => {
+            this._ct.sortCol = 'ttd';
+            this._ct.sortAsc = false;
             this._ctComputeFocus();
             this._ctSyncTissueMode();
             this._ctRecount();
@@ -23455,7 +23457,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (!th) return;
             const col = th.dataset.ctSort;
             if (this._ct.sortCol === col) this._ct.sortAsc = !this._ct.sortAsc;
-            else { this._ct.sortCol = col; this._ct.sortAsc = col === 'gene'; }
+            else { this._ct.sortCol = col; this._ct.sortAsc = col === 'gene' || col === 'p'; }
             this._ctRenderTable();
         });
         document.getElementById('ctBody')?.addEventListener('click', (e) => {
@@ -23736,32 +23738,39 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const T = c.tisNames.length;
         const ttIdx = new Int16Array(c.genes.length).fill(-1), ttPct = new Float32Array(c.genes.length), ttN = new Int32Array(c.genes.length);
         const ttMed = new Float32Array(c.genes.length), ttDiff = new Float32Array(c.genes.length);
+        const ttP = new Float64Array(c.genes.length).fill(NaN);
         const tv = new Int32Array(T), tp = new Int32Array(T);
+        // Sums for a Welch test of the group against all other lines.
+        const ts = new Float64Array(T), tq = new Float64Array(T);
         const { data, cols, stride, tis } = c;
         if (!isNaN(cut)) {
             for (let g = 0; g < c.genes.length; g++) {
                 if (!c.nValid[g]) continue;
                 const off = g * stride;
-                let k = 0;
-                tv.fill(0); tp.fill(0);
+                let k = 0, S = 0, Q = 0, nAll = 0;
+                tv.fill(0); tp.fill(0); ts.fill(0); tq.fill(0);
                 for (let j = 0; j < cols.length; j++) {
                     const v = data[off + cols[j]];
                     if (v !== v || v === -999) continue;
-                    tv[tis[j]]++;
-                    if (dir === 'below' ? v < cut : v > cut) { k++; tp[tis[j]]++; }
+                    const t = tis[j];
+                    tv[t]++; ts[t] += v; tq[t] += v * v; S += v; Q += v * v; nAll++;
+                    if (dir === 'below' ? v < cut : v > cut) { k++; tp[t]++; }
                 }
                 nP[g] = k;
                 if (c.focus) {
                     // A chosen group: its median against all lines, its own share.
-                    let fv = 0, fp = 0;
+                    let fv = 0, fp = 0, fs = 0, fq = 0;
                     for (let j = 0; j < cols.length; j++) {
                         if (!c.focus.mask[j]) continue;
                         const v = data[off + cols[j]];
                         if (v !== v || v === -999) continue;
-                        fv++;
+                        fv++; fs += v; fq += v * v;
                         if (dir === 'below' ? v < cut : v > cut) fp++;
                     }
-                    if (fv) { ttIdx[g] = 0; ttN[g] = fv; ttPct[g] = fp / fv * 100; ttMed[g] = c.focus.med[g]; ttDiff[g] = ttMed[g] - c.median[g]; }
+                    if (fv) {
+                        ttIdx[g] = 0; ttN[g] = fv; ttPct[g] = fp / fv * 100; ttMed[g] = c.focus.med[g]; ttDiff[g] = ttMed[g] - c.median[g];
+                        ttP[g] = this._welchFromSums(fs, fq, fv, S - fs, Q - fq, nAll - fv).p;
+                    }
                     continue;
                 }
                 const t = dir === 'below' ? c.loIdx[g] : c.hiIdx[g];
@@ -23769,10 +23778,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     ttIdx[g] = t; ttN[g] = tv[t]; ttPct[g] = tv[t] ? tp[t] / tv[t] * 100 : 0;
                     ttMed[g] = dir === 'below' ? c.loMed[g] : c.hiMed[g];
                     ttDiff[g] = ttMed[g] - c.median[g];
+                    ttP[g] = this._welchFromSums(ts[t], tq[t], tv[t], S - ts[t], Q - tq[t], nAll - tv[t]).p;
                 }
             }
         }
-        Object.assign(c, { cut, dir, nP, ttIdx, ttPct, ttN, ttMed, ttDiff });
+        Object.assign(c, { cut, dir, nP, ttIdx, ttPct, ttN, ttMed, ttDiff, ttP });
         this._ctRenderTable();
         this._ctRenderPlot();
     }
@@ -23814,7 +23824,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const covered = n >= nMin;
             if (covered) measured++;
             const pct = isNaN(c.cut) ? null : c.nP[g] / n * 100;
-            const tt = c.ttIdx[g] >= 0 ? { name: c.focus ? c.focus.label : c.tisNames[c.ttIdx[g]], pct: c.ttPct[g], n: c.ttN[g], med: c.ttMed[g], diff: c.ttDiff[g] } : null;
+            const tt = c.ttIdx[g] >= 0 ? { name: c.focus ? c.focus.label : c.tisNames[c.ttIdx[g]], pct: c.ttPct[g], n: c.ttN[g], med: c.ttMed[g], diff: c.ttDiff[g], p: c.ttP[g] } : null;
             const meets = covered && pct !== null && c.nP[g] > 0
                 && (scope === 'tissue' ? !!tt && tt.pct >= minShare : pct >= minShare);
             const gene = String(c.genes[g]);
@@ -23824,7 +23834,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
         const col = c.sortCol || 'pct', asc = !!c.sortAsc;
         const key = { gene: r => r.gene, n: r => r.n, pct: r => r.pct ?? -1, k: r => r.k, median: r => r.med,
-            tt: r => r.tt?.name || '', ttm: r => r.tt ? r.tt.med : NaN,
+            tt: r => r.tt?.name || '', ttm: r => r.tt ? r.tt.med : NaN, p: r => r.tt && Number.isFinite(r.tt.p) ? r.tt.p : 2,
             // Strongest first in the scan's direction: most negative for "below".
             ttd: r => r.tt ? (c.dir === 'below' ? -r.tt.diff : r.tt.diff) : -Infinity }[col] || (r => r.pct ?? -1);
         const sorter = (a, b) => {
@@ -23846,7 +23856,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             : `(${Math.max(1, Math.ceil(N * minShare / 100)).toLocaleString()} of ${N.toLocaleString()})`;
         const shown = q ? found : listed;
 
-        const th = (k, label, title) => `<th data-ct-sort="${k}" title="${this.esc(title)}" style="padding:6px 8px; border-bottom:2px solid #d1d5db; cursor:pointer; user-select:none; white-space:nowrap; text-align:${k === 'gene' ? 'left' : 'center'};">${label}${col === k ? (asc ? ' ▲' : ' ▼') : ''}</th>`;
+        // Headers wrap onto two or three lines so they do not set the width.
+        const th = (k, label, title) => `<th data-ct-sort="${k}" title="${this.esc(title)}" style="padding:5px 6px; border-bottom:2px solid #d1d5db; cursor:pointer; user-select:none; white-space:normal; line-height:1.15; vertical-align:bottom; max-width:${k === 'gene' ? 'none' : '78px'}; text-align:${k === 'gene' ? 'left' : 'center'};">${label}${col === k ? (asc ? ' ▲' : ' ▼') : ''}</th>`;
         const tMode = scope === 'tissue';
         document.getElementById('ctHead').innerHTML =
             th('gene', 'Gene', 'Gene symbol')
@@ -23857,6 +23868,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                   + th('ttm', c.focus ? `Median in ${this.esc(c.focus.label)}` : 'Median there', c.focus ? `Median value in ${c.focus.label}` : 'Median value in that tissue')
                   + th('median', 'Median', 'Median value across all the cell lines')
                   + th('ttd', 'Difference', 'Median there minus the median of all cell lines')
+                  + th('p', 'p', `Welch t-test: ${c.focus ? c.focus.label : 'the tissue'} against all other cell lines`)
                 : th('k', 'Lines', `Number of cell lines with a value ${c.dir === 'above' ? 'higher' : 'lower'} than the cutoff`)
                   + th('median', 'Median', 'Median value across those cell lines'));
         const CAP = 500;
@@ -23872,10 +23884,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 ? (c.focus ? '' : `<td style="${td} max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="${r.tt ? this.esc(`${r.tt.name}: median ${this._ctSigned(r.tt.med)} in ${r.tt.n} lines; ${r.tt.pct.toFixed(1)}% of them ${this._ctCutWords()}`) : ''}">${r.tt ? this.esc(r.tt.name) : ''}</td>`)
                   + `<td style="${td} text-align:center;">${r.tt ? this._ctSigned(r.tt.med) : ''}</td>`
                   + `<td style="${td} text-align:center;">${this._ctSigned(r.med)}</td>`
-                  + `<td style="${td} text-align:center;${r.meets ? ` color:${pctColor};` : ''}">${r.tt ? (r.tt.diff > 0 ? '+' : '') + r.tt.diff.toFixed(2).replace('-', '\u2212') : ''}</td></tr>`
+                  + `<td style="${td} text-align:center;${r.meets ? ` color:${pctColor};` : ''}">${r.tt ? (r.tt.diff > 0 ? '+' : '') + r.tt.diff.toFixed(2).replace('-', '\u2212') : ''}</td>`
+                  + `<td style="${td} text-align:center; white-space:nowrap;">${r.tt && Number.isFinite(r.tt.p) ? this.formatPValue(r.tt.p) : ''}</td></tr>`
                 : `<td style="${td} text-align:center;${r.meets ? ' color:#6b7280;' : ''}">${r.pct === null ? '' : r.k}</td>`
                   + `<td style="${td} text-align:center;">${this._ctSigned(r.med)}</td></tr>`)).join('')
-            || `<tr><td colspan="${tMode ? (c.focus ? 6 : 7) : 5}" style="padding:10px; color:#6b7280;">${q ? 'No gene symbol contains that text.' : 'No gene meets the criterion.'}</td></tr>`);
+            || `<tr><td colspan="${tMode ? (c.focus ? 7 : 8) : 5}" style="padding:10px; color:#6b7280;">${q ? 'No gene symbol contains that text.' : 'No gene meets the criterion.'}</td></tr>`);
         // Same gene card as the network and the other gene lists.
         this.attachGeneTooltips?.(document.getElementById('ctBody'));
         const countEl = document.getElementById('ctCount');
@@ -23994,19 +24007,35 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     _ctRenderTissuePlot(el, g) {
         const c = this._ct;
         const ids = c.measure === 'expr' ? this.expressionMetadata.cellLines : this.metadata.cellLines;
+        // Rows are tissues; a subtype or disease focus shows the subtypes or
+        // diseases of its tissue instead, plus one row for all other lines,
+        // as the Gene Effect view does when narrowed to a tissue.
+        const f = c.tissueMode ? c.focus : null;
+        const kind = f ? f.key[0] : 'L';
+        let groupOf = (j) => c.tisNames[c.tis[j]];
+        let within = '';
+        if (kind === 'S' || kind === 'D') {
+            const cnt = new Map();
+            c.cohort.forEach((cl, j) => { if (f.mask[j]) { const t = this.getCellLineLineage(cl) || 'Not recorded'; cnt.set(t, (cnt.get(t) || 0) + 1); } });
+            within = [...cnt.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+            const sub = kind === 'S' ? (cl => this.getCellLineSublineage(cl)) : (cl => this.cellLineMetadata?.oncotreeSubtype?.[cl]);
+            groupOf = (j) => { const cl = c.cohort[j]; return (this.getCellLineLineage(cl) || 'Not recorded') === within ? (sub(cl) || 'Not recorded') : 'All other lines'; };
+        }
+        // The group to mark: the chosen focus, or the gene's standout tissue.
+        const mark = f ? f.label : (c.tissueMode && c.ttIdx?.[g] >= 0 ? c.tisNames[c.ttIdx[g]] : null);
         const groups = new Map();
         const off = g * c.stride;
         for (let j = 0; j < c.cols.length; j++) {
             const v = c.data[off + c.cols[j]];
             if (v !== v || v === -999) continue;
-            const t = c.tisNames[c.tis[j]];
+            const t = groupOf(j);
             if (!groups.has(t)) groups.set(t, []);
             groups.get(t).push([ids[c.cols[j]], v]);
         }
         const past = (v) => c.dir === 'above' ? v > c.cut : v < c.cut;
         const rows = [...groups.entries()].map(([t, pts]) => ({ t, pts, k: isNaN(c.cut) ? 0 : pts.filter(p => past(p[1])).length }))
             .map(r => ({ ...r, pct: r.k / r.pts.length * 100 }))
-            .sort((a, b) => b.pct - a.pct || b.pts.length - a.pts.length);
+            .sort((a, b) => (a.t === 'All other lines') - (b.t === 'All other lines') || b.pct - a.pct || b.pts.length - a.pts.length);
         const pastColor = c.dir === 'above' ? '#3b82f6' : '#dc2626';
         // Stable jitter, so an export matches the screen.
         const jit = (id) => { let h = 0; for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) | 0; return ((h >>> 0) % 1000) / 1000 - 0.5; };
@@ -24020,18 +24049,24 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }));
         const traces = [0, 1].map(b => ({ type: 'scatter', mode: 'markers', x: xs[b], y: ys[b], customdata: cd[b], hovertext: tx[b], hoverinfo: 'none',
             marker: { size: 5, color: b ? pastColor : '#9ca3af', opacity: 0.75 }, showlegend: false }));
-        const H = Math.max(440, rows.length * 22 + 130);
+        const H = Math.max(rows.length <= 6 ? 300 : 440, rows.length * 22 + 130);
+        // Room for the longest row label (about 6 px a character at 10 px).
+        const mL = Math.min(300, Math.max(120, Math.max(...rows.map(r => `${r.t} (${r.pts.length})`.length)) * 6 + 20));
         el.style.height = H + 'px';
         const gene = this.esc(c.genes[g]);
         const filt = this._ctFilterParts();
         const range = this._ctXRange(lo, hi);
         const layout = {
-            title: { text: `<b><i>${gene}</i> ${c.measure === 'expr' ? 'mRNA expression' : 'gene effect'} by tissue</b><br><span style="font-size:11px; color:#6b7280;">${c.cohort.length.toLocaleString()} cell lines${filt.length ? ', ' + this.esc(filt.join(', ')) : ''}; share ${this._ctCutWords()} at the right</span>`, font: { size: 14 }, y: 1 - 18 / H },
+            title: { text: `<b><i>${gene}</i> ${c.measure === 'expr' ? 'mRNA expression' : 'gene effect'} by ${kind === 'S' ? `subtype, ${this.esc(within)}` : kind === 'D' ? `disease, ${this.esc(within)}` : 'tissue'}</b><br><span style="font-size:11px; color:#6b7280;">${c.cohort.length.toLocaleString()} cell lines${filt.length ? ', ' + this.esc(filt.join(', ')) : ''}; share ${this._ctCutWords()} at the right</span>`, font: { size: 14 }, y: 1 - 18 / H },
             xaxis: { title: { text: `<i>${gene}</i> ${this._ctMeasureWord()}` }, zeroline: true, zerolinecolor: '#9ca3af', gridcolor: '#eeeeee', ...(range ? { range } : {}) },
-            yaxis: { tickvals: rows.map((_, i) => i), ticktext: rows.map(r => `${this.esc(r.t)} (${r.pts.length})`), autorange: 'reversed', tickfont: { size: 10 }, gridcolor: '#f3f4f6', zeroline: false },
-            shapes: isNaN(c.cut) ? [] : [{ type: 'line', xref: 'x', yref: 'paper', x0: c.cut, x1: c.cut, y0: 0, y1: 1, line: { color: pastColor, width: 1.5, dash: 'dash' } }],
+            yaxis: { tickvals: rows.map((_, i) => i), autorange: 'reversed', tickfont: { size: 10 }, gridcolor: '#f3f4f6', zeroline: false,
+                ticktext: rows.map(r => r.t === mark ? `<span style="color:#4c782e;"><b>${this.esc(r.t)} (${r.pts.length})</b></span>` : `${this.esc(r.t)} (${r.pts.length})`) },
+            shapes: [
+                ...rows.map((r, i) => r.t === mark ? { type: 'rect', xref: 'paper', yref: 'y', x0: 0, x1: 1, y0: i - 0.45, y1: i + 0.45, fillcolor: 'rgba(107,165,68,0.10)', line: { width: 0 }, layer: 'below' } : null).filter(Boolean),
+                ...(isNaN(c.cut) ? [] : [{ type: 'line', xref: 'x', yref: 'paper', x0: c.cut, x1: c.cut, y0: 0, y1: 1, line: { color: pastColor, width: 1.5, dash: 'dash' } }])
+            ],
             annotations: rows.map((r, i) => ({ xref: 'paper', yref: 'y', x: 1.01, y: i, xanchor: 'left', showarrow: false, font: { size: 10, color: r.k ? pastColor : '#9ca3af' }, text: `${r.pct.toFixed(0)}%` })),
-            margin: { l: 170, r: 46, t: 64, b: 50, autoexpand: false }, height: H,
+            margin: { l: mL, r: 46, t: 64, b: 50, autoexpand: false }, height: H,
             paper_bgcolor: '#ffffff', plot_bgcolor: '#fafafa', font: { family: 'Open Sans, sans-serif' }
         };
         Plotly.react(el, traces, layout, { displayModeBar: false, responsive: true });
@@ -24070,14 +24105,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     _ctTableRows() {
         const t = this._ct.tissueMode;
         return (this._ct.listed || []).map(r => [r.gene, r.n, r.pct === null ? '' : +r.pct.toFixed(2), r.pct === null ? '' : r.k,
-            ...(t ? [r.tt ? r.tt.name : '', r.tt ? r.tt.n : '', r.tt ? +r.tt.med.toFixed(3) : '', r.tt ? +r.tt.diff.toFixed(3) : '', r.tt ? +r.tt.pct.toFixed(2) : ''] : []),
+            ...(t ? [r.tt ? r.tt.name : '', r.tt ? r.tt.n : '', r.tt ? +r.tt.med.toFixed(3) : '', r.tt ? +r.tt.diff.toFixed(3) : '', r.tt ? +r.tt.pct.toFixed(2) : '', r.tt && Number.isFinite(r.tt.p) ? Number(r.tt.p.toPrecision(3)) : ''] : []),
             +r.med.toFixed(3)]);
     }
 
     _ctHeaderCols() {
         const c = this._ct;
         return ['Gene', 'N', isNaN(c.cut) ? 'Pct' : `Pct_${c.dir}_${c.cut}`, isNaN(c.cut) ? 'Lines' : `Lines_${c.dir}_${c.cut}`,
-            ...(c.tissueMode ? ['Tissue', 'N_tissue', 'Median_tissue', 'Difference_from_median', isNaN(c.cut) ? 'Pct_tissue' : `Pct_tissue_${c.dir}_${c.cut}`] : []), 'Median'];
+            ...(c.tissueMode ? ['Tissue', 'N_tissue', 'Median_tissue', 'Difference_from_median', isNaN(c.cut) ? 'Pct_tissue' : `Pct_tissue_${c.dir}_${c.cut}`, 'P_welch'] : []), 'Median'];
     }
 
     _ctDownloadCsv() {
@@ -24231,7 +24266,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             filters: this._ctFilterParts().join(', '),
             listRule: this._ctListWords(),
             sort: this._ctSortWords(),
-            columns: ['gene', 'n', isNaN(c.cut) ? 'pct' : `pct_${c.dir}_${c.cut}`, isNaN(c.cut) ? 'lines' : `lines_${c.dir}_${c.cut}`, ...(c.tissueMode ? ['tissue', 'nTissue', 'medianTissue', 'differenceFromMedian', 'pctTissuePastCutoff'] : []), 'median'],
+            columns: ['gene', 'n', isNaN(c.cut) ? 'pct' : `pct_${c.dir}_${c.cut}`, isNaN(c.cut) ? 'lines' : `lines_${c.dir}_${c.cut}`, ...(c.tissueMode ? ['tissue', 'nTissue', 'medianTissue', 'differenceFromMedian', 'pctTissuePastCutoff', 'pWelch'] : []), 'median'],
             rows: this._ctTableRows().slice(0, CAP),
             listed: c.listed.length,
             selected: sel ? { gene: sel, values: this._ctValues(c.selectedG, true).map(([id, v]) => [id, +v.toFixed(3)]) } : null
@@ -24263,7 +24298,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         ]);
         const long = this._mBlocks([
             this._methodsHeaderBlock(title, kind),
-            `WHAT WAS COUNTED\n   For every gene, the cell lines in the cohort with a value for it (n), the percentage of those with a value strictly ${c.dir} ${c.cut}, and the median value. A cell line without a value for a gene is left out of that gene's n.${c.tissueMode && c.focus ? `\n   Tissue differences were switched on with a chosen group, ${c.focus.label}: for each gene, its median in that group and the difference from its median across all cell lines; a gene was listed when at least ${c.minShare}% of the group's lines were past the cutoff, and the table is sorted by the difference unless re-sorted.` : ''}${c.tissueMode && !c.focus ? `\n   Tissue differences were switched on: for each gene, the tissue (at least 10 cell lines measured for the gene) whose median lies ${c.dir === 'above' ? 'highest' : 'lowest'} relative to the gene's median across all cell lines, with that median and the difference; a gene was listed when at least ${c.minShare}% of that tissue's lines were past the cutoff, and the table is sorted by the difference unless re-sorted.` : ''}`,
+            `WHAT WAS COUNTED\n   For every gene, the cell lines in the cohort with a value for it (n), the percentage of those with a value strictly ${c.dir} ${c.cut}, and the median value. A cell line without a value for a gene is left out of that gene's n.${c.tissueMode && c.focus ? `\n   Tissue differences were switched on with a chosen group, ${c.focus.label}: for each gene, its median in that group and the difference from its median across all cell lines; a gene was listed when at least ${c.minShare}% of the group's lines were past the cutoff, and the table is sorted by the difference unless re-sorted. The p column is a two-sided Welch t-test of the group's values against all other cell lines, not corrected for the number of genes tested.` : ''}${c.tissueMode && !c.focus ? `\n   Tissue differences were switched on: for each gene, the tissue (at least 10 cell lines measured for the gene) whose median lies ${c.dir === 'above' ? 'highest' : 'lowest'} relative to the gene's median across all cell lines, with that median and the difference; a gene was listed when at least ${c.minShare}% of that tissue's lines were past the cutoff, and the table is sorted by the difference unless re-sorted. The p column is a two-sided Welch t-test of the group's values against all other cell lines, not corrected for the number of genes tested.` : ''}`,
             `THE COHORT\n   ${this._mNum(N)} cell lines. Filters: ${this._mListOr(filt, 'none, every cell line with data')}.`,
             `THE TABLE\n   ${this._mNum(c.listed.length)} of ${this._mNum(c.measuredN)} genes listed: those with ${this._ctListWords()}. Rows are ${this._ctSortWords()}.`,
             `THE CHART\n   One gene (the first in the table unless another was clicked). As a histogram: its values across the cohort as a percentage of cell lines, in bins of ${size} with an edge on the cutoff; bars past the cutoff are coloured and a dashed line marks the cutoff with the share past it. By tissue: one row per tissue, one dot per cell line, the share past the cutoff at the right, tissues ordered by that share; rows can hold fewer than 10 lines.`,
@@ -34813,7 +34848,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const complete = ctab.rows.length === ctab.listed;
             extras = {
                 thresholdScan: { columns: ctab.columns, rows: ctab.rows, genesListed: ctab.listed, rowsIncluded: ctab.rows.length, complete },
-                thresholdScan_readMe: `One row per gene that meets the criterion on screen: ${ctab.listRule}. Rows are ${ctab.sort}. Columns: gene; n, the cell lines in this file's cohort with a value for the gene; the percentage of those with a value strictly ${cutWords}; the number of those cell lines; ${ctab.columns.includes('tissue') ? `the tissue that stands out (the tissue, among those with at least 10 lines measured for the gene, whose median lies ${ctab.dir === 'above' ? 'highest' : 'lowest'} relative to the gene's median across all cell lines), its n, its median, that median minus the median of all cell lines, and the share of its lines past the cutoff; ` : ''}and the median, all in ${ctab.measure}. ${complete ? `All ${ctab.listed.toLocaleString()} genes meeting the criterion are included.` : `${ctab.listed.toLocaleString()} genes meet the criterion; the first ${ctab.rows.length.toLocaleString()} in the table's order are included and the rest were cut.`} Genes that miss the criterion are not in this list. A cell line without a value for a gene counts in neither n nor the percentage for that gene.`
+                thresholdScan_readMe: `One row per gene that meets the criterion on screen: ${ctab.listRule}. Rows are ${ctab.sort}. Columns: gene; n, the cell lines in this file's cohort with a value for the gene; the percentage of those with a value strictly ${cutWords}; the number of those cell lines; ${ctab.columns.includes('tissue') ? `the tissue that stands out (the tissue, among those with at least 10 lines measured for the gene, whose median lies ${ctab.dir === 'above' ? 'highest' : 'lowest'} relative to the gene's median across all cell lines), its n, its median, that median minus the median of all cell lines, the share of its lines past the cutoff, and a two-sided Welch t-test p of its values against all other cell lines (not corrected for the number of genes); ` : ''}and the median, all in ${ctab.measure}. ${complete ? `All ${ctab.listed.toLocaleString()} genes meeting the criterion are included.` : `${ctab.listed.toLocaleString()} genes meet the criterion; the first ${ctab.rows.length.toLocaleString()} in the table's order are included and the rest were cut.`} Genes that miss the criterion are not in this list. A cell line without a value for a gene counts in neither n nor the percentage for that gene.`
             };
             if (ctab.selected) {
                 extras.thresholdScanSelectedGene = ctab.selected;
