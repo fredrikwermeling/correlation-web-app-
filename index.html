@@ -757,6 +757,12 @@
             background: #f3faee; border: 1px solid #b2dd95; border-radius: 6px; padding: 6px 10px;
         }
 
+        /* Steppers with their own - / + buttons: the browser's arrows only
+           take room from the number (the 100 was cut off on Windows). */
+        #minCellLines, #minGeneCoverage { -moz-appearance: textfield; appearance: textfield; min-width: 38px !important; }
+        #minCellLines::-webkit-inner-spin-button, #minCellLines::-webkit-outer-spin-button,
+        #minGeneCoverage::-webkit-inner-spin-button, #minGeneCoverage::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+
         .form-control:focus {
             border-color: var(--green-500);
             box-shadow: 0 0 0 3px rgba(122, 185, 80, 0.15);
@@ -3087,7 +3093,7 @@
                         <button class="btn btn-success" id="runMutationAnalysisBtn" disabled style="width:100%; margin-top:10px; font-size:14px;" title="Split the cell lines into altered and wild-type for the gene chosen above, then rank every gene in the screen by how much its gene effect differs between the two groups.">Run Mutation Analysis</button>
                     </div>
 
-                    <div style="display:flex; gap:8px;" id="minCellLinesPvalRow">
+                    <div style="display:flex; gap:8px; align-items:flex-end;" id="minCellLinesPvalRow">
                         <div class="form-group" id="minCellLinesGroup" style="flex:1;">
                             <label class="form-label" style="font-size:11px; margin-bottom:2px;">Min Cell Lines:</label>
                             <div style="display:flex; gap:3px; align-items:center;">
@@ -4779,6 +4785,14 @@
                             <label style="font-weight:600; color:#374151;" title="How much of this cohort a gene must be measured in before it can appear. A share computed on a fraction of the cell lines is mostly noise. Expressed as a share of the cohort so it scales with whatever you have filtered to. Set 0 to see everything.">measured in &ge; <input type="text" inputmode="numeric" id="ctMinPct" value="75" style="width:40px; padding:2px 4px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;"> <span style="font-weight:400; color:#6b7280;">% of lines</span></label>
                         </div>
                     </div>
+                    <div class="clb-row">
+                        <span class="clb-row-label">Genes</span>
+                        <div class="clb-row-items">
+                            <select id="ctGeneSet" style="width:250px;" title="Scan every gene, or only a list of them"></select>
+                            <input type="text" id="ctGeneList" placeholder="Paste gene symbols, separated by commas or spaces" autocomplete="off" disabled style="width:340px; padding:2px 6px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;">
+                            <span id="ctGeneSetNote" style="color:#6b7280; font-size:11px;"></span>
+                        </div>
+                    </div>
                     <div class="clb-row clb-row-alt">
                         <span class="clb-row-label">Cell lines</span>
                         <div class="clb-row-items">
@@ -4838,6 +4852,7 @@
                             <label style="display:inline-flex; align-items:center; gap:3px; cursor:pointer;" title="Keep 0 on the x axis"><input type="checkbox" id="ctZero" checked style="margin:0;"> include 0</label>
                         </div>
                         <div id="ctPlot" style="width:100%; height:440px;"></div>
+                        <div id="ctEnrich" style="width:100%; display:none; margin-top:14px; border-top:1px solid #f3f4f6;"></div>
                     </div>
                 </div>
             </div>
@@ -5953,7 +5968,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v90_5"></script>
+    <script src="app.js?v=v90_6"></script>
     <script src="tour.js?v=v89_49"></script>
 </body>
 </html>

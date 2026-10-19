@@ -23412,6 +23412,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             this._ctRecount();
         });
         document.getElementById('ctCut')?.addEventListener('input', debounce(() => this._ctRecount()));
+        document.getElementById('ctGeneSet')?.addEventListener('change', async (e) => {
+            const list = document.getElementById('ctGeneList');
+            if (list) list.disabled = e.target.value !== 'custom';
+            if (e.target.value === 'ess') await this._ctEnsureCommonEssentials();
+            this._ct.autoSel = true;
+            this._ctRenderTable();
+        });
+        document.getElementById('ctGeneList')?.addEventListener('input', debounce(() => { this._ct.autoSel = true; this._ctRenderTable(); }));
         ['ctMinShare', 'ctMinPct', 'ctSearch'].forEach(id => document.getElementById(id)?.addEventListener('input', debounce(() => this._ctRenderTable())));
         ['ctXmin', 'ctXmax'].forEach(id => document.getElementById(id)?.addEventListener('input', debounce(() => this._ctRenderPlot())));
         document.getElementById('ctZero')?.addEventListener('change', () => this._ctRenderPlot());
@@ -23516,6 +23524,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
         set('ctMeasure', 'ge'); set('ctDir', 'below'); set('ctCut', this._ctDefault('ge', 'below'));
         set('ctMinShare', 10); set('ctMinPct', 75); set('ctSearch', ''); set('ctFocus', '');
+        this._ctPopulateGeneSets();
+        set('ctGeneList', '');
+        const gl = document.getElementById('ctGeneList'); if (gl) gl.disabled = true;
         const vh = document.getElementById('ctViewHist'), vt = document.getElementById('ctViewTissue');
         if (vh) vh.className = 'btn btn-success btn-sm';
         if (vt) vt.className = 'btn btn-secondary btn-sm';
@@ -23583,6 +23594,47 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (m) { const x = buf.subarray(0, m).sort(); med[g] = m % 2 ? x[(m - 1) >> 1] : (x[m / 2 - 1] + x[m / 2]) / 2; }
         }
         c.focus = { key, label: val, mask, med, n };
+    }
+
+    // Gene lists: the app's own curated cancer gene panels and the heatmap's
+    // gene set library, or a pasted list.
+    _ctPopulateGeneSets() {
+        const sel = document.getElementById('ctGeneSet');
+        if (!sel) return;
+        const lib = this._GENE_SET_LIBRARY?.() || {};
+        const libOpts = Object.entries(lib).filter(([, v]) => v?.genes?.length).map(([k, v]) => `<option value="lib:${this.esc(k)}">${this.esc(v.label)} (${v.genes.length})</option>`).join('');
+        sel.innerHTML = '<option value="">All genes</option>'
+            + '<optgroup label="Cancer genes">'
+            + '<option value="tsg">Tumour suppressors</option>'
+            + '<option value="onc">Proto-oncogenes</option>'
+            + '<option value="hot">Hotspot-mutated genes</option>'
+            + '<option value="ess">Common essential genes</option>'
+            + '</optgroup>'
+            + (libOpts ? `<optgroup label="Gene sets">${libOpts}</optgroup>` : '')
+            + '<option value="custom">Custom list...</option>';
+        sel.value = '';
+    }
+
+    async _ctEnsureCommonEssentials() {
+        if (this._commonEssentials) return;
+        try { const r = await fetch(this._dataUrl('web_data/common_essentials.json')); this._commonEssentials = new Set(await r.json()); }
+        catch (e) { this._commonEssentials = new Set(); }
+    }
+
+    // The genes the chosen list holds (upper case), or null for all genes.
+    _ctGeneSet() {
+        const key = document.getElementById('ctGeneSet')?.value || '';
+        if (!key) return null;
+        const up = (a) => new Set([...a].map(g => String(g).toUpperCase()));
+        const panel = (p) => (p || []).map(e => e.gene).filter(Boolean);
+        let genes = [], label = '';
+        if (key === 'tsg') { genes = [...panel(this.clinicalCn?.deletionPanel), ...Object.keys(this.functionalLoss?.geneData || {})]; label = 'tumour suppressors'; }
+        else if (key === 'onc') { genes = panel(this.clinicalCn?.amplificationPanel); label = 'proto-oncogenes'; }
+        else if (key === 'hot') { genes = (this.mutations?.genes || []).filter(g => !this._isPolymorphicLocus?.(g)); label = 'hotspot-mutated genes'; }
+        else if (key === 'ess') { genes = [...(this._commonEssentials || [])]; label = 'common essential genes'; }
+        else if (key.startsWith('lib:')) { const e = this._GENE_SET_LIBRARY?.()[key.slice(4)]; genes = e?.genes || []; label = e?.label || 'the gene set'; }
+        else if (key === 'custom') { genes = (document.getElementById('ctGeneList')?.value || '').split(/[\s,;]+/).filter(Boolean); label = 'genes from the pasted list'; }
+        return { set: up(genes), label, key };
     }
 
     _ctBaseLines(measure) {
@@ -23822,9 +23874,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // matching genes that miss it, greyed, so a gene can always be found.
         const listed = [], found = [];
         let measured = 0;
+        const gs = this._ctGeneSet();
         for (let g = 0; g < c.genes.length; g++) {
             const n = c.nValid[g];
             if (!n) continue;
+            if (gs && !gs.set.has(String(c.genes[g]).toUpperCase())) continue;
             const covered = n >= nMin;
             if (covered) measured++;
             const pct = isNaN(c.cut) ? null : c.nP[g] / n * 100;
@@ -23848,7 +23902,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         };
         listed.sort(sorter);
         found.sort((a, b) => (b.meets - a.meets) || sorter(a, b));
-        Object.assign(c, { listed, measuredN: measured, nMin, minPct, minShare, search: q, scope });
+        Object.assign(c, { listed, measuredN: measured, nMin, minPct, minShare, search: q, scope, geneSet: gs ? gs.label : null });
+        const gsNote = document.getElementById('ctGeneSetNote');
+        if (gsNote) {
+            const inData = gs ? measured : 0;
+            gsNote.textContent = gs ? (gs.set.size ? `${gs.set.size.toLocaleString()} genes, ${inData.toLocaleString()} measured here` : 'no genes in this list yet') : '';
+        }
         // The chart follows the table's first gene until a gene is clicked.
         const prevSel = c.selectedG;
         if (c.selectedG == null || c.autoSel) { c.selectedG = listed.length ? listed[0].g : null; c.autoSel = true; }
@@ -23896,7 +23955,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Same gene card as the network and the other gene lists.
         this.attachGeneTooltips?.(document.getElementById('ctBody'));
         const countEl = document.getElementById('ctCount');
-        if (countEl) countEl.textContent = `${listed.length.toLocaleString()} of ${measured.toLocaleString()} genes ${this._ctCutWords()} in at least ${minShare}% of ${scope === 'tissue' ? (c.focus ? `the ${c.focus.label} lines` : 'the lines of one tissue') : `${N.toLocaleString()} cell lines`}`
+        if (countEl) countEl.textContent = `${listed.length.toLocaleString()} of ${measured.toLocaleString()} ${gs ? gs.label : 'genes'} ${this._ctCutWords()} in at least ${minShare}% of ${scope === 'tissue' ? (c.focus ? `the ${c.focus.label} lines` : 'the lines of one tissue') : `${N.toLocaleString()} cell lines`}`
             + (!q && listed.length > CAP ? `; the first ${CAP} shown, .csv and Copy data carry all` : '');
 
     }
@@ -23978,10 +24037,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (g == null) {
             Plotly.purge(el);
             el.innerHTML = '<div style="padding:40px; color:#9ca3af; text-align:center;">No gene meets the criterion.</div>';
+            const enr0 = document.getElementById('ctEnrich'); if (enr0) enr0.style.display = 'none';
             return;
         }
         if (!el.data) el.innerHTML = '';
-        if (c.view === 'tissue') { this._ctRenderTissuePlot(el, g); return; }
+        const enr = document.getElementById('ctEnrich');
+        if (c.view === 'tissue') { if (enr) enr.style.display = 'none'; this._ctRenderTissuePlot(el, g); return; }
+        this._ctRenderEnrich(g);
         el.style.height = '440px';
         const filt = this._ctFilterParts();
         const cohortWords = `${c.cohort.length.toLocaleString()} cell lines${filt.length ? ', ' + this.esc(filt.join(', ')) : ''}`;
@@ -24089,6 +24151,81 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
     }
 
+    // P(X >= k) for a hypergeometric draw: n lines drawn from N, K of them
+    // in the tissue. Exact, from log factorials.
+    _hypergeomUpperP(k, K, n, N) {
+        if (k <= 0) return 1;
+        const lf = this._logFactTable(N);
+        const lc = (a, b) => lf[a] - lf[b] - lf[a - b];
+        const denom = lc(N, n);
+        let p = 0;
+        for (let x = k; x <= Math.min(K, n); x++) p += Math.exp(lc(K, x) + lc(N - K, n - x) - denom);
+        return Math.min(1, p);
+    }
+
+    _logFactTable(N) {
+        if (!this._lfTable || this._lfTable.length <= N) {
+            const t = new Float64Array(N + 1);
+            for (let i = 2; i <= N; i++) t[i] = t[i - 1] + Math.log(i);
+            this._lfTable = t;
+        }
+        return this._lfTable;
+    }
+
+    // Under the histogram: which tissues supply more of the lines past the
+    // cutoff than their share of all lines would give by chance.
+    _ctRenderEnrich(g) {
+        const box = document.getElementById('ctEnrich');
+        const c = this._ct;
+        if (!box) return;
+        if (g == null || isNaN(c.cut)) { box.style.display = 'none'; return; }
+        const T = c.tisNames.length;
+        const tv = new Int32Array(T), tp = new Int32Array(T);
+        const off = g * c.stride;
+        for (let j = 0; j < c.cols.length; j++) {
+            const v = c.data[off + c.cols[j]];
+            if (v !== v || v === -999) continue;
+            tv[c.tis[j]]++;
+            if (c.dir === 'below' ? v < c.cut : v > c.cut) tp[c.tis[j]]++;
+        }
+        let N = 0, n = 0;
+        for (let t = 0; t < T; t++) { N += tv[t]; n += tp[t]; }
+        if (!n || n === N) { box.style.display = 'none'; return; }
+        const rows = [];
+        for (let t = 0; t < T; t++) {
+            if (!tp[t]) continue;
+            const obs = tp[t] / n * 100, exp = tv[t] / N * 100;
+            rows.push({ t: c.tisNames[t], k: tp[t], K: tv[t], obs, exp, ratio: obs / exp, p: this._hypergeomUpperP(tp[t], tv[t], n, N) });
+        }
+        rows.sort((a, b) => a.p - b.p || b.ratio - a.ratio);
+        const top = rows.slice(0, 8);
+        const pastColor = c.dir === 'above' ? '#3b82f6' : '#dc2626';
+        const labels = top.map(r => `${this.esc(r.t)} (${r.K})`);
+        const H = top.length * 30 + 110;
+        box.style.display = '';
+        box.style.height = H + 'px';
+        const gene = this.esc(c.genes[g]);
+        const traces = [
+            { type: 'bar', orientation: 'h', name: `Share of the ${n} lines ${this._ctCutWords()}`, y: labels, x: top.map(r => r.obs), marker: { color: pastColor },
+              hovertext: top.map(r => `${r.t}: ${r.k} of the ${n} lines ${this._ctCutWords()} (${r.obs.toFixed(1)}%)`), hoverinfo: 'text' },
+            { type: 'bar', orientation: 'h', name: 'Expected by chance (share of all lines)', y: labels, x: top.map(r => r.exp), marker: { color: '#d1d5db' },
+              hovertext: top.map(r => `${r.t}: ${r.K} of all ${N} lines (${r.exp.toFixed(1)}%)`), hoverinfo: 'text' }
+        ];
+        const layout = {
+            title: { text: `<b>Tissues among the lines ${this._ctCutWords()}</b><br><span style="font-size:10px; color:#6b7280;"><i>${gene}</i>: observed share vs the share expected by chance; p from a one-sided hypergeometric test</span>`, font: { size: 12 }, y: 1 - 12 / H },
+            barmode: 'group', bargap: 0.25, bargroupgap: 0.05,
+            xaxis: { title: { text: '% of the lines', font: { size: 10 } }, tickfont: { size: 9 }, gridcolor: '#eeeeee', rangemode: 'tozero' },
+            yaxis: { autorange: 'reversed', tickfont: { size: 10 } },
+            legend: { orientation: 'h', x: 0, y: 0, yref: 'container', yanchor: 'bottom', font: { size: 9 } },
+            annotations: top.map((r, i) => ({ xref: 'paper', yref: 'y', x: 1.01, y: labels[i], xanchor: 'left', showarrow: false,
+                font: { size: 9, color: r.p < 0.05 ? pastColor : '#6b7280' },
+                text: `${r.ratio.toFixed(1)}\u00d7, p ${this.formatPValue(r.p)}` })),
+            margin: { l: Math.min(240, Math.max(110, Math.max(...labels.map(l => l.length)) * 6 + 16)), r: 110, t: 50, b: 78, autoexpand: false }, height: H + 20,
+            paper_bgcolor: '#ffffff', plot_bgcolor: '#fafafa', font: { family: 'Open Sans, sans-serif' }
+        };
+        Plotly.react(box, traces, layout, { displayModeBar: false, responsive: true });
+    }
+
     _ctSortWords() {
         const c = this._ct;
         const name = { gene: 'gene name', n: 'n', pct: `% ${this._ctCutWords()}`, k: `lines ${this._ctCutWords()}`, median: 'median',
@@ -24103,7 +24240,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const c = this._ct;
         const where = c.scope !== 'tissue' ? 'the cell lines'
             : c.focus ? `the ${c.focus.label} cell lines` : 'the cell lines of at least one tissue (tissues with 10 or more lines)';
-        return `at least ${c.minShare}% of ${where} ${this._ctCutWords()}, and measured in at least ${c.minPct}% of all the cell lines (${c.nMin.toLocaleString()} or more)`;
+        return `${c.geneSet ? `among ${c.geneSet}, ` : ''}at least ${c.minShare}% of ${where} ${this._ctCutWords()}, and measured in at least ${c.minPct}% of all the cell lines (${c.nMin.toLocaleString()} or more)`;
     }
 
     _ctTableRows() {
