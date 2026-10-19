@@ -339,7 +339,6 @@ class CorrelationExplorer {
             await this.loadData();
             this.setupUI();
             this._setupGlobalCohortBar();
-            this._guardNetworkKeysFromInputs();
             this._armPhoneCollapsibles();
             this._armTabletCollapsibles();
             // A node drawn at 25px and an edge at 3px are a fine mouse target
@@ -4448,26 +4447,6 @@ class CorrelationExplorer {
     // Any control anywhere can change the cohort, so the active-filter chips
     // refresh off a single delegated listener rather than a call at each of
     // ~40 sites.
-    // The network pans on arrow keys via a WINDOW listener (works without
-    // clicking the canvas first), so this guard must be a CAPTURE listener on
-    // the window, registered before the network binds its own; otherwise arrow
-    // keys typed into a search box slide the network behind the dialog.
-    _guardNetworkKeysFromInputs() {
-        const NAV = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
-            'PageUp', 'PageDown', 'Home', 'End']);
-        window.addEventListener('keydown', (e) => {
-            if (!NAV.has(e.key)) return;
-            const el = e.target;
-            if (!el) return;
-            const editable = el.tagName === 'INPUT' || el.tagName === 'TEXTAREA'
-                || el.tagName === 'SELECT' || el.isContentEditable;
-            if (!editable) return;
-            // The field still receives the key, so the caret moves as it should;
-            // only the network is kept from acting on it.
-            e.stopPropagation();
-        }, true);
-    }
-
     _setupGlobalCohortBar() {
         const refresh = () => {
             // A timer, not requestAnimationFrame: rAF is suspended while the
@@ -13626,11 +13605,11 @@ class CorrelationExplorer {
                 hover: true,
                 tooltipDelay: 100,
                 navigationButtons: true,
-                // Bound to the window on purpose: that is what lets the arrow
-                // keys pan the network without clicking the canvas first.
-                // _guardNetworkKeysFromInputs() is what keeps those same keys
-                // out of the network while the caret is in a text box.
-                keyboard: { enabled: true, bindToWindow: true }
+                // Off: bound to the window it took keys typed into text boxes,
+                // arrows moved the network and Shift + the + key ("?" on a
+                // Swedish keyboard) zoomed it instead of typing. Mouse,
+                // trackpad and the on-screen buttons cover navigation.
+                keyboard: { enabled: false }
             }
         };
 
@@ -58415,6 +58394,9 @@ ${clone.innerHTML}
 
         this._tsArrowHandler = (e) => {
             if (this._tsSelectedAnnotation == null) return;
+            // Keys typed into a box move the caret, not the label.
+            const t = e.target;
+            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
             const idx = this._tsSelectedAnnotation;
             const ann = plotEl.layout.annotations?.[idx];
             if (!ann || ann.xref !== 'paper') return;
