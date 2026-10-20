@@ -23567,7 +23567,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         [['ctGridHotspotBtn', 'hotspot'], ['ctGridFusionBtn', 'fusion'], ['ctGridCnBtn', 'cn']].forEach(([id, kind]) =>
             document.getElementById(id)?.addEventListener('click', () => this.showOncoprint(null, kind)));
         ['ctLineage', 'ctSubtype', 'ctDisease'].forEach(id => document.getElementById(id)?.addEventListener('change', () => this._ctRecompute()));
-        document.getElementById('ctLines')?.addEventListener('input', debounce(() => this._ctRecompute()));
+        this._ctPickedIds = new Set();
+        this._ctSetupLinesPicker();
         const changed = () => { this._renderFilterChips('cutoff'); this._ctRecompute(); };
         this._setupMutFilterWidget('hotspot', 'ctHotspotFilter', 'ctHotspotDropdown', changed, () => this._ctCohortExcluding('hotspot'));
         this._setupMutFilterWidget('fusion', 'ctFusionFilter', 'ctFusionDropdown', changed, () => this._ctCohortExcluding('fusion'));
@@ -23649,6 +23650,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         set('ctXmin', ''); set('ctXmax', '');
         const z = document.getElementById('ctZero'); if (z) z.checked = true;
         set('ctLineage', ''); set('ctSubtype', ''); set('ctDisease', ''); set('ctLines', '');
+        this._ctPickedIds = new Set(); this._ctLinesMissed = [];
         [['ctHotspotFilter', 'ctHotspotLevel', '1+2'], ['ctFusionFilter', 'ctFusionLevel', '1+2'], ['ctCnFilter', 'ctCnLevel', 'altered']].forEach(([i, l, def]) => {
             set(i, ''); set(l, def);
             const lv = document.getElementById(l); if (lv) lv.style.display = 'none';
@@ -23792,43 +23794,113 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (lineage && (this.getCellLineLineage(cl) || 'Not recorded') !== lineage) return false;
         if (subtype && this.getCellLineSublineage(cl) !== subtype) return false;
         if (disease && (this.cellLineMetadata?.oncotreeSubtype?.[cl] || '') !== disease) return false;
-        const only = this._ctLinesMatch();
-        if (only && !only(this.getCellLineName(cl) || cl, cl)) return false;
+        if (this._ctPickedIds?.size && !this._ctPickedIds.has(cl)) return false;
         return true;
     }
 
-    // Which cell lines the "Only these cell lines" box picked, as chips, and
-    // the typed names that matched nothing.
-    _ctRenderLinesChips(cohort, base) {
+    // "Only these cell lines": a search box that suggests cell lines by name
+    // (the hotspot filter's dropdown look); each pick becomes a chip. A
+    // pasted list adds every exact name at once, the rest are reported.
+    _ctSetupLinesPicker() {
+        const input = document.getElementById('ctLines');
+        const dd = document.getElementById('ctLinesDropdown');
+        if (!input || !dd || input._ctPickerWired) return;
+        input._ctPickerWired = true;
+        const norm = (t) => String(t || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+        const pool = () => {
+            const measure = document.getElementById('ctMeasure')?.value || 'ge';
+            return this._ctBaseLines(measure).map(cl => ({ id: cl, name: this.getCellLineName(cl) || cl }));
+        };
+        const tokens = () => input.value.split(/[,;\n\t]+/).map(t => t.trim()).filter(Boolean);
+        const addIds = (ids, missed = []) => {
+            ids.forEach(id => this._ctPickedIds.add(id));
+            this._ctLinesMissed = missed;
+            input.value = '';
+            dd.style.display = 'none';
+            this._ctRecompute();
+        };
+        const addPasted = () => {
+            const byName = new Map();
+            pool().forEach(p => { byName.set(norm(p.name), p.id); byName.set(norm(p.id), p.id); });
+            const ids = [], missed = [];
+            tokens().forEach(t => { const id = byName.get(norm(t)); if (id) ids.push(id); else missed.push(t); });
+            addIds(ids, missed);
+        };
+        const render = () => {
+            const q = norm(input.value);
+            if (!q) { dd.style.display = 'none'; return; }
+            const many = tokens().length > 1;
+            let html = '';
+            if (many) {
+                html = `<div class="ct-line-opt" data-paste="1" style="padding:6px 10px; cursor:pointer; border-bottom:1px solid #f3f4f6; font-weight:600; color:#374151;" onmouseover="this.style.background='#f0fdf4'" onmouseout="this.style.background=''">Add the ${tokens().length} names (Enter)</div>`;
+            } else {
+                const rows = pool().filter(p => !this._ctPickedIds.has(p.id)).map(p => {
+                    const n = norm(p.name);
+                    const rank = n === q ? 0 : n.startsWith(q) ? 1 : n.includes(q) ? 2 : norm(p.id) === q ? 0 : -1;
+                    return { ...p, rank };
+                }).filter(p => p.rank >= 0).sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name)).slice(0, 40);
+                html = rows.length ? rows.map(p => `<div class="ct-line-opt" data-id="${this.esc(p.id)}" style="padding:5px 10px; cursor:pointer; border-bottom:1px solid #f3f4f6;" onmouseover="this.style.background='#f0fdf4'" onmouseout="this.style.background=''">`
+                        + `<span style="font-weight:600; color:#374151;">${this.esc(p.name)}</span> <span style="font-size:10px; color:#9ca3af;">${this.esc(this.getCellLineLineage(p.id) || '')}</span></div>`).join('')
+                    : `<div style="padding:8px 10px; color:#9ca3af;">No cell line matches.</div>`;
+            }
+            dd.innerHTML = html;
+            dd.style.display = 'block';
+        };
+        input.addEventListener('input', render);
+        input.addEventListener('focus', render);
+        // A text box turns pasted new lines into spaces; keep them as a list.
+        input.addEventListener('paste', (e) => {
+            const txt = e.clipboardData?.getData('text') || '';
+            if (!/[\n\r,;\t]/.test(txt.trim())) return;
+            e.preventDefault();
+            input.value = txt.split(/[\n\r,;\t]+/).map(t => t.trim()).filter(Boolean).join(', ');
+            render();
+        });
+        input.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter') return;
+            e.preventDefault();
+            if (tokens().length > 1) { addPasted(); return; }
+            const first = dd.querySelector('.ct-line-opt[data-id]');
+            if (first) addIds([first.dataset.id]);
+        });
+        dd.addEventListener('mousedown', (e) => e.preventDefault());
+        dd.addEventListener('click', (e) => {
+            const opt = e.target.closest('.ct-line-opt');
+            if (!opt) return;
+            if (opt.dataset.paste) addPasted(); else addIds([opt.dataset.id]);
+        });
+        input.addEventListener('blur', () => { dd.style.display = 'none'; });
+        document.getElementById('ctLinesChips')?.addEventListener('click', (e) => {
+            const x = e.target.closest('[data-ct-unpick]');
+            if (!x) return;
+            if (x.dataset.ctUnpick === '*') this._ctPickedIds.clear(); else this._ctPickedIds.delete(x.dataset.ctUnpick);
+            this._ctLinesMissed = [];
+            this._ctRecompute();
+        });
+    }
+
+    // The picked cell lines as chips (x removes one); a pick the other
+    // filters or the measure leave out is shown struck through.
+    _ctRenderLinesChips(cohort) {
         const box = document.getElementById('ctLinesChips');
         const input = document.getElementById('ctLines');
         if (!box || !input) return;
-        const terms = this._splitHighlightTerms(input.value);
-        input.style.borderColor = terms.length ? '#3b82f6' : '#d1d5db';
-        input.style.background = terms.length ? '#eff6ff' : '';
-        input.style.fontWeight = terms.length ? '600' : '';
-        this._ctLinesPicked = terms.length ? cohort.map(cl => this.getCellLineName(cl) || cl) : null;
-        if (!terms.length) { box.innerHTML = ''; return; }
-        const missed = terms.filter(t => { const m = this._highlightMatcher([t]); return !base.some(cl => m(this.getCellLineName(cl) || cl, cl)); });
-        const names = this._ctLinesPicked, MAX = 6;
-        const chip = (n) => `<span style="padding:1px 7px; border-radius:9px; background:#eff6ff; border:1px solid #bfdbfe; color:#1e40af; font-weight:600;">${this.esc(n)}</span>`;
-        box.innerHTML = (names.length
-                ? `<span style="color:#6b7280;">${names.length === 1 ? 'Cell line:' : `${names.length} cell lines:`}</span>${names.slice(0, MAX).map(chip).join('')}`
-                  + (names.length > MAX ? `<span style="color:#6b7280;">+ ${names.length - MAX} more</span>` : '')
-                : `<span style="color:#b91c1c;">No cell line left with these filters</span>`)
+        const P = this._ctPickedIds || new Set();
+        const on = P.size > 0;
+        input.style.borderColor = on ? '#3b82f6' : '#d1d5db';
+        input.style.background = on ? '#eff6ff' : '';
+        input.placeholder = on ? 'Add another cell line...' : 'Only these cell lines...';
+        const inCohort = new Set(cohort);
+        this._ctLinesPicked = on ? cohort.filter(cl => P.has(cl)).map(cl => this.getCellLineName(cl) || cl) : null;
+        const missed = this._ctLinesMissed || [];
+        const chip = (id) => {
+            const out = !inCohort.has(id);
+            return `<span title="${out ? 'Not among the cell lines left by the other filters or the measure' : ''}" style="display:inline-flex; align-items:center; gap:2px; padding:1px 3px 1px 7px; border-radius:9px; background:#eff6ff; border:1px solid #bfdbfe; color:#1e40af; font-weight:600;${out ? ' opacity:0.55; text-decoration:line-through;' : ''}">${this.esc(this.getCellLineName(id) || id)}`
+                + `<button type="button" data-ct-unpick="${this.esc(id)}" title="Remove" style="background:none; border:none; padding:0 2px; cursor:pointer; color:#6b7280; font-size:11px; line-height:1;">&times;</button></span>`;
+        };
+        box.innerHTML = (on ? [...P].map(chip).join('') : '')
+            + (P.size > 1 ? `<button type="button" data-ct-unpick="*" style="background:none; border:none; color:#6b7280; text-decoration:underline; cursor:pointer; font-size:10px;">Clear</button>` : '')
             + (missed.length ? `<span style="color:#b91c1c;">not found: ${missed.map(t => this.esc(t)).join(', ')}</span>` : '');
-    }
-
-    // The "Only these cell lines" box: names or group terms, as in the
-    // highlight boxes. Cached per text, since every line is tested.
-    _ctLinesMatch() {
-        const text = document.getElementById('ctLines')?.value || '';
-        if (this._ctLinesKey !== text) {
-            const terms = this._splitHighlightTerms(text);
-            this._ctLinesKey = text;
-            this._ctLinesFn = terms.length ? this._highlightMatcher(terms) : null;
-        }
-        return this._ctLinesFn;
     }
 
     _ctCohortExcluding(kind) {
@@ -23898,7 +23970,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const alt = this._ctBaseLines(measure).filter(cl => this._ctPassesAlterations(cl));
         this._ctPopulateSelects(alt);
         const cohort = alt.filter(cl => this._ctPassesGroups(cl));
-        this._ctRenderLinesChips(cohort, this._ctBaseLines(measure));
+        this._ctRenderLinesChips(cohort);
         const ids = measure === 'expr' ? this.expressionMetadata.cellLines : this.metadata.cellLines;
         const stride = measure === 'expr' ? this.expressionMetadata.nCellLines : this.nCellLines;
         const data = measure === 'expr' ? this.expressionData : this.geneEffects;
@@ -24259,9 +24331,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
 
     // Cell lines named in the scan's highlight box (names or group terms).
+    // A dozen or fewer lines picked by "Only these cell lines" are always
+    // named, so a scan of one or two lines shows which dot is which.
     _ctHighlightMatch() {
         const terms = this._splitHighlightTerms(document.getElementById('ctHighlight')?.value);
-        return terms.length ? this._highlightMatcher(terms) : null;
+        const typed = terms.length ? this._highlightMatcher(terms) : null;
+        const picked = this._ctLinesPicked && this._ct?.cohort?.length <= 12 ? new Set(this._ct.cohort) : null;
+        if (!picked) return typed;
+        return (name, id) => picked.has(id) || !!typed?.(name, id);
     }
 
     // A click on a dot adds that cell line to the highlight box, or takes it
@@ -24378,7 +24455,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const layout = {
             title: { text: `<b><i>${gene}</i> ${c.measure === 'expr' ? 'mRNA expression' : 'gene effect'} by ${kind === 'S' ? `subtype, ${this.esc(within)}` : kind === 'D' ? `disease, ${this.esc(within)}` : 'tissue'}</b><br><span style="font-size:11px; color:#6b7280;">${c.cohort.length.toLocaleString()} cell lines${filt.length ? ', ' + this.esc(filt.join(', ')) : ''}; share ${this._ctCutWords()} at the right</span>`, font: { size: 14 }, y: 1 - 18 / H },
             xaxis: { title: { text: `<i>${gene}</i> ${this._ctMeasureWord()}` }, zeroline: true, zerolinecolor: '#9ca3af', gridcolor: '#eeeeee', ...(range ? { range } : {}) },
-            yaxis: { tickvals: rows.map((_, i) => i), autorange: 'reversed', tickfont: { size: 10 }, gridcolor: '#f3f4f6', zeroline: false,
+            yaxis: { tickvals: rows.map((_, i) => i), range: [rows.length - 0.5, -0.5], tickfont: { size: 10 }, gridcolor: '#f3f4f6', zeroline: false,
                 ticktext: rows.map(r => r.t === mark ? `<span style="color:#4c782e;"><b>${this.esc(r.t)} (${r.pts.length})</b></span>` : `${this.esc(r.t)} (${r.pts.length})`) },
             shapes: [
                 ...rows.map((r, i) => r.t === mark ? { type: 'rect', xref: 'paper', yref: 'y', x0: 0, x1: 1, y0: i - 0.45, y1: i + 0.45, fillcolor: 'rgba(107,165,68,0.10)', line: { width: 0 }, layer: 'below' } : null).filter(Boolean),
