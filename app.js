@@ -7657,6 +7657,13 @@ class CorrelationExplorer {
         const geDataTypeEl = document.getElementById('geDataType');
         if (geDataTypeEl) {
             geDataTypeEl.addEventListener('change', () => {
+                // Highlights belong to the cell lines, not the measure: keep
+                // the highlight box and the clicked labels across the switch.
+                const plotEl0 = document.getElementById('geneEffectPlot');
+                const keepHl = document.getElementById('geCellLineSearch')?.value || '';
+                const keepLabels = (plotEl0?.layout?.annotations || []).filter(a => a._dotLabel).map(a => a._dotLabel);
+                const oldData = plotEl0?.data;
+                if (keepHl || keepLabels.length) this._geRestoreHighlightsAfterRedraw(oldData, keepHl, keepLabels);
                 // The popout keeps the gene in one of two places depending on
                 // how it was opened: currentGeneEffect.gene for the normal
                 // view, currentGeneEffectGene for mutation inspect. Reading
@@ -29711,8 +29718,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
         if (useExpr) {
             if (!this.expressionLoaded) {
-                alert('Expression data is still loading, try again in a moment.');
-                try { this.loadExpressionData?.(); } catch (e) {}
+                // Load and continue, rather than asking to try again.
+                this.showCopyNotification?.('Loading mRNA expression...');
+                Promise.resolve(this.loadExpressionData?.()).then(() => {
+                    if (this.expressionLoaded) this.openGeneEffectModal(gene, view, opts);
+                }).catch(() => this.showCopyNotification?.('mRNA expression could not be loaded.'));
                 return;
             }
             if (!this.expressionGeneIndex || this.expressionGeneIndex.get(geneUpper) === undefined) {
@@ -38172,6 +38182,44 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             navigator.clipboard?.writeText(names.map(x => x.name).join('\n'));
             this.showCopyNotification?.(`Copied ${names.length} cell line name${names.length === 1 ? '' : 's'}`);
         });
+    }
+
+    // After the Gene effect chart is redrawn (a measure switch), put the
+    // highlight box text back and re-place each clicked label at that cell
+    // line's new position.
+    async _geRestoreHighlightsAfterRedraw(oldData, hlText, labelIds) {
+        const plotId = 'geneEffectPlot';
+        // Up to 30 s: the first switch to mRNA loads the expression data.
+        for (let i = 0; i < 240; i++) {
+            await new Promise(r => setTimeout(r, 125));
+            const el = document.getElementById(plotId);
+            if (el?.data && el.data !== oldData) break;
+        }
+        const box = document.getElementById('geCellLineSearch');
+        if (box && hlText && !box.value) {
+            box.value = hlText;
+            if (this.geneEffectViewMode !== 'mutation' && this.currentGeneEffect) this.switchGeneEffectView(this.currentGEView || 'tissue');
+            await new Promise(r => setTimeout(r, 150));
+        }
+        const el = document.getElementById(plotId);
+        if (!labelIds.length || !el?.data) return;
+        const anns = (el.layout.annotations || []).filter(a => !a._dotLabel);
+        for (const id of labelIds) {
+            for (const t of el.data) {
+                const i = Array.isArray(t.customdata) ? t.customdata.indexOf(id) : -1;
+                if (i < 0 || !Array.isArray(t.x)) continue;
+                anns.push({
+                    x: t.x[i], y: Array.isArray(t.y) ? t.y[i] : t.name, xref: 'x', yref: 'y', text: this.getCellLineName(id) || id,
+                    showarrow: true, arrowhead: 0, arrowwidth: 1, arrowcolor: '#6b7280', ax: 0, ay: -18,
+                    font: { size: this._geDotLabelSize || 11, color: '#111' }, bgcolor: 'rgba(255,255,255,0.88)',
+                    bordercolor: '#d1d5db', borderwidth: 1, borderpad: 2, captureevents: true,
+                    _dotLabel: id, hovertext: 'Click to remove'
+                });
+                break;
+            }
+        }
+        await Plotly.relayout(plotId, { annotations: anns });
+        this._renderLabeledCellLines(plotId);
     }
 
     // Toggle a small name label (with a leader line) on a clicked dot.
