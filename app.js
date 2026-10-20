@@ -23535,6 +23535,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         ['ctMinShare', 'ctMinPct', 'ctSearch'].forEach(id => document.getElementById(id)?.addEventListener('input', debounce(() => this._ctRenderTable())));
         ['ctXmin', 'ctXmax'].forEach(id => document.getElementById(id)?.addEventListener('input', debounce(() => this._ctRenderPlot())));
         document.getElementById('ctZero')?.addEventListener('change', () => this._ctRenderPlot());
+        // Highlight box + group menu, as in Gene effect / expression.
+        document.getElementById('ctHighlight')?.addEventListener('input', debounce(() => this._ctRenderPlot()));
+        this._attachGroupHighlightPicker('ctHighlight', () => this._ct?.cohort || []);
         document.getElementById('ctFocus')?.addEventListener('change', () => {
             this._ct.sortCol = 'ttd';
             this._ct.sortAsc = false;
@@ -23635,7 +23638,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Starts fresh on every open.
         const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
         set('ctMeasure', 'ge'); set('ctDir', 'below'); set('ctCut', this._ctDefault('ge', 'below'));
-        set('ctMinShare', 10); set('ctMinPct', 75); set('ctSearch', ''); set('ctFocus', '');
+        set('ctMinShare', 10); set('ctMinPct', 75); set('ctSearch', ''); set('ctFocus', ''); set('ctHighlight', '');
         this._ctPopulateGeneSets();
         set('ctGeneList', '');
         const gl = document.getElementById('ctGeneList'); if (gl) gl.disabled = true;
@@ -24186,15 +24189,56 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (!vals.length) { Plotly.purge(el); return; }
         const p = this._ctHistParts(vals, '', 11, true, unit);
         const range = this._ctXRange(p.start, p.end);
+        // Highlighted cell lines: markers under the bars at their values,
+        // named when a dozen or fewer; click one to take it out.
+        const hm = this._ctHighlightMatch();
+        const hl = hm ? this._ctValues(g, true).filter(([id]) => hm(this.getCellLineName(id) || id, id)) : [];
+        const rugY = -p.ymax * 0.06;
+        if (hl.length) p.traces.push({ type: 'scatter', mode: 'markers', x: hl.map(([, v]) => v), y: hl.map(() => rugY), customdata: hl.map(([id]) => id),
+            hovertext: hl.map(([id, v]) => `${this.getCellLineName(id) || id}: ${v.toFixed(2)}`), hoverinfo: 'text', showlegend: false,
+            marker: { size: 10, symbol: 'triangle-up', color: '#f59e0b', line: { color: '#92400e', width: 1 } } });
+        if (hl.length && hl.length <= 12) hl.forEach(([id, v], k) => p.annotations.push({ xref: 'x', yref: 'y', x: v, y: rugY, text: this.esc(this.getCellLineName(id) || id),
+            showarrow: true, arrowhead: 0, arrowwidth: 1, arrowcolor: '#92400e', ax: 0, ay: -(26 + (k % 3) * 16), font: { size: 10, color: '#111' },
+            bgcolor: 'rgba(255,255,255,0.9)', bordercolor: '#f59e0b', borderwidth: 1, borderpad: 2 }));
         const layout = {
             title: { text: `${titleTop}<br><span style="font-size:11px; color:#6b7280;">${sub}</span>`, font: { size: 14 }, y: 0.96 },
             xaxis: { title: { text: xTitle }, zeroline: true, zerolinecolor: '#9ca3af', gridcolor: '#eeeeee', ...(range ? { range } : {}) },
-            yaxis: { title: { text: `% of ${unit}` }, range: [0, p.ymax * 1.3], gridcolor: '#eeeeee' },
+            yaxis: { title: { text: `% of ${unit}` }, range: [hl.length ? -p.ymax * 0.12 : 0, p.ymax * 1.3], gridcolor: '#eeeeee', zeroline: !!hl.length, zerolinecolor: '#d1d5db' },
             shapes: p.shapes, annotations: p.annotations, bargap: 0,
             margin: { l: 60, r: 20, t: 70, b: 55 }, height: 440,
             paper_bgcolor: '#ffffff', plot_bgcolor: '#fafafa', font: { family: 'Open Sans, sans-serif' }
         };
         Plotly.react(el, p.traces, layout, { displayModeBar: false, responsive: true });
+        this._ctWireClicks(el);
+    }
+
+    // Cell lines named in the scan's highlight box (names or group terms).
+    _ctHighlightMatch() {
+        const terms = this._splitHighlightTerms(document.getElementById('ctHighlight')?.value);
+        return terms.length ? this._highlightMatcher(terms) : null;
+    }
+
+    // A click on a dot adds that cell line to the highlight box, or takes it
+    // out again, so the box is the one list to read and copy.
+    _ctToggleHighlight(id) {
+        const box = document.getElementById('ctHighlight');
+        if (!box || !id) return;
+        const name = this.getCellLineName(id) || id;
+        const norm = (t) => String(t).toUpperCase().replace(/[^A-Z0-9]/g, '');
+        const parts = box.value.split(/[,;\n\t]+/).map(t => t.trim()).filter(Boolean);
+        const i = parts.findIndex(t => norm(t) === norm(name) || norm(t) === norm(id));
+        if (i >= 0) parts.splice(i, 1); else parts.push(name);
+        box.value = parts.join(', ');
+        this._ctRenderPlot();
+    }
+
+    _ctWireClicks(el) {
+        if (el._ctClickWired) return;
+        el._ctClickWired = true;
+        el.on('plotly_click', (ev) => {
+            const id = ev?.points?.[0]?.customdata;
+            if (typeof id === 'string') this._ctToggleHighlight(id);
+        });
     }
 
     // One row per tissue, one dot per cell line, the cutoff line, and each
@@ -24244,6 +24288,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }));
         const traces = [0, 1].map(b => ({ type: 'scatter', mode: 'markers', x: xs[b], y: ys[b], customdata: cd[b], hovertext: tx[b], hoverinfo: 'none',
             marker: { size: 5, color: b ? pastColor : '#9ca3af', opacity: 0.75 }, showlegend: false }));
+        // Highlighted cell lines: orange diamonds, named when a dozen or fewer.
+        const hm = this._ctHighlightMatch();
+        const hlPts = [];
+        if (hm) rows.forEach((r, i) => r.pts.forEach(([id, v]) => { if (hm(this.getCellLineName(id) || id, id)) hlPts.push({ id, v, y: i + jit(id) * 0.6 }); }));
+        if (hlPts.length) traces.push({ type: 'scatter', mode: 'markers', x: hlPts.map(p => p.v), y: hlPts.map(p => p.y), customdata: hlPts.map(p => p.id),
+            hovertext: hlPts.map(p => `${this.getCellLineName(p.id) || p.id}: ${p.v.toFixed(2)}`), hoverinfo: 'none', showlegend: false,
+            marker: { size: 10, symbol: 'diamond', color: '#f59e0b', line: { color: '#92400e', width: 1.2 } } });
+        const hlNames = hlPts.length && hlPts.length <= 12 ? hlPts.map(p => ({ xref: 'x', yref: 'y', x: p.v, y: p.y, text: this.esc(this.getCellLineName(p.id) || p.id),
+            showarrow: true, arrowhead: 0, arrowwidth: 1, arrowcolor: '#92400e', ax: 0, ay: -18, font: { size: 10, color: '#111' },
+            bgcolor: 'rgba(255,255,255,0.88)', bordercolor: '#f59e0b', borderwidth: 1, borderpad: 2 })) : [];
         const H = Math.max(rows.length <= 6 ? 300 : 440, rows.length * 22 + 130);
         // Room for the longest row label (about 6 px a character at 10 px).
         const mL = Math.min(300, Math.max(120, Math.max(...rows.map(r => `${r.t} (${r.pts.length})`.length)) * 6 + 20));
@@ -24260,11 +24314,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 ...rows.map((r, i) => r.t === mark ? { type: 'rect', xref: 'paper', yref: 'y', x0: 0, x1: 1, y0: i - 0.45, y1: i + 0.45, fillcolor: 'rgba(107,165,68,0.10)', line: { width: 0 }, layer: 'below' } : null).filter(Boolean),
                 ...(isNaN(c.cut) ? [] : [{ type: 'line', xref: 'x', yref: 'paper', x0: c.cut, x1: c.cut, y0: 0, y1: 1, line: { color: pastColor, width: 1.5, dash: 'dash' } }])
             ],
-            annotations: rows.map((r, i) => ({ xref: 'paper', yref: 'y', x: 1.01, y: i, xanchor: 'left', showarrow: false, font: { size: 10, color: r.k ? pastColor : '#9ca3af' }, text: `${r.pct.toFixed(0)}%` })),
+            annotations: [...rows.map((r, i) => ({ xref: 'paper', yref: 'y', x: 1.01, y: i, xanchor: 'left', showarrow: false, font: { size: 10, color: r.k ? pastColor : '#9ca3af' }, text: `${r.pct.toFixed(0)}%` })), ...hlNames],
             margin: { l: mL, r: 46, t: 64, b: 50, autoexpand: false }, height: H,
             paper_bgcolor: '#ffffff', plot_bgcolor: '#fafafa', font: { family: 'Open Sans, sans-serif' }
         };
         Plotly.react(el, traces, layout, { displayModeBar: false, responsive: true });
+        this._ctWireClicks(el);
         // The cell line card on hover, as in the correlation plots.
         if (!el._ctHoverWired) {
             el._ctHoverWired = true;
@@ -49097,7 +49152,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
 
     // Per-gene cohort mean / SD across CRISPR gene-effect, cached on first
     // use. Used to z-score this cell line's GE values so "uniquely essential"
-    // and "uniquely growth-promoting on knockout" can be computed, the
+    // and "less needed than typical" can be computed, the
     // biologically interesting view, since the most-essential genes by raw
     // score are dominated by pan-essentials (RAN, PCNA, RPL17 …) that every
     // cell line shares.
@@ -50437,14 +50492,14 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 }
             }
 
-            // Top uniquely growth-promoting on knockout (most positive z).
-            // Tumor suppressors are common here, if removing them helps,
-            // they're still functional in this line.
+            // Least needed vs the cohort (most positive z). A high z can still
+            // be a negative GE, so only GE above 0 counts as knockout helping
+            // growth; a tumor suppressor there is still functional in this line.
             const tumorSuppressors = new Set(['TP53', 'RB1', 'PTEN', 'APC', 'NF1', 'VHL', 'BRCA1', 'BRCA2', 'STK11', 'CDKN2A', 'SMAD4', 'CTCF']);
             const topGain = zScored.slice().sort((a, b) => b.z - a.z).slice(0, 8);
-            const tsHits = topGain.filter(g => tumorSuppressors.has(g.gene));
+            const tsHits = topGain.filter(g => tumorSuppressors.has(g.gene) && g.val > 0);
             const topGainHtml = topGain.map(g => {
-                const isTSG = tumorSuppressors.has(g.gene);
+                const isTSG = tumorSuppressors.has(g.gene) && g.val > 0;
                 const tsStyle = isTSG ? 'color:#dc2626; font-weight:600;' : '';
                 return `<span class="gene-hover clb-gene-link" data-gene="${g.gene}" style="cursor:help; ${tsStyle}">${this.gi(g.gene)}</span> <span style="color:#9ca3af; font-size:10px;">(GE ${g.val.toFixed(2)}, z ${fmtZ(g.z)})</span>`;
             }).join(', ');
@@ -50452,7 +50507,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 ? `<div style="padding:6px 10px; background:#fef2f2; border-left:3px solid #dc2626; font-size:11px; margin-top:4px;"><b style="color:#991b1b;">Tumor suppressors whose knockout boosts growth</b> (red above): ${tsHits.map(g => g.gene).join(', ')}. Removing these helps the cell grow, so they are <em>still functional</em> here and have <em>not</em> been inactivated in this cell line.</div>`
                 : '';
 
-            const introPara = `<p style="margin:0 0 8px; font-size:11px; color:#6b7280;">A CRISPR knockout screen asks which genes this cell line cannot grow without. The interesting ones are <b>selective to this cell line</b>: genes it needs more than most cell lines, often downstream of its driver. <b>"More than most" is judged against all ${this.nCellLines.toLocaleString()} screened cell lines</b>, across every lineage, not only same-tissue lines. Genes every cell needs (ribosomal, RNA polymerase and the like) are left out, since they say nothing about this line. Rankings use the z-score against that whole set: below &minus;2, much more essential than typical; above +2, knockout helps growth much more than typical. A second list scores the same way <b>against same-lineage lines only</b>, so it shows what this cell line depends on beyond what its cancer family shares. <span style="display:inline-block; margin-left:6px;">💊 = an approved or clinical-stage drug targets this gene.</span></p>`;
+            const introPara = `<p style="margin:0 0 8px; font-size:11px; color:#6b7280;">A CRISPR knockout screen asks which genes this cell line cannot grow without. The interesting ones are <b>selective to this cell line</b>: genes it needs more than most cell lines, often downstream of its driver. <b>"More than most" is judged against all ${this.nCellLines.toLocaleString()} screened cell lines</b>, across every lineage, not only same-tissue lines. Genes every cell needs (ribosomal, RNA polymerase and the like) are left out, since they say nothing about this line. Rankings use the z-score against that whole set: below &minus;2, much more essential than typical; above +2, much less needed than typical (only a gene effect above 0 means knockout helps growth). A second list scores the same way <b>against same-lineage lines only</b>, so it shows what this cell line depends on beyond what its cancer family shares. <span style="display:inline-block; margin-left:6px;">💊 = an approved or clinical-stage drug targets this gene.</span></p>`;
             if (zScored.length === 0) {
                 // The cell line index is valid (we're in the clIdx >= 0
                 // branch) but no gene-effect values survived the per-gene
@@ -50465,7 +50520,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 geSigHtml = `${introPara}
                     ${row('Top essential vs whole cohort <span style="color:#9ca3af; font-weight:400;">(all lineages)</span>', topUniqueHtml)}
                     ${familyDepHtml}
-                    ${row('Top uniquely growth-promoting on knockout (z-ranked)', topGainHtml)}
+                    ${row('Top less needed vs whole cohort <span style="color:#9ca3af; font-weight:400;">(all lineages; GE above 0 = knockout helps growth)</span>', topGainHtml)}
                     ${interpLines.join('')}
                     ${tsInterp}`;
             }
