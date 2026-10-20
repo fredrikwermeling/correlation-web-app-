@@ -25453,10 +25453,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     _legendTitleText(mode) {
         const stat = document.getElementById('colorByLegendStat')?.value || 'none';
         const what = mode === 'subtype' ? 'Subtype' : mode === 'disease' ? 'Disease' : mode === 'medium' ? 'Medium' : 'Tissue';
-        if (stat === 'r') return `${what} \u00b7 n \u00b7 r (within group)`;
-        if (stat === 'mean') return `${what} \u00b7 n \u00b7 average x, y`;
-        if (stat === 'median') return `${what} \u00b7 n \u00b7 median x, y`;
-        return `${what} \u00b7 n`;
+        if (stat === 'r') return `${what} (n, r within group)`;
+        if (stat === 'mean') return `${what} (n, average x, y)`;
+        if (stat === 'median') return `${what} (n, median x, y)`;
+        return `${what} (n)`;
     }
 
     // The group a cell line belongs to for "Color by", at whichever level of
@@ -43453,12 +43453,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Explicitly emptied: color nothing, everything goes to the gray bucket.
         if (raw === 'none') return new Set();
         if (!raw) {
-            // Nothing chosen yet. Tissues are few enough that coloring them all
-            // is a fast, if busy, way to see whether there's any pattern, so that
-            // is the default. Subtypes run to 70+ and mean nothing all at once,
-            // so those start empty and wait to be picked.
+            // Nothing chosen yet. Tissues are few enough to colour them all.
+            // Subtypes and diseases run to 70+ across the panel, so they
+            // colour the 8 largest of those shown (all of them when there are
+            // no more than 8, as in a one-tissue view); coloring none left a
+            // legend of nothing but "Not selected". `available` is largest first.
             const mode = document.getElementById('colorByCategory')?.value;
-            return (mode === 'subtype' || mode === 'disease') ? new Set() : null;
+            if (mode !== 'subtype' && mode !== 'disease') return null;
+            return available.length <= 8 ? null : new Set(available.slice(0, 8));
         }
         const want = new Set(raw.split('|').filter(Boolean));
         const usable = new Set(available.filter(c => want.has(c)));
@@ -43680,8 +43682,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (raw === '*') return 'Groups: all';
         if (raw === 'none') return 'Groups: none';
         if (raw) return `Groups: ${raw.split('|').filter(Boolean).length}`;
-        return mode === 'subtype' ? 'Pick subtypes to color...'
-            : mode === 'disease' ? 'Pick diseases to color...' : 'Groups: all';
+        return mode === 'subtype' || mode === 'disease' ? 'Groups: up to 8 largest' : 'Groups: all';
     }
 
     // Total plot width for the three-panel view. #plotWidth is sized for a
