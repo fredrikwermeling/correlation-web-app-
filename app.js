@@ -931,7 +931,7 @@ class CorrelationExplorer {
     _GE_NEWTAB_CONTROLS() { return ['geDataType', 'geHotspotGeneSelect', 'geTissueFilter', 'geSubtypeFilter', 'geOncotreeFilter', 'geHotspotFilter', 'geHotspotLevel', 'geFusionFilter', 'geFusionLevel', 'geCnFilter', 'geCnLevel', 'geMinGroupSize', 'geCellLineSearch']; }
     _SCATTER_NEWTAB_CONTROLS() { return ['inspectGeneX', 'inspectGeneY', 'xAxisDataType', 'yAxisDataType', 'showCorrelationLine', 'showZeroLines', 'scatterDotColor', 'scatterXmin', 'scatterXmax', 'scatterYmin', 'scatterYmax', 'scatterCancerFilter', 'scatterSubtypeFilter', 'scatterOncotreeFilter', 'mutationFilterGene', 'mutationFilterLevel', 'translocationFilterGene', 'translocationFilterLevel', 'scatterCnFilter', 'scatterCnLevel', 'scatterFontSize', 'hotspotGene', 'hotspotMode', 'translocationGene', 'translocationMode', 'colorByCategory', 'colorByPicked', 'colorByLegendStat', 'scatterCellSearch', 'customCellLineFilter', 'scatterWhiteBg']; }
     _SI_NEWTAB_CONTROLS() { return ['geLeftDeltaCutoff', 'geLeftQCutoff', 'geLeftN', 'geRightDeltaCutoff', 'geRightQCutoff', 'geRightN', 'geInspectSearch', 'geInspectHideThin']; }
-    _CA_NEWTAB_CONTROLS() { return ['caTissueFilter', 'caSubtypeFilter', 'caOncotreeFilter', 'caHotspotFilter', 'caHotspotLevel', 'caFusionFilter', 'caFusionLevel', 'caCnFilter', 'caCnLevel', 'caCellLineSearch']; }
+    _CA_NEWTAB_CONTROLS() { return ['caTissueFilter', 'caSubtypeFilter', 'caOncotreeFilter', 'caHotspotFilter', 'caHotspotLevel', 'caFusionFilter', 'caFusionLevel', 'caCnFilter', 'caCnLevel']; }
 
     // Snapshot the underlying analysis/network so a new tab can rebuild the
     // whole app (genes, mode, cutoff, filters, network settings), not just the
@@ -7793,6 +7793,9 @@ class CorrelationExplorer {
                 }
             }
         });
+        // Group highlight menus beside the highlight boxes.
+        this._attachGroupHighlightPicker('scatterCellSearch', () => (this.currentInspect?.filteredData || []).map(d => d.cellLineId));
+        this._attachGroupHighlightPicker('geCellLineSearch', () => [...new Set((document.getElementById('geneEffectPlot')?.data || []).flatMap(t => Array.isArray(t.customdata) ? t.customdata.filter(x => typeof x === 'string') : []))]);
         // Cell line search in gene effect modal
         let geCellLineSearchTimer;
         document.getElementById('geCellLineSearch')?.addEventListener('input', () => {
@@ -19572,15 +19575,92 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // ignored on both sides ("MEC-1" finds MEC1), but a term under four
     // characters must be the name or start it: plain substring matching let
     // "CI" (a real CLL line) pull in NCIH1650 and 94 others.
+    // Highlight box text to terms. Commas, semicolons, tabs and new lines
+    // separate entries, and a plain entry may also be space separated; a
+    // group term (tissue:, subtype:, disease:) keeps its spaces.
+    _splitHighlightTerms(text) {
+        const out = [];
+        for (const part of String(text || '').split(/[\n,;\t]+/)) {
+            const t = part.trim();
+            if (!t) continue;
+            if (/^(tissue|lineage|subtype|disease)\s*[:=]/i.test(t)) out.push(t);
+            else out.push(...t.split(/\s+/).filter(Boolean));
+        }
+        return out;
+    }
+
+    // Cell lines of a tissue / subtype / disease named in a highlight term:
+    // the exact group when one is called that, else every group containing
+    // the words.
+    _groupHighlightIds(kind, want) {
+        const md = this.cellLineMetadata || {};
+        const ids = Object.keys(md.lineage || {});
+        const of = kind === 'tissue' || kind === 'lineage' ? (cl => this.getCellLineLineage(cl))
+            : kind === 'subtype' ? (cl => this.getCellLineSublineage(cl))
+            : (cl => md.oncotreeSubtype?.[cl]);
+        const w = String(want).trim().toLowerCase();
+        const exact = ids.filter(cl => String(of(cl) || '').toLowerCase() === w);
+        return exact.length ? exact : ids.filter(cl => String(of(cl) || '').toLowerCase().includes(w));
+    }
+
+    // A "highlight a group" menu beside a highlight box. It lists the
+    // tissues, subtypes and diseases of the cell lines currently shown,
+    // rebuilt each time it opens, and adds the chosen one (tissue:Skin) to
+    // the box, so a filtered view never offers a group it does not show.
+    _attachGroupHighlightPicker(inputId, idsFn) {
+        const input = document.getElementById(inputId);
+        if (!input || input._groupPicker) return;
+        const sel = document.createElement('select');
+        sel.className = 'hl-group-picker mobile-hide';
+        sel.title = 'Highlight every cell line of a tissue, subtype or disease among those shown';
+        sel.style.cssText = 'font-size:11px; padding:2px 4px; border:1px solid #d1d5db; border-radius:4px; max-width:150px; background:#fff;';
+        const head = '<option value="">+ Highlight group...</option>';
+        sel.innerHTML = head;
+        const fill = () => {
+            const ids = idsFn() || [];
+            const md = this.cellLineMetadata || {};
+            const count = (fn) => {
+                const m = new Map();
+                for (const id of ids) { const v = fn(id); if (v) m.set(v, (m.get(v) || 0) + 1); }
+                return [...m.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+            };
+            const groups = [
+                ['tissue', 'Tissue', count(id => this.getCellLineLineage(id))],
+                ['subtype', 'Subtype', count(id => this.getCellLineSublineage(id))],
+                ['disease', 'Disease', count(id => md.oncotreeSubtype?.[id])]
+            ];
+            sel.innerHTML = head + (ids.length ? groups.map(([k, label, items]) => items.length
+                ? `<optgroup label="${label}">${items.map(([v, n]) => `<option value="${k}:${this.esc(v)}">${this.esc(v)} (${n})</option>`).join('')}</optgroup>` : '').join('')
+                : '<option value="" disabled>Draw a plot first</option>');
+        };
+        sel.addEventListener('mousedown', fill);
+        sel.addEventListener('focus', fill);
+        sel.addEventListener('change', () => {
+            const term = sel.value;
+            sel.value = '';
+            if (!term) return;
+            const cur = input.value.trim();
+            const have = this._splitHighlightTerms(cur).some(t => t.toLowerCase() === term.toLowerCase());
+            if (!have) input.value = cur ? cur + (input.tagName === 'TEXTAREA' ? '\n' : ', ') + term : term;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+        input.insertAdjacentElement('afterend', sel);
+        input._groupPicker = sel;
+    }
+
     _highlightMatcher(terms) {
         const norm = (s) => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
         const keys = [];
+        const groupIds = new Set();
         for (const t of (terms || [])) {
+            const g = String(t).match(/^(tissue|lineage|subtype|disease)\s*[:=]\s*(.+)$/i);
+            if (g) { this._groupHighlightIds(g[1].toLowerCase(), g[2]).forEach(id => groupIds.add(id)); continue; }
             const key = norm(t);
             if (key) keys.push(key);
         }
-        if (!keys.length) return () => false;
+        if (!keys.length && !groupIds.size) return () => false;
         return (name, id) => {
+            if (groupIds.has(id)) return true;
             const n = norm(name), i = norm(id);
             return keys.some(k =>
                 n === k || i === k
@@ -20081,8 +20161,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const mutFilterLevel = document.getElementById('mutationFilterLevel').value;
         // Commas and semicolons separate names too: pasting a list from a
         // paper is the common case, and it rarely arrives one per line.
-        const searchTerms = document.getElementById('scatterCellSearch').value
-            .split(/[\n,;\t]+/).map(s => s.trim().toUpperCase()).filter(s => s);
+        const searchTerms = this._splitHighlightTerms(document.getElementById('scatterCellSearch').value);
         const fontSize = parseInt(document.getElementById('scatterFontSize')?.value) || 5;
         const hotspotGene = document.getElementById('hotspotGene').value;
         const hotspotMode = document.getElementById('hotspotMode').value;
@@ -22813,6 +22892,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
         modal.classList.add('active');
         this._compBorrowAltFilters();
+        this._attachGroupHighlightPicker('compHl', () => [...new Set((this._compLast || []).flatMap(x => (x.res?.data || []).map(d => d.cellLineId)))]);
         modal.querySelector('#compRows').value = st.rows; modal.querySelector('#compCols').value = st.cols;
         modal.querySelector('#compShowLine').checked = st.showLine !== false;
         modal.querySelector('#compSameRange').checked = st.sameRange !== false;
@@ -22893,7 +22973,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
     // Typed highlights plus clicked cell lines, once each.
     _compHighlightNames() {
-        const typed = (document.getElementById('scatterCellSearch')?.value || '').split(/[,\n]+/).map(t => t.trim()).filter(Boolean);
+        const typed = (document.getElementById('scatterCellSearch')?.value || '').split(/[,;\n\t]+/).map(t => t.trim()).filter(Boolean);
         const seen = new Set(), out = [];
         for (const n of [...typed, ...(this.clickedCells || [])]) {
             const k = String(n).toUpperCase();
@@ -23107,7 +23187,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // correlation plot: its mutation or fusion overlay first, as there, then
     // its colour-by groups.
     _compLook(allData) {
-        const terms = (document.getElementById('scatterCellSearch')?.value || '').split(/[\n,;\t]+/).map(s => s.trim()).filter(Boolean);
+        const terms = this._splitHighlightTerms(document.getElementById('scatterCellSearch')?.value);
         const hl = this._highlightMatcher(terms);
         const isHl = (d) => hl(d.cellLineName, d.cellLineId) || this.clickedCells?.has(d.cellLineName);
         const hotGene = document.getElementById('hotspotGene')?.value || '';
@@ -23336,7 +23416,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (!panels.length) { if (status) status.textContent = 'Draw at least one panel first.'; return; }
         const genes = [...new Set(panels.flatMap(({ p }) => [p.xg, p.yg]))];
         const cohort = [...new Set(panels.flatMap(({ res }) => res.data.map(d => d.cellLineId)))];
-        const terms = (document.getElementById('scatterCellSearch')?.value || '').split(/[\n,;\t]+/).map(s => s.trim()).filter(Boolean);
+        const terms = this._splitHighlightTerms(document.getElementById('scatterCellSearch')?.value);
         const hl = this._highlightMatcher(terms);
         const colorBy = this._compLook(panels.flatMap(({ res }) => res.data)).groupsBy || '';
         const word = (t) => t === 'expr' ? 'mRNA expression (log2 TPM+1)' : t === 'cn' ? 'relative copy number (1.0 = the line\'s baseline)' : 'CRISPR gene effect (Chronos)';
@@ -30895,6 +30975,26 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             plot_bgcolor: 'white'
         };
 
+        // Cell lines named in the highlight box: several names, or a whole
+        // tissue / subtype / disease. Up to a dozen are named with arrows;
+        // more are marked as diamonds so the chart stays readable.
+        const geTerms = this._splitHighlightTerms(document.getElementById('geCellLineSearch')?.value);
+        const geMatch = geTerms.length ? this._highlightMatcher(geTerms) : null;
+        const geMatched = [];
+        if (geMatch) filteredStats.forEach(s => s.cellData.forEach(c => { if (geMatch(c.cellLineName, c.cellLineId)) geMatched.push([s, c]); }));
+        const GE_LABEL_MAX = 12;
+        if (geMatched.length > GE_LABEL_MAX) {
+            filteredStats.forEach(s => {
+                const cells = geMatched.filter(([gs]) => gs === s).map(([, c]) => c);
+                if (!cells.length) return;
+                traces.push({ type: 'scatter', mode: 'markers', name: `Highlighted in ${s.group}`, showlegend: false,
+                    x: cells.map(c => c.geneEffect), y: cells.map(() => labelFor.get(s.group)),
+                    text: cells.map(c => c.cellLineName), customdata: cells.map(c => c.cellLineId),
+                    hovertemplate: `<b>%{text}</b><br>${hoverMetric}: %{x:.3f}<br>Highlighted<extra></extra>`,
+                    marker: { color: '#f59e0b', size: 10, symbol: 'diamond', line: { color: '#92400e', width: 1.2 } } });
+            });
+        }
+        const geLabelIds = new Set(geMatched.length <= GE_LABEL_MAX ? geMatched.map(([, c]) => c.cellLineId) : []);
         Plotly.newPlot('geneEffectPlot', traces, layout, { responsive: true, edits: { annotationPosition: true, annotationTail: true }, displaylogo: false, modeBarButtonsToRemove: ['lasso2d', 'select2d'] });
         this._attachGEGateHandler('geneEffectPlot');
         this._attachGECellInteractivity('geneEffectPlot');
@@ -30902,8 +31002,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         // Highlight cell line if requested (from CLB gene link or cell line search)
         const highlightCl = this._geHighlightCellLine;
-        const searchCl = document.getElementById('geCellLineSearch')?.value?.trim().toUpperCase();
-        if (highlightCl || searchCl) {
+        if (highlightCl || geLabelIds.size) {
             // Start from the annotations already on the plot: relayout with
             // a bare arrow list REPLACED them all, which silently deleted the
             // title annotation, on screen and in every subsequent export,
@@ -30920,10 +31019,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 const rowLabel = labelFor.get(s.group);
                 if (!rowLabel) continue;
                 for (const c of s.cellData) {
-                    const nameUpper = (c.cellLineName || '').toUpperCase();
-                    const idUpper = (c.cellLineId || '').toUpperCase();
                     const isHighlight = (highlightCl && (c.cellLineId === highlightCl));
-                    const isSearch = (searchCl && searchCl.length >= 2 && (nameUpper.includes(searchCl) || idUpper.includes(searchCl)));
+                    const isSearch = geLabelIds.has(c.cellLineId);
                     if (isHighlight || isSearch) {
                         annotations.push({
                             x: c.geneEffect,
@@ -43765,7 +43862,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // so it can be copied without reading the chips off the screen.
         const pillStyle = 'border:1px solid #d1d5db; background:#f9fafb; color:#4b5563;'
             + ' border-radius:10px; padding:1px 8px; font-size:10px; cursor:pointer; margin-left:2px;';
-        box.innerHTML = list.map(n => this._chipHtml(n, 'highlight', n, '#f59e0b')).join('')
+        const CHIP_MAX = 20;
+        box.innerHTML = list.slice(0, CHIP_MAX).map(n => this._chipHtml(n, 'highlight', n, '#f59e0b')).join('')
+            + (list.length > CHIP_MAX ? `<span style="font-size:10px; color:#6b7280; align-self:center;">+ ${list.length - CHIP_MAX} more</span>` : '')
             + `<button type="button" id="copyHighlightedBtn" title="Copy these ${list.length} cell line names, one per line"`
             + ` style="${pillStyle}">Copy ${list.length} name${list.length === 1 ? '' : 's'}</button>`
             + `<button type="button" id="highlightToBrowserBtn" title="Open the Cell Line Browser with these ${list.length} cell lines ticked, ready for its filters, sorts and exports"`
@@ -63988,8 +64087,7 @@ ${clone.innerHTML}
             : 'with no tissue, subtype, disease, alteration or cell-line-list restriction applied';
 
         // Highlights and labels mark points, they never remove them.
-        const searchTerms = (document.getElementById('scatterCellSearch')?.value || '')
-            .split(/[\n,;\t]+/).map(s => s.trim()).filter(Boolean);
+        const searchTerms = this._splitHighlightTerms(document.getElementById('scatterCellSearch')?.value);
         const clicked = this.clickedCells?.size || 0;
         const colorBy = document.getElementById('colorByCategory')?.value || '';
         const overlayHot = document.getElementById('hotspotGene')?.value || '';
