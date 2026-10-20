@@ -7925,14 +7925,13 @@ class CorrelationExplorer {
             document.getElementById('caShowAllBtn').style.display = 'none';
             this.switchCorrAnalysisView(this._caView || 'tissue');
         });
-        document.getElementById('caAnalyzeBtn')?.addEventListener('click', () => {
-            const g1 = document.getElementById('caGene1Search').value.trim().toUpperCase();
-            const g2 = document.getElementById('caGene2Search').value.trim().toUpperCase();
-            if (g1 && g2 && this.geneIndex.has(g1) && this.geneIndex.has(g2)) {
-                this.openCorrelationAnalysisModal(g1, g2, this._caView || 'tissue');
-            } else {
-                alert('Both genes must be valid gene symbols in the dataset.');
-            }
+        document.getElementById('caAnalyzeBtn')?.addEventListener('click', async () => {
+            const has = (g) => this.geneIndex.has(g);
+            const g1 = await this._resolveGeneBox(document.getElementById('caGene1Search'), has, 'the gene-effect data');
+            if (!g1) return;
+            const g2 = await this._resolveGeneBox(document.getElementById('caGene2Search'), has, 'the gene-effect data');
+            if (!g2) return;
+            this.openCorrelationAnalysisModal(g1, g2, this._caView || 'tissue');
         });
         // Enter key on gene inputs triggers analyze
         document.getElementById('caGene1Search')?.addEventListener('keydown', (e) => {
@@ -8532,6 +8531,34 @@ class CorrelationExplorer {
         const a = this.libraryGenes?.alias?.[up];
         if (inData(a)) return { rep: a, src: 'library synonym' };
         return null;
+    }
+
+    // A typed gene as the data names it: itself, or the name its synonym,
+    // mouse ortholog or library alias points to. null when neither is in the
+    // data `has` checks. Every gene box resolves through this, then shows
+    // geneNotFound for what is left, so typing feels the same everywhere.
+    _resolveTypedGene(gene, has) {
+        const up = String(gene || '').trim().toUpperCase();
+        if (!up) return null;
+        if (has(up)) return { gene: up, from: null };
+        const k = this._knownAliasFor(up);
+        if (k && has(k.rep)) return { gene: k.rep, from: up, src: k.src };
+        return null;
+    }
+
+    // Resolve the gene in a box in place (CD132 becomes IL2RG, with a note),
+    // or raise the standard "not found" notice. Returns the gene or null.
+    async _resolveGeneBox(inputEl, has, where) {
+        const raw = (inputEl?.value || '').trim();
+        if (!raw) return null;
+        await this._ensureAliasTables();
+        const r = this._resolveTypedGene(raw, has);
+        if (!r) { this.geneNotFound(raw.toUpperCase(), where); return null; }
+        if (r.from) {
+            inputEl.value = r.gene;
+            this.showCopyNotification?.(`${r.from} is called ${r.gene} in this data (${r.src})`);
+        }
+        return r.gene;
     }
 
     // The alias tables load on first need; the notice is drawn at once and
@@ -19635,6 +19662,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         };
         sel.addEventListener('mousedown', fill);
         sel.addEventListener('focus', fill);
+        sel._beforeOpen = fill;
+        sel.id = inputId + 'GroupPicker';
+        sel.style.width = '160px';
+        sel.dataset.alwaysFilter = '1';
         sel.addEventListener('change', () => {
             const term = sel.value;
             sel.value = '';
@@ -19646,6 +19677,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         });
         input.insertAdjacentElement('afterend', sel);
         input._groupPicker = sel;
+        // Searchable, like every other long menu in the app.
+        this._enhanceSelect(sel.id);
     }
 
     _highlightMatcher(terms) {
@@ -22893,6 +22926,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         modal.classList.add('active');
         this._compBorrowAltFilters();
         this._attachGroupHighlightPicker('compHl', () => [...new Set((this._compLast || []).flatMap(x => (x.res?.data || []).map(d => d.cellLineId)))]);
+        ['compTissue', 'compSubtype', 'compHot'].forEach(id => this._enhanceSelect(id));
         modal.querySelector('#compRows').value = st.rows; modal.querySelector('#compCols').value = st.cols;
         modal.querySelector('#compShowLine').checked = st.showLine !== false;
         modal.querySelector('#compSameRange').checked = st.sameRange !== false;
@@ -23055,12 +23089,26 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         pop.style.top = Math.max(8, Math.min(window.innerHeight - pop.offsetHeight - 8, y + 12)) + 'px';
         const q = (c) => pop.querySelector(c);
         let t = null;
+        this._ensureAliasTables();
+        // Synonyms become the data's name as you type; an unknown name gets
+        // the usual notice on Enter, not while still typing.
+        const fixGene = (geneCls, typeCls, ms) => {
+            const el = q(geneCls), typ = q(typeCls).value, raw = el.value.trim();
+            if (!raw) return '';
+            const has = typ === 'ge' ? (g) => this.geneIndex.has(g)
+                : typ === 'expr' && this.expressionLoaded ? (g) => !!this.expressionGeneIndex?.has(g) : null;
+            if (!has) return raw.toUpperCase();
+            const r = this._resolveTypedGene(raw, has);
+            if (r?.from) { el.value = r.gene; this.showCopyNotification?.(`${r.from} is called ${r.gene} in this data (${r.src})`); }
+            else if (!r && ms === 0) this.geneNotFound(raw.toUpperCase(), typ === 'ge' ? 'the gene-effect data' : 'the expression data');
+            return r ? r.gene : raw.toUpperCase();
+        };
         const apply = (ms) => {
             clearTimeout(t);
             t = setTimeout(() => {
                 Object.assign(p, {
-                    xg: q('.pp-xg').value.trim().toUpperCase(), xt: q('.pp-xt').value, x0: q('.pp-x0').checked,
-                    yg: q('.pp-yg').value.trim().toUpperCase(), yt: q('.pp-yt').value, y0: q('.pp-y0').checked, fit: q('.pp-fit').checked
+                    xg: fixGene('.pp-xg', '.pp-xt', ms), xt: q('.pp-xt').value, x0: q('.pp-x0').checked,
+                    yg: fixGene('.pp-yg', '.pp-yt', ms), yt: q('.pp-yt').value, y0: q('.pp-y0').checked, fit: q('.pp-fit').checked
                 });
                 st.lastFill = null;
                 this._compRenderEditor();
@@ -23690,8 +23738,22 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         else if (key === 'hot') { genes = (this.mutations?.genes || []).filter(g => !this._isPolymorphicLocus?.(g)); label = 'hotspot-mutated genes'; }
         else if (key === 'ess') { genes = [...(this._commonEssentials || [])]; label = 'common essential genes'; }
         else if (key.startsWith('lib:')) { const e = this._GENE_SET_LIBRARY?.()[key.slice(4)]; genes = e?.genes || []; label = e?.label || 'the gene set'; }
-        else if (key === 'custom') { genes = (document.getElementById('ctGeneList')?.value || '').split(/[\s,;]+/).filter(Boolean); label = 'genes from the pasted list'; }
-        return { set: up(genes), label, key };
+        let renamed = [], missing = [];
+        if (key === 'custom') {
+            // Pasted names resolve like every gene box: synonyms read as the
+            // data's name, the rest are listed with the usual suggestions.
+            const c = this._ct;
+            const has = c?.measure === 'expr' ? (g) => !!this.expressionGeneIndex?.has(g) : (g) => this.geneIndex.has(g);
+            if (!this.synonymLookup || !this.libraryGenes) this._ensureAliasTables().then(() => this._ctRenderTable());
+            genes = (document.getElementById('ctGeneList')?.value || '').split(/[\s,;]+/).filter(Boolean).map(t => {
+                const r = this._resolveTypedGene(t, has);
+                if (!r) { missing.push(t.toUpperCase()); return t; }
+                if (r.from) renamed.push(`${r.from} \u2192 ${r.gene}`);
+                return r.gene;
+            });
+            label = 'genes from the pasted list';
+        }
+        return { set: up(genes), label, key, renamed, missing };
     }
 
     _ctBaseLines(measure) {
@@ -23963,7 +24025,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const gsNote = document.getElementById('ctGeneSetNote');
         if (gsNote) {
             const inData = gs ? measured : 0;
-            gsNote.textContent = gs ? (gs.set.size ? `${gs.set.size.toLocaleString()} genes, ${inData.toLocaleString()} measured here` : 'no genes in this list yet') : '';
+            gsNote.innerHTML = !gs ? '' : (gs.set.size ? `${gs.set.size.toLocaleString()} genes, ${inData.toLocaleString()} measured here` : 'no genes in this list yet')
+                + (gs.renamed?.length ? `; read as ${this.esc(gs.renamed.join(', '))}` : '')
+                + (gs.missing?.length ? `; not found: ${gs.missing.map(g => `<a href="#" data-ct-miss="${this.esc(g)}" style="color:#b45309;">${this.esc(g)}</a>`).join(', ')}` : '');
+            gsNote.querySelectorAll('[data-ct-miss]').forEach(a => a.onclick = (e) => { e.preventDefault(); this.geneNotFound(a.dataset.ctMiss, this._ct.measure === 'expr' ? 'the expression data' : 'the gene-effect data'); });
         }
         // The chart follows the table's first gene until a gene is clicked.
         const prevSel = c.selectedG;
@@ -24556,6 +24621,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const GS_LABEL = this._geneSetLabel ? `📊 ${this._geneSetLabel}` : '📊 Gene Set';
         const noGeneAxis = (t) => t === 'growth' || t === 'geneset';
 
+        // A synonym in either box becomes the data's name (CD132 to IL2RG),
+        // as in every gene box; an unknown name still gets the notice below.
+        [['inspectGeneX', xType], ['inspectGeneY', yType]].forEach(([id, t]) => {
+            if (noGeneAxis(t) || t === 'cn') return;
+            const el = document.getElementById(id), raw = (el?.value || '').trim();
+            if (!raw) return;
+            const has = t === 'expr' ? (g) => !this.expressionLoaded || !!this.expressionGeneIndex?.has(g) : (g) => this.geneIndex.has(g);
+            const r = this._resolveTypedGene(raw, has);
+            if (r?.from) { el.value = r.gene; this.showCopyNotification?.(`${r.from} is called ${r.gene} in this data (${r.src})`); }
+        });
         // For growth/geneset axes, use labels; otherwise require a gene
         const gene1 = xType === 'growth' ? GR_LABEL : xType === 'geneset' ? GS_LABEL : document.getElementById('inspectGeneX').value.trim().toUpperCase();
         const gene2 = yType === 'growth' ? GR_LABEL : yType === 'geneset' ? GS_LABEL : document.getElementById('inspectGeneY').value.trim().toUpperCase();
@@ -28562,7 +28637,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         this._caGene1 = g1; this._caGene2 = g2; this._caView = view;
 
         if (!this.geneIndex.has(g1) || !this.geneIndex.has(g2)) {
-            alert(`One or both genes not found in dataset.`);
+            this.geneNotFound(!this.geneIndex.has(g1) ? g1 : g2, 'the gene-effect data');
             return;
         }
 
@@ -29580,6 +29655,17 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // ============================================================
 
     openGeneEffectModal(gene, view = 'tissue', opts = {}) {
+        // A synonym becomes the data's name, as in every gene box.
+        {
+            const dt = opts.dataType || document.getElementById('geDataType')?.value;
+            const has = dt === 'expr' ? (g) => !this.expressionLoaded || !!this.expressionGeneIndex?.has(g) : (g) => this.geneIndex.has(g);
+            const r = gene ? this._resolveTypedGene(gene, has) : null;
+            if (r?.from) {
+                gene = r.gene;
+                const box = document.getElementById('geneEffectSearch'); if (box) box.value = r.gene;
+                this.showCopyNotification?.(`${r.from} is called ${r.gene} in this data (${r.src})`);
+            }
+        }
         // Close leftovers from the view underneath (network settings panel,
         // hover cards) so they don't linger on top of this popout.
         const geTsp = document.getElementById('textSettingsPanel');
@@ -33525,11 +33611,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     // synonym table is already shipped for the gene box; use it
                     // here too rather than reporting a live gene as missing.
                     const renamed = [];
+                    // All three alias sources, as every gene box uses.
                     const gs2 = gs.map(g => {
-                        if (inData(g)) return g;
-                        const alt = (this.synonymLookup?.[g]?.d || '').toUpperCase();
-                        if (alt && inData(alt)) { renamed.push(`${g} \u2192 ${alt}`); return alt; }
-                        return g;
+                        const r = this._resolveTypedGene(g, inData);
+                        if (r?.from) { renamed.push(`${g} \u2192 ${r.gene}`); return r.gene; }
+                        return r ? r.gene : g;
                     });
                     const known = gs2.filter(inData);
                     const unknown = gs2.filter(g => !known.includes(g));
@@ -33641,6 +33727,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
 
     openCustomAIExport(prefill) {
+        this._ensureAliasTables();
         this._caiQuestionFromBlock = false;
         const dlg = document.getElementById('customAIDialog');
         if (!dlg) return;
@@ -33739,6 +33826,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
         // A request fully determines what it names: it starts from the
         // standard settings, not from whatever the dialog held before.
+        await this._ensureAliasTables();
         const { settings, applied, ignored } = this._parseAIRequest(text, this._caiFreshSettings());
         this._caiAppliedText = text.trim();
         this._aiCustom = settings;
@@ -33820,7 +33908,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             cohort: pick('caiCohort') || 'view',
             cohortList: cohortIds,
             genes: pick('caiGenes') || 'auto',
-            geneList: val('caiGeneList').split(/[\n,;\t ]+/).map(x => x.trim().toUpperCase()).filter(Boolean),
+            // Typed genes resolve through the same aliases as every gene box.
+            geneList: val('caiGeneList').split(/[\n,;\t ]+/).map(x => x.trim().toUpperCase()).filter(Boolean)
+                .map(g => this._resolveTypedGene(g, (x) => this.geneIndex.has(x) || !!this.expressionGeneIndex?.has(x))?.gene || g),
             geneCap: capRaw === '' ? null : Math.max(0, parseInt(capRaw, 10) || 0),
             scanTop: Math.max(5, Math.min(500, parseInt(val('caiScanTop'), 10) || 30)),
             layers: {
@@ -39701,31 +39791,24 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         this._attachDotShiftOpen('exprCorrelateScatterPlot');
     }
 
-    updateExprScatterGenes() {
+    async updateExprScatterGenes() {
         if (!this._exprCorrelateContext || !this.expressionLoaded) return;
 
         const ctx = this._exprCorrelateContext;
-        const newGEGene = document.getElementById('exprScatterGEGene').value.trim().toUpperCase();
-        const newExprGene = document.getElementById('exprScatterExprGene').value.trim().toUpperCase();
-
-        if (!newGEGene || !newExprGene) {
+        const geEl = document.getElementById('exprScatterGEGene'), exEl = document.getElementById('exprScatterExprGene');
+        if (!geEl.value.trim() || !exEl.value.trim()) {
             alert('Please enter both gene names.');
             return;
         }
-
-        // Validate expression gene exists
-        if (this.expressionGeneIndex.get(newExprGene) === undefined) {
-            alert(`Expression gene "${newExprGene}" not found in expression data.`);
-            return;
-        }
+        // Synonyms resolve and unknown names get the usual notice, as in every gene box.
+        const newExprGene = await this._resolveGeneBox(exEl, (g) => this.expressionGeneIndex.has(g), 'the expression data');
+        if (!newExprGene) return;
+        const newGEGene = await this._resolveGeneBox(geEl, (g) => this.geneIndex.has(g), 'the gene-effect data');
+        if (!newGEGene) return;
 
         // If GE gene changed, update the context
         if (newGEGene !== ctx.targetGene.toUpperCase()) {
             const newGEIdx = this.geneIndex.get(newGEGene);
-            if (newGEIdx === undefined) {
-                alert(`GE gene "${newGEGene}" not found in gene effect data.`);
-                return;
-            }
             ctx.targetGene = newGEGene;
             ctx.targetGeneIdx = newGEIdx;
         }
@@ -43267,14 +43350,26 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         } else {
             wrap.style.flex = select.style.flex || '1';
         }
+        if (select.style.maxWidth) wrap.style.maxWidth = select.style.maxWidth;
+        // The button takes the menu's own size, so a compact toolbar menu
+        // stays compact (read before the native select is hidden).
+        const cs = getComputedStyle(select);
+        const keep = { fontSize: cs.fontSize, paddingTop: cs.paddingTop, paddingBottom: cs.paddingBottom, paddingLeft: cs.paddingLeft, height: cs.height, marginTop: cs.marginTop };
+        if (parseFloat(keep.marginTop) > 0) wrap.style.marginTop = keep.marginTop;
         select.parentNode.insertBefore(wrap, select);
         wrap.appendChild(select);
-        select.style.display = 'none';
+        // The native select is hidden by the stylesheet (.select-proxy >
+        // select), so code setting its inline display cannot reveal it.
+        if (select.style.display === 'none') wrap.style.display = 'none';
 
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'form-control select-proxy-btn';
         btn.innerHTML = '<span class="select-proxy-label"></span><span class="select-proxy-caret">&#9662;</span>';
+        if (select.dataset.compact !== '0') {
+            Object.assign(btn.style, { fontSize: keep.fontSize, paddingTop: keep.paddingTop, paddingBottom: keep.paddingBottom, paddingLeft: keep.paddingLeft, minHeight: '0' });
+            if (parseFloat(keep.height) > 0) btn.style.height = keep.height;
+        }
         wrap.appendChild(btn);
 
         const labelEl = btn.querySelector('.select-proxy-label');
@@ -43285,7 +43380,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         };
         syncLabel();
         select.addEventListener('change', syncLabel);
-        new MutationObserver(syncLabel).observe(select, { childList: true, attributes: true, attributeFilter: ['disabled'] });
+        new MutationObserver(syncLabel).observe(select, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['disabled'] });
+        // Code that shows or hides the menu sets select.style.display; the
+        // button follows it. Active-filter marking (border, background,
+        // weight) carries over too.
+        new MutationObserver(() => {
+            wrap.style.display = select.style.display === 'none' ? 'none' : '';
+            btn.style.borderColor = select.style.borderColor;
+            btn.style.background = select.style.background;
+            btn.style.fontWeight = select.style.fontWeight;
+        }).observe(select, { attributes: true, attributeFilter: ['style'] });
         // Assigning `.value` from code does NOT fire `change`, so the button
         // went on showing the old label after a Reset that had genuinely
         // cleared the select underneath it: the disease filter read as still
@@ -43317,14 +43421,30 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             window.removeEventListener('resize', close);
         };
         const onOutside = (e) => { if (!panel?.contains(e.target) && !btn.contains(e.target)) close(); };
-        const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+        const onKey = (e) => {
+            if (e.key === 'Escape') { e.stopPropagation(); close(); return; }
+            if (!panel || !['ArrowDown', 'ArrowUp', 'Enter'].includes(e.key)) return;
+            // Arrow keys move through the visible entries, Enter picks one.
+            const items = [...panel.querySelectorAll('.select-proxy-item:not(.is-disabled)')].filter(it => it.style.display !== 'none');
+            if (!items.length) return;
+            let i = items.findIndex(it => it.classList.contains('is-active'));
+            if (e.key === 'Enter') { e.preventDefault(); (items[i] || items[0]).click(); return; }
+            e.preventDefault();
+            items[i]?.classList.remove('is-active');
+            i = e.key === 'ArrowDown' ? Math.min(items.length - 1, i + 1) : Math.max(0, i - 1);
+            items[i].classList.add('is-active');
+            items.forEach((it, k) => { it.style.background = k === i ? '#ecfdf5' : ''; });
+            items[i].scrollIntoView({ block: 'nearest' });
+        };
 
         const open = () => {
             if (panel) { close(); return; }
+            // A list built on demand (the highlight-group menu) refills here.
+            select._beforeOpen?.();
             const opts = [...select.options];
             panel = document.createElement('div');
             panel.className = 'select-proxy-panel';
-            const needsFilter = opts.length > 12;
+            const needsFilter = opts.length > 12 || select.dataset.alwaysFilter === '1';
             if (needsFilter) {
                 const f = document.createElement('input');
                 f.type = 'text';
@@ -43338,24 +43458,44 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                         const acro = (it.dataset.acronyms || '');
                         it.style.display = !q || hay.includes(q) || acro.includes(q) ? '' : 'none';
                     });
+                    // A group heading shows only while something under it does.
+                    panel.querySelectorAll('.select-proxy-group').forEach(h => {
+                        let n = h.nextElementSibling, any = false;
+                        while (n && !n.classList.contains('select-proxy-group')) { if (n.style.display !== 'none') { any = true; break; } n = n.nextElementSibling; }
+                        h.style.display = any ? '' : 'none';
+                    });
                 });
                 setTimeout(() => f.focus(), 0);
             }
             const list = document.createElement('div');
             list.className = 'select-proxy-list';
-            opts.forEach((o, i) => {
+            const addItem = (o) => {
+                if (o.hidden) return;
+                const i = o.index;
                 const item = document.createElement('div');
-                item.className = 'select-proxy-item' + (i === select.selectedIndex ? ' is-selected' : '');
+                item.className = 'select-proxy-item' + (i === select.selectedIndex ? ' is-selected' : '') + (o.disabled ? ' is-disabled' : '');
                 item.textContent = o.textContent;
                 item.dataset.acronyms = this._optionAcronyms(o.textContent);
-                item.addEventListener('click', () => {
+                if (o.disabled) item.style.cssText = 'color:#9ca3af; cursor:default;';
+                else item.addEventListener('click', () => {
                     select.selectedIndex = i;
                     syncLabel();
                     close();
                     select.dispatchEvent(new Event('change', { bubbles: true }));
                 });
                 list.appendChild(item);
-            });
+            };
+            // <optgroup>s become headings, as in the native menu.
+            for (const ch of select.children) {
+                if (ch.tagName === 'OPTGROUP') {
+                    const h = document.createElement('div');
+                    h.className = 'select-proxy-group';
+                    h.textContent = ch.label;
+                    h.style.cssText = 'font-size:10px; font-weight:700; color:#6b7280; text-transform:uppercase; letter-spacing:.03em; padding:6px 8px 2px; cursor:default;';
+                    list.appendChild(h);
+                    [...ch.children].forEach(addItem);
+                } else if (ch.tagName === 'OPTION') addItem(ch);
+            }
             panel.appendChild(list);
             document.body.appendChild(panel);
 
@@ -44821,6 +44961,20 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             }, 200);
             // Refresh the suggestion dropdown live as the user types.
             renderSortDropdown();
+        });
+        // On Enter or leaving the box: synonyms become the data's name and an
+        // unknown gene gets the usual notice, as in every gene box. A compound
+        // (drug sort) is not a gene and is left alone.
+        clbSortGene.addEventListener('change', async () => {
+            const mode = document.getElementById('clbSortBy')?.value;
+            if (mode !== 'ge' && mode !== 'expr' && mode !== 'cn') return;
+            await this._ensureAliasTables();
+            const has = mode === 'expr' ? (g) => !!this.expressionGeneIndex?.has(g) : (g) => this.geneIndex.has(g) || !!this.expressionGeneIndex?.has(g);
+            const toks = clbSortGene.value.split(/[\s,;]+/).filter(Boolean);
+            let changed = false, unknown = null;
+            const out = toks.map(t => { const r = this._resolveTypedGene(t, has); if (!r) { unknown = unknown || t.toUpperCase(); return t; } if (r.from) changed = true; return r.gene; });
+            if (changed) { clbSortGene.value = out.join(', '); clbSortGene.dispatchEvent(new Event('input', { bubbles: true })); }
+            if (unknown) this.geneNotFound(unknown, mode === 'expr' ? 'the expression data' : 'the gene-effect data');
         });
         // Suggestion dropdown, opens on focus for drug / GE / expression
         // modes. Uses the same pattern as the CN / fusion filter dropdowns
@@ -54306,7 +54460,7 @@ ${clone.innerHTML}
             'Enter one or more gene symbols, separated by commas, semicolons or spaces.\n\nEach gene adds GE, Expression, Hotspot, Damaging, Fusion, focal-CN and relative copy-number columns, per cell line.',
             'TP53, MDM2');
         if (input === null) return;
-        const genes = input.split(/[\s,;]+/).map(s => s.trim().toUpperCase()).filter(Boolean);
+        let genes = input.split(/[\s,;]+/).map(s => s.trim().toUpperCase()).filter(Boolean);
         if (!genes.length) return;
 
         // Rows: prefer the current selection; fall back to the visible list
@@ -54328,8 +54482,14 @@ ${clone.innerHTML}
         try { await this.loadCnData(); } catch (e) { /* CN column blank */ }
         try { await this.loadGeneLocations(); } catch (e) { /* location info blank */ }
 
+        // Synonyms read as the data's name, as in every gene box.
+        await this._ensureAliasTables();
+        const inData = (g) => this.geneIndex.has(g) || !!this.expressionGeneIndex?.has(g);
+        const renamed = [];
+        genes = genes.map(g => { const r = this._resolveTypedGene(g, inData); if (r?.from) renamed.push(`${r.from} as ${r.gene}`); return r ? r.gene : g; });
         const resolved = genes.map(g => ({ gene: g, geIdx: this.geneIndex.get(g) }));
         const missing = resolved.filter(r => r.geIdx === undefined && (this.expressionGeneIndex?.get(r.gene) === undefined));
+        if (renamed.length) this.showCopyNotification?.(`Exported ${renamed.join(', ')} (the names used in this data)`);
         if (missing.length) {
             alert(`Not found: ${missing.map(m => m.gene).join(', ')}. These columns will be empty.`);
         }
@@ -55075,7 +55235,8 @@ ${clone.innerHTML}
     }
 
     _applyUmapSplit() {
-        const gene = document.getElementById('clbUmapSplitGene').value.trim();
+        // Upper case, as every gene box reads: "braf" found nothing.
+        const gene = document.getElementById('clbUmapSplitGene').value.trim().toUpperCase();
         if (!gene || !this._clbUmapData) return;
         const source = document.getElementById('clbUmapSplitSource').value;
 
@@ -57294,12 +57455,17 @@ ${clone.innerHTML}
         this.showCopyNotification(`Ticked ${added} in list above (${this._clbSelectedCellLines.size} total selected)`);
     }
 
-    applyUmapGeneColor() {
+    async applyUmapGeneColor() {
         if (!this._clbUmapData) return;
-        const gene = document.getElementById('clbUmapColorGene').value.trim().toUpperCase();
         const colorType = document.getElementById('clbUmapColorGeneType').value; // 'ge' or 'expr'
         const statusEl = document.getElementById('clbUmapColorGeneStatus');
-        if (!gene) { statusEl.textContent = 'Enter a gene name.'; return; }
+        if (!document.getElementById('clbUmapColorGene').value.trim()) { statusEl.textContent = 'Enter a gene name.'; return; }
+        if (colorType !== 'ge' && !this.expressionLoaded) { statusEl.textContent = 'Expression data not loaded.'; return; }
+        // Synonyms and unknown names are handled as in every gene box.
+        const gene = await this._resolveGeneBox(document.getElementById('clbUmapColorGene'),
+            colorType === 'ge' ? (g) => this.geneIndex.has(g) : (g) => !!this.expressionGeneIndex?.has(g),
+            colorType === 'ge' ? 'the gene-effect data' : 'the expression data');
+        if (!gene) { statusEl.textContent = ''; return; }
 
         const { cellLines, x, y } = this._clbUmapData;
         const values = [];
@@ -59563,11 +59729,22 @@ ${clone.innerHTML}
         const hasGene = (g) => dataType === 'expr'
             ? !!this.expressionGeneIndex?.has(g.toUpperCase())
             : !!this.geneIndex?.has(g.toUpperCase());
+        // Typed genes resolve like every gene box: synonyms read as the
+        // data's name (the alias tables load in the background the first time).
+        if (presetKey === 'custom') {
+            if (!this.synonymLookup || !this.libraryGenes) this._ensureAliasTables().then(() => { if (enteredGenes.some(g => !hasGene(g))) this._hmRedraw?.(); });
+            enteredGenes = Array.from(new Set(enteredGenes.map(g => this._resolveTypedGene(g, hasGene)?.gene || g)));
+        }
         let genes = enteredGenes.filter(hasGene);
         const missingGenes = enteredGenes.filter(g => !hasGene(g));
 
         if (!genes.length) {
-            if (hint) hint.textContent = `None of the ${enteredGenes.length} genes entered have ${dataType === 'expr' ? 'expression' : 'gene effect'} data. Check spelling or try the other data type.`;
+            if (hint) {
+                hint.innerHTML = `None of the ${enteredGenes.length} genes entered have ${dataType === 'expr' ? 'expression' : 'gene effect'} data: `
+                    + missingGenes.slice(0, 12).map(g => `<a href="#" data-hm-miss="${this.esc(g)}" style="color:#b45309;">${this.esc(g)}</a>`).join(', ')
+                    + '. Click a name for suggestions, or try the other data type.';
+                hint.querySelectorAll('[data-hm-miss]').forEach(a => a.onclick = (e) => { e.preventDefault(); this.geneNotFound(a.dataset.hmMiss, dataType === 'expr' ? 'the expression data' : 'the gene-effect data'); });
+            }
             this._hmClearCanvases();
             return;
         }
@@ -59966,20 +60143,23 @@ ${clone.innerHTML}
                 raw = this._stripFusionFilterDecoration(row.gene).trim().toUpperCase();
                 resolved.push({ mode: 'fusion', gene: raw, sortDir, sortKey, idx });
             } else if (row.mode === 'ge') {
-                if (!this.geneIndex?.has(raw)) {
+                // A synonym reads as the data's name, as in every gene box.
+                const rg = this._resolveTypedGene(raw, (g) => !!this.geneIndex?.has(g));
+                if (!rg) {
                     note += `${raw} has no CRISPR gene effect data, that annotation row is not drawn. `;
                     return;
                 }
-                resolved.push({ mode: 'ge', gene: raw, sortDir, sortKey, idx });
+                resolved.push({ mode: 'ge', gene: rg.gene, sortDir, sortKey, idx });
             } else if (row.mode === 'expr') {
                 // Expression loads on demand; _hmRedrawCore awaits that load
                 // before calling this whenever a row asks for it, so a miss
                 // here really is a gene absent from the matrix.
-                if (!this.expressionLoaded || !this.expressionGeneIndex?.has(raw)) {
+                const rx = this.expressionLoaded ? this._resolveTypedGene(raw, (g) => !!this.expressionGeneIndex?.has(g)) : null;
+                if (!rx) {
                     note += `${raw} has no mRNA expression data, that annotation row is not drawn. `;
                     return;
                 }
-                resolved.push({ mode: 'expr', gene: raw, sortDir, sortKey, idx });
+                resolved.push({ mode: 'expr', gene: rx.gene, sortDir, sortKey, idx });
             } else {
                 // The cn gene slot is the CN filter widget, whose picks are
                 // the DECORATED panel key ("MYC_amp"/"MYC_del", see
@@ -62355,10 +62535,16 @@ ${clone.innerHTML}
             if (d.annRows.length) base += `, annotation rows: ${d.annRows.map(r => r.attrLabel).join(', ')}`;
             let text = `${base}, ${dataWord}, ${scaleWord}. ${colourWord}`;
             if (noteText) text = noteText + text;
-            if (d.missingGenes.length) {
-                text += ` ${d.missingGenes.length} gene${d.missingGenes.length === 1 ? '' : 's'} not found: ${d.missingGenes.slice(0, 12).join(', ')}${d.missingGenes.length > 12 ? '…' : ''}.`;
-            }
             hint.innerHTML = this._italicizeGenesInHtml(this.esc(text));
+            // Missing names are links to the usual suggestions, as in every gene box.
+            if (d.missingGenes.length) {
+                const span = document.createElement('span');
+                span.innerHTML = ` ${d.missingGenes.length} gene${d.missingGenes.length === 1 ? '' : 's'} not found: `
+                    + d.missingGenes.slice(0, 12).map(g => `<a href="#" data-hm-miss="${this.esc(g)}" style="color:#b45309;">${this.esc(g)}</a>`).join(', ')
+                    + `${d.missingGenes.length > 12 ? '…' : ''}.`;
+                span.querySelectorAll('[data-hm-miss]').forEach(a => a.onclick = (e) => { e.preventDefault(); this.geneNotFound(a.dataset.hmMiss, d.dataType === 'expr' ? 'the expression data' : 'the gene-effect data'); });
+                hint.appendChild(span);
+            }
         }
 
         const scrollHint = document.getElementById('hmScrollHint');
@@ -65044,13 +65230,38 @@ document.addEventListener('keydown', (e) => {
     }
 });
 document.addEventListener('keyup', (e) => { if (e.key === 'Shift' && window.app) window.app._shiftHeld = false; });
+
+// The synonym tables (6 MB) load the first time any gene box is used, so a
+// synonym typed there is recognised by the time it is submitted.
+document.addEventListener('focusin', (e) => {
+    const t = e.target;
+    if (!window.app || !t?.matches) return;
+    if (t.matches('#inspectGeneX, #inspectGeneY, #geneEffectSearch, #caGene1Search, #caGene2Search, #compTopGene, .pp-xg, .pp-yg, #ctGeneList, #hmGenes, #clbSortGene, #exprScatterGEGene, #exprScatterExprGene, #caiGeneList, #axisEditorGene, #clbUmapColorGene, #clbUmapSplitGene, #geneTextarea, #askValueInput')) {
+        window.app._ensureAliasTables?.();
+    }
+});
 window.addEventListener('blur', () => { if (window.app) window.app._shiftHeld = false; });
 
 document.addEventListener('DOMContentLoaded', () => {
     // Long tissue lists: the native menu runs off-screen and cannot be
     // scrolled back down. The disease selector joins so all three levels of
     // the lineage-and-disease block look and open identically.
-    ['lineageFilter', 'subLineageFilter', 'paramOncotreeFilter'].forEach(id => window.app?._enhanceSelect(id));
+    // These three keep the proxy's own (larger) main-page look.
+    ['lineageFilter', 'subLineageFilter', 'paramOncotreeFilter'].forEach(id => {
+        const el = document.getElementById(id); if (el) el.dataset.compact = '0';
+        window.app?._enhanceSelect(id);
+    });
+    // Every other long menu (tissue, subtype, disease, mutation genes, gene
+    // sets) is searchable the same way, wherever it sits in the app.
+    ['scatterCancerFilter', 'scatterSubtypeFilter', 'scatterOncotreeFilter', 'hotspotGene',
+     'mutationHotspotSelect', 'translocationHotspotSelect', 'damagingHotspotSelect',
+     'geHotspotGeneSelect', 'geTissueFilter', 'geSubtypeFilter', 'geOncotreeFilter',
+     'caTissueFilter', 'caSubtypeFilter', 'caOncotreeFilter',
+     'ctGeneSet', 'ctLineage', 'ctSubtype', 'ctDisease', 'ctFocus',
+     'hmPreset', 'hmLineage', 'hmSubtype', 'hmDisease',
+     'clbTissueFilter', 'clbSubtypeFilter', 'clbOncotreeFilter', 'clbSexFilter', 'clbSortBy',
+     'clbUmapTissueFilter', 'clbUmapSubtypeFilter', 'clbUmapHighlightGene'
+    ].forEach(id => window.app?._enhanceSelect(id));
 });
 
 document.addEventListener('DOMContentLoaded', () => {

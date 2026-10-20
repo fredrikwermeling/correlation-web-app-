@@ -763,6 +763,10 @@
         #minCellLines::-webkit-inner-spin-button, #minCellLines::-webkit-outer-spin-button,
         #minGeneCoverage::-webkit-inner-spin-button, #minGeneCoverage::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 
+        /* A searchable menu's native select stays hidden whatever inline
+           display code gives it; the proxy button stands in for it. */
+        .select-proxy > select { display: none !important; }
+
         .form-control:focus {
             border-color: var(--green-500);
             box-shadow: 0 0 0 3px rgba(122, 185, 80, 0.15);
@@ -5625,7 +5629,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v90_11"></script>
+    <script src="app.js?v=v90_12"></script>
     <script src="tour.js?v=v89_49"></script>
 </body>
 </html>
