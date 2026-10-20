@@ -23797,6 +23797,28 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         return true;
     }
 
+    // Which cell lines the "Only these cell lines" box picked, as chips, and
+    // the typed names that matched nothing.
+    _ctRenderLinesChips(cohort, base) {
+        const box = document.getElementById('ctLinesChips');
+        const input = document.getElementById('ctLines');
+        if (!box || !input) return;
+        const terms = this._splitHighlightTerms(input.value);
+        input.style.borderColor = terms.length ? '#3b82f6' : '#d1d5db';
+        input.style.background = terms.length ? '#eff6ff' : '';
+        input.style.fontWeight = terms.length ? '600' : '';
+        this._ctLinesPicked = terms.length ? cohort.map(cl => this.getCellLineName(cl) || cl) : null;
+        if (!terms.length) { box.innerHTML = ''; return; }
+        const missed = terms.filter(t => { const m = this._highlightMatcher([t]); return !base.some(cl => m(this.getCellLineName(cl) || cl, cl)); });
+        const names = this._ctLinesPicked, MAX = 6;
+        const chip = (n) => `<span style="padding:1px 7px; border-radius:9px; background:#eff6ff; border:1px solid #bfdbfe; color:#1e40af; font-weight:600;">${this.esc(n)}</span>`;
+        box.innerHTML = (names.length
+                ? `<span style="color:#6b7280;">${names.length === 1 ? 'Cell line:' : `${names.length} cell lines:`}</span>${names.slice(0, MAX).map(chip).join('')}`
+                  + (names.length > MAX ? `<span style="color:#6b7280;">+ ${names.length - MAX} more</span>` : '')
+                : `<span style="color:#b91c1c;">No cell line left with these filters</span>`)
+            + (missed.length ? `<span style="color:#b91c1c;">not found: ${missed.map(t => this.esc(t)).join(', ')}</span>` : '');
+    }
+
     // The "Only these cell lines" box: names or group terms, as in the
     // highlight boxes. Cached per text, since every line is tested.
     _ctLinesMatch() {
@@ -23844,8 +23866,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (v('ctSubtype')) parts.push(`subtype ${v('ctSubtype')}`);
             if (v('ctDisease')) parts.push(`disease ${v('ctDisease')}`);
         }
-        const only = this._splitHighlightTerms(v('ctLines'));
-        if (only.length) parts.push(short && only.length > 3 ? `${only.length} named cell lines` : `only ${only.join(', ')}`);
+        const picked = this._ctLinesPicked;
+        if (picked?.length) parts.push(picked.length > (short ? 3 : 20) ? `${picked.length} chosen cell lines` : `only ${picked.join(', ')}`);
         const hot = v('ctHotspotFilter');
         if (hot) {
             const lvl = v('ctHotspotLevel') || '1+2';
@@ -23876,6 +23898,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const alt = this._ctBaseLines(measure).filter(cl => this._ctPassesAlterations(cl));
         this._ctPopulateSelects(alt);
         const cohort = alt.filter(cl => this._ctPassesGroups(cl));
+        this._ctRenderLinesChips(cohort, this._ctBaseLines(measure));
         const ids = measure === 'expr' ? this.expressionMetadata.cellLines : this.metadata.cellLines;
         const stride = measure === 'expr' ? this.expressionMetadata.nCellLines : this.nCellLines;
         const data = measure === 'expr' ? this.expressionData : this.geneEffects;
