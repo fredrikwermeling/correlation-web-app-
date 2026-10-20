@@ -7652,13 +7652,11 @@ class CorrelationExplorer {
             if (e.key === 'Enter') geRunSearch(e.target.value.trim().toUpperCase());
         });
         // Data-type toggle (GE / Expression). Re-analyze the current gene
-        // immediately when the user flips it. Updates the Gene Effect label
-        // to match the active data type.
+        // immediately when the user flips it; the measure menu itself says
+        // which is shown, so the box's label stays "Gene:".
         const geDataTypeEl = document.getElementById('geDataType');
         if (geDataTypeEl) {
             geDataTypeEl.addEventListener('change', () => {
-                const labelEl = document.getElementById('geneEffectLabel');
-                if (labelEl) labelEl.textContent = geDataTypeEl.value === 'expr' ? 'Expression:' : 'Gene Effect:';
                 // The popout keeps the gene in one of two places depending on
                 // how it was opened: currentGeneEffect.gene for the normal
                 // view, currentGeneEffectGene for mutation inspect. Reading
@@ -29532,8 +29530,6 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         {
             const dt = document.getElementById('geDataType');
             if (dt) dt.value = (opts.dataType === 'expr') ? 'expr' : 'ge';
-            const labelEl = document.getElementById('geneEffectLabel');
-            if (labelEl) labelEl.textContent = dt && dt.value === 'expr' ? 'Expression:' : 'Gene Effect:';
         }
         // Read the data-type toggle (GE / Expression). The data field is
         // still called "geneEffect" downstream for backwards compatibility —
@@ -44482,7 +44478,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             this.geneEffectViewMode = 'geneEffect';
             this.currentGeneEffect = null;
             document.getElementById('geneEffectModal').style.display = 'flex';
-            document.getElementById('geneEffectTitle').textContent = `${this._geMetric().full} Analysis`;
+            document.getElementById('geneEffectTitle').textContent = 'Gene effect / expression';
             document.getElementById('geneEffectSearch').value = '';
             document.getElementById('geneEffectCurrentGene').textContent = '';
             document.getElementById('geneEffectSummary').style.display = 'none';

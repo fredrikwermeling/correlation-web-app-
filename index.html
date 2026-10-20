@@ -2922,7 +2922,7 @@
                             <button class="btn btn-outline btn-sm" id="optionsOtherBtn" aria-haspopup="true" aria-expanded="false" style="color:var(--green-700); border-color:var(--green-400); flex:1 1 0; min-width:0;" title="Mutation analysis, Gene Effect, Correlation and opening a saved figure">Other &#9662;</button>
                             <div id="optionsOtherMenu" style="display:none; position:absolute; top:calc(100% + 4px); right:0; z-index:1200; background:#fff; border:1px solid var(--gray-200); border-radius:6px; box-shadow:0 6px 18px rgba(0,0,0,0.12); min-width:180px; padding:4px;">
                                 <button class="options-menu-item" id="modeMutationBtn" title="Split the cohort into altered vs wild-type lines for a chosen gene and rank the genes whose gene effect differs most">Mutation analysis</button>
-                                <button class="options-menu-item" id="showGeneEffectDirect">Gene Effect</button>
+                                <button class="options-menu-item" id="showGeneEffectDirect" title="One gene across all cell lines, by tissue or mutation, as CRISPR gene effect or mRNA expression">Gene effect / expression</button>
                                 <button class="options-menu-item" id="showCorrelationDirect">Correlation</button>
                                 <button class="options-menu-item" id="customAIExportBtn" title="Paste a block an assistant wrote after reading an export: a view opens straight away, a request for more data fills in the export settings. The settings can also be set by hand.">Paste from AI</button>
                                 <label class="options-menu-item" for="restoreFromExportInput" title="Open a Correlate metadata file (.correlate.json, saved alongside every image export) to recreate the figure. Older SVG/PNG exports with embedded settings also work.">Open saved figure</label>
@@ -4092,7 +4092,7 @@
     <div class="modal-overlay" id="geneEffectModal" style="display: none; z-index: 1400;">
         <div class="modal" id="geneEffectModalInner" style="max-width: 95vw; width: 1300px;">
             <div class="modal-header" style="display:flex; align-items:center; gap:10px;">
-                <h3 id="geneEffectTitle" style="flex:1; margin:0;">Gene Effect Analysis</h3>
+                <h3 id="geneEffectTitle" style="flex:1; margin:0;">Gene effect / expression</h3>
                 <button onclick="app.openGeneEffectInNewTab()" class="btn btn-outline btn-sm" style="font-size:11px; padding:3px 8px; color:var(--green-700); border-color:var(--green-400);" title="Open this view (same gene, filters and settings) in a new browser tab so you can keep working here">New tab &#8599;</button>
                 <button class="modal-close" id="closeGeneEffect" title="Close the Gene Effect view">&times;</button>
             </div>
@@ -4103,7 +4103,7 @@
                     <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 8px; flex-wrap: wrap;">
                         <div class="main-input" style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
                         <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-                            <label id="geneEffectLabel" style="font-size: 13px; font-weight: 600; color: #374151; white-space: nowrap;">Gene Effect:</label>
+                            <label id="geneEffectLabel" style="font-size: 13px; font-weight: 600; color: #374151; white-space: nowrap;">Gene:</label>
                             <input type="text" id="geneEffectSearch" class="form-control" placeholder="Gene symbol" style="width: 130px; font-size: 13px; padding: 6px 10px;">
                             <select id="geDataType" title="Switch between gene-effect (CRISPR knockout) and expression (log2-TPM+1) as the y-axis data" style="font-size: 12px; padding: 4px 6px; border: 1px solid #d1d5db; border-radius: 4px; background: #fff;">
                                 <option value="ge">Gene effect (CRISPR)</option>
@@ -4247,7 +4247,7 @@
                         <!-- Placeholder: single source of truth for "no plot yet". Visibility owned by _updateGEPlaceholderVisibility(). -->
                         <div id="gePlotPlaceholder" style="display:flex; align-items:center; justify-content:center; min-height:400px; color:#6b7280; font-size:14px; text-align:center; padding:40px;">
                             <div>Type a gene name above and click <b>Analyze</b>.<br><br>
-                            <span style="font-size:12px;">Shows gene effect (CRISPR knockout impact) across all cell lines,<br>
+                            <span style="font-size:12px;">Shows gene effect (CRISPR knockout) or mRNA expression across all cell lines,<br>
                             broken down by cancer type or hotspot mutation.<br><br>
                             <span style="color:#9ca3af;">Try: <b>BRAF</b>, <b>TP53</b>, <b>MYC</b>, <b>KRAS</b>, <b>TSC1</b>, <b>CDK4</b></span></span></div>
                         </div>
@@ -5626,7 +5626,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v90_8"></script>
+    <script src="app.js?v=v90_9"></script>
     <script src="tour.js?v=v89_49"></script>
 </body>
 </html>
