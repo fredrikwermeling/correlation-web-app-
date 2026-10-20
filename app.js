@@ -23567,6 +23567,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         [['ctGridHotspotBtn', 'hotspot'], ['ctGridFusionBtn', 'fusion'], ['ctGridCnBtn', 'cn']].forEach(([id, kind]) =>
             document.getElementById(id)?.addEventListener('click', () => this.showOncoprint(null, kind)));
         ['ctLineage', 'ctSubtype', 'ctDisease'].forEach(id => document.getElementById(id)?.addEventListener('change', () => this._ctRecompute()));
+        document.getElementById('ctLines')?.addEventListener('input', debounce(() => this._ctRecompute()));
         const changed = () => { this._renderFilterChips('cutoff'); this._ctRecompute(); };
         this._setupMutFilterWidget('hotspot', 'ctHotspotFilter', 'ctHotspotDropdown', changed, () => this._ctCohortExcluding('hotspot'));
         this._setupMutFilterWidget('fusion', 'ctFusionFilter', 'ctFusionDropdown', changed, () => this._ctCohortExcluding('fusion'));
@@ -23647,7 +23648,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (vt) vt.className = 'btn btn-secondary btn-sm';
         set('ctXmin', ''); set('ctXmax', '');
         const z = document.getElementById('ctZero'); if (z) z.checked = true;
-        set('ctLineage', ''); set('ctSubtype', ''); set('ctDisease', '');
+        set('ctLineage', ''); set('ctSubtype', ''); set('ctDisease', ''); set('ctLines', '');
         [['ctHotspotFilter', 'ctHotspotLevel', '1+2'], ['ctFusionFilter', 'ctFusionLevel', '1+2'], ['ctCnFilter', 'ctCnLevel', 'altered']].forEach(([i, l, def]) => {
             set(i, ''); set(l, def);
             const lv = document.getElementById(l); if (lv) lv.style.display = 'none';
@@ -23791,7 +23792,21 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (lineage && (this.getCellLineLineage(cl) || 'Not recorded') !== lineage) return false;
         if (subtype && this.getCellLineSublineage(cl) !== subtype) return false;
         if (disease && (this.cellLineMetadata?.oncotreeSubtype?.[cl] || '') !== disease) return false;
+        const only = this._ctLinesMatch();
+        if (only && !only(this.getCellLineName(cl) || cl, cl)) return false;
         return true;
+    }
+
+    // The "Only these cell lines" box: names or group terms, as in the
+    // highlight boxes. Cached per text, since every line is tested.
+    _ctLinesMatch() {
+        const text = document.getElementById('ctLines')?.value || '';
+        if (this._ctLinesKey !== text) {
+            const terms = this._splitHighlightTerms(text);
+            this._ctLinesKey = text;
+            this._ctLinesFn = terms.length ? this._highlightMatcher(terms) : null;
+        }
+        return this._ctLinesFn;
     }
 
     _ctCohortExcluding(kind) {
@@ -23817,12 +23832,20 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
 
     // Filters in words, for the plot subtitle, the CSV and the AI export.
-    _ctFilterParts() {
+    // short: chart titles keep only the finest of tissue / subtype / disease.
+    _ctFilterParts(short = false) {
         const parts = [];
         const v = (id) => document.getElementById(id)?.value || '';
-        if (v('ctLineage')) parts.push(`lineage ${v('ctLineage')}`);
-        if (v('ctSubtype')) parts.push(`subtype ${v('ctSubtype')}`);
-        if (v('ctDisease')) parts.push(`disease ${v('ctDisease')}`);
+        if (short) {
+            const finest = v('ctDisease') || v('ctSubtype') || v('ctLineage');
+            if (finest) parts.push(finest);
+        } else {
+            if (v('ctLineage')) parts.push(`lineage ${v('ctLineage')}`);
+            if (v('ctSubtype')) parts.push(`subtype ${v('ctSubtype')}`);
+            if (v('ctDisease')) parts.push(`disease ${v('ctDisease')}`);
+        }
+        const only = this._splitHighlightTerms(v('ctLines'));
+        if (only.length) parts.push(short && only.length > 3 ? `${only.length} named cell lines` : `only ${only.join(', ')}`);
         const hot = v('ctHotspotFilter');
         if (hot) {
             const lvl = v('ctHotspotLevel') || '1+2';
@@ -24177,7 +24200,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (c.view === 'tissue') { if (enr) enr.style.display = 'none'; this._ctRenderTissuePlot(el, g); return; }
         this._ctRenderEnrich(g);
         el.style.height = '440px';
-        const filt = this._ctFilterParts();
+        const filt = this._ctFilterParts(true);
         const cohortWords = `${c.cohort.length.toLocaleString()} cell lines${filt.length ? ', ' + this.esc(filt.join(', ')) : ''}`;
         const mName = c.measure === 'expr' ? 'mRNA expression' : 'gene effect';
         const vals = this._ctValues(g);
@@ -24195,7 +24218,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const hl = hm ? this._ctValues(g, true).filter(([id]) => hm(this.getCellLineName(id) || id, id)) : [];
         const rugY = -p.ymax * 0.06;
         if (hl.length) p.traces.push({ type: 'scatter', mode: 'markers', x: hl.map(([, v]) => v), y: hl.map(() => rugY), customdata: hl.map(([id]) => id),
-            hovertext: hl.map(([id, v]) => `${this.getCellLineName(id) || id}: ${v.toFixed(2)}`), hoverinfo: 'text', showlegend: false,
+            hovertext: hl.map(([id, v]) => `${this.getCellLineName(id) || id}: ${v.toFixed(2)}`), hoverinfo: 'none', showlegend: false,
             marker: { size: 10, symbol: 'triangle-up', color: '#f59e0b', line: { color: '#92400e', width: 1 } } });
         if (hl.length && hl.length <= 12) hl.forEach(([id, v], k) => p.annotations.push({ xref: 'x', yref: 'y', x: v, y: rugY, text: this.esc(this.getCellLineName(id) || id),
             showarrow: true, arrowhead: 0, arrowwidth: 1, arrowcolor: '#92400e', ax: 0, ay: -(26 + (k % 3) * 16), font: { size: 10, color: '#111' },
@@ -24232,12 +24255,25 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         this._ctRenderPlot();
     }
 
+    // Dots in both charts: the cell line card on hover, click to highlight,
+    // Shift-click for the Wiki, as on the other cell line plots.
     _ctWireClicks(el) {
         if (el._ctClickWired) return;
         el._ctClickWired = true;
+        let hoverTimer = null;
+        el.on('plotly_hover', (ev) => {
+            const pt = ev?.points?.[0];
+            if (typeof pt?.customdata !== 'string') return;
+            const e = { clientX: ev.event?.clientX, clientY: ev.event?.clientY };
+            clearTimeout(hoverTimer);
+            hoverTimer = setTimeout(() => this.showCellLineTooltip(e, pt.customdata, `${this.esc(pt.hovertext || '')}<br>Click to highlight this cell line \u00b7 Shift-click to open its Wiki`), this._HOVER_DELAY);
+        });
+        el.on('plotly_unhover', () => { clearTimeout(hoverTimer); this.hideCellLineTooltip?.(); });
         el.on('plotly_click', (ev) => {
             const id = ev?.points?.[0]?.customdata;
-            if (typeof id === 'string') this._ctToggleHighlight(id);
+            if (typeof id !== 'string') return;
+            if (ev.event?.shiftKey) { this.hideCellLineTooltip?.(); this.openCellLineWiki(id); return; }
+            this._ctToggleHighlight(id);
         });
     }
 
@@ -24250,10 +24286,21 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // diseases of its tissue instead, plus one row for all other lines,
         // as the Gene Effect view does when narrowed to a tissue.
         const f = c.tissueMode ? c.focus : null;
-        const kind = f ? f.key[0] : 'L';
+        let kind = f ? f.key[0] : 'L';
         let groupOf = (j) => c.tisNames[c.tis[j]];
         let within = '';
-        if (kind === 'S' || kind === 'D') {
+        // Otherwise the rows go one level below the cell line filter, as in
+        // Gene effect: a tissue splits into subtypes, a subtype into diseases.
+        const pickedLin = document.getElementById('ctLineage')?.value || '';
+        const pickedSub = document.getElementById('ctSubtype')?.value || '';
+        if (!f && (pickedSub || pickedLin)) {
+            const m = this.cellLineMetadata || {};
+            kind = pickedSub ? 'D' : 'S';
+            within = pickedSub || pickedLin;
+            groupOf = pickedSub
+                ? (j) => { const cl = c.cohort[j]; return m.oncotreeSubtype?.[cl] || m.primaryDisease?.[cl] || 'Not recorded'; }
+                : (j) => this.getCellLineSublineage(c.cohort[j]) || 'Not recorded';
+        } else if (kind === 'S' || kind === 'D') {
             const cnt = new Map();
             c.cohort.forEach((cl, j) => { if (f.mask[j]) { const t = this.getCellLineLineage(cl) || 'Not recorded'; cnt.set(t, (cnt.get(t) || 0) + 1); } });
             within = [...cnt.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || '';
@@ -24303,7 +24350,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const mL = Math.min(300, Math.max(120, Math.max(...rows.map(r => `${r.t} (${r.pts.length})`.length)) * 6 + 20));
         el.style.height = H + 'px';
         const gene = this.esc(c.genes[g]);
-        const filt = this._ctFilterParts();
+        const filt = this._ctFilterParts(true);
         const range = this._ctXRange(lo, hi);
         const layout = {
             title: { text: `<b><i>${gene}</i> ${c.measure === 'expr' ? 'mRNA expression' : 'gene effect'} by ${kind === 'S' ? `subtype, ${this.esc(within)}` : kind === 'D' ? `disease, ${this.esc(within)}` : 'tissue'}</b><br><span style="font-size:11px; color:#6b7280;">${c.cohort.length.toLocaleString()} cell lines${filt.length ? ', ' + this.esc(filt.join(', ')) : ''}; share ${this._ctCutWords()} at the right</span>`, font: { size: 14 }, y: 1 - 18 / H },
@@ -24320,19 +24367,6 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         };
         Plotly.react(el, traces, layout, { displayModeBar: false, responsive: true });
         this._ctWireClicks(el);
-        // The cell line card on hover, as in the correlation plots.
-        if (!el._ctHoverWired) {
-            el._ctHoverWired = true;
-            let hoverTimer = null;
-            el.on('plotly_hover', (ev) => {
-                const pt = ev?.points?.[0];
-                if (!pt?.customdata) return;
-                const e = { clientX: ev.event?.clientX, clientY: ev.event?.clientY };
-                clearTimeout(hoverTimer);
-                hoverTimer = setTimeout(() => this.showCellLineTooltip(e, pt.customdata, pt.hovertext), this._HOVER_DELAY);
-            });
-            el.on('plotly_unhover', () => { clearTimeout(hoverTimer); this.hideCellLineTooltip?.(); });
-        }
     }
 
     // P(X >= k) for a hypergeometric draw: n lines drawn from N, K of them
