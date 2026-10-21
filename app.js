@@ -1220,6 +1220,33 @@ class CorrelationExplorer {
     // The mutation analysis results table: the analysis that produced it plus
     // the table's own sort, search and row filters. Restored through the
     // same re-run as mutation_inspect, stopping at the table.
+    _buildNetworkMeta() {
+        return this._buildExportMetadata('network', {
+            geneList: this.getGeneList(),
+            mode: this.results?.mode,
+            analysisBasis: this.results?.basis || 'ge',
+            cutoff: this.results?.cutoff,
+            nCellLines: this.results?.nCellLines,
+            networkSettings: this._captureNetworkSettings(),
+            paramFilters: this._captureParamFilters(),
+            oncoprintFilters: this._activeOncoprintFilters || null
+        });
+    }
+
+    // Reopen settings for the picture Export for AI saves beside its file,
+    // the same ones that view's own Export image embeds.
+    _aiCompanionMeta(source) {
+        try {
+            if (source === 'ge') return this.geneEffectViewMode === 'mutation' && this.mutationResults ? this._buildMutationInspectMeta() : this._buildPopoutMeta('gene_effect');
+            if (source === 'scatter') return this._buildPopoutMeta('scatter');
+            if (source === 'mutation') return this.mutationResults?.hotspotGene ? this._buildMutationTableMeta() : null;
+            if (source === 'correlations' || source === 'clusters') return this.results?.success ? this._buildNetworkMeta() : null;
+            if (source === 'wiki' && this._wikiCellLineId != null) return this._buildExportMetadata('wiki', { wikiCellLine: this._wikiCellLineId });
+            if (source === 'heatmap') return this._hmViewState();
+        } catch (e) { console.warn('No reopen settings for the AI picture:', e); }
+        return null;
+    }
+
     _buildMutationTableMeta() {
         return this._buildExportMetadata('mutation_table', {
             ...this._mutAnalysisMetaFields(),
@@ -15756,16 +15783,7 @@ Results:
         if (!canvas) return;
 
         // Embed metadata and create download link
-        const meta = this._buildExportMetadata('network', {
-            geneList: this.getGeneList(),
-            mode: this.results?.mode,
-            analysisBasis: this.results?.basis || 'ge',
-            cutoff: this.results?.cutoff,
-            nCellLines: this.results?.nCellLines,
-            networkSettings: this._captureNetworkSettings(),
-            paramFilters: this._captureParamFilters(),
-            oncoprintFilters: this._activeOncoprintFilters || null
-        });
+        const meta = this._buildNetworkMeta();
         // PNG / TIFF / PDF / PPTX all come from this composed canvas; SVG uses
         // the dedicated vector reconstruction (reusing the dialog we just shew).
         // Trim the empty frame, then recompute the height so the figure keeps its
@@ -16543,16 +16561,7 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
         }
 
         // Embed metadata
-        const meta = this._buildExportMetadata('network', {
-            geneList: this.getGeneList(),
-            mode: this.results?.mode,
-            analysisBasis: this.results?.basis || 'ge',
-            cutoff: this.results?.cutoff,
-            nCellLines: this.results?.nCellLines,
-            networkSettings: this._captureNetworkSettings(),
-            paramFilters: this._captureParamFilters(),
-            oncoprintFilters: this._activeOncoprintFilters || null
-        });
+        const meta = this._buildNetworkMeta();
         svg += `<metadata><correlate-meta>${JSON.stringify(meta)}</correlate-meta></metadata>`;
         svg += '</svg>';
 
@@ -27560,11 +27569,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (metaJson) {
             let meta;
             try { meta = JSON.parse(metaJson); } catch (e) { alert('Invalid metadata in PNG.'); return; }
+            if (meta?.type === 'correlate_heatmap_view') return this._hmRestoreView(meta);
             return this._handleExportMeta(meta);
         }
         // Say why, since the file looks like any other image: copies lose the
         // settings, and so do images re-saved by another program.
-        alert('No Correlate settings found in this PNG.\n\nOnly images saved with "Export image..." carry them (from v.90.18 always, before that only with the settings-file box ticked). An image taken with Copy, a screenshot, or a file re-saved by another program has none. Export the figure again and open that file.');
+        alert('No Correlate settings found in this PNG.\n\nImages saved with "Export image..." carry them (from v.90.18 always, before that only with the settings-file box ticked), and so does the picture Export for AI saves, from v.90.20. An image taken with Copy, a screenshot, or a file re-saved by another program has none. Export the figure again and open that file.');
     }
 
     async restoreFromSvg(file) {
@@ -37472,12 +37482,23 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         URL.revokeObjectURL(a.href);
 
         if (_pngUrl) {
+            // The picture carries the view's reopen settings, like any
+            // exported image, so Open saved figure can return to it.
+            let href = _pngUrl, blobUrl = null;
+            const reopen = this._aiCompanionMeta(source);
+            if (reopen) {
+                try {
+                    const buf = this._addPngTextChunk(await (await fetch(_pngUrl)).arrayBuffer(), 'correlate-meta', JSON.stringify(reopen));
+                    href = blobUrl = URL.createObjectURL(new Blob([buf], { type: 'image/png' }));
+                } catch (e) { console.warn('Reopen settings not embedded:', e); }
+            }
             const ia = document.createElement('a');
-            ia.href = _pngUrl;
+            ia.href = href;
             ia.download = `${_stem}.png`;
             document.body.appendChild(ia);
             ia.click();
             document.body.removeChild(ia);
+            if (blobUrl) setTimeout(() => URL.revokeObjectURL(blobUrl), 4000);
         }
 
         const sizeMB = ((useCompressed ? compressed.length : uncompressedBytes) / (1024 * 1024)).toFixed(1);
