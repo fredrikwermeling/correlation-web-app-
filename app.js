@@ -1208,9 +1208,33 @@ class CorrelationExplorer {
     // filter controls so the new tab reproduces the same cohort. Restored by the
     // mutation_inspect branch of _handleExportMeta.
     _buildMutationInspectMeta() {
-        const mr = this.mutationResults || {};
         return this._buildExportMetadata('mutation_inspect', {
             gene: this.currentGeneEffectGene,
+            ...this._mutAnalysisMetaFields(),
+            controls: this._captureControls(this._GE_NEWTAB_CONTROLS()),
+            textSettings: this._capturePlotTextSettings('geneEffectPlot'),
+            geChartWidthRatio: this.geChartWidthRatio || 1.0
+        });
+    }
+
+    // The mutation analysis results table: the analysis that produced it plus
+    // the table's own sort, search and row filters. Restored through the
+    // same re-run as mutation_inspect, stopping at the table.
+    _buildMutationTableMeta() {
+        return this._buildExportMetadata('mutation_table', {
+            ...this._mutAnalysisMetaFields(),
+            tableSortCol: this._mutTableSortCol || 'diff_mut',
+            tableSortDir: this._mutTableSortDir || 'asc',
+            tableSearch: document.getElementById('mutationSearch')?.value || '',
+            tablePFilter: !!document.getElementById('mutPvalueFilter')?.checked,
+            tableLowNFilter: !!document.getElementById('mutLowNFilter')?.checked
+        });
+    }
+
+    // What a re-run needs to split the same cell lines the same way.
+    _mutAnalysisMetaFields() {
+        const mr = this.mutationResults || {};
+        return {
             hotspotGene: mr.hotspotGene,
             isTranslocation: mr.isTranslocation || false,
             isDamaging: mr.isDamaging || false,
@@ -1232,11 +1256,8 @@ class CorrelationExplorer {
             excludedTissues: mr.excludedTissues?.size ? [...mr.excludedTissues] : null,
             minCellLines: mr.minN ?? null,
             metric: mr.metric || 'ge',
-            controls: this._captureControls(this._GE_NEWTAB_CONTROLS()),
-            textSettings: this._capturePlotTextSettings('geneEffectPlot'),
-            geChartWidthRatio: this.geChartWidthRatio || 1.0,
             oncoprintFilters: this._activeOncoprintFilters || null
-        });
+        };
     }
 
     // Open one restored popout (used after the network is rebuilt, or directly
@@ -11233,9 +11254,11 @@ class CorrelationExplorer {
         // One "Export image" entry point: ask the format (PNG / SVG / TIFF / PDF
         // / PowerPoint). SVG uses the hand-built vector table below; the raster
         // formats come from an html2canvas capture via _downloadCanvasAs.
-        const dlg = await this._showExportDialog({ format, plotW: tableContainer?.offsetWidth || 600, plotH: tableContainer?.offsetHeight || 400, restorable: false });
+        const restorable = !!this.mutationResults?.hotspotGene;
+        const dlg = await this._showExportDialog({ format, plotW: tableContainer?.offsetWidth || 600, plotH: tableContainer?.offsetHeight || 400, restorable });
         if (!dlg) return;
         const fmt = dlg.format;
+        const metaJson = restorable ? JSON.stringify(this._buildMutationTableMeta()) : null;
 
         if (fmt !== 'svg') {
             // Use html2canvas on the visible portion only
@@ -11246,7 +11269,7 @@ class CorrelationExplorer {
                 const hTbl = (trimmedTbl !== canvas && trimmedTbl.width)
                     ? Math.round(dlg.widthCm * (trimmedTbl.height / trimmedTbl.width) * 100) / 100
                     : dlg.heightCm;
-                await this._downloadCanvasAs(trimmedTbl, fmt, filename, { dpi: dlg.dpi, widthCm: dlg.widthCm, heightCm: hTbl });
+                await this._downloadCanvasAs(trimmedTbl, fmt, filename, { dpi: dlg.dpi, widthCm: dlg.widthCm, heightCm: hTbl, metaJson });
             } catch (e) {
                 console.error('Table image export failed:', e);
                 alert('Image export failed. Try SVG instead.');
@@ -11323,7 +11346,9 @@ class CorrelationExplorer {
                 svg += `<line x1="${pad}" y1="${y + cellH}" x2="${totalW - pad}" y2="${y + cellH}" stroke="#e5e7eb" stroke-width="0.5"/>\n`;
             });
 
+            if (metaJson) svg += `<metadata><correlate-meta>${metaJson}</correlate-meta></metadata>\n`;
             svg += '</svg>';
+            this._downloadMetaSidecar(filename, metaJson);
             const blob = new Blob([svg], { type: 'image/svg+xml' });
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
@@ -15733,7 +15758,7 @@ Results:
             : heightCm;
         await this._downloadCanvasAs(trimmed, dlg.format, 'correlation_network', {
             dpi, widthCm, heightCm: outHeightCm,
-            metaJson: dlg.sidecar === false ? null : JSON.stringify(meta)
+            metaJson: JSON.stringify(meta)
         });
     }
 
@@ -16526,7 +16551,7 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
 
         // Download. The settings also travel inside the SVG, but write the
         // companion file too so every format behaves the way the dialog says.
-        this._downloadMetaSidecar('correlation_network', dlg.sidecar === false ? null : JSON.stringify(meta));
+        this._downloadMetaSidecar('correlation_network', JSON.stringify(meta));
         const blob = new Blob([svg], { type: 'image/svg+xml' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -27937,6 +27962,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             return this._restoreMutationInspectMeta(meta);
         }
 
+        // Mutation analysis table → re-run the analysis, then the table's
+        // sort, search and row filters
+        if (meta.graphType === 'mutation_table' && meta.hotspotGene) {
+            return this._restoreMutationInspectMeta(meta);
+        }
+
         // Gene effect exports → open gene effect modal
         if (meta.graphType === 'gene_effect' && meta.gene) {
             this.openGeneEffectModal(meta.gene, meta.view || 'tissue',
@@ -28015,6 +28046,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             'tissue_chart': 'By-Tissue Chart',
             'gene_effect': 'Gene Effect Chart',
             'mutation_inspect': 'Mutation Inspect',
+            'mutation_table': 'Mutation analysis table',
             'umap': 'UMAP Plot',
             'pca': 'PCA Plot',
             'correlation_analysis': 'Correlation by group',
@@ -28163,6 +28195,34 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         this.runAnalysis();
         const waitForResults = () => {
             if (this.mutationResults && this.mutationResults.hotspotGene === meta.hotspotGene) {
+                if (meta.graphType === 'mutation_table') {
+                    const sEl = document.getElementById('mutationSearch');
+                    if (sEl) sEl.value = meta.tableSearch || '';
+                    const pEl = document.getElementById('mutPvalueFilter');
+                    if (pEl && meta.tablePFilter != null) pEl.checked = !!meta.tablePFilter;
+                    const nEl = document.getElementById('mutLowNFilter');
+                    if (nEl && meta.tableLowNFilter != null) nEl.checked = !!meta.tableLowNFilter;
+                    // Sorting the stored rows the way sortMutationTable does,
+                    // then a plain redraw, which keeps the sort.
+                    const col = meta.tableSortCol || 'diff_mut', asc = meta.tableSortDir !== 'desc';
+                    this._mutTableSortCol = col;
+                    this._mutTableSortDir = asc ? 'asc' : 'desc';
+                    this.displayMutationResults();
+                    const rows = this.mutationTableData;
+                    if (rows?.length) {
+                        rows.sort((a, b) => {
+                            let x = a[col], y = b[col];
+                            if (typeof x === 'string') return asc ? x.localeCompare(y) : y.localeCompare(x);
+                            if (isNaN(x)) x = asc ? Infinity : -Infinity;
+                            if (isNaN(y)) y = asc ? Infinity : -Infinity;
+                            return asc ? x - y : y - x;
+                        });
+                        this.mutationResults.significantResults = rows;
+                        this.displayMutationResults();
+                    }
+                    document.getElementById('mutationTableWrap')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    return;
+                }
                 if (meta.geChartWidthRatio) this.geChartWidthRatio = meta.geChartWidthRatio;
                 // The first render is what populates the inspect-level filter
                 // dropdowns (tissue etc.) from the cohort, so saved control
@@ -32402,6 +32462,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     sidecar: !!(document.getElementById('exportOptSidecar')?.checked)
                 };
                 this._lastExportOpts = opts;
+                // The box only decides the separate .correlate.json; PNG and
+                // SVG always carry the settings, so the image itself reopens.
+                this._exportSidecarOff = !opts.sidecar;
                 cleanup();
                 resolve(opts);
             };
@@ -32524,7 +32587,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const CM_TO_IN = 1 / 2.54;
         let outSvg = svgIn;
         // The dialog's settings-file checkbox.
-        const metaJson = (meta && dlg.sidecar !== false) ? JSON.stringify(meta) : null;
+        const metaJson = meta ? JSON.stringify(meta) : null;
 
         // A gate-filtered scatter carries its gating plot into the file. Flat
         // formats get the two panels composed side by side in one image;
@@ -32854,7 +32917,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const meta = (typeof this._buildExportMetadata === 'function')
             ? this._buildExportMetadata('popout_screenshot', { scope, ...metaExtra })
             : null;
-        const metaJson = (meta && dlg.sidecar !== false) ? JSON.stringify(meta) : null;
+        const metaJson = meta ? JSON.stringify(meta) : null;
         // The canvas is capW×scale pixels whatever width was asked for, so the
         // physical size has to come from the REQUESTED width: stamping the
         // dialog dpi made an 18 cm request print at 41 cm. Density = pixels
@@ -32886,7 +32949,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // button reads it back and restores the exact view (filters, settings,
     // genes, cohort), independent of whether the image itself is re-imported.
     _downloadMetaSidecar(filename, metaJson) {
-        if (!metaJson) return;
+        if (!metaJson || this._exportSidecarOff) return;
         if (!/_\d{4}-\d{2}-\d{2}_\d{4}$/.test(filename)) filename = `${filename}_${exportStamp()}`;
         try {
             const blob = new Blob([metaJson], { type: 'application/json' });
@@ -57074,7 +57137,6 @@ ${clone.innerHTML}
 
         const dlg = await this._showExportDialog({ format, plotW: composedW, plotH: composedH });
         if (!dlg) return;
-        if (dlg.sidecar === false) metaJson = null;
         const { widthCm, heightCm, dpi, background } = dlg;
         const fmt = dlg.format || format;
         const CM_TO_IN = 1 / 2.54;

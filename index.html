@@ -4795,11 +4795,10 @@
                 <div id="exportOptSidecarRow" style="margin-bottom:10px; padding:8px 10px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:5px;">
                     <label style="display:flex; align-items:flex-start; gap:6px; cursor:pointer; font-size:12px; color:#374151;">
                         <input type="checkbox" id="exportOptSidecar" checked style="margin-top:2px;">
-                        <span>Also save a small <b>settings file</b> next to the image
+                        <span>Also save a separate <b>settings file</b>
                             (<code style="font-size:11px;">.correlate.json</code>).<br>
-                            <span style="color:#4b5563; font-size:11px;">It records the genes, filters and appearance behind this figure. To come back
-                            and change something, open Correlate and choose <b>Options &rarr; Other &rarr; Open saved figure</b>,
-                            then pick that file: the app returns to exactly this view. The file holds no image, only the settings.</span>
+                            <span style="color:#4b5563; font-size:11px;">PNG and SVG keep the settings inside, so <b>Options &rarr; Other &rarr; Open saved figure</b> reopens the image itself.
+                            TIFF, PDF and PowerPoint need this file.</span>
                         </span>
                     </label>
                     <div id="exportOptSidecarNote" style="display:none; font-size:11px; color:#92400e; margin-top:6px;"></div>
@@ -5629,7 +5628,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v90_17"></script>
+    <script src="app.js?v=v90_18"></script>
     <script src="tour.js?v=v89_49"></script>
 </body>
 </html>
