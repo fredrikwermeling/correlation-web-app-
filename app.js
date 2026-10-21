@@ -3424,7 +3424,7 @@ class CorrelationExplorer {
 
         const popup = document.createElement('div');
         popup.id = 'tissueBreakdownPopup';
-        popup.style.cssText = 'position: fixed; z-index: 10000; background: white; border: 1px solid #d1d5db; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); padding: 0; min-width: 340px; max-width: 420px; display: flex; flex-direction: column;';
+        popup.style.cssText = 'position: fixed; z-index: 10000; background: white; border: 1px solid #d1d5db; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); padding: 0; min-width: 400px; max-width: 500px; display: flex; flex-direction: column;';
 
         // Position near the button, clamped to viewport
         const btn = document.getElementById(isTransloc ? 'translocationTissueBreakdownBtn' : isDamaging ? 'damagingTissueBreakdownBtn' : 'tissueBreakdownBtn');
@@ -3432,7 +3432,7 @@ class CorrelationExplorer {
         const vw = window.innerWidth;
         const vh = window.innerHeight;
         const margin = 10;
-        const popupWidth = 400;
+        const popupWidth = 480;
 
         // Take whichever side of the button has more room. In a short window
         // both sides can be cramped, and the old code could work out a negative
@@ -3442,16 +3442,16 @@ class CorrelationExplorer {
         const spaceAbove = rect.top - 6 - margin;
         const usable = Math.max(0, vh - 2 * margin);
         let maxH, top;
-        if (spaceBelow >= 200 || spaceBelow >= spaceAbove) {
-            maxH = Math.min(480, Math.max(0, spaceBelow));
+        if (spaceBelow >= 420 || spaceBelow >= spaceAbove) {
+            maxH = Math.min(620, Math.max(0, spaceBelow));
             top = rect.bottom + 6;
         } else {
-            maxH = Math.min(480, Math.max(0, spaceAbove));
+            maxH = Math.min(620, Math.max(0, spaceAbove));
             top = rect.top - 6 - maxH;
         }
         // Never smaller than a usable list; if that no longer fits beside the
         // button, centre it in the viewport instead.
-        const minH = Math.min(240, usable);
+        const minH = Math.min(420, usable);
         if (maxH < minH) {
             maxH = minH;
             top = Math.max(margin, (vh - maxH) / 2);
@@ -4948,16 +4948,16 @@ class CorrelationExplorer {
 
         const popup = document.createElement('div');
         popup.id = 'tissueBreakdownPopup';
-        popup.style.cssText = 'position: fixed; z-index: 10000; background: white; border: 1px solid #d1d5db; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); padding: 0; min-width: 340px; max-width: 420px; display: flex; flex-direction: column;';
+        popup.style.cssText = 'position: fixed; z-index: 10000; background: white; border: 1px solid #d1d5db; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); padding: 0; min-width: 400px; max-width: 500px; display: flex; flex-direction: column;';
 
         const btn = document.getElementById('generalTissueBreakdownBtn');
         const rect = btn.getBoundingClientRect();
         const vw = window.innerWidth, vh = window.innerHeight, margin = 10;
         let top = rect.bottom + 6;
         let maxH = vh - top - margin;
-        if (maxH < 200) { maxH = rect.top - 6 - margin; top = rect.top - 6 - Math.min(480, maxH); maxH = Math.min(480, maxH); } else { maxH = Math.min(480, maxH); }
+        if (maxH < 420 && rect.top > maxH) { maxH = rect.top - 6 - margin; top = rect.top - 6 - Math.min(620, maxH); maxH = Math.min(620, maxH); } else { maxH = Math.min(620, maxH); }
         popup.style.top = Math.max(margin, top) + 'px';
-        popup.style.left = Math.max(margin, Math.min(rect.left - 100, vw - 420 - margin)) + 'px';
+        popup.style.left = Math.max(margin, Math.min(rect.left - 100, vw - 500 - margin)) + 'px';
         popup.style.maxHeight = maxH + 'px';
 
         let html = `<div style="padding: 10px 14px 8px; border-bottom: 1px solid #e5e7eb; display: flex; justify-content: space-between; align-items: center;">
@@ -7829,7 +7829,9 @@ class CorrelationExplorer {
         document.getElementById('geCellLineSearch')?.addEventListener('input', () => {
             clearTimeout(geCellLineSearchTimer);
             geCellLineSearchTimer = setTimeout(() => {
-                if (this.currentGeneEffect) {
+                if (this.geneEffectViewMode === 'mutation' && this.mutationResults && this.currentGeneEffectGene) {
+                    this.showGeneEffectDistribution(this.currentGeneEffectGene);
+                } else if (this.currentGeneEffect) {
                     this.switchGeneEffectView(this.currentGEView || 'tissue');
                 }
             }, 200);
@@ -12252,6 +12254,24 @@ class CorrelationExplorer {
         document.getElementById('exprCorrelatesTargetGene').innerHTML = this.gi(gene.toUpperCase());
 
         // (Chart container width is set above, before the y-axis label is measured.)
+
+        // The highlight box, as in the other Gene effect views: up to a dozen
+        // matches are named with arrows, more become diamonds.
+        const miTerms = this._splitHighlightTerms(document.getElementById('geCellLineSearch')?.value);
+        if (miTerms.length) {
+            const miMatch = this._highlightMatcher(miTerms);
+            const hits = (this._geGatePlotData || []).filter(p => miMatch(p.cellLineName || p.cellLineId, p.cellLineId));
+            if (hits.length > 12) {
+                traces.push({ type: 'scatter', mode: 'markers', showlegend: false, name: 'Highlighted',
+                    x: hits.map(p => p.x), y: hits.map(p => p.y), customdata: hits.map(p => p.cellLineId),
+                    text: hits.map(p => `${p.cellLineName || p.cellLineId}<br>${p.lineage || ''}<br>GE: ${p.x.toFixed(2)}`), hoverinfo: 'text',
+                    marker: { color: '#f59e0b', size: 10, symbol: 'diamond', line: { color: '#92400e', width: 1.2 } } });
+            } else {
+                hits.forEach(p => layout.annotations.push({ x: p.x, y: p.y, text: this.esc(p.cellLineName || p.cellLineId),
+                    showarrow: true, arrowhead: 2, arrowsize: 1, arrowcolor: '#dc2626', ax: 40, ay: -25,
+                    font: { size: 10, color: '#dc2626' }, bgcolor: 'rgba(255,255,255,0.85)' }));
+            }
+        }
 
         Plotly.newPlot('geneEffectPlot', traces, layout, {
             responsive: true,
@@ -27542,7 +27562,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             try { meta = JSON.parse(metaJson); } catch (e) { alert('Invalid metadata in PNG.'); return; }
             return this._handleExportMeta(meta);
         }
-        alert('No Correlate data found in this PNG file.');
+        // Say why, since the file looks like any other image: copies lose the
+        // settings, and so do images re-saved by another program.
+        alert('No Correlate settings found in this PNG.\n\nOnly images saved with "Export image..." carry them (from v.90.18 always, before that only with the settings-file box ticked). An image taken with Copy, a screenshot, or a file re-saved by another program has none. Export the figure again and open that file.');
     }
 
     async restoreFromSvg(file) {
@@ -44756,10 +44778,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // for the same reason dragging is: a card positioned by a CSS rule using
     // !important ignores a plain inline style.
     _makeResizable(card, edges = ['left', 'right', 'bottom']) {
-        if (!card || card.dataset.resizable) return;
-        card.dataset.resizable = '1';
+        // Checked by the grips themselves: a popup that rewrites its
+        // innerHTML loses them and gets them back on the next call.
+        if (!card || card.querySelector(':scope > .resize-grip')) return;
         if (getComputedStyle(card).position === 'static') card.style.position = 'relative';
-        const MIN_W = 320, MIN_H = 180;
         for (const edge of edges) {
             const grip = document.createElement('div');
             grip.className = `resize-grip resize-${edge}`;
@@ -44769,6 +44791,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 e.stopPropagation();
                 grip.classList.add('dragging');
                 const r = card.getBoundingClientRect();
+                const MIN_W = Math.min(320, r.width), MIN_H = Math.min(180, r.height);
                 const put = (k, v) => card.style.setProperty(k, v, 'important');
                 const onMove = (m) => {
                     if (edge === 'right') {
@@ -65824,6 +65847,25 @@ document.addEventListener('DOMContentLoaded', () => {
         // Same cards get edge grips, so a dialog can be sized as well as moved.
         if (card) app._makeResizable(card);
     });
+
+    // The hand-built floating popups (tissue breakdown, pickers, editors)
+    // get the same edge grips as they appear. Matched by id, so tooltips
+    // and dropdown lists stay as they are.
+    const POPUP_ID = /(Popup|Popout|Pop|Picker)$/;
+    const gripPopup = (el) => {
+        if (!(el instanceof HTMLElement) || !POPUP_ID.test(el.id || '') || !el.isConnected) return;
+        const pos = getComputedStyle(el).position;
+        if (pos === 'fixed' || pos === 'absolute') app._makeResizable(el);
+    };
+    const pending = new Set();
+    new MutationObserver((muts) => {
+        for (const m of muts) {
+            m.addedNodes.forEach(n => { if (n instanceof HTMLElement && POPUP_ID.test(n.id || '')) pending.add(n); });
+            if (POPUP_ID.test(m.target?.id || '')) pending.add(m.target);
+        }
+        // Just after, once the popup has its position and contents.
+        if (pending.size) setTimeout(() => { pending.forEach(gripPopup); pending.clear(); }, 0);
+    }).observe(document.body, { childList: true, subtree: true });
 });
 
 // ============================================================================
