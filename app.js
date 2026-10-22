@@ -52,6 +52,14 @@
         const orig = Plotly[fn];
         if (typeof orig !== 'function') return;
         Plotly[fn] = function(div, data, layout, config) {
+            // A responsive chart refits to its box on every window resize,
+            // browser zoom included, and a box without a height of its own
+            // gives Plotly's 450 px default: a tall chart was squashed for
+            // good. Pin the chart's own height on the box.
+            if (config?.responsive && typeof layout?.height === 'number') {
+                const el = typeof div === 'string' ? document.getElementById(div) : div;
+                if (el?.style) el.style.height = layout.height + 'px';
+            }
             const r = orig.call(this, div, data, lockLayout(layout), lockConfig(config));
             // Phone only, and only if a Run / Update press armed it.
             if (r && typeof r.then === 'function') {
@@ -60,6 +68,15 @@
             return r;
         };
     });
+    // Same for a later height change, so the box keeps up with the chart.
+    const origRelayout = Plotly.relayout;
+    if (typeof origRelayout === 'function') {
+        Plotly.relayout = function(div, update, ...rest) {
+            const el = typeof div === 'string' ? document.getElementById(div) : div;
+            if (el?._context?.responsive && update && typeof update === 'object' && typeof update.height === 'number') el.style.height = update.height + 'px';
+            return origRelayout.call(this, div, update, ...rest);
+        };
+    }
 })();
 
 // Phone: a Run or Update press produces a chart that is usually below the
