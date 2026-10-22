@@ -7447,6 +7447,7 @@ class CorrelationExplorer {
 
         document.getElementById('downloadScatterPNG').addEventListener('click', () => this.downloadScatterPNG());
         document.getElementById('openCompilationBtn')?.addEventListener('click', () => this.openCompilation());
+        document.getElementById('geOpenCompilationBtn')?.addEventListener('click', () => this.openGeCompilation());
         document.getElementById('scatterTextSettingsBtn')?.addEventListener('click', () => this.openTextSettings('scatterPlot'));
         document.getElementById('geTextSettingsBtn')?.addEventListener('click', () => this.openTextSettings('geneEffectPlot'));
         document.getElementById('geScopeSelect')?.addEventListener('change', (e) => this.setGeScopeMode(e.target.value));
@@ -7878,6 +7879,7 @@ class CorrelationExplorer {
                 } else if (this.currentGeneEffect) {
                     this.switchGeneEffectView(this.currentGEView || 'tissue');
                 }
+                this._gcRedrawSoon();
             }, 200);
         });
         // Inline compare buttons
@@ -12342,6 +12344,7 @@ class CorrelationExplorer {
         // Hover a dot for the cell line's executive summary; single-click toggles
         // its name label, double-click opens its Wiki, Shift-click opens the browser.
         this._attachGECellInteractivity('geneEffectPlot');
+        this._gcRedrawSoon();
 
         // Show GE gate controls in mutation inspect mode
         const geGateCtrl = document.getElementById('geGateControls');
@@ -22908,6 +22911,303 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
     }
 
+    // ===== Gene effect / expression compilation: a grid of genes =====
+    // Each panel is one gene on the Gene effect popout's cohort, grouped the
+    // way the popout groups (tissue, one level below a tissue or subtype
+    // pick, or mutation status in Mutation Inspect), with its highlighted
+    // cell lines. The popout's filter rows are borrowed while it is open, so
+    // the filters are set in one place and the two never disagree.
+    openGeCompilation() {
+        const cur = this.geneEffectViewMode === 'mutation' ? this.currentGeneEffectGene : (this.currentGeneEffect?.gene || this.currentGeneEffectGene);
+        const st = this._gcState = { genes: cur ? [cur] : [], cols: 4, sameRange: true,
+            measure: this.geneEffectViewMode === 'mutation' ? (this.mutationResults?.metric === 'expr' ? 'expr' : 'ge') : (document.getElementById('geDataType')?.value || 'ge') };
+        let modal = document.getElementById('geCompModal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'geCompModal';
+            modal.className = 'modal-overlay';
+            modal.style.zIndex = '1360';
+            modal.innerHTML = `<div class="modal" id="geCompModalInner" style="max-width:min(97vw,1500px); width:97vw;">
+                <div class="modal-header"><h3>Compilation, gene effect / expression</h3><button class="modal-close" id="gcClose" title="Close">&times;</button></div>
+                <div class="modal-body" style="font-size:12px; color:#374151;">
+                    <div class="main-input" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:6px; padding:7px 10px;">
+                        <span style="font-size:13px; font-weight:600; color:#374151;">Genes</span>
+                        <input type="text" id="gcGenes" class="form-control" placeholder="Gene symbols, separated by commas or spaces" autocomplete="off" style="width:340px; font-size:13px; padding:6px 10px;">
+                        <select id="gcMeasure" style="font-size:12px; padding:4px 6px; border:1px solid #d1d5db; border-radius:4px; background:#fff;"><option value="ge">Gene effect (CRISPR)</option><option value="expr">mRNA (bulk RNA-seq)</option></select>
+                        <button type="button" class="btn btn-primary btn-sm" id="gcShow" style="font-size:12px; padding:4px 14px; font-weight:600;">Show</button>
+                    </div>
+                    <div id="gcFilters" style="display:flex; flex-direction:column; gap:4px; margin-bottom:6px; padding:5px 8px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:6px;"></div>
+                    <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:6px;">
+                        <label title="Panels side by side, up to 8">Panels per row <input type="number" id="gcCols" min="1" max="8" style="width:38px; font-size:11px; padding:1px 4px; border:1px solid #d1d5db; border-radius:4px;"></label>
+                        <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;" title="Every panel on the same x range, so they line up"><input type="checkbox" id="gcSameRange" checked> Same x range</label>
+                        <span id="gcCohort" style="color:#6b7280; font-size:11px;"></span>
+                    </div>
+                    <div id="gcHint" style="color:#6b7280; font-size:12px; margin-bottom:6px;"></div>
+                    <div id="gcPlot"></div>
+                </div>
+                <div class="modal-footer" style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+                    <span style="font-size:10px; color:#9ca3af;">Export:</span>
+                    <button class="btn btn-outline btn-sm" id="gcExportImg">Export image...</button>
+                    <button class="btn btn-outline btn-sm" id="gcCopy">Copy</button>
+                    <span id="gcStatus" style="font-size:11px; color:#6b7280;"></span>
+                    <button class="btn btn-outline btn-sm" id="gcClose2" style="margin-left:auto;">Close</button>
+                </div></div>`;
+            document.body.appendChild(modal);
+            const close = () => { modal.classList.remove('active'); this._gcReturnFilters(); this.hideCellLineTooltip?.(); };
+            modal.querySelector('#gcClose').onclick = close;
+            modal.querySelector('#gcClose2').onclick = close;
+            modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+            const show = () => this._gcReadGenes();
+            modal.querySelector('#gcShow').onclick = show;
+            modal.querySelector('#gcGenes').addEventListener('keydown', (e) => { if (e.key === 'Enter') show(); });
+            modal.querySelector('#gcMeasure').onchange = (e) => { this._gcState.measure = e.target.value; this._gcReadGenes(); };
+            modal.querySelector('#gcCols').onchange = (e) => { const v = Math.max(1, Math.min(8, parseInt(e.target.value, 10) || 4)); e.target.value = v; this._gcState.cols = v; this._gcDraw(); };
+            modal.querySelector('#gcSameRange').onchange = (e) => { this._gcState.sameRange = e.target.checked; this._gcDraw(); };
+            const noPanels = () => { const s2 = document.getElementById('gcStatus'); if (s2) s2.textContent = 'Show at least one gene first.'; };
+            modal.querySelector('#gcCopy').onclick = async () => {
+                const el = document.getElementById('gcPlot');
+                if (!el?.data?.length) return noPanels();
+                await this.copyPlotToClipboard(el, 'Compilation');
+            };
+            modal.querySelector('#gcExportImg').onclick = async () => {
+                const el = document.getElementById('gcPlot');
+                if (!el?.data?.length) return noPanels();
+                await this._exportPlotly(el, { w: el._fullLayout?.width || el.offsetWidth, h: el._fullLayout?.height || el.offsetHeight,
+                    format: 'png', filename: `correlate_ge_compilation_${this._gcState.genes.length}genes`, meta: this._gcMeta() });
+            };
+        }
+        modal.classList.add('active');
+        this._gcBorrowFilters();
+        modal.querySelector('#gcGenes').value = st.genes.join(', ');
+        modal.querySelector('#gcMeasure').value = st.measure;
+        modal.querySelector('#gcCols').value = st.cols;
+        modal.querySelector('#gcSameRange').checked = true;
+        modal.querySelector('#gcStatus').textContent = '';
+        this._gcDraw();
+    }
+
+    // The popout's two filter rows move into the compilation while it is open.
+    _gcBorrowFilters() {
+        const host = document.getElementById('gcFilters');
+        if (!host || this._gcBorrowed) return;
+        this._gcBorrowed = [];
+        ['geLineageRow', 'geAlterRow'].forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            const mark = document.createComment('gc-borrowed:' + id);
+            el.parentNode.insertBefore(mark, el);
+            this._gcBorrowed.push({ el, mark });
+            host.appendChild(el);
+        });
+        host.style.display = this._gcBorrowed.length ? 'flex' : 'none';
+    }
+
+    _gcReturnFilters() {
+        for (const { el, mark } of (this._gcBorrowed || [])) { mark.parentNode?.insertBefore(el, mark); mark.remove(); }
+        this._gcBorrowed = null;
+    }
+
+    // A filter changed in the borrowed rows: the popout redraws, then this.
+    _gcRedrawSoon() {
+        if (!document.getElementById('geCompModal')?.classList.contains('active')) return;
+        clearTimeout(this._gcTimer);
+        this._gcTimer = setTimeout(() => this._gcDraw(), 120);
+    }
+
+    async _gcReadGenes() {
+        const st = this._gcState;
+        const raw = (document.getElementById('gcGenes')?.value || '').split(/[\s,;]+/).map(t => t.trim()).filter(Boolean);
+        if (st.measure === 'expr' && !this.expressionLoaded) {
+            const s2 = document.getElementById('gcStatus'); if (s2) s2.textContent = 'Loading mRNA expression...';
+            try { await this.loadExpressionData(); } catch (e) { /* reported below */ }
+            if (s2) s2.textContent = this.expressionLoaded ? '' : 'mRNA expression could not be loaded.';
+            if (!this.expressionLoaded) return;
+        }
+        await this._ensureAliasTables?.();
+        const has = st.measure === 'expr' ? (g) => this.expressionGeneIndex?.get(g) !== undefined : (g) => this.geneIndex?.get(g) !== undefined;
+        const genes = [], missed = [], renamed = [];
+        for (const t of raw) {
+            const r = this._resolveTypedGene(t, has);
+            if (!r) { missed.push(t.toUpperCase()); continue; }
+            if (r.from) renamed.push(`${r.from} → ${r.gene}`);
+            if (!genes.includes(r.gene)) genes.push(r.gene);
+        }
+        st.genes = genes;
+        st.missed = missed;
+        st.renamed = renamed;
+        if (genes.length) document.getElementById('gcGenes').value = genes.join(', ');
+        if (!genes.length && missed.length === 1) this.geneNotFound(missed[0], st.measure === 'expr' ? 'the expression data' : 'the gene effect data');
+        this._gcDraw();
+    }
+
+    // The cell lines and their row, as the popout has them now.
+    _gcCohort() {
+        if (this.geneEffectViewMode === 'mutation') {
+            const el = document.getElementById('geneEffectPlot');
+            const tv = el?.layout?.yaxis?.tickvals || [], tt = el?.layout?.yaxis?.ticktext || [];
+            const label = (y) => { const i = tv.indexOf(Math.round(y)); return String(tt[i] ?? Math.round(y)).replace(/\s*\(n=\d+\)\s*$/, ''); };
+            const rows = (this._geGatePlotData || []).map(p => ({ id: p.cellLineId, group: label(p.y) }));
+            const order = [...new Set(tv.map(v => label(v)))].reverse();
+            return { rows, order };
+        }
+        const data = this.getGETissueFilteredData();
+        const keyOf = this._geGroupKeyOf || ((d) => d.lineage || 'Unknown');
+        const rows = data.map(d => ({ id: d.cellLineId, group: keyOf(d) || 'Unknown' }));
+        const minN = parseInt(document.getElementById('geMinGroupSize')?.value, 10) || 1;
+        const cnt = new Map();
+        rows.forEach(r => cnt.set(r.group, (cnt.get(r.group) || 0) + 1));
+        const order = [...cnt.entries()].filter(([, n]) => n >= minN).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([g]) => g);
+        const keep = new Set(order);
+        return { rows: rows.filter(r => keep.has(r.group)), order };
+    }
+
+    // One gene's value per cell line, in the measure asked for.
+    _gcValues(gene, measure) {
+        const out = new Map();
+        if (measure === 'expr') {
+            const gi = this.expressionGeneIndex?.get(gene);
+            if (gi === undefined || !this.expressionData) return out;
+            const n = this.expressionMetadata.nCellLines, off = gi * n;
+            this.expressionMetadata.cellLines.forEach((cl, i) => { const v = this.expressionData[off + i]; if (v === v && v !== -999) out.set(cl, v); });
+        } else {
+            const gi = this.geneIndex?.get(gene);
+            if (gi === undefined) return out;
+            const vals = this.getGeneData(gi);
+            this.metadata.cellLines.forEach((cl, i) => { const v = vals[i]; if (v === v && v !== -999) out.set(cl, v); });
+        }
+        return out;
+    }
+
+    _gcDraw() {
+        const st = this._gcState;
+        const el = document.getElementById('gcPlot');
+        if (!st || !el) return;
+        const hint = document.getElementById('gcHint');
+        const status = document.getElementById('gcStatus');
+        const cohortEl = document.getElementById('gcCohort');
+        const { rows, order } = this._gcCohort();
+        const filt = this.geneEffectViewMode === 'mutation' ? '' : this._getGEFilterDescription();
+        if (cohortEl) cohortEl.textContent = `${rows.length.toLocaleString()} cell lines${filt ? ', ' + filt : ''}`;
+        const notes = [];
+        if (st.renamed?.length) notes.push(`read as ${st.renamed.join(', ')}`);
+        if (st.missed?.length) notes.push(`not found: ${st.missed.join(', ')}`);
+        if (status) status.textContent = notes.join('; ');
+        if (!st.genes.length || !rows.length) {
+            if (el.data) Plotly.purge(el);
+            el.innerHTML = '';
+            if (hint) hint.innerHTML = !rows.length ? 'No cell lines under these filters.' : 'Type one or more genes in the <b>Genes</b> box and press <b>Show</b>.';
+            return;
+        }
+        if (hint) hint.textContent = 'Click a dot to highlight that cell line in every panel; Shift-click opens its Wiki.';
+        const G = order.length, gi = new Map(order.map((g, i) => [g, i]));
+        const cols = Math.min(st.cols, st.genes.length), nr = Math.ceil(st.genes.length / cols);
+        const jit = (id) => { let h = 0; for (const ch of String(id)) h = (h * 31 + ch.charCodeAt(0)) | 0; return ((h >>> 0) % 1000) / 1000 - 0.5; };
+        const terms = this._splitHighlightTerms(document.getElementById('geCellLineSearch')?.value);
+        const hm = terms.length ? this._highlightMatcher(terms) : null;
+        const word = st.measure === 'expr' ? 'mRNA (log2 TPM+1)' : 'gene effect';
+        const panels = st.genes.map(g => {
+            const vals = this._gcValues(g, st.measure);
+            const pts = rows.filter(r => vals.has(r.id)).map(r => ({ id: r.id, row: gi.get(r.group), v: vals.get(r.id) }));
+            return { gene: g, pts };
+        });
+        let lo = Infinity, hi = -Infinity;
+        panels.forEach(p => p.pts.forEach(q => { if (q.v < lo) lo = q.v; if (q.v > hi) hi = q.v; }));
+        if (st.measure !== 'expr') { lo = Math.min(lo, 0); hi = Math.max(hi, 0); }
+        const pad = (hi - lo) * 0.05 || 0.5;
+        const panelH = Math.max(190, G * 13 + 70);
+        const longest = Math.max(...order.map(g => g.length));
+        const L = Math.min(260, Math.max(90, longest * 6 + 20));
+        const W = Math.max(600, el.clientWidth || 1200), H = nr * panelH + 30;
+        const gapX = 0.012, gapY = 34 / H;
+        const traces = [], annotations = [], layout = { height: H, width: W, margin: { l: L, r: 16, t: 26, b: 4, autoexpand: false },
+            paper_bgcolor: '#ffffff', plot_bgcolor: '#fafafa', showlegend: false, font: { family: 'Open Sans, sans-serif', size: 10 } };
+        panels.forEach((p, k) => {
+            const r = Math.floor(k / cols), c = k % cols, n = k ? String(k + 1) : '';
+            const xa = 'x' + n, ya = 'y' + n;
+            const x0 = c / cols + (c ? gapX : 0), x1 = (c + 1) / cols - gapX;
+            const yTop = 1 - r / nr - gapY, yBot = 1 - (r + 1) / nr + 26 / H;
+            layout['xaxis' + n] = { domain: [x0, x1], anchor: ya, zeroline: st.measure !== 'expr', zerolinecolor: '#9ca3af', gridcolor: '#eeeeee', tickfont: { size: 9 },
+                title: { text: `<i>${this.esc(p.gene)}</i> ${word}`, font: { size: 10 }, standoff: 2 },
+                ...(st.sameRange ? { range: [lo - pad, hi + pad] } : {}) };
+            layout['yaxis' + n] = { domain: [yBot + 22 / H, yTop], anchor: xa, range: [G - 0.5, -0.5], tickvals: order.map((_, i) => i),
+                ticktext: c === 0 ? order.map(g => this.esc(g)) : order.map(() => ''), showticklabels: c === 0, tickfont: { size: 9 }, gridcolor: '#f0f0f0', zeroline: false };
+            annotations.push({ xref: 'paper', yref: 'paper', x: (x0 + x1) / 2, y: yTop, xanchor: 'center', yanchor: 'bottom', showarrow: false,
+                text: `<b><i>${this.esc(p.gene)}</i></b> <span style="color:#6b7280;">n=${p.pts.length}</span>`, font: { size: 12, color: '#111' } });
+            const ys = p.pts.map(q => q.row + jit(q.id) * 0.55);
+            traces.push({ type: 'scatter', mode: 'markers', xaxis: xa, yaxis: ya, x: p.pts.map(q => q.v), y: ys, customdata: p.pts.map(q => q.id),
+                hovertext: p.pts.map(q => `${this.getCellLineName(q.id) || q.id}: ${q.v.toFixed(2)}`), hoverinfo: 'none',
+                marker: { size: 4, color: '#9ca3af', opacity: 0.7 } });
+            // Median of each row as a short dark tick.
+            const mx = [], my = [];
+            order.forEach((_, i) => {
+                const v = p.pts.filter(q => q.row === i).map(q => q.v).sort((a, b) => a - b);
+                if (!v.length) return;
+                const m = v.length % 2 ? v[(v.length - 1) / 2] : (v[v.length / 2 - 1] + v[v.length / 2]) / 2;
+                mx.push(m, m, null); my.push(i - 0.38, i + 0.38, null);
+            });
+            traces.push({ type: 'scatter', mode: 'lines', xaxis: xa, yaxis: ya, x: mx, y: my, line: { color: '#374151', width: 2 }, hoverinfo: 'skip' });
+            if (hm) {
+                const h = p.pts.map((q, i) => ({ ...q, y: ys[i] })).filter(q => hm(this.getCellLineName(q.id) || q.id, q.id));
+                if (h.length) traces.push({ type: 'scatter', mode: 'markers', xaxis: xa, yaxis: ya, x: h.map(q => q.v), y: h.map(q => q.y), customdata: h.map(q => q.id),
+                    hovertext: h.map(q => `${this.getCellLineName(q.id) || q.id}: ${q.v.toFixed(2)}`), hoverinfo: 'none', marker: this._hlMarker(9) });
+                // Alternating heights, so two lines close together stay readable.
+                if (h.length && h.length <= 12) h.slice().sort((a, b) => a.v - b.v).forEach((q, j) => annotations.push(this._hlLabel(q.v, q.y, this.getCellLineName(q.id) || q.id, { xref: xa, yref: ya, ay: j % 2 ? -30 : -15, font: { size: 9, color: '#111' }, borderpad: 1 })));
+            }
+        });
+        layout.annotations = annotations;
+        el.style.height = H + 'px';
+        Plotly.react(el, traces, layout, { displayModeBar: false, responsive: false });
+        this._gcWire(el);
+    }
+
+    _gcWire(el) {
+        if (el._gcWired) return;
+        el._gcWired = true;
+        let t = null;
+        el.on('plotly_hover', (ev) => {
+            const pt = ev?.points?.[0];
+            if (typeof pt?.customdata !== 'string') return;
+            const e = { clientX: ev.event?.clientX, clientY: ev.event?.clientY };
+            clearTimeout(t);
+            t = setTimeout(() => this.showCellLineTooltip(e, pt.customdata, `${this.esc(pt.hovertext || '')}<br>Click to highlight this cell line · Shift-click to open its Wiki`), this._HOVER_DELAY);
+        });
+        el.on('plotly_unhover', () => { clearTimeout(t); this.hideCellLineTooltip?.(); });
+        el.on('plotly_click', (ev) => {
+            const id = ev?.points?.[0]?.customdata;
+            if (typeof id !== 'string') return;
+            if (ev.event?.shiftKey) { this.hideCellLineTooltip?.(); this.openCellLineWiki(id); return; }
+            this._hlToggleInBox('geCellLineSearch', id);
+        });
+    }
+
+    // Reopen settings: the popout behind it plus the compilation's own.
+    _gcMeta() {
+        const st = this._gcState || {};
+        const base = this.geneEffectViewMode === 'mutation' && this.mutationResults ? this._buildMutationInspectMeta() : this._buildPopoutMeta('gene_effect');
+        return { ...base, geCompilation: { gene: base.popout?.gene || base.gene || null, genes: st.genes || [], measure: st.measure, cols: st.cols, sameRange: st.sameRange !== false, highlight: document.getElementById('geCellLineSearch')?.value || '' } };
+    }
+
+    // After a reopened popout has drawn, put the compilation back on top.
+    _gcRestore(spec) {
+        let tries = 0;
+        const go = () => {
+            const shown = this.geneEffectViewMode === 'mutation' ? this.currentGeneEffectGene : this.currentGeneEffect?.gene;
+            const ready = (this.geneEffectViewMode === 'mutation' ? !!this._geGatePlotData?.length : !!this.currentGeneEffect?.data?.length)
+                && (!spec.gene || shown === spec.gene);
+            if (!ready) { if (tries++ < 150) setTimeout(go, 200); return; }
+            const pop = document.getElementById('geCellLineSearch');
+            if (pop && spec.highlight != null) { pop.value = spec.highlight; pop.dispatchEvent(new Event('input', { bubbles: true })); }
+            this.openGeCompilation();
+            Object.assign(this._gcState, { measure: spec.measure || 'ge', cols: spec.cols || 4, sameRange: spec.sameRange !== false });
+            document.getElementById('gcGenes').value = (spec.genes || []).join(', ');
+            document.getElementById('gcMeasure').value = this._gcState.measure;
+            document.getElementById('gcCols').value = this._gcState.cols;
+            document.getElementById('gcSameRange').checked = this._gcState.sameRange;
+            this._gcReadGenes();
+        };
+        setTimeout(go, 400);
+    }
+
     // ===== Compilation: a grid of correlation plots =====
     // Every panel uses the correlation popout's own filters (the same chain the
     // plot uses), its highlighted cell lines and its colour-by groups, so the
@@ -27636,6 +27936,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // and the state that lives outside them, so it gets its own restore
         // path rather than going through _applyRestoreMeta's graphType branches.
         if (meta.type === 'correlate_heatmap_view') { return this._hmRestoreView(meta); }
+        if (meta.geCompilation) this._gcRestore(meta.geCompilation);
         // Unified restore: rebuilds the network (if captured) and the popout with
         // its exact filters/settings; loads expression first when needed.
         return this._applyRestoreMeta(meta);
@@ -27656,6 +27957,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             let meta;
             try { meta = JSON.parse(metaJson); } catch (e) { alert('Invalid metadata in PNG.'); return; }
             if (meta?.type === 'correlate_heatmap_view') return this._hmRestoreView(meta);
+            if (meta?.geCompilation) this._gcRestore(meta.geCompilation);
             return this._handleExportMeta(meta);
         }
         // Say why, since the file looks like any other image: copies lose the
@@ -27677,6 +27979,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (metaMatch) {
             let meta;
             try { meta = JSON.parse(metaMatch[1]); } catch (e) { alert('Invalid metadata in SVG.'); return; }
+            if (meta?.geCompilation) this._gcRestore(meta.geCompilation);
             return this._handleExportMeta(meta);
         }
         alert('No Correlate data found in this file.');
@@ -31093,9 +31396,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         return parts.join(' | ');
     }
 
-    getGETissueFilteredData() {
-        if (!this.currentGeneEffect) return [];
-        let data = this.currentGeneEffect.data;
+    // dataOverride: another gene's values run through the same filters (the
+    // Gene effect compilation).
+    getGETissueFilteredData(dataOverride) {
+        if (!this.currentGeneEffect && !dataOverride) return [];
+        let data = dataOverride || this.currentGeneEffect.data;
         // Comparing the two sides means those cell lines and NO OTHERS, and
         // nothing further is applied on top. The set was already being
         // restricted here, but every filter below then ran as well, and a
@@ -31505,6 +31810,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         this.currentGEStats = tableStats;
         this._geGroupBySubtype = groupBySubtype;
         this.renderGETable(tableStats, 'tissue');
+        this._gcRedrawSoon();
     }
 
     // Minimum cell lines a change must occur in to appear in the scan.
@@ -65653,7 +65959,7 @@ document.addEventListener('keyup', (e) => { if (e.key === 'Shift' && window.app)
 document.addEventListener('focusin', (e) => {
     const t = e.target;
     if (!window.app || !t?.matches) return;
-    if (t.matches('#inspectGeneX, #inspectGeneY, #geneEffectSearch, #caGene1Search, #caGene2Search, #compTopGene, .pp-xg, .pp-yg, #ctGeneList, #hmGenes, #clbSortGene, #exprScatterGEGene, #exprScatterExprGene, #caiGeneList, #axisEditorGene, #clbUmapColorGene, #clbUmapSplitGene, #geneTextarea, #askValueInput')) {
+    if (t.matches('#inspectGeneX, #inspectGeneY, #geneEffectSearch, #caGene1Search, #caGene2Search, #compTopGene, .pp-xg, .pp-yg, #ctGeneList, #hmGenes, #clbSortGene, #exprScatterGEGene, #exprScatterExprGene, #caiGeneList, #axisEditorGene, #clbUmapColorGene, #clbUmapSplitGene, #geneTextarea, #askValueInput, #gcGenes')) {
         window.app._ensureAliasTables?.();
     }
 });
