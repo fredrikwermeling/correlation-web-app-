@@ -12299,22 +12299,16 @@ class CorrelationExplorer {
 
         // (Chart container width is set above, before the y-axis label is measured.)
 
-        // The highlight box, as in the other Gene effect views: up to a dozen
-        // matches are named with arrows, more become diamonds.
+        // The highlight box, as in the other Gene effect views.
         const miTerms = this._splitHighlightTerms(document.getElementById('geCellLineSearch')?.value);
         if (miTerms.length) {
             const miMatch = this._highlightMatcher(miTerms);
             const hits = (this._geGatePlotData || []).filter(p => miMatch(p.cellLineName || p.cellLineId, p.cellLineId));
-            if (hits.length > 12) {
-                traces.push({ type: 'scatter', mode: 'markers', showlegend: false, name: 'Highlighted',
-                    x: hits.map(p => p.x), y: hits.map(p => p.y), customdata: hits.map(p => p.cellLineId),
-                    text: hits.map(p => `${p.cellLineName || p.cellLineId}<br>${p.lineage || ''}<br>GE: ${p.x.toFixed(2)}`), hoverinfo: 'text',
-                    marker: { color: '#f59e0b', size: 10, symbol: 'diamond', line: { color: '#92400e', width: 1.2 } } });
-            } else {
-                hits.forEach(p => layout.annotations.push({ x: p.x, y: p.y, text: this.esc(p.cellLineName || p.cellLineId),
-                    showarrow: true, arrowhead: 2, arrowsize: 1, arrowcolor: '#dc2626', ax: 40, ay: -25,
-                    font: { size: 10, color: '#dc2626' }, bgcolor: 'rgba(255,255,255,0.85)' }));
-            }
+            if (hits.length) traces.push({ type: 'scatter', mode: 'markers', showlegend: false, name: 'Highlighted',
+                x: hits.map(p => p.x), y: hits.map(p => p.y), customdata: hits.map(p => p.cellLineId),
+                text: hits.map(p => `${p.cellLineName || p.cellLineId}<br>${p.lineage || ''}<br>GE: ${p.x.toFixed(2)}`), hoverinfo: 'text',
+                marker: this._hlMarker(10) });
+            if (hits.length <= 12) hits.forEach(p => layout.annotations.push(this._hlLabel(p.x, p.y, p.cellLineName || p.cellLineId)));
         }
 
         Plotly.newPlot('geneEffectPlot', traces, layout, {
@@ -19757,6 +19751,98 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         input._groupPicker = sel;
         // Searchable, like every other long menu in the app.
         this._enhanceSelect(sel.id);
+        this._attachHighlightSuggest(input, idsFn);
+    }
+
+    // Names suggested while typing in a highlight box, from the cell lines
+    // the chart shows (the "Only these cell lines" picker's look). A pick
+    // replaces the word being typed; group terms are left alone.
+    _attachHighlightSuggest(input, idsFn) {
+        if (!input || input._hlSuggest) return;
+        const dd = document.createElement('div');
+        dd.className = 'hl-suggest';
+        dd.style.cssText = 'display:none; position:fixed; z-index:10050; min-width:220px; max-height:260px; overflow-y:auto; background:#fff; border:1px solid #d1d5db; border-radius:5px; box-shadow:0 6px 16px rgba(0,0,0,0.18); font-size:11px;';
+        document.body.appendChild(dd);
+        input._hlSuggest = dd;
+        const norm = (t) => String(t || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+        const sep = () => input.tagName === 'TEXTAREA' && input.value.includes('\n') ? '\n' : ', ';
+        const token = () => {
+            const v = input.value;
+            const at = Math.max(v.lastIndexOf(','), v.lastIndexOf(';'), v.lastIndexOf('\n'), v.lastIndexOf('\t'));
+            return { start: at + 1, text: v.slice(at + 1).trim() };
+        };
+        const hide = () => { dd.style.display = 'none'; };
+        const pick = (name) => {
+            const { start } = token();
+            const head = input.value.slice(0, start).replace(/[\s,;]+$/, '');
+            input.value = (head ? head + sep() : '') + name;
+            hide();
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.focus();
+        };
+        const render = () => {
+            const { text } = token();
+            const q = norm(text);
+            if (!q || text.includes(':') || document.activeElement !== input) { hide(); return; }
+            const have = new Set(this._splitHighlightTerms(input.value.slice(0, token().start)).map(norm));
+            const rows = [...new Set(idsFn() || [])].map(id => ({ id, name: this.getCellLineName(id) || id }))
+                .filter(r => !have.has(norm(r.name)))
+                .map(r => { const n = norm(r.name); return { ...r, rank: n === q ? 0 : n.startsWith(q) ? 1 : n.includes(q) ? 2 : -1 }; })
+                .filter(r => r.rank >= 0).sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name)).slice(0, 30);
+            if (!rows.length || (rows.length === 1 && rows[0].rank === 0)) { hide(); return; }
+            dd.innerHTML = rows.map(r => `<div class="hl-suggest-opt" data-name="${this.esc(r.name)}" style="padding:5px 10px; cursor:pointer; border-bottom:1px solid #f3f4f6;" onmouseover="this.style.background='#f0fdf4'" onmouseout="this.style.background=''">`
+                + `<span style="font-weight:600; color:#374151;">${this.esc(r.name)}</span> <span style="font-size:10px; color:#9ca3af;">${this.esc(this.getCellLineLineage(r.id) || '')}</span></div>`).join('');
+            const b = input.getBoundingClientRect();
+            dd.style.left = Math.max(8, Math.min(b.left, window.innerWidth - 260)) + 'px';
+            dd.style.top = (b.bottom + 2) + 'px';
+            dd.style.display = 'block';
+        };
+        input.addEventListener('input', render);
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') { hide(); return; }
+            if (e.key !== 'Enter' || dd.style.display === 'none') return;
+            const first = dd.querySelector('.hl-suggest-opt');
+            if (first) { e.preventDefault(); pick(first.dataset.name); }
+        });
+        dd.addEventListener('mousedown', (e) => e.preventDefault());
+        dd.addEventListener('click', (e) => { const o = e.target.closest('.hl-suggest-opt'); if (o) pick(o.dataset.name); });
+        input.addEventListener('blur', hide);
+        window.addEventListener('scroll', (e) => { if (e.target !== dd) hide(); }, true);
+    }
+
+    // One look for a highlighted cell line in every chart: an orange
+    // diamond, and (when a dozen or fewer) the name in a white box with an
+    // orange edge. Clicking a dot adds it to the view's highlight box.
+    _hlMarker(size = 10) {
+        return { size, symbol: 'diamond', color: '#f59e0b', line: { color: '#92400e', width: 1.2 } };
+    }
+
+    _hlLabel(x, y, name, extra = {}) {
+        return { x, y, xref: 'x', yref: 'y', text: this.esc(name), showarrow: true, arrowhead: 0, arrowwidth: 1,
+            arrowcolor: '#92400e', ax: 0, ay: -22, font: { size: 10, color: '#111' },
+            bgcolor: 'rgba(255,255,255,0.9)', bordercolor: '#f59e0b', borderwidth: 1, borderpad: 2, ...extra };
+    }
+
+    // Add the cell line to a highlight box, or take it out; the box's own
+    // input handler redraws the chart.
+    _hlToggleInBox(inputId, id) {
+        const box = document.getElementById(inputId);
+        if (!box || !id) return;
+        const name = this.getCellLineName(id) || id;
+        const norm = (t) => String(t).toUpperCase().replace(/[^A-Z0-9]/g, '');
+        const parts = box.value.split(/[,;\n\t]+/).map(t => t.trim()).filter(Boolean);
+        const i = parts.findIndex(t => norm(t) === norm(name) || norm(t) === norm(id));
+        if (i >= 0) parts.splice(i, 1); else parts.push(name);
+        box.value = parts.join(', ');
+        box.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    _hlBoxHas(inputId, id) {
+        const box = document.getElementById(inputId);
+        if (!box) return false;
+        const norm = (t) => String(t).toUpperCase().replace(/[^A-Z0-9]/g, '');
+        const name = norm(this.getCellLineName(id) || id);
+        return box.value.split(/[,;\n\t]+/).some(t => norm(t) === name || norm(t) === norm(id));
     }
 
     _highlightMatcher(terms) {
@@ -20609,12 +20695,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 mode: 'markers',
                 type: 'scatter',
                 hovertemplate: highlightData.map(d => `${d.cellLineName} (${d.lineage || 'Unknown'})<extra></extra>`),
-                marker: {
-                    color: '#f59e0b',
-                    size: 14,
-                    symbol: 'circle',
-                    line: { color: '#000', width: 2 }
-                },
+                marker: this._hlMarker(14),
                 name: 'Highlighted',
                 showlegend: false
             });
@@ -20645,15 +20726,18 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     text: d.cellLineName,
                     showarrow: true,
                     arrowhead: 0,
-                    arrowcolor: '#999',
+                    arrowwidth: 1,
+                    arrowcolor: '#92400e',
                     ax: saved ? saved.ax : 0,
                     // Default the label well clear of its dot: with draggable
                     // annotations (edits.annotationTail) the label's drag region
                     // sits over the anchor, and a label too close was capturing
                     // the pointer so the just-labeled dot couldn't be hovered.
                     ay: saved ? saved.ay : -34,
-                    font: { size: fontSize * 3, color: '#000' },
-                    bgcolor: 'rgba(255,255,255,0.7)',
+                    font: { size: fontSize * 3, color: '#111' },
+                    bgcolor: 'rgba(255,255,255,0.9)',
+                    bordercolor: '#f59e0b',
+                    borderwidth: 1,
                     borderpad: 2,
                     captureevents: false
                 });
@@ -21349,12 +21433,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     mode: 'markers',
                     type: 'scatter',
                     hovertemplate: highlightData.map(d => `${d.cellLineName} (${d.lineage || 'Unknown'})<extra></extra>`),
-                    marker: {
-                        color: '#f59e0b',
-                        size: 10,
-                        symbol: 'circle',
-                        line: { color: '#000', width: 2 }
-                    },
+                    marker: this._hlMarker(11),
                     showlegend: false
                 });
                 highlightData.forEach(d => {
@@ -21365,11 +21444,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                         text: `${d.cellLineName} (${d.lineage || 'Unknown'})`,
                         showarrow: true,
                         arrowhead: 0,
-                        arrowcolor: '#999',
+                        arrowwidth: 1,
+                        arrowcolor: '#92400e',
                         ax: saved ? saved.ax : 0,
                         ay: saved ? saved.ay : -25,
-                        font: { size: fontSize * 3, color: '#000' },
-                        bgcolor: 'rgba(255,255,255,0.7)',
+                        font: { size: fontSize * 3, color: '#111' },
+                        bgcolor: 'rgba(255,255,255,0.9)',
+                        bordercolor: '#f59e0b',
+                        borderwidth: 1,
                         borderpad: 2
                     });
                 });
@@ -23444,7 +23526,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 traces.push({ x: [lo, hi], y: [b0 + s.slope * lo, b0 + s.slope * hi], xaxis: xa, yaxis: ya, type: 'scatter', mode: 'lines', line: { color: '#6ba544', width: 1.5 }, hoverinfo: 'skip', showlegend: false });
             }
             const h = d.filter(look.isHl);
-            if (h.length) traces.push({ ...base, mode: h.length <= 12 ? 'markers+text' : 'markers', x: h.map(q => q.x), y: h.map(q => q.y), text: h.map(q => q.cellLineName), customdata: ids(h), textposition: 'top center', textfont: { size: 9 }, showlegend: false, marker: { size: 8, color: '#f59e0b', line: { color: '#111', width: 1 } } });
+            if (h.length) traces.push({ ...base, x: h.map(q => q.x), y: h.map(q => q.y), text: h.map(q => q.cellLineName), customdata: ids(h), showlegend: false, marker: this._hlMarker(9) });
+            if (h.length && h.length <= 12) h.forEach(q => annotations.push(this._hlLabel(q.x, q.y, q.cellLineName, { xref: xa, yref: ya, ay: -16, font: { size: 9, color: '#111' }, borderpad: 1 })));
         });
         layout.annotations = annotations;
         await Plotly.react(el, traces, layout, { displayModeBar: false, responsive: false });
@@ -24385,10 +24468,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const rugY = -p.ymax * 0.06;
         if (hl.length) p.traces.push({ type: 'scatter', mode: 'markers', x: hl.map(([, v]) => v), y: hl.map(() => rugY), customdata: hl.map(([id]) => id),
             hovertext: hl.map(([id, v]) => `${this.getCellLineName(id) || id}: ${v.toFixed(2)}`), hoverinfo: 'none', showlegend: false,
-            marker: { size: 10, symbol: 'triangle-up', color: '#f59e0b', line: { color: '#92400e', width: 1 } } });
-        if (hl.length && hl.length <= 12) hl.forEach(([id, v], k) => p.annotations.push({ xref: 'x', yref: 'y', x: v, y: rugY, text: this.esc(this.getCellLineName(id) || id),
-            showarrow: true, arrowhead: 0, arrowwidth: 1, arrowcolor: '#92400e', ax: 0, ay: -(26 + (k % 3) * 16), font: { size: 10, color: '#111' },
-            bgcolor: 'rgba(255,255,255,0.9)', bordercolor: '#f59e0b', borderwidth: 1, borderpad: 2 }));
+            marker: this._hlMarker(10) });
+        if (hl.length && hl.length <= 12) hl.forEach(([id, v], k) => p.annotations.push(this._hlLabel(v, rugY, this.getCellLineName(id) || id, { ay: -(26 + (k % 3) * 16) })));
         const layout = {
             title: { text: `${titleTop}<br><span style="font-size:11px; color:#6b7280;">${sub}</span>`, font: { size: 14 }, y: 0.96 },
             xaxis: { title: { text: xTitle }, zeroline: true, zerolinecolor: '#9ca3af', gridcolor: '#eeeeee', ...(range ? { range } : {}) },
@@ -24414,17 +24495,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
     // A click on a dot adds that cell line to the highlight box, or takes it
     // out again, so the box is the one list to read and copy.
-    _ctToggleHighlight(id) {
-        const box = document.getElementById('ctHighlight');
-        if (!box || !id) return;
-        const name = this.getCellLineName(id) || id;
-        const norm = (t) => String(t).toUpperCase().replace(/[^A-Z0-9]/g, '');
-        const parts = box.value.split(/[,;\n\t]+/).map(t => t.trim()).filter(Boolean);
-        const i = parts.findIndex(t => norm(t) === norm(name) || norm(t) === norm(id));
-        if (i >= 0) parts.splice(i, 1); else parts.push(name);
-        box.value = parts.join(', ');
-        this._ctRenderPlot();
-    }
+    _ctToggleHighlight(id) { this._hlToggleInBox('ctHighlight', id); }
 
     // Dots in both charts: the cell line card on hover, click to highlight,
     // Shift-click for the Wiki, as on the other cell line plots.
@@ -24512,10 +24583,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (hm) rows.forEach((r, i) => r.pts.forEach(([id, v]) => { if (hm(this.getCellLineName(id) || id, id)) hlPts.push({ id, v, y: i + jit(id) * 0.6 }); }));
         if (hlPts.length) traces.push({ type: 'scatter', mode: 'markers', x: hlPts.map(p => p.v), y: hlPts.map(p => p.y), customdata: hlPts.map(p => p.id),
             hovertext: hlPts.map(p => `${this.getCellLineName(p.id) || p.id}: ${p.v.toFixed(2)}`), hoverinfo: 'none', showlegend: false,
-            marker: { size: 10, symbol: 'diamond', color: '#f59e0b', line: { color: '#92400e', width: 1.2 } } });
-        const hlNames = hlPts.length && hlPts.length <= 12 ? hlPts.map(p => ({ xref: 'x', yref: 'y', x: p.v, y: p.y, text: this.esc(this.getCellLineName(p.id) || p.id),
-            showarrow: true, arrowhead: 0, arrowwidth: 1, arrowcolor: '#92400e', ax: 0, ay: -18, font: { size: 10, color: '#111' },
-            bgcolor: 'rgba(255,255,255,0.88)', bordercolor: '#f59e0b', borderwidth: 1, borderpad: 2 })) : [];
+            marker: this._hlMarker(10) });
+        const hlNames = hlPts.length && hlPts.length <= 12 ? hlPts.map(p => this._hlLabel(p.v, p.y, this.getCellLineName(p.id) || p.id, { ay: -18 })) : [];
         const H = Math.max(rows.length <= 6 ? 300 : 440, rows.length * 22 + 130);
         // Room for the longest row label (about 6 px a character at 10 px).
         const mL = Math.min(300, Math.max(120, Math.max(...rows.map(r => `${r.t} (${r.pts.length})`.length)) * 6 + 20));
@@ -31377,7 +31446,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const geMatched = [];
         if (geMatch) filteredStats.forEach(s => s.cellData.forEach(c => { if (geMatch(c.cellLineName, c.cellLineId)) geMatched.push([s, c]); }));
         const GE_LABEL_MAX = 12;
-        if (geMatched.length > GE_LABEL_MAX) {
+        if (this._geHighlightCellLine) filteredStats.forEach(s => s.cellData.forEach(c => { if (c.cellLineId === this._geHighlightCellLine && !geMatched.some(([, m]) => m === c)) geMatched.push([s, c]); }));
+        if (geMatched.length) {
             filteredStats.forEach(s => {
                 const cells = geMatched.filter(([gs]) => gs === s).map(([, c]) => c);
                 if (!cells.length) return;
@@ -31385,7 +31455,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     x: cells.map(c => c.geneEffect), y: cells.map(() => labelFor.get(s.group)),
                     text: cells.map(c => c.cellLineName), customdata: cells.map(c => c.cellLineId),
                     hovertemplate: `<b>%{text}</b><br>${hoverMetric}: %{x:.3f}<br>Highlighted<extra></extra>`,
-                    marker: { color: '#f59e0b', size: 10, symbol: 'diamond', line: { color: '#92400e', width: 1.2 } } });
+                    marker: this._hlMarker(10) });
             });
         }
         const geLabelIds = new Set(geMatched.length <= GE_LABEL_MAX ? geMatched.map(([, c]) => c.cellLineId) : []);
@@ -31415,22 +31485,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 for (const c of s.cellData) {
                     const isHighlight = (highlightCl && (c.cellLineId === highlightCl));
                     const isSearch = geLabelIds.has(c.cellLineId);
-                    if (isHighlight || isSearch) {
-                        annotations.push({
-                            x: c.geneEffect,
-                            y: rowLabel,
-                            text: c.cellLineName,
-                            showarrow: true,
-                            arrowhead: 2,
-                            arrowsize: 1,
-                            arrowcolor: '#dc2626',
-                            ax: 40,
-                            ay: -25,
-                            font: { size: 10, color: '#dc2626', weight: 'bold' },
-                            bgcolor: 'rgba(255,255,255,0.85)',
-                            borderpad: 2
-                        });
-                    }
+                    if (isHighlight || isSearch) annotations.push(this._hlLabel(c.geneEffect, rowLabel, c.cellLineName));
                 }
             }
             if (annotations.length > layout.annotations.length) {
@@ -38446,12 +38501,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             // A phone has no Shift, so the wiki was simply unreachable from a
             // dot. Tapping a dot that is already labelled opens it instead,
             // which also matches how the label reads as a thing you can press.
-            if (window.innerWidth <= 640 && this._dotHasLabel?.(plotId, id)) {
+            const hlBox = plotId === 'geneEffectPlot' ? 'geCellLineSearch' : null;
+            if (window.innerWidth <= 640 && (hlBox ? this._hlBoxHas(hlBox, id) : this._dotHasLabel?.(plotId, id))) {
                 this.hideCellLineTooltip?.();
                 this.openCellLineWiki(id);
                 return;
             }
-            this._toggleDotLabel(plotId, pt, id);
+            if (hlBox) this._hlToggleInBox(hlBox, id);
+            else this._toggleDotLabel(plotId, pt, id);
         });
         // Click a placed name label to remove it.
         el.removeAllListeners?.('plotly_clickannotation');
@@ -38625,8 +38682,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
     _attachGECellInteractivity(plotId) {
         this._attachDotHoverSummary(plotId, null, window.innerWidth <= 640
-            ? 'Tap to name this cell line \u00b7 tap the named dot again to open it'
-            : 'Click to label this cell line \u00b7 Shift-click to open its Wiki');
+            ? (plotId === 'geneEffectPlot' ? 'Tap to highlight this cell line \u00b7 tap it again to open it' : 'Tap to name this cell line \u00b7 tap the named dot again to open it')
+            : (plotId === 'geneEffectPlot' ? 'Click to highlight this cell line \u00b7 Shift-click to open its Wiki' : 'Click to label this cell line \u00b7 Shift-click to open its Wiki'));
         this._attachDotClickLabelWiki(plotId);
     }
 
