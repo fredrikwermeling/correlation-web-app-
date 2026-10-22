@@ -22953,7 +22953,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     <button class="btn btn-outline btn-sm" id="gcClose2" style="margin-left:auto;">Close</button>
                 </div></div>`;
             document.body.appendChild(modal);
-            const close = () => { modal.classList.remove('active'); this._gcReturnFilters(); this.hideCellLineTooltip?.(); };
+            const close = () => this._gcClose();
+            // However it is closed, the popout gets its filter rows back.
+            new MutationObserver(() => { if (!modal.classList.contains('active') && this._gcBorrowed) this._gcReturnFilters(); })
+                .observe(modal, { attributes: true, attributeFilter: ['class'] });
+            // It lives on the popout's cohort, so it goes when the popout does.
+            const ge = document.getElementById('geneEffectModal');
+            if (ge) new MutationObserver(() => { if (getComputedStyle(ge).display === 'none') this._gcClose(); })
+                .observe(ge, { attributes: true, attributeFilter: ['style', 'class'] });
             modal.querySelector('#gcClose').onclick = close;
             modal.querySelector('#gcClose2').onclick = close;
             modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
@@ -23005,6 +23012,17 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     _gcReturnFilters() {
         for (const { el, mark } of (this._gcBorrowed || [])) { mark.parentNode?.insertBefore(el, mark); mark.remove(); }
         this._gcBorrowed = null;
+        // The rows change the popout's layout; refit its chart to the box.
+        const pe = document.getElementById('geneEffectPlot');
+        if (pe?.data) try { Plotly.Plots.resize(pe); } catch (e) {}
+    }
+
+    _gcClose() {
+        const modal = document.getElementById('geCompModal');
+        if (!modal?.classList.contains('active')) return;
+        modal.classList.remove('active');
+        this._gcReturnFilters();
+        this.hideCellLineTooltip?.();
     }
 
     // A filter changed in the borrowed rows: the popout redraws, then this.
@@ -30332,6 +30350,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // ============================================================
 
     openGeneEffectModal(gene, view = 'tissue', opts = {}) {
+        // A gene opened from inside the compilation (a Wiki link, say) takes
+        // the popout back, filter rows included.
+        this._gcClose?.();
         // A synonym becomes the data's name, as in every gene box.
         {
             const dt = opts.dataType || document.getElementById('geDataType')?.value;
