@@ -51585,12 +51585,20 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                     <button id="sqCopyRange" class="btn btn-outline btn-sm" title="Copy the bases from..to (or the current search match)">Copy region</button>
                     <button id="sqCopyAll" class="btn btn-outline btn-sm" title="Copy the whole sequence">Copy all</button>
                     <button id="sqFasta" class="btn btn-outline btn-sm" title="Download as FASTA">FASTA</button>
-                    <button id="sqEdit" class="btn btn-outline btn-sm" title="Edit the sequence as plain text">Edit</button>
+                    <button id="sqEdit" class="btn btn-outline btn-sm" title="Insert and delete bases in place; the changes stay marked in the sequence">Edit</button>
+                </div>
+                <div id="sqEditBar" class="sq-bar sq-editbar" style="display:none;">
+                    <span class="sq-m">Click to place the cursor, then type to insert or use Backspace / Delete. Select bases to delete or replace them.</span>
+                    <input id="sqInsText" type="text" placeholder="Bases to insert" autocomplete="off" spellcheck="false">
+                    <button id="sqInsBtn" class="btn btn-outline btn-sm" title="Insert at the cursor (replaces a selection)">Insert</button>
+                    <button id="sqDelSel" class="btn btn-outline btn-sm" title="Delete the selected bases (or the one after the cursor)">Delete selection</button>
+                    <button id="sqUndo" class="btn btn-outline btn-sm" title="Undo the last edit (Cmd/Ctrl+Z)">Undo</button>
+                    <button id="sqDiscard" class="btn btn-outline btn-sm" title="Remove every edit in this view">Discard edits</button>
+                    <span id="sqEditSum" class="sq-m"></span>
                 </div>
                 <div id="sqLegend" class="sq-legend"></div>
                 <div id="sqOverview" class="sq-ov" title="Click or drag to move through the sequence"></div>
                 <div id="sqScroll" class="sq-scroll" tabindex="0"><div id="sqSpacer"></div><div id="sqLines"></div></div>
-                <div id="sqEditWrap" style="display:none;"><div class="sq-m" style="margin:6px 0;">Plain text, edit freely. The annotation is not carried into edits; Copy all and FASTA use the edited text while this box is open.</div><textarea id="sqEditBox" spellcheck="false"></textarea></div>
             </div>`;
             document.body.appendChild(modal);
             this._sqWire(modal);
@@ -51612,12 +51620,17 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
 
     _sqSetView(view, st, t, genomic) {
         const m = this._gbSeqModel(view, st, t, genomic);
-        // Base classes as one Uint8Array: 0 flank, 1 intron, 2 utr, 3 cds; hotspot bit 4.
+        // Base classes as one Uint8Array: 0 flank, 1 intron, 2 utr, 3 cds;
+        // bit 4 hotspot, bit 8 inserted by the user, bit 16 deleted by the user.
         const cls = new Uint8Array(m.seq.length);
         const code = { flank: 0, intron: 1, utr: 2, cds: 3 };
         for (const s of m.segs) cls.fill(code[s.type], s.a, s.b);
         for (const h of m.hot) for (let p = h.a; p < h.b; p++) cls[p] |= 4;
-        this._sq = { view, st, t, genomic, m, cls, hits: [], hitIdx: -1, prot: view === 'protein' };
+        const key = `${st.gene || this._gbGene}|${t.tx.id}|${view}`;
+        const store = (this._sqOpsStore ||= new Map());
+        if (!store.has(key)) store.set(key, []);
+        this._sq = { view, st, t, genomic, m, refLen: m.seq.length, base: { seq: m.seq, cls }, ops: store.get(key), caret: null, hits: [], hitIdx: -1, prot: view === 'protein' };
+        this._sqApply();
         const dna = !this._sq.prot;
         document.getElementById('sqBothLbl').style.display = dna ? '' : 'none';
         document.getElementById('sqFind').placeholder = dna ? 'Search DNA (ACGT, N = any)' : 'Search protein';
@@ -51625,19 +51638,93 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         document.getElementById('sqLegend').innerHTML = `${m.seq.length.toLocaleString()} ${dna ? 'bases' : 'amino acids'} · `
             + (view === 'genomic' ? sw('sq-cds', 'EXON coding') + sw('sq-utr', 'EXON untranslated') + sw('sq-intron', 'intron') : view === 'mrna' ? sw('sq-cds', 'coding') + sw('sq-utr', 'UTR') : '')
             + (m.hot.length ? sw('sq-cds sq-hot', 'hotspot codon') : '')
-            + `<span class="sq-m">Hover for the exon or intron. Selecting with the mouse copies bare sequence.</span>`;
+            + sw('sq-ins', 'inserted') + sw('sq-del', 'deleted')
+            + `<span class="sq-m">Hover for the exon or intron.</span>`;
         document.getElementById('sqFind').value = '';
         document.getElementById('sqHits').textContent = '';
+        this._sqEditUi();
         this._sqDrawOverview();
         this._sqLayout();
     }
 
-    // The whole sequence as a strip: regions to scale, hotspots as red
-    // ticks, search hits as amber ticks, and a window for what is in view.
+    // Rebuild the shown sequence from the reference plus the edit list.
+    // Edits are replayed in order (display coordinates at the time of each),
+    // so undo is dropping the last one. Deleted bases stay on screen, struck
+    // through, and are skipped by search, positions, copy and FASTA.
+    _sqApply() {
+        const s = this._sq;
+        let codes = new Uint8Array(s.base.seq.length);
+        for (let i = 0; i < codes.length; i++) codes[i] = s.base.seq.charCodeAt(i);
+        let cls = s.base.cls.slice();
+        let ref = new Int32Array(codes.length);
+        for (let i = 0; i < ref.length; i++) ref[i] = i;
+        for (const op of s.ops) {
+            if (op.t === 'del') {
+                let drop = 0;
+                for (let i = op.a; i < op.b && i < codes.length; i++) { if (ref[i] < 0) drop++; else cls[i] |= 16; }
+                if (drop) {
+                    const n = codes.length - drop, c2 = new Uint8Array(n), k2 = new Uint8Array(n), r2 = new Int32Array(n);
+                    let j = 0;
+                    for (let i = 0; i < codes.length; i++) {
+                        if (i >= op.a && i < op.b && ref[i] < 0) continue;
+                        c2[j] = codes[i]; k2[j] = cls[i]; r2[j] = ref[i]; j++;
+                    }
+                    codes = c2; cls = k2; ref = r2;
+                }
+            } else {
+                const p = Math.min(op.p, codes.length), k = op.s.length, n = codes.length + k;
+                const c2 = new Uint8Array(n), k2 = new Uint8Array(n), r2 = new Int32Array(n);
+                c2.set(codes.subarray(0, p)); k2.set(cls.subarray(0, p)); r2.set(ref.subarray(0, p));
+                const nb = p > 0 ? cls[p - 1] : cls[p] ?? 0;
+                for (let i = 0; i < k; i++) { c2[p + i] = op.s.charCodeAt(i); k2[p + i] = (nb & 3) | 8; r2[p + i] = -1; }
+                c2.set(codes.subarray(p), p + k); k2.set(cls.subarray(p), p + k); r2.set(ref.subarray(p), p + k);
+                codes = c2; cls = k2; ref = r2;
+            }
+        }
+        let txt = '';
+        for (let i = 0; i < codes.length; i += 8192) txt += String.fromCharCode.apply(null, codes.subarray(i, i + 8192));
+        // pre[d]: edited (not deleted) bases before display index d; e2d maps
+        // an edited position back to its display index.
+        const pre = new Int32Array(codes.length + 1);
+        let ne = 0;
+        for (let i = 0; i < codes.length; i++) { pre[i] = ne; if (!(cls[i] & 16)) ne++; }
+        pre[codes.length] = ne;
+        const e2d = new Int32Array(ne);
+        let eSeq = '';
+        const parts = [];
+        for (let i = 0, j = 0; i < codes.length; i++) if (!(cls[i] & 16)) { e2d[j++] = i; parts.push(txt[i]); if (parts.length >= 8192) { eSeq += parts.join(''); parts.length = 0; } }
+        eSeq += parts.join('');
+        s.m = { ...s.m, seq: txt };
+        Object.assign(s, { cls, ref, pre, e2d, eSeq });
+        const ins = s.ops.reduce((n, o) => n + (o.t === 'ins' ? o.s.length : 0), 0);
+        let del = 0;
+        for (let i = 0; i < cls.length; i++) if (cls[i] & 16) del++;
+        s.nIns = cls.length - s.refLen; s.nDel = del;
+        s.nInsTyped = ins;
+    }
+
+    // Reference position for a display index (an inserted base takes the
+    // reference base before it), and the display index of a reference base.
+    _sqRefAt(d) {
+        const r = this._sq.ref;
+        for (let i = Math.min(d, r.length - 1); i >= 0; i--) if (r[i] >= 0) return r[i];
+        return 0;
+    }
+
+    _sqDispOfRef(x) {
+        const r = this._sq.ref;
+        let lo = 0, hi = r.length - 1;
+        while (lo < hi) { const mid = (lo + hi) >> 1; if (this._sqRefAt(mid) < x) lo = mid + 1; else hi = mid; }
+        return lo;
+    }
+
+    // The whole sequence as a strip, in reference coordinates: regions to
+    // scale, hotspots red, search hits amber, the user's edits purple, and a
+    // window for what is in view.
     _sqDrawOverview() {
         const s = this._sq, box = document.getElementById('sqOverview');
         if (!s || !box) return;
-        const N = s.m.seq.length || 1, W = 1000;
+        const N = s.refLen || 1, W = 1000;
         const X = (p) => (p / N * W).toFixed(2);
         const col = { flank: null, intron: null, utr: '#cfe8bb', cds: '#6ba544' };
         let g = `<line x1="0" y1="14" x2="${W}" y2="14" stroke="#9ca3af" stroke-width="1"/>`;
@@ -51647,7 +51734,17 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             g += `<rect x="${X(sg.a)}" y="${14 - h / 2}" width="${Math.max(0.8, (sg.b - sg.a) / N * W).toFixed(2)}" height="${h}" fill="${col[sg.type]}" stroke="${sg.type === 'cds' ? '#2f4f1d' : '#6ba544'}" stroke-width="0.4"/>`;
         }
         for (const h of s.m.hot) g += `<line x1="${X(h.a)}" y1="3" x2="${X(h.a)}" y2="25" stroke="#dc2626" stroke-width="1.2"/>`;
-        for (const [a] of (s.hits || []).slice(0, 2000)) g += `<line x1="${X(a)}" y1="4" x2="${X(a)}" y2="24" stroke="#f59e0b" stroke-width="0.8" opacity="0.8"/>`;
+        for (const [a] of (s.hits || []).slice(0, 2000)) g += `<line x1="${X(this._sqRefAt(a))}" y1="4" x2="${X(this._sqRefAt(a))}" y2="24" stroke="#f59e0b" stroke-width="0.8" opacity="0.8"/>`;
+        if (s.nIns || s.nDel) {
+            let last = -1;
+            for (let i = 0; i < s.cls.length; i++) {
+                if (!(s.cls[i] & 24)) continue;
+                const x = Math.round(this._sqRefAt(i) / N * W);
+                if (x === last) continue;
+                last = x;
+                g += `<line x1="${x}" y1="1" x2="${x}" y2="27" stroke="#7c3aed" stroke-width="1.4"/>`;
+            }
+        }
         box.innerHTML = `<svg viewBox="0 0 ${W} 28" preserveAspectRatio="none" width="100%" height="28" style="display:block; cursor:pointer;">${g}<rect id="sqOvWin" x="0" y="0" width="0" height="28" fill="rgba(59,130,246,0.15)" stroke="#2563eb" stroke-width="1"/></svg>`
             + `<div class="sq-ov-scale"><span>1</span><span>${N.toLocaleString()} ${s.prot ? 'aa' : 'bases'}</span></div>`;
         this._sqOvWindow();
@@ -51656,20 +51753,21 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
     _sqOvWindow() {
         const s = this._sq, win = document.getElementById('sqOvWin'), sc = document.getElementById('sqScroll');
         if (!s || !win || !sc) return;
-        const N = s.m.seq.length || 1, L = this._sqL || 60, H = this._sqLineH || 20;
-        const a = Math.floor(sc.scrollTop / H) * L, b = Math.min(N, Math.ceil((sc.scrollTop + sc.clientHeight) / H) * L);
-        win.setAttribute('x', (a / N * 1000).toFixed(2));
-        win.setAttribute('width', Math.max(2, (b - a) / N * 1000).toFixed(2));
+        const N = s.refLen || 1, D = s.m.seq.length, L = this._sqL || 60, H = this._sqLineH || 20;
+        const a = Math.min(D - 1, Math.floor(sc.scrollTop / H) * L), b = Math.min(D - 1, Math.ceil((sc.scrollTop + sc.clientHeight) / H) * L);
+        const ra = this._sqRefAt(Math.max(0, a)), rb = this._sqRefAt(Math.max(0, b)) + 1;
+        win.setAttribute('x', (ra / N * 1000).toFixed(2));
+        win.setAttribute('width', Math.max(2, (rb - ra) / N * 1000).toFixed(2));
     }
 
-    _sqLayout() {
+    _sqLayout(keepScroll = false) {
         const sc = document.getElementById('sqScroll');
         // 100 bases a line when the window has room for it, else 60.
         this._sqL = sc.clientWidth >= 1080 ? 100 : 60;
         const n = Math.ceil(this._sq.m.seq.length / this._sqL);
         this._sqLineH = 20;
         document.getElementById('sqSpacer').style.height = (n * this._sqLineH) + 'px';
-        sc.scrollTop = 0;
+        if (!keepScroll) sc.scrollTop = 0;
         this._sqRender();
     }
 
@@ -51683,46 +51781,55 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const first = Math.max(0, Math.floor(sc.scrollTop / H) - 20), last = Math.min(n, Math.ceil((sc.scrollTop + sc.clientHeight) / H) + 20);
         const hitMask = s.hitMaskFor ? s.hitMaskFor(first * L, last * L) : null;
         const names = ['sq-flank', 'sq-intron', 'sq-utr', 'sq-cds'];
-        const segNames = (a, b) => s.m.segs.filter(g => g.a < b && g.b > a).map(g => g.name);
+        const segNames = (a, b) => {
+            const ra = this._sqRefAt(a), rb = this._sqRefAt(b - 1) + 1;
+            return s.m.segs.filter(g => g.a < rb && g.b > ra).map(g => g.name);
+        };
+        const caret = this._sqEditing ? s.caret : null;
         let html = '';
         for (let li = first; li < last; li++) {
             const a = li * L, b = Math.min(seq.length, a + L);
             let line = '';
             let k = a;
             while (k < b) {
-                // Runs of equal class, cut at every 10th base for the visual gap.
+                // Runs of equal class, cut at every 10th base for the visual
+                // gap and at the cursor.
                 const c = s.cls[k], hm = hitMask ? hitMask[k - first * L] : 0;
                 let e = k + 1;
-                while (e < b && s.cls[e] === c && (hitMask ? hitMask[e - first * L] : 0) === hm && e % 10 !== 0) e++;
+                while (e < b && s.cls[e] === c && (hitMask ? hitMask[e - first * L] : 0) === hm && e % 10 !== 0 && e !== caret) e++;
                 let txt = seq.slice(k, e);
                 if (!s.prot) txt = (c & 3) >= 2 ? txt.toUpperCase() : txt.toLowerCase();
-                const cl = names[c & 3] + (c & 4 ? ' sq-hot' : '') + (hm === 2 ? ' sq-cur' : hm ? ' sq-hit' : '') + (k % 10 === 0 && k !== a ? ' sq-g' : '');
-                line += `<span class="${cl}">${txt}</span>`;
+                const cl = names[c & 3] + (c & 4 ? ' sq-hot' : '') + (c & 8 ? ' sq-ins' : '') + (c & 16 ? ' sq-del' : '') + (hm === 2 ? ' sq-cur' : hm ? ' sq-hit' : '') + (k % 10 === 0 && k !== a ? ' sq-g' : '');
+                line += (k === caret ? '<span class="sq-caret"></span>' : '') + `<span class="${cl}" data-a="${k}">${txt}</span>`;
                 k = e;
             }
+            if (caret === b && (b === seq.length || b === a + L) && caret !== null && (b === seq.length)) line += '<span class="sq-caret"></span>';
             const reg = segNames(a, b).join(' → ');
-            html += `<div class="sq-line" style="top:${li * H}px"><span class="sq-num">${(a + 1).toLocaleString()}</span><span class="sq-seq" title="${this.esc(reg)}">${line}</span><span class="sq-reg">${this.esc(reg)}</span></div>`;
+            html += `<div class="sq-line" style="top:${li * H}px"><span class="sq-num">${(s.pre[a] + 1).toLocaleString()}</span><span class="sq-seq" title="${this.esc(reg)}">${line}</span><span class="sq-reg">${this.esc(reg)}</span></div>`;
         }
         box.innerHTML = html;
         this._sqOvWindow();
     }
 
-    _sqFind(q) {
+    _sqFind(q, keepIdx = false) {
         const s = this._sq;
         if (!s) return;
         q = (q || '').trim().toUpperCase().replace(/\s+/g, '');
+        const prevIdx = s.hitIdx;
         s.hits = []; s.hitIdx = -1; s.hitMaskFor = null;
         if (q.length >= (s.prot ? 2 : 3)) {
-            const seq = s.m.seq.toUpperCase();
+            const seq = s.eSeq.toUpperCase();
             const pats = [q];
             if (!s.prot && document.getElementById('sqBoth')?.checked) {
                 const rc = q.split('').reverse().map(c => ({ A: 'T', T: 'A', G: 'C', C: 'G', N: 'N' }[c] || c)).join('');
                 if (rc !== q) pats.push(rc);
             }
             for (const p of pats) {
-                const re = new RegExp(p.replace(/[^A-Z]/g, '').replace(/N/g, s.prot ? 'N' : '[ACGTN]'), 'g');
+                const re = new RegExp(p.replace(/[^A-Z*]/g, '').replace(/\*/g, '\\*').replace(/N/g, s.prot ? 'N' : '[ACGTN]'), 'g');
                 let mm;
-                while ((mm = re.exec(seq)) && s.hits.length < 20000) { s.hits.push([mm.index, mm.index + mm[0].length]); re.lastIndex = mm.index + 1; }
+                // Matches are found in the edited sequence, then held as
+                // display ranges so they can be drawn.
+                while ((mm = re.exec(seq)) && s.hits.length < 20000) { s.hits.push([s.e2d[mm.index], s.e2d[mm.index + mm[0].length - 1] + 1]); re.lastIndex = mm.index + 1; }
             }
             s.hits.sort((x, y) => x[0] - y[0]);
             s.hitMaskFor = (from, to) => {
@@ -51736,6 +51843,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         }
         document.getElementById('sqHits').textContent = q.length < (s.prot ? 2 : 3) ? (q ? 'type at least ' + (s.prot ? 2 : 3) : '') : `${s.hits.length.toLocaleString()}${s.hits.length >= 20000 ? '+' : ''} match${s.hits.length === 1 ? '' : 'es'}`;
         this._sqDrawOverview();
+        if (keepIdx) { if (s.hits.length) s.hitIdx = Math.min(Math.max(prevIdx, 0), s.hits.length - 1); this._sqRender(); return; }
         if (s.hits.length) this._sqStep(1); else this._sqRender();
     }
 
@@ -51744,31 +51852,146 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         if (!s?.hits.length) return;
         s.hitIdx = (s.hitIdx + dir + s.hits.length) % s.hits.length;
         const [a, b] = s.hits[s.hitIdx];
-        document.getElementById('sqHits').textContent = `${s.hitIdx + 1} of ${s.hits.length.toLocaleString()} · ${(a + 1).toLocaleString()}..${b.toLocaleString()}`;
-        document.getElementById('sqFrom').value = a + 1; document.getElementById('sqTo').value = b;
-        this._sqGoTo(a + 1);
+        const ea = s.pre[a] + 1, eb = s.pre[b];
+        document.getElementById('sqHits').textContent = `${s.hitIdx + 1} of ${s.hits.length.toLocaleString()} · ${ea.toLocaleString()}..${eb.toLocaleString()}`;
+        document.getElementById('sqFrom').value = ea; document.getElementById('sqTo').value = eb;
+        this._sqScrollTo(a);
     }
 
+    // pos is a position in the (edited) sequence, counted from 1.
     _sqGoTo(pos) {
+        const s = this._sq;
+        const e = Math.min(Math.max(1, pos), s.e2d.length) - 1;
+        this._sqScrollTo(s.e2d.length ? s.e2d[e] : 0);
+    }
+
+    _sqScrollTo(d) {
         const sc = document.getElementById('sqScroll');
-        const li = Math.floor((pos - 1) / this._sqL);
+        const li = Math.floor(d / this._sqL);
         sc.scrollTop = Math.max(0, li * this._sqLineH - sc.clientHeight / 3);
         this._sqRender();
     }
 
+    // The edited sequence as text, exons upper case and introns lower case.
     _sqText() {
-        const ed = document.getElementById('sqEditWrap');
-        if (ed && ed.style.display !== 'none') return document.getElementById('sqEditBox').value.replace(/\s+/g, '');
         const s = this._sq;
-        if (s.prot) return s.m.seq;
+        if (s.prot) return s.eSeq;
         let out = '';
-        for (const g of s.m.segs) { const t2 = s.m.seq.slice(g.a, g.b); out += g.type === 'cds' || g.type === 'utr' ? t2.toUpperCase() : t2.toLowerCase(); }
-        return out;
+        const parts = [];
+        for (let j = 0; j < s.e2d.length; j++) {
+            const d = s.e2d[j], ch = s.m.seq[d];
+            parts.push((s.cls[d] & 3) >= 2 ? ch.toUpperCase() : ch.toLowerCase());
+            if (parts.length >= 8192) { out += parts.join(''); parts.length = 0; }
+        }
+        return out + parts.join('');
     }
 
     async _sqCopy(text, what) {
         try { await navigator.clipboard.writeText(text); this.showCopyNotification?.(`Copied ${what}`); }
         catch (e) { this.showCopyNotification?.('Copy failed; select the text instead.'); }
+    }
+
+    // ---- Editing in place ----
+    _sqEditUi() {
+        const on = !!this._sqEditing, s = this._sq;
+        const bar = document.getElementById('sqEditBar');
+        if (bar) bar.style.display = on ? '' : 'none';
+        const btn = document.getElementById('sqEdit');
+        if (btn) { btn.textContent = on ? 'Done editing' : 'Edit'; btn.classList.toggle('sq-on', on); }
+        document.getElementById('sqScroll')?.classList.toggle('sq-editing', on);
+        const sum = document.getElementById('sqEditSum');
+        if (sum && s) {
+            const unit = s.prot ? 'aa' : 'bases';
+            sum.innerHTML = s.ops.length ? `<span class="sq-chip sq-ins">+${s.nIns.toLocaleString()}</span> <span class="sq-chip sq-del">−${s.nDel.toLocaleString()}</span> ${unit} · ${s.eSeq.length.toLocaleString()} ${unit} now` : 'No edits yet';
+        }
+        const und = document.getElementById('sqUndo'), dis = document.getElementById('sqDiscard');
+        if (und) und.disabled = !s?.ops.length;
+        if (dis) dis.disabled = !s?.ops.length;
+        const ft = document.getElementById('sqFasta');
+        if (ft && s) ft.title = s.ops.length ? 'Download the edited sequence as FASTA' : 'Download as FASTA';
+    }
+
+    _sqAfterEdit() {
+        const s = this._sq, sc = document.getElementById('sqScroll');
+        const top = sc.scrollTop;
+        this._sqApply();
+        const n = Math.ceil(s.m.seq.length / this._sqL);
+        document.getElementById('sqSpacer').style.height = (n * this._sqLineH) + 'px';
+        sc.scrollTop = top;
+        const q = document.getElementById('sqFind').value;
+        if (q.trim()) this._sqFind(q, true); else this._sqDrawOverview();
+        this._sqEditUi();
+        this._sqRender();
+    }
+
+    // Display index under a DOM point inside the sequence, or null.
+    _sqDomIdx(node, off) {
+        const el = node?.nodeType === 3 ? node.parentElement : node;
+        const span = el?.closest?.('[data-a]');
+        if (span) return +span.dataset.a + (node.nodeType === 3 ? off : 0);
+        if (el?.classList?.contains('sq-caret')) { const nx = el.nextElementSibling; return nx?.dataset.a != null ? +nx.dataset.a : null; }
+        const line = el?.closest?.('.sq-line');
+        if (line) { const spans = line.querySelectorAll('[data-a]'); const lastS = spans[spans.length - 1]; return lastS ? +lastS.dataset.a + lastS.textContent.length : null; }
+        return null;
+    }
+
+    _sqSelRange() {
+        const sel = window.getSelection();
+        if (!sel || !sel.rangeCount || sel.isCollapsed) return null;
+        const box = document.getElementById('sqLines');
+        if (!box.contains(sel.anchorNode) || !box.contains(sel.focusNode)) return null;
+        const a = this._sqDomIdx(sel.anchorNode, sel.anchorOffset), b = this._sqDomIdx(sel.focusNode, sel.focusOffset);
+        if (a == null || b == null || a === b) return null;
+        return [Math.min(a, b), Math.max(a, b)];
+    }
+
+    _sqInsert(text) {
+        const s = this._sq;
+        const ok = s.prot ? /[^ACDEFGHIKLMNPQRSTVWY*]/g : /[^ACGTN]/g;
+        text = String(text || '').toUpperCase().replace(/\s+/g, '').replace(ok, '');
+        if (!text) return false;
+        const r = this._sqSelRange();
+        if (r) { s.ops.push({ t: 'del', a: r[0], b: r[1] }); this._sqApply(); s.caret = this._sqDispAfterDelete(r[0]); window.getSelection()?.removeAllRanges(); }
+        const p = s.caret ?? s.m.seq.length;
+        const lastOp = s.ops[s.ops.length - 1];
+        if (!r && lastOp?.t === 'ins' && lastOp.p + lastOp.s.length === p) lastOp.s += text;
+        else s.ops.push({ t: 'ins', p, s: text });
+        s.caret = p + text.length;
+        this._sqAfterEdit();
+        return true;
+    }
+
+    // After deleting from a, the first display index at or after a (inserted
+    // bases there are gone, reference ones stay struck through).
+    _sqDispAfterDelete(a) { return Math.min(a, this._sq.m.seq.length); }
+
+    _sqDelete(dir) {
+        const s = this._sq;
+        const r = this._sqSelRange();
+        if (r) {
+            s.ops.push({ t: 'del', a: r[0], b: r[1] });
+            window.getSelection()?.removeAllRanges();
+            this._sqApply();
+            s.caret = this._sqDispAfterDelete(r[0]);
+            this._sqAfterEdit();
+            return;
+        }
+        if (s.caret == null) return;
+        let i = s.caret;
+        if (dir < 0) { i--; while (i >= 0 && (s.cls[i] & 16)) i--; if (i < 0) return; }
+        else { while (i < s.cls.length && (s.cls[i] & 16)) i++; if (i >= s.cls.length) return; }
+        const wasIns = s.ref[i] < 0;
+        s.ops.push({ t: 'del', a: i, b: i + 1 });
+        s.caret = dir < 0 ? i : (wasIns ? i : i + 1);
+        this._sqAfterEdit();
+    }
+
+    _sqUndo() {
+        const s = this._sq;
+        if (!s?.ops.length) return;
+        const op = s.ops.pop();
+        s.caret = op.t === 'ins' ? op.p : op.a;
+        this._sqAfterEdit();
     }
 
     _sqWire(modal) {
@@ -51783,8 +52006,8 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             const r = svg.getBoundingClientRect();
             const f = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
             const sc = document.getElementById('sqScroll');
-            const total = Math.ceil(this._sq.m.seq.length / this._sqL) * this._sqLineH;
-            sc.scrollTop = Math.max(0, f * total - sc.clientHeight / 2);
+            const d = this._sqDispOfRef(Math.floor(f * this._sq.refLen));
+            sc.scrollTop = Math.max(0, Math.floor(d / this._sqL) * this._sqLineH - sc.clientHeight / 2);
         };
         let ovDrag = false;
         ov.addEventListener('mousedown', (e) => { ovDrag = true; ovJump(e); e.preventDefault(); });
@@ -51792,7 +52015,6 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         document.addEventListener('mouseup', () => { ovDrag = false; });
         document.getElementById('sqView').addEventListener('change', (e) => {
             const s = this._sq; if (!s) return;
-            document.getElementById('sqEditWrap').style.display = 'none'; document.getElementById('sqScroll').style.display = '';
             this._sqSetView(e.target.value, s.st, s.t, s.genomic);
         });
         let ft;
@@ -51802,7 +52024,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         document.getElementById('sqPrev').addEventListener('click', () => this._sqStep(-1));
         document.getElementById('sqNext').addEventListener('click', () => this._sqStep(1));
         document.getElementById('sqGo').addEventListener('keydown', (e) => { if (e.key === 'Enter') this._sqGoTo(parseInt(e.target.value, 10) || 1); });
-        document.getElementById('sqCopyAll').addEventListener('click', () => this._sqCopy(this._sqText(), 'the whole sequence'));
+        document.getElementById('sqCopyAll').addEventListener('click', () => this._sqCopy(this._sqText(), this._sq.ops.length ? 'the whole edited sequence' : 'the whole sequence'));
         document.getElementById('sqCopyRange').addEventListener('click', () => {
             const txt = this._sqText();
             const a = Math.max(1, parseInt(document.getElementById('sqFrom').value, 10) || 1), b = Math.min(txt.length, parseInt(document.getElementById('sqTo').value, 10) || txt.length);
@@ -51811,17 +52033,69 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         });
         document.getElementById('sqFasta').addEventListener('click', () => {
             const s = this._sq, gene = this._gbGene;
-            const edited = document.getElementById('sqEditWrap').style.display !== 'none';
-            const head = `${gene} ${s.t.tx.id}${s.t.tx.version ? '.' + s.t.tx.version : ''} ${{ genomic: 'genomic, gene strand', mrna: 'mRNA', cds: 'CDS', protein: 'protein' }[s.view]} GRCh38${edited ? ' (edited)' : ''}`;
+            const edited = s.ops.length > 0;
+            const head = `${gene} ${s.t.tx.id}${s.t.tx.version ? '.' + s.t.tx.version : ''} ${{ genomic: 'genomic, gene strand', mrna: 'mRNA', cds: 'CDS', protein: 'protein' }[s.view]} GRCh38${edited ? ` (edited: +${s.nIns} / -${s.nDel})` : ''}`;
             this.downloadFile(this._gbFasta(head, this._sqText()), `${gene}_${s.view}${edited ? '_edited' : ''}.fa`, 'text/plain');
         });
+        // A mouse selection copies the sequence as it now reads: struck-out
+        // bases are left out.
+        document.getElementById('sqScroll').addEventListener('copy', (e) => {
+            const r = this._sqSelRange(), s = this._sq;
+            if (!r || !s) return;
+            let out = '';
+            for (let d = r[0]; d < r[1]; d++) if (!(s.cls[d] & 16)) { const ch = s.m.seq[d]; out += s.prot ? ch : ((s.cls[d] & 3) >= 2 ? ch.toUpperCase() : ch.toLowerCase()); }
+            e.clipboardData.setData('text/plain', out);
+            e.preventDefault();
+        });
         document.getElementById('sqEdit').addEventListener('click', () => {
-            const wrap = document.getElementById('sqEditWrap'), sc = document.getElementById('sqScroll');
-            const on = wrap.style.display === 'none';
-            if (on) document.getElementById('sqEditBox').value = this._sqText().replace(/(.{60})/g, '$1\n');
-            wrap.style.display = on ? '' : 'none'; sc.style.display = on ? 'none' : '';
-            document.getElementById('sqEdit').textContent = on ? 'Annotated view' : 'Edit';
-            if (!on) this._sqRender();
+            this._sqEditing = !this._sqEditing;
+            if (this._sqEditing && this._sq && this._sq.caret == null) {
+                const sc = document.getElementById('sqScroll');
+                this._sq.caret = Math.min(this._sq.m.seq.length, Math.floor(sc.scrollTop / this._sqLineH) * this._sqL);
+            }
+            this._sqEditUi();
+            this._sqRender();
+            if (this._sqEditing) document.getElementById('sqScroll').focus({ preventScroll: true });
+        });
+        document.getElementById('sqScroll').addEventListener('mouseup', () => {
+            if (!this._sqEditing || !this._sq) return;
+            const sel = window.getSelection();
+            if (sel && sel.isCollapsed && document.getElementById('sqLines').contains(sel.anchorNode)) {
+                const d = this._sqDomIdx(sel.anchorNode, sel.anchorOffset);
+                if (d != null) { this._sq.caret = d; this._sqRender(); }
+            }
+        });
+        document.addEventListener('keydown', (e) => {
+            if (!this._sqEditing || !this._sq || modal.style.display === 'none') return;
+            const t = e.target;
+            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+            const s = this._sq;
+            if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); this._sqUndo(); return; }
+            if (e.metaKey || e.ctrlKey || e.altKey) return;
+            if (e.key === 'Backspace') { e.preventDefault(); this._sqDelete(-1); return; }
+            if (e.key === 'Delete') { e.preventDefault(); this._sqDelete(1); return; }
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                if (s.caret == null) return;
+                e.preventDefault();
+                s.caret = Math.min(s.m.seq.length, Math.max(0, s.caret + (e.key === 'ArrowLeft' ? -1 : 1)));
+                this._sqRender();
+                return;
+            }
+            if (e.key.length === 1 && /[a-z*]/i.test(e.key)) { if (this._sqInsert(e.key)) e.preventDefault(); }
+        });
+        const insBox = document.getElementById('sqInsText');
+        const doIns = () => { if (this._sqInsert(insBox.value)) insBox.value = ''; };
+        document.getElementById('sqInsBtn').addEventListener('click', doIns);
+        insBox.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); doIns(); } });
+        // Keep the page selection when a toolbar button is pressed, so
+        // "Delete selection" and "Insert" act on what was selected.
+        ['sqDelSel', 'sqInsBtn'].forEach(id => document.getElementById(id).addEventListener('mousedown', (e) => e.preventDefault()));
+        document.getElementById('sqDelSel').addEventListener('click', () => this._sqDelete(1));
+        document.getElementById('sqUndo').addEventListener('click', () => this._sqUndo());
+        document.getElementById('sqDiscard').addEventListener('click', () => {
+            const s = this._sq; if (!s?.ops.length) return;
+            s.ops.length = 0; s.caret = null;
+            this._sqAfterEdit();
         });
     }
 
