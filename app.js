@@ -60519,12 +60519,15 @@ ${clone.innerHTML}
             const ex = cx + t.lx * scale;
             const ey = cy - t.ly * scale;
             if (Math.abs(t.lx * scale) < 1 && Math.abs(t.ly * scale) < 1) return;
-            svg += `<line x1="${cx}" y1="${cy}" x2="${ex}" y2="${ey}" stroke="${arrowCol(t.src)}" stroke-width="1.4" marker-end="url(#${mixed && t.src !== 'expr' ? 'lahGe' : 'lah'})"/>`;
+            const on = this._clbUmapGeneColorActive?.gene === t.gene && (!mixed || this._clbUmapGeneColorActive.colorType === (t.src || 'ge'));
+            svg += `<g data-umap-load="${this.esc(t.gene)}" data-umap-src="${t.src || ''}" style="cursor:pointer;"><title>${this.esc(t.gene)}: click to colour the plot by it</title>`
+                + `<line x1="${cx}" y1="${cy}" x2="${ex}" y2="${ey}" stroke="${arrowCol(t.src)}" stroke-width="${on ? 2.6 : 1.4}" marker-end="url(#${mixed && t.src !== 'expr' ? 'lahGe' : 'lah'})"/>`
+                + `<line x1="${cx}" y1="${cy}" x2="${ex}" y2="${ey}" stroke="transparent" stroke-width="10"/></g>`;
             const dist = Math.sqrt((ex - cx) ** 2 + (ey - cy) ** 2) || 1;
             const lx = ex + (ex - cx) / dist * 7;
             const ly = ey + (ey - cy) / dist * 7;
             const anchor = lx > cx ? 'start' : 'end';
-            labels.push({ gene: t.gene, x: lx, y: ly, anchor, col: mixed ? arrowCol(t.src) : '#374151' });
+            labels.push({ gene: t.gene, src: t.src, x: lx, y: ly, anchor, col: mixed ? arrowCol(t.src) : '#374151' });
         });
 
         // Space labels 11 px apart within each side, then lift a side's stack
@@ -60539,7 +60542,8 @@ ${clone.innerHTML}
         labels.forEach(l => {
             const clampX = Math.max(2, Math.min(svgW - 2, l.x));
             const clampY = Math.max(12, Math.min(svgH - 2, l.y));
-            svg += `<text x="${clampX}" y="${clampY}" text-anchor="${l.anchor}" style="font-size:10px;font-style:italic;fill:${l.col};" stroke="white" stroke-width="3" paint-order="stroke">${this.esc(l.gene)}</text>`;
+            const on = this._clbUmapGeneColorActive?.gene === l.gene && (!mixed || this._clbUmapGeneColorActive.colorType === (l.src || 'ge'));
+            svg += `<text data-umap-load="${this.esc(l.gene)}" data-umap-src="${l.src || ''}" x="${clampX}" y="${clampY}" text-anchor="${l.anchor}" style="font-size:10px;font-style:italic;fill:${l.col};cursor:pointer;${on ? 'font-weight:700;text-decoration:underline;' : ''}" stroke="white" stroke-width="3" paint-order="stroke">${this.esc(l.gene)}</text>`;
         });
 
         const axX = this._clbUmapData.axisLabels?.[0]?.split('(')[0].trim() || `PC${compX + 1}`;
@@ -60557,7 +60561,17 @@ ${clone.innerHTML}
                 <div style="height:50px; display:flex; align-items:flex-end; justify-content:center; padding-bottom:8px;">
                     <b style="font-size:14px; color:#111827;">${loadTitle}</b>
                 </div>
-                ${svg}${mixed ? `<div style="font-size:10px; color:#6b7280; text-align:center; margin-top:4px;"><span style="color:#4c782e; font-weight:600;">green</span> CRISPR gene effect · <span style="color:#b91c1c; font-weight:600;">red</span> mRNA</div>` : ''}`;
+                ${svg}${mixed ? `<div style="font-size:10px; color:#6b7280; text-align:center; margin-top:4px;"><span style="color:#4c782e; font-weight:600;">green</span> CRISPR gene effect · <span style="color:#b91c1c; font-weight:600;">red</span> mRNA</div>` : ''}<div style="font-size:10px; color:#9ca3af; text-align:center; margin-top:2px;">Click a gene to colour the plot by it</div>`;
+            if (!sidecar._loadClick) {
+                sidecar._loadClick = true;
+                sidecar.addEventListener('click', (e) => {
+                    const el = e.target.closest('[data-umap-load]');
+                    if (!el) return;
+                    this.applyUmapGeneColor_fromTop(el.dataset.umapLoad, el.dataset.umapSrc || '');
+                    // Redraw so the clicked gene is marked.
+                    setTimeout(() => { const pd = document.getElementById('clbUmapPlot'); if (pd) this._addLoadingsArrows(pd); }, 300);
+                });
+            }
         }
     }
 
