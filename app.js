@@ -47463,7 +47463,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Keep the UMAP/PCA "Visible in list above" option count in sync with
         // the browser's current filter state.
         const visOpt = document.querySelector('#clbUmapTissueFilter option[value="__visible__"]');
-        if (visOpt) visOpt.textContent = `Visible in list above (n=${filtered.length})`;
+        if (visOpt) visOpt.textContent = `Cell lines filtered above (${filtered.length.toLocaleString()})`;
 
         const container = document.getElementById('clbList');
         if (filtered.length === 0) {
@@ -58430,11 +58430,11 @@ ${clone.innerHTML}
         // tissue dropdown directly.
         const visOpt = document.createElement('option');
         visOpt.value = '__visible__';
-        visOpt.textContent = `Visible in list above (n=${visibleN})`;
+        visOpt.textContent = `Cell lines filtered above (${visibleN.toLocaleString()})`;
         tissueSelect.appendChild(visOpt);
         const allOpt = document.createElement('option');
         allOpt.value = '';
-        allOpt.textContent = 'All tissues';
+        allOpt.textContent = `All cell lines (${(this.metadata?.cellLines?.length || 0).toLocaleString()})`;
         tissueSelect.appendChild(allOpt);
         if (this.lineageCounts) {
             Object.keys(this.lineageCounts).sort((a, b) => this.lineageCounts[b] - this.lineageCounts[a]).forEach(tissue => {
@@ -58574,7 +58574,7 @@ ${clone.innerHTML}
         document.getElementById('clbUmapMarkerSize').value = '9';
         document.getElementById('clbUmapComponentRow').style.display = 'none';
         document.getElementById('clbUmapLoadingsToggle').style.display = 'none';
-        document.getElementById('clbUmapShowLoadings').checked = false;
+        document.getElementById('clbUmapShowLoadings').checked = true;
         document.getElementById('clbUmapTopGenesPanel').style.display = 'none';
         document.getElementById('clbUmapColorGene').value = '';
         document.getElementById('clbUmapColorGeneClear').style.display = 'none';
@@ -59408,7 +59408,7 @@ ${clone.innerHTML}
 
             let x, y, axisLabels, pcaLoadings = null;
 
-            document.getElementById('clbUmapShowLoadings').checked = false;
+            document.getElementById('clbUmapShowLoadings').checked = true;
 
             if (method === 'pca') {
                 const pca = this._computePCA(matrix, 5);
@@ -59589,7 +59589,7 @@ ${clone.innerHTML}
             this._populateUmapHighlightGeneDropdown(customGeneList && customGeneList.length ? geneNames : null);
             document.getElementById('clbUmapLoadingsLabel').style.display = 'none';
             document.getElementById('clbUmapGatePanel').style.display = 'none';
-            document.getElementById('clbUmapShowLoadings').checked = false;
+            document.getElementById('clbUmapShowLoadings').checked = true;
             this._clbUmapClickedLabels = new Set();
             this._clbUmapHighlightGroup = null;
             this._clbUmapGeneColorActive = null;
@@ -60270,6 +60270,41 @@ ${clone.innerHTML}
     // the loadings SVG into a single outer SVG so downstream export (PNG or
     // SVG) captures both. Returns the plot SVG unchanged if the sidecar is
     // hidden or the SVG can't be parsed.
+    // Copy: with the loadings showing, the same plot + loadings picture the
+    // export writes; otherwise the plain chart copy.
+    async _copyUmapPlot() {
+        const plotDiv = document.getElementById('clbUmapPlot')?.querySelector('.js-plotly-plot') || document.getElementById('clbUmapPlot');
+        const sidecar = document.getElementById('clbUmapLoadingsSidecar');
+        if (!sidecar || sidecar.style.display === 'none' || !sidecar.querySelector('svg') || !plotDiv?.layout
+            || !navigator.clipboard || typeof ClipboardItem === 'undefined') {
+            return this.copyPlotToClipboard('clbUmapPlot', 'Plot');
+        }
+        this.showCopyNotification?.('Copying…');
+        try {
+            const w = plotDiv.layout.width || plotDiv.offsetWidth, h = plotDiv.layout.height || plotDiv.offsetHeight;
+            const url = await Plotly.toImage(plotDiv, { format: 'svg', width: w, height: h });
+            let plotSvg = url.indexOf('base64,') > -1 ? atob(url.split('base64,')[1]) : decodeURIComponent(url.split(',').slice(1).join(','));
+            plotSvg = await this._finalizeSvgForExport(plotSvg);
+            const composed = this._composeUmapExportSvg(plotSvg, w, h);
+            const W = +(composed.match(/width="([\d.]+)"/) || [])[1] || w, H = +(composed.match(/height="([\d.]+)"/) || [])[1] || h;
+            const img = new Image();
+            const svgUrl = URL.createObjectURL(new Blob([composed], { type: 'image/svg+xml;charset=utf-8' }));
+            await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = svgUrl; });
+            const canvas = document.createElement('canvas');
+            canvas.width = W * 2; canvas.height = H * 2;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            URL.revokeObjectURL(svgUrl);
+            const blob = await new Promise(r => this._trimCanvasWhitespace(canvas).toBlob(r, 'image/png'));
+            await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+            this.showCopyNotification?.('Plot and loadings copied, paste it anywhere');
+        } catch (e) {
+            console.warn('Copy failed:', e);
+            this.showCopyNotification?.('Copy failed. Use Export image instead.');
+        }
+    }
+
     _composeUmapExportSvg(plotSvg, plotW, plotH) {
         const sidecar = document.getElementById('clbUmapLoadingsSidecar');
         if (!sidecar || sidecar.style.display === 'none') return plotSvg;
@@ -60281,7 +60316,9 @@ ${clone.innerHTML}
         const titleH = 50;
         const gap = 10;
         const totalW = plotW + gap + loadW;
-        const totalH = Math.max(plotH, titleH + loadH);
+        // GE + Expression: the arrow colours need their key in the picture.
+        const keyH = this._clbUmapData?.mixedSrc ? 18 : 0;
+        const totalH = Math.max(plotH, titleH + loadH + keyH);
 
         const plotInner = plotSvg.replace(/^[\s\S]*?<svg[^>]*>/, '').replace(/<\/svg>\s*$/, '');
         const loadingsInner = loadingsSvgEl.innerHTML;
@@ -60291,7 +60328,8 @@ ${clone.innerHTML}
             + `<g>${plotInner}</g>`
             + `<g transform="translate(${plotW + gap}, 0)">`
             +   `<text x="${loadW / 2}" y="${titleH - 12}" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="700" fill="#111827">${this.esc(sidecar.querySelector('b')?.textContent || 'Loadings')}</text>`
-            +   `<g transform="translate(0, ${titleH})">${loadingsInner}</g>`
+            +   `<g transform="translate(0, ${titleH})" font-family="Arial, sans-serif">${loadingsInner}</g>`
+            +   (keyH ? `<text x="${loadW / 2}" y="${titleH + loadH + 13}" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="#6b7280"><tspan fill="#4c782e" font-weight="700">green</tspan> CRISPR gene effect · <tspan fill="#b91c1c" font-weight="700">red</tspan> mRNA</text>` : '')
             + `</g>`
             + `</svg>`;
     }
