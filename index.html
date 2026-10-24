@@ -1054,6 +1054,16 @@
             display: block;
         }
 
+        /* Set while a popout covers the window (_setupPopoutScrollLock). The
+           gutter stays reserved so the page does not shift when it locks. */
+        html { scrollbar-gutter: stable; }
+        html.popout-open, html.popout-open body { overflow: hidden !important; }
+
+        .mut-pop-grid { display: grid; grid-template-columns: minmax(300px, 400px) minmax(0, 1fr); gap: 12px; align-items: start; padding: 16px; background: #f9fafb; border-radius: 0 0 8px 8px; }
+        .mut-pop-grid > .card { margin-bottom: 0; }
+        #mutModal #tab-mutation { display: block; padding-top: 0; }
+        @media (max-width: 900px) { .mut-pop-grid { grid-template-columns: minmax(0, 1fr); padding: 10px; } }
+
         /* Network tab uses visibility instead of display to preserve
            container dimensions and prevent vis.js from breaking the viewport */
         #tab-network {
@@ -1699,6 +1709,71 @@
            source lines. Gene names are chips with real padding so a long list
            stays readable instead of running together as tiny comma-separated
            text. */
+        /* Gene Browser */
+        .gb-scope .gb-card { margin-bottom:16px; background:#fff; border:1px solid #e5e7eb; border-radius:8px; box-shadow:0 1px 2px rgba(0,0,0,0.04); overflow:hidden; }
+        .gb-scope .gb-card-head { display:flex; align-items:center; gap:8px; padding:10px 14px; border-bottom:1px solid #eef2f7; background:#f7fbf8; }
+        .gb-scope .gb-dot { width:8px; height:8px; border-radius:50%; background:#4c782e; flex:0 0 auto; }
+        .gb-scope .gb-card-head h3 { margin:0; font-size:13px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; color:#4c782e; }
+        .gb-scope .gb-card-body { padding:12px 14px; }
+        .gb-scope .gb-card-src { padding:8px 14px; border-top:1px solid #f1f5f9; font-size:10px; color:#9ca3af; }
+        .gb-scope .gb-desc { margin:0 0 10px; font-size:11px; color:#6b7280; }
+        .gb-scope .gb-summary { font-size:13px; line-height:1.6; }
+        .gb-scope .gb-m { font-size:10px; color:#6b7280; }
+        .gb-scope .gb-sub { font-weight:600; color:#374151; font-size:12px; margin:12px 0 4px; }
+        .gb-scope .gb-loading, .gb-scope .gb-empty { font-size:11px; color:#9ca3af; padding:4px 0; }
+        .gb-scope .gb-empty { font-size:12px; color:#6b7280; }
+        .gb-scope .gb-grid { display:grid; grid-template-columns:minmax(0,1.1fr) minmax(0,1fr); gap:14px; align-items:start; }
+        .gb-scope .gb-hist { height:200px; }
+        .gb-scope .gb-kv { display:flex; gap:12px; padding:3px 0; align-items:baseline; }
+        .gb-scope .gb-kv-l { flex:0 0 170px; color:#6b7280; font-size:11px; }
+        .gb-scope .gb-kv-v { flex:1; min-width:0; }
+        .gb-scope .gb-trow { display:grid; grid-template-columns:minmax(0,1fr) 56px minmax(0,auto); gap:10px; padding:2px 0; align-items:baseline; border-bottom:1px solid #f3f4f6; max-width:460px; }
+        .gb-scope .gb-trow-n { min-width:0; overflow-wrap:anywhere; }
+        .gb-scope .gb-trow-v { font-weight:600; text-align:right; }
+        .gb-scope .gb-trow-c { text-align:right; font-size:10px; color:#6b7280; white-space:nowrap; }
+        .gb-scope .gb-relgrid { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:24px; align-items:start; }
+        .gb-scope .gb-relfig { min-width:0; padding-top:2px; }
+        @media (max-width: 900px) { .gb-scope .gb-relgrid { grid-template-columns:minmax(0,1fr); } }
+        .gb-scope .gb-tag { display:inline-block; margin-left:5px; padding:0 5px; border-radius:7px; font-size:9.5px; line-height:1.45; font-style:normal; vertical-align:1px; border:1px solid; }
+        .gb-scope .gb-tag-complex { background:#f3faee; color:#3f6b25; border-color:#6ba544; }
+        .gb-scope .gb-tag-pathway { background:#f3f4f6; color:#4b5563; border-color:#d1d5db; }
+        .gb-scope .gb-xtabs { display:flex; flex-wrap:wrap; gap:5px; margin:2px 0 4px; }
+        .gb-scope .gb-xtab { font-size:11px; padding:2px 10px; }
+        .gb-scope .gb-xtab.on { background:#6ba544; color:#fff; }
+        .gb-scope .gb-xtab.on .gb-near { background:#fff7db; }
+        .gb-scope .gb-near { background:#fef3c7; color:#92400e; border-radius:8px; padding:0 6px; font-size:10px; white-space:nowrap; font-weight:600; }
+        .gb-scope .gb-edge:hover .gb-edge-line { stroke:#1e40af; }
+        .gb-scope .gb-node:hover circle { stroke-width:2.4; }
+        .gb-scope .gb-table { width:auto; min-width:min(100%, 320px); font-size:11.5px; margin-bottom:2px; }
+        .gb-scope .gb-table thead th { cursor:default; padding:4px 10px; font-size:11px; }
+        .gb-scope .gb-table td { padding:3px 10px; }
+        .gb-scope .gb-table td:first-child, .gb-scope .gb-table th:first-child { text-align:left; }
+        .gb-scope .gb-rtab { display:grid; grid-template-columns:max-content minmax(50px,110px) max-content max-content max-content; column-gap:10px; row-gap:3px; align-items:center; }
+        .gb-scope .gb-rbar { height:6px; background:#eef2e9; border-radius:3px; overflow:hidden; }
+        .gb-scope .gb-rbar > span { display:block; height:100%; background:#6ba544; border-radius:3px; }
+        .gb-scope .gb-scatter-btn { border:1px solid #6ba544; background:#f3faee; color:#3f6b25; font-weight:600; font-size:10px; border-radius:10px; padding:1px 9px; cursor:pointer; line-height:1.5; }
+        .gb-scope .gb-scatter-btn:hover { background:#6ba544; color:#fff; }
+        .gb-scope .gb-set { padding:6px 0; border-bottom:1px solid #f3f4f6; }
+        .gb-scope .gb-set-acts { float:right; display:inline-flex; gap:4px; }
+        .gb-scope .gb-chip.gb-chip-me { background:#4c782e; color:#fff; border-color:#4c782e; cursor:default; box-shadow:0 0 0 2px #cde6b8; }
+        .gb-scope .gb-details { margin-top:8px; }
+        .gb-scope .gb-details > summary { cursor:pointer; font-size:11px; color:#4c782e; font-weight:600; }
+        .gb-scope .gb-drug { padding:5px 0; border-bottom:1px solid #f3f4f6; }
+        .gb-scope .gb-cl { color:#3730a3; text-decoration:none; }
+        .gb-scope .gb-cl:hover { text-decoration:underline; }
+        .gb-scope .gb-act { color:#4c782e; font-weight:600; text-decoration:none; margin-left:6px; white-space:nowrap; }
+        .gb-scope .gb-actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+        .gb-scope .gb-actions .btn { font-size:11px; padding:3px 10px; }
+        .gb-scope .gb-chips { display:flex; flex-wrap:wrap; gap:4px; align-items:center; }
+        .gb-scope .gb-chip { border:1px solid #d1d5db; background:#f9fafb; color:#4c782e; font-weight:600; border-radius:10px; padding:2px 10px; cursor:pointer; font-size:11px; margin:0 4px 4px 0; }
+        .gb-scope .gb-chip:hover { border-color:#4c782e; }
+        @media (max-width: 640px) {
+            #gbBody { padding:12px 10px !important; }
+            .gb-scope .gb-grid { grid-template-columns:1fr; }
+            .gb-scope .gb-kv { flex-direction:column; gap:0; }
+            .gb-scope .gb-kv-l { flex:0 0 auto; }
+            .gb-scope .gb-trow-c { flex-basis:34%; max-width:34%; }
+        }
         #clbWikiBody { font-size: 12px; line-height: 1.55; }
         #clbWikiBody .wiki-sub-h { font-weight: 600; color: #374151; font-size: 13px; margin-bottom: 3px; }
         #clbWikiBody .wiki-sub-p { margin: 0 0 10px; font-size: 11px; color: #6b7280; line-height: 1.55; }
@@ -1766,6 +1841,11 @@
         /* Reserve the space, hide the control. Used for the sort-direction
            arrow, which only means something once a sort basis is chosen. */
         .clb-hidden { visibility: hidden; }
+        /* Plotly's handle for dragging a label's arrow tip sits on the dot the
+           label names and swallowed its hover. The label box still drags. */
+        .js-plotly-plot path.annotation-arrow.anndrag { pointer-events: none !important; }
+        /* Forces the next group onto its own line of a wrapping row. */
+        .clb-break { flex-basis: 100%; height: 0; }
         .clb-sep { display: inline-block; width: 1px; height: 20px; background: var(--gray-200); margin: 0 3px; flex: 0 0 auto; }
         .clb-toolbar input[type="text"],
         .clb-toolbar select,
@@ -2746,7 +2826,7 @@
                does reach for, to loosen or tighten a network. */
             #slopeParams, #minCellLinesPvalRow,
             #pValueThresholdGroup,
-            #networkAnalyzeWithAI, #clbExportAIBtn, #clbWikiAnalyzeWithAI,
+            #networkAnalyzeWithAI, #clbExportAIBtn, #clbWikiAnalyzeWithAI, #gbAnalyzeWithAI,
             #selectionInspectAI, #aiExportBtn,
             #toggleSelectMode, #toggleRemoveMode,
             #compareAllMutationsBtn, #compareAllTranslocationsBtn,
@@ -2922,6 +3002,7 @@
                     <div id="optionsRow">
                         <button class="btn btn-success btn-sm" id="modeGeneSetBtn" title="Correlate the gene-effect profiles of a set of genes, and optionally expand it to find correlated genes">Gene set<br>analysis</button>
                         <button class="btn btn-outline btn-sm" id="showCellLineBrowser" style="color:var(--green-700); border-color:var(--green-400);" title="Browse, filter and compare the cell lines behind the data">Cell Line<br>Browser</button>
+                        <button class="btn btn-outline btn-sm" id="showGeneBrowser" style="color:var(--green-700); border-color:var(--green-400);" title="Look up one gene: dependency, expression, mutations and copy number across the cell lines">Gene<br>Browser</button>
                         <div style="position:relative; display:flex;">
                             <button class="btn btn-outline btn-sm" id="optionsOtherBtn" aria-haspopup="true" aria-expanded="false" style="color:var(--green-700); border-color:var(--green-400); flex:1 1 0; min-width:0;" title="Mutation analysis, Gene Effect, Correlation and opening a saved figure">Other &#9662;</button>
                             <div id="optionsOtherMenu" style="display:none; position:absolute; top:calc(100% + 4px); right:0; z-index:1200; background:#fff; border:1px solid var(--gray-200); border-radius:6px; box-shadow:0 6px 18px rgba(0,0,0,0.12); min-width:180px; padding:4px;">
@@ -4912,7 +4993,7 @@
                         </div>
                     </div>
                     <p style="font-size: 12px; color: #777; margin: 12px 0 0; line-height: 1.55;">
-                        More under <b>Options &rarr; Other</b>: <b>Mutation analysis</b> splits the cell lines by a chosen alteration (hotspot mutation, driver fusion, functional loss or amplification) and ranks the genes carriers depend on more, or express differently.
+                        The <b>Gene Browser</b> (Options) is the gene-level counterpart: one gene in, and a page of cards for its dependency, expression, mutations, copy number, drugs and related genes. More under <b>Options &rarr; Other</b>: <b>Mutation analysis</b> splits the cell lines by a chosen alteration (hotspot mutation, driver fusion, functional loss or amplification) and ranks the genes carriers depend on more, or express differently.
                     </p>
                 </div>
 
@@ -5022,6 +5103,53 @@
         </div>
         <div style="padding:8px 20px; border-bottom:1px solid #e5e7eb; display:flex; gap:6px; flex-wrap:wrap;" id="enrichrTabs"></div>
         <div id="enrichrContent" style="flex:1; overflow-y:auto; padding:20px; color:#374151;"></div>
+      </div>
+    </div>
+
+    <!-- Mutation Analysis Modal: box 1 and the mutation results pane are
+         moved in here while the mode is active (_mutPopout), so the
+         controls are the same elements as before, not copies. -->
+    <div id="mutModal" style="display:none; position:fixed; inset:0; z-index:1100; background:rgba(0,0,0,0.5); align-items:flex-start; justify-content:center; padding:0 20px 20px; overflow-y:auto;">
+      <div style="background:#fff; width:100%; max-width:min(98vw, 1500px); margin-top:20px; border-radius:8px; display:flex; flex-direction:column; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);">
+        <div style="position:sticky; top:0; z-index:3; display:flex; justify-content:space-between; align-items:center; padding:12px 18px; border-bottom:1px solid #e5e7eb; background:linear-gradient(90deg,#f3faee,#fff); border-radius:8px 8px 0 0;">
+          <h3 style="margin:0; font-size:17px; color:#4c782e;">Mutation analysis</h3>
+          <button id="mutModalCloseBtn" style="background:none; border:none; font-size:24px; cursor:pointer; line-height:1; color:#6b7280;" title="Close Mutation analysis and return to Gene set analysis">&times;</button>
+        </div>
+        <div class="mut-pop-grid">
+          <div id="mutPopLeft"></div>
+          <div class="card" id="mutPopResults" style="padding-bottom:0;">
+            <div class="card-title">2. Results</div>
+            <div class="card-content" id="mutPopRight" style="padding-bottom:0;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Gene Browser Modal -->
+    <div id="gbModal" style="display:none; position:fixed; inset:0; z-index:1365; background:rgba(0,0,0,0.5); align-items:flex-start; justify-content:center; padding:0 20px 20px; overflow-y:auto;">
+      <div style="background:#fff; width:100%; max-width:min(96vw, 1100px); margin-top:20px; border-radius:8px; display:flex; flex-direction:column; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);">
+        <div style="position:sticky; top:0; z-index:3; display:flex; justify-content:space-between; align-items:center; padding:12px 18px; border-bottom:1px solid #e5e7eb; background:linear-gradient(90deg,#f3faee,#fff); border-radius:8px 8px 0 0;">
+          <div style="min-width:0;">
+            <img src="web_data/gb_banner.png" alt="Gene Browser" style="display:block; height:44px; width:auto; max-width:100%; object-fit:contain; object-position:left center;">
+            <div id="gbSubtitle" style="font-size:11px; color:#6b7280; margin-top:2px; min-height:14px;"></div>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <button id="gbExportImageBtn" class="btn btn-outline btn-sm mobile-hide gb-needs-gene" style="font-size:11px; padding:4px 10px; color:var(--earth-700); border-color:var(--earth-300);" disabled title="Save the page as an image, choosing format, resolution and whether to capture the whole page or just what is on screen">Export image...</button>
+            <button id="gbMethodsBtn" class="btn btn-outline btn-sm mobile-hide gb-needs-gene" style="font-size:11px; padding:4px 10px;" disabled title="Write out how every number on this page was calculated, as a methods paragraph and as a plain walk-through">Methods</button>
+            <button id="gbAnalyzeWithAI" class="btn btn-outline btn-sm mobile-hide gb-needs-gene" style="font-size:11px; padding:4px 10px;" disabled title="Package this gene as one file for a language model, so you can ask questions about it">Export for AI</button>
+            <button id="gbDownloadBtn" class="btn btn-outline btn-sm mobile-hide gb-needs-gene" style="font-size:11px; padding:4px 10px; color:var(--green-700); border-color:var(--green-400);" disabled title="Download this page as a multi-page PDF (charts embedded as images, white background)">Download PDF</button>
+            <button id="gbResetBtn" class="btn btn-outline btn-sm gb-needs-gene" style="font-size:11px; padding:4px 10px;" disabled title="Clear the gene and start again">Reset</button>
+            <button id="gbCloseBtn" style="background:none; border:none; font-size:24px; cursor:pointer; line-height:1; color:#6b7280;" title="Close the Gene Browser">&times;</button>
+          </div>
+        </div>
+        <div id="gbBody" class="gb-scope" style="padding:16px 20px; font-size:12px; line-height:1.55; color:#374151; background:#f9fafb; border-radius:0 0 8px 8px;">
+          <div class="main-input" style="display:inline-flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:14px;">
+            <label for="gbGene" style="font-size:13px; font-weight:600; color:#374151; white-space:nowrap;">Gene:</label>
+            <input type="text" id="gbGene" class="form-control" placeholder="Gene symbol" autocomplete="off" style="width:150px; font-size:13px; padding:6px 10px;">
+            <button class="btn btn-success btn-sm" id="gbShowBtn" style="padding:6px 16px;">Show</button>
+          </div>
+          <div id="gbCards"></div>
+        </div>
       </div>
     </div>
 
@@ -5327,7 +5455,7 @@
               <button id="clbInspectGEBtn" class="btn btn-outline btn-sm clb-tall-btn" style="color:#5d9239; border-color:#6ba544;" title="Compare the selected cell lines against every other cell line, gene by gene. Fast (~seconds).">Inspect<br><span>selected vs rest</span></button>
               <button id="clbSendToBtn" class="btn btn-outline btn-sm clb-tall-btn" style="color:#5d9239; border-color:#6ba544;" title="Carry these cell lines over to another view: highlight them on a chart, or narrow that view to them.">Send to<br><span>another view</span></button>
 
-              <span class="clb-sep"></span>
+              <span class="clb-break"></span>
 
               <span class="clb-group-label mobile-hide" style="color:var(--earth-700);">Export CSV</span>
               <button id="clbExportMinimal" class="btn btn-outline btn-sm clb-tall-btn" style="color:var(--earth-700); border-color:var(--earth-300);" title="One or a few selected cell lines: Gene Effect + Expression for every gene (CSV). Includes DepMap version and citation.">Cell line:<br><span>GE + expression</span></button>
@@ -5629,7 +5757,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v90_25"></script>
+    <script src="app.js?v=v90_61"></script>
     <script src="tour.js?v=v89_49"></script>
 </body>
 </html>
