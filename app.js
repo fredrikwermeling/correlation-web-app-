@@ -51399,18 +51399,35 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             let s2 = `     ${key.padEnd(16)}${lines[0]}\n` + lines.slice(1).map(l => pad + l + '\n').join('');
             for (const [k2, v, raw] of quals) {
                 const text = raw ? `/${k2}=${v}` : `/${k2}="${String(v).replace(/"/g, "'")}"`;
-                for (let i = 0; i < text.length; i += 58) s2 += pad + text.slice(i, i + 58) + '\n';
+                // Break at a space where there is one, so words stay whole.
+                let rest = text;
+                while (rest.length > 58) {
+                    let cut = rest.lastIndexOf(' ', 58);
+                    if (cut < 20) cut = 58;
+                    s2 += pad + rest.slice(0, cut).trimEnd() + '\n';
+                    rest = rest.slice(cut).trimStart();
+                }
+                s2 += pad + rest + '\n';
             }
             return s2;
         };
+        // A label every editor shows, and ApE's own colours (other editors
+        // ignore the ApEinfo qualifiers).
+        const look = (label, col) => [['label', label], ['ApEinfo_fwdcolor', col], ['ApEinfo_revcolor', col]];
         const txv = `${t.tx.id}${t.tx.version ? '.' + t.tx.version : ''}`;
         const refTag = t.tx.mane ? `MANE Select${t.tx.refseq ? ' ' + t.tx.refseq : ''}` : t.tx.plus ? `MANE Plus Clinical${t.tx.refseq ? ' ' + t.tx.refseq : ''}` : t.tx.canonical ? 'Ensembl canonical' : 'not the reference transcript';
         let f = feat('source', `1..${L}`, [['organism', 'Homo sapiens'], ['mol_type', genomic ? 'genomic DNA' : 'mRNA'], ['db_xref', 'taxon:9606'], ['chromosome', String(st.chr)]]);
-        f += feat('gene', `1..${L}`, [['gene', gene], ['db_xref', `Ensembl:${st.geneId}`]]);
-        if (genomic) f += feat(t.protein ? 'mRNA' : 'misc_RNA', join(exR), [['gene', gene], ['note', `${t.tx.name || t.tx.id} ${txv} (${refTag})`]]);
-        exR.forEach(([a, b], i) => { f += feat('exon', `${a}..${b}`, [['gene', gene], ['number', String(i + 1), true]]); });
+        // No feature spans the whole file (the file is the gene, or the
+        // mRNA): editors shade such a feature over every base, and a joined
+        // mRNA is drawn as a line through every intron. The exons say it.
+        exR.forEach(([a, b], i) => { f += feat('exon', `${a}..${b}`, [['gene', gene], ['number', String(i + 1), true], ...look(`exon ${i + 1}`, '#b7dc9b')]); });
+        if (!genomic && t.protein && cdsR.length) {
+            const [c0, c1] = cdsR[0];
+            if (c0 > 1) f += feat("5'UTR", `1..${c0 - 1}`, [['gene', gene], ...look("5' UTR", '#e5e7eb')]);
+            if (c1 < L) f += feat("3'UTR", `${c1 + 1}..${L}`, [['gene', gene], ...look("3' UTR", '#e5e7eb')]);
+        }
         if (t.protein && cdsR.length) {
-            f += feat('CDS', join(cdsR), [['gene', gene], ['codon_start', '1', true], ['product', `${gene} protein`], ['protein_id', t.protein.id], ['note', `${t.cdsLength} nt, ${t.protein.length} aa; ${refTag}`], ['translation', prot]]);
+            f += feat('CDS', join(cdsR), [['gene', gene], ['codon_start', '1', true], ['product', `${gene} protein`], ['protein_id', t.protein.id], ['note', `${t.cdsLength} nt, ${t.protein.length} aa; ${refTag}`], ...look(`${gene} CDS`, '#6ba544'), ['translation', prot]]);
             if (t === st.transcripts[0]) {
                 for (const h of this._gbHotspots(gene)) {
                     // The codon's three bases, which can straddle an exon junction.
@@ -51421,19 +51438,26 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                     }
                     if (pos.length === 3) {
                         const loc = pos[2] - pos[0] === 2 ? `${pos[0]}..${pos[2]}` : `join(${pos.map(p => `${p}..${p}`).join(',')})`;
-                        f += feat('variation', loc, [['gene', gene], ['note', `hotspot codon ${h.label}: ${h.n} DepMap cell line${h.n === 1 ? '' : 's'}${h.detail ? ` (${h.detail})` : ''}`]]);
+                        f += feat('variation', loc, [['gene', gene], ['note', `hotspot codon ${h.label}: ${h.n} DepMap cell line${h.n === 1 ? '' : 's'}${h.detail ? ` (${h.detail})` : ''}`], ...look(`${h.label} hotspot`, '#dc2626')]);
                     }
                 }
             }
         }
+        // Free text in lines of at most `w` characters (GenBank keeps to 80 columns).
+        const wrapText = (txt, w) => {
+            const out = []; let line = '';
+            for (const word of txt.split(' ')) { if (line && (line + ' ' + word).length > w) { out.push(line); line = word; } else line = line ? line + ' ' + word : word; }
+            if (line) out.push(line);
+            return out;
+        };
         const date = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).replace(/ /g, '-').toUpperCase();
         const name = `${gene}_${genomic ? 'gen' : 'mRNA'}`.slice(0, 16);
         const head = `LOCUS       ${name.padEnd(16)} ${String(L).padStart(11)} bp    ${(genomic ? 'DNA' : 'mRNA').padEnd(6)}  linear   PRI ${date}\n`
-            + `DEFINITION  Homo sapiens ${gene}, ${genomic ? `genomic region chr${st.chr}:${st.start}-${st.end} (GRCh38), gene strand` : 'mRNA'}, transcript ${t.tx.name || ''} ${txv}.\n`
+            + `DEFINITION  ${wrapText(`Homo sapiens ${gene}, ${genomic ? `genomic region chr${st.chr}:${st.start}-${st.end} (GRCh38), gene strand` : 'mRNA'}, transcript ${t.tx.name || ''} ${txv}.`, 66).join('\n            ')}\n`
             + `ACCESSION   ${genomic ? st.geneId : txv}\n`
             + `KEYWORDS    ${refTag}.\n`
             + `SOURCE      Homo sapiens (human)\n  ORGANISM  Homo sapiens\n`
-            + `COMMENT     Written by Correlate from Ensembl (structure) and UCSC/Ensembl\n            (sequence), GRCh38. ${gene} has ${st.nTranscripts} annotated transcripts; this\n            file describes ${t.tx.name || t.tx.id} only.${genomic && st.strand === -1 ? '\n            Minus-strand gene: the sequence is the reverse complement of the\n            reference, so it reads 5\' to 3\' along the gene.' : ''}\n`
+            + `COMMENT     ${wrapText(`Written by Correlate from Ensembl (structure) and UCSC/Ensembl (sequence), GRCh38. Gene ${gene} (${st.geneId}), transcript ${t.tx.name || t.tx.id} ${txv} (${refTag}). ${gene} has ${st.nTranscripts} annotated transcripts; this file describes this one only.${genomic && st.strand === -1 ? " Minus-strand gene: the sequence is the reverse complement of the reference, so it reads 5' to 3' along the gene." : ''}`, 66).join('\n            ')}\n`
             + `FEATURES             Location/Qualifiers\n`;
         let origin = 'ORIGIN\n';
         const low = body.toLowerCase();
