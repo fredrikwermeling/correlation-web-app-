@@ -25663,7 +25663,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             `For ${gene}, the share of cell lines with a gene effect below ${dep} (${this._mNum(nGe)} screened lines)${nEx ? ` and with an expression of at least ${ex} log2(TPM+1) (${this._mNum(nEx)} lines)` : ''} was calculated, and tissues with at least 5 lines were summarized by their mean gene effect and median expression.`,
             s.split ? `Gene effect in ${s.split.label} and wild-type lines was compared with a two-sided Welch t-test.` : '',
             `Pearson correlations were computed over the cell lines with both values: expression against gene effect, copy number against expression, drug sensitivity (PRISM AUC) against gene effect for compounds annotated to target ${gene}, and ${gene}'s gene effect against that of every other gene in the screen (genes with at least 100 shared lines).`,
-            `Genes whose mRNA expression correlated with ${gene}'s mRNA, and genes whose gene effect correlated with ${gene}'s mRNA, were ranked by absolute Pearson r (genes with at least 100 shared lines).`,
+            `Genes whose mRNA expression correlated with ${gene}'s mRNA were ranked by absolute Pearson r (genes with at least 100 shared lines).`,
             'Relative copy number of at least 3 was counted as amplification and below 0.3 as deep deletion.',
             'Complex partners came from CORUM (Steinkamp et al., 2025) and pathway partners from Reactome (Milacic et al., 2024); gene annotation from MyGene.info, transcripts from Ensembl with the MANE Select reference, and genomic sequence from the UCSC Genome Browser (GRCh38).',
             this._methodsCitation()
@@ -25676,7 +25676,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             `MUTATIONS AND FUSIONS\n   Hotspot, any-mutation, functional-loss and fusion calls as used across the app. Percentages use all ${this._mNum(s.N)} lines as the denominator, including lines that were never sequenced. Specific variants come from the inferred-subtype layer.${s.split ? ` Mutated (${s.split.label}, n = ${s.split.mut.length}) and wild-type (n = ${s.split.wt.length}) lines were compared with a two-sided Welch t-test on gene effect.` : ''}`,
             'COPY NUMBER\n   Gene-level relative copy number (1 = the line\'s own baseline). The app\'s copy-number tiers: amplified from 3, deep deletion below 0.3.',
             this._gbStructure ? `GENE STRUCTURE\n   Exons, transcript, coding and protein lengths of the MANE Select transcript (else the Ensembl canonical one), fetched live from the Ensembl REST API (GRCh38).` : '',
-            `RELATED GENES\n   Co-dependencies: the 10 genes whose gene effect correlates most positively with ${gene}'s (Pearson r, genes with at least 100 shared lines, p from the t distribution, not corrected for the number of genes tested).\n   Expression correlations: the 10 genes with the largest absolute r in each of two comparisons across the cell lines with both values: ${gene}'s mRNA against every gene's mRNA, and ${gene}'s mRNA against every gene's gene effect (same rules). Co-dependencies that are also CORUM complex partners, or share a curated pathway or a Reactome pathway with ${gene}, are tagged.\n   Complex partners from CORUM, pathway partners from Reactome (pathways of 5 to 100 genes).`,
+            `RELATED GENES\n   Co-dependencies: the 10 genes whose gene effect correlates most positively with ${gene}'s (Pearson r, genes with at least 100 shared lines, p from the t distribution, not corrected for the number of genes tested).\n   Expression correlations: the 10 genes whose mRNA correlates most strongly (largest absolute r) with ${gene}'s mRNA across the cell lines with both values (same rules). Co-dependencies that are also CORUM complex partners, or share a curated pathway or a Reactome pathway with ${gene}, are tagged.\n   Complex partners from CORUM, pathway partners from Reactome (pathways of 5 to 100 genes).`,
             'WHAT THIS DOES NOT SAY\nA correlation across cell lines does not show that two genes act together, and differences between tissues can drive it. A mutated-versus-wild-type difference across the whole panel can reflect lineage rather than the mutation; Mutation analysis inside one tissue separates the two.',
             'REFERENCES\n' + CorrelationExplorer.GB_REFS.map(r => `   ${r.name} (${r.url}): ${r.cite}`).join('\n')
         ]);
@@ -51283,6 +51283,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             + (hot.length ? `<div class="gb-m" style="margin:-4px 0 2px;"><span style="color:#dc2626;">●</span> Hotspot codons: where DepMap calls recurrent mutations, sized by how many cell lines carry one; hover a mark for the specific changes.</div>` : '')
             + `<div class="gb-m" style="display:flex; justify-content:flex-end; margin:-2px 0 8px;"><button class="btn btn-outline btn-sm mobile-hide" data-gb-act="copy-struct" style="font-size:10px; padding:1px 8px;" title="Copy the exon figure as an image">Copy figure</button></div>`
             + stats
+            + `<div class="gb-actions" style="margin:6px 0 2px;"><button class="btn btn-sm" data-gb-act="seq-view" style="background:#6ba544; color:#fff; border-color:#6ba544;" title="Open the sequence with exons, introns and hotspot codons coloured; search, copy and edit it">View sequence</button></div>`
             + `<div class="gb-sub">Download this transcript</div>`
             + `<div class="gb-m" style="margin-bottom:4px;">GenBank (.gb) opens in SnapGene, Benchling, ApE and most sequence editors with the exons, coding sequence and translation${hot.length ? ' and the hotspot codons' : ''} annotated. FASTA is the bare sequence.</div>`
             + `<div class="gb-actions mobile-hide" style="margin-top:2px;">`
@@ -51466,6 +51467,284 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             origin += `${String(i + 1).padStart(9)} ${chunk}\n`;
         }
         return head + f + origin + '//\n';
+    }
+
+    // ===== Sequence viewer =====
+    // One transcript's sequence in a popout: genomic (exons upper case and
+    // coloured, introns lower case), mRNA, coding or protein. Only the lines
+    // in view are drawn, so a megabase gene scrolls as freely as a short one.
+    // Position numbers sit outside the selectable text, so a mouse copy is
+    // bare sequence.
+
+    // Per-view sequence and its regions as 0-based [a, b) ranges.
+    _gbSeqModel(view, st, t, genomic) {
+        const segs = [], hot = [];
+        const exonRanges = [];
+        let seq;
+        if (view === 'genomic') {
+            seq = genomic;
+            const ex = t.exons.map((e, i) => ({ e, i, o: this._gbOff(st, e) })).sort((a, b) => a.o - b.o);
+            let pos = 0;
+            ex.forEach(({ e, i, o }, k) => {
+                if (o > pos) segs.push({ a: pos, b: o, type: k === 0 ? 'flank' : 'intron', name: k === 0 ? 'upstream of this transcript' : `intron ${ex[k - 1].i + 1}` });
+                exonRanges.push({ a: o, b: o + e.len, i });
+                if (e.c0 === null) segs.push({ a: o, b: o + e.len, type: 'utr', name: `exon ${i + 1} (untranslated)` });
+                else {
+                    if (e.c0 > 0) segs.push({ a: o, b: o + e.c0, type: 'utr', name: `exon ${i + 1} (UTR)` });
+                    segs.push({ a: o + e.c0, b: o + e.c1, type: 'cds', name: `exon ${i + 1} (coding)` });
+                    if (e.c1 < e.len) segs.push({ a: o + e.c1, b: o + e.len, type: 'utr', name: `exon ${i + 1} (UTR)` });
+                }
+                pos = o + e.len;
+            });
+            if (pos < seq.length) segs.push({ a: pos, b: seq.length, type: 'flank', name: 'downstream of this transcript' });
+        } else if (view === 'mrna' || view === 'cds') {
+            const cdsOnly = view === 'cds';
+            let m = 0;
+            t.exons.forEach((e, i) => {
+                const len = cdsOnly ? (e.c0 === null ? 0 : e.c1 - e.c0) : e.len;
+                if (!len) return;
+                exonRanges.push({ a: m, b: m + len, i });
+                if (cdsOnly) segs.push({ a: m, b: m + len, type: 'cds', name: `exon ${i + 1}` });
+                else if (e.c0 === null) segs.push({ a: m, b: m + len, type: 'utr', name: `exon ${i + 1} (untranslated)` });
+                else {
+                    if (e.c0 > 0) segs.push({ a: m, b: m + e.c0, type: 'utr', name: `exon ${i + 1} (UTR)` });
+                    segs.push({ a: m + e.c0, b: m + e.c1, type: 'cds', name: `exon ${i + 1} (coding)` });
+                    if (e.c1 < e.len) segs.push({ a: m + e.c1, b: m + len, type: 'utr', name: `exon ${i + 1} (UTR)` });
+                }
+                m += len;
+            });
+            seq = cdsOnly ? this._gbSplice(st, genomic, true, t) : this._gbSplice(st, genomic, false, t);
+        } else {
+            seq = this._gbTranslate(this._gbSplice(st, genomic, true, t)).replace(/\*$/, '');
+            segs.push({ a: 0, b: seq.length, type: 'cds', name: 'protein' });
+        }
+        // Hotspot codons (reference transcript only), mapped base by base.
+        if (t === st.transcripts[0] && t.protein) {
+            const cdsBases = [];
+            for (const sg of segs) if (sg.type === 'cds') for (let p = sg.a; p < sg.b; p++) cdsBases.push(p);
+            for (const h of this._gbHotspots(st.gene || this._gbGene)) {
+                if (view === 'protein') { hot.push({ a: h.pos - 1, b: h.pos, label: h.label, n: h.n }); continue; }
+                const ps = [0, 1, 2].map(k => cdsBases[(h.pos - 1) * 3 + k]).filter(p => p !== undefined);
+                if (ps.length === 3) ps.forEach(p => hot.push({ a: p, b: p + 1, label: h.label, n: h.n }));
+            }
+        }
+        return { seq, segs: segs.sort((a, b) => a.a - b.a), hot, exonRanges };
+    }
+
+    async openSequenceViewer(view = 'genomic') {
+        const st = this._gbStructure, t = this._gbTxSel, gene = this._gbGene;
+        if (!st || !t || !gene) return;
+        let modal = document.getElementById('gbSeqModal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'gbSeqModal';
+            modal.innerHTML = `<div class="sq-card">
+                <div class="sq-head"><div><h3 id="sqTitle"></h3><div id="sqSub" class="sq-m"></div></div>
+                    <button id="sqClose" class="sq-x" title="Close (Esc)">&times;</button></div>
+                <div class="sq-bar">
+                    <select id="sqView"><option value="genomic">Genomic (exons + introns)</option><option value="mrna">mRNA</option><option value="cds">Coding sequence</option><option value="protein">Protein</option></select>
+                    <input id="sqFind" type="text" placeholder="Search sequence" autocomplete="off" spellcheck="false">
+                    <label class="sq-m" id="sqBothLbl" title="Also find the reverse complement"><input type="checkbox" id="sqBoth" checked> both strands</label>
+                    <button id="sqPrev" class="btn btn-outline btn-sm" title="Previous match">&#9650;</button><button id="sqNext" class="btn btn-outline btn-sm" title="Next match">&#9660;</button>
+                    <span id="sqHits" class="sq-m"></span>
+                    <span class="sq-sep"></span>
+                    <input id="sqGo" type="number" min="1" placeholder="Go to position" title="Jump to a position">
+                    <span class="sq-sep"></span>
+                    <input id="sqFrom" type="number" min="1" placeholder="from"><input id="sqTo" type="number" min="1" placeholder="to">
+                    <button id="sqCopyRange" class="btn btn-outline btn-sm" title="Copy the bases from..to (or the current search match)">Copy region</button>
+                    <button id="sqCopyAll" class="btn btn-outline btn-sm" title="Copy the whole sequence">Copy all</button>
+                    <button id="sqFasta" class="btn btn-outline btn-sm" title="Download as FASTA">FASTA</button>
+                    <button id="sqEdit" class="btn btn-outline btn-sm" title="Edit the sequence as plain text">Edit</button>
+                </div>
+                <div id="sqLegend" class="sq-legend"></div>
+                <div id="sqScroll" class="sq-scroll" tabindex="0"><div id="sqSpacer"></div><div id="sqLines"></div></div>
+                <div id="sqEditWrap" style="display:none;"><div class="sq-m" style="margin:6px 0;">Plain text, edit freely. The annotation is not carried into edits; Copy all and FASTA use the edited text while this box is open.</div><textarea id="sqEditBox" spellcheck="false"></textarea></div>
+            </div>`;
+            document.body.appendChild(modal);
+            this._sqWire(modal);
+        }
+        const gbZ = parseInt(document.getElementById('gbModal')?.style.zIndex) || 1365;
+        modal.style.zIndex = String(gbZ + 10);
+        modal.style.display = 'flex';
+        document.getElementById('sqTitle').innerHTML = `${this.gi(gene)} sequence`;
+        document.getElementById('sqSub').textContent = `${t.tx.name || t.tx.id} ${t.tx.id}${t.tx.version ? '.' + t.tx.version : ''}${t.tx.mane ? ' · MANE Select' : ''} · GRCh38, read 5′ to 3′ along the gene`;
+        const sel = document.getElementById('sqView');
+        sel.value = view;
+        [...sel.options].forEach(o => { o.disabled = !t.protein && (o.value === 'cds' || o.value === 'protein'); });
+        document.getElementById('sqLines').innerHTML = '<div class="sq-m" style="padding:10px;">Fetching the sequence...</div>';
+        let genomic;
+        try { genomic = await this._gbGenomic(st); } catch (e) { document.getElementById('sqLines').innerHTML = '<div class="sq-m" style="padding:10px;">The sequence services did not answer. Try again in a moment.</div>'; return; }
+        if (this._gbStructure !== st || this._gbTxSel !== t) return;
+        this._sqSetView(view, st, t, genomic);
+    }
+
+    _sqSetView(view, st, t, genomic) {
+        const m = this._gbSeqModel(view, st, t, genomic);
+        // Base classes as one Uint8Array: 0 flank, 1 intron, 2 utr, 3 cds; hotspot bit 4.
+        const cls = new Uint8Array(m.seq.length);
+        const code = { flank: 0, intron: 1, utr: 2, cds: 3 };
+        for (const s of m.segs) cls.fill(code[s.type], s.a, s.b);
+        for (const h of m.hot) for (let p = h.a; p < h.b; p++) cls[p] |= 4;
+        this._sq = { view, st, t, genomic, m, cls, hits: [], hitIdx: -1, prot: view === 'protein' };
+        const dna = !this._sq.prot;
+        document.getElementById('sqBothLbl').style.display = dna ? '' : 'none';
+        document.getElementById('sqFind').placeholder = dna ? 'Search DNA (ACGT, N = any)' : 'Search protein';
+        const sw = (c, t2) => `<span class="sq-chip ${c}">${t2}</span>`;
+        document.getElementById('sqLegend').innerHTML = `${m.seq.length.toLocaleString()} ${dna ? 'bases' : 'amino acids'} · `
+            + (view === 'genomic' ? sw('sq-cds', 'EXON coding') + sw('sq-utr', 'EXON untranslated') + sw('sq-intron', 'intron') : view === 'mrna' ? sw('sq-cds', 'coding') + sw('sq-utr', 'UTR') : '')
+            + (m.hot.length ? sw('sq-cds sq-hot', 'hotspot codon') : '')
+            + `<span class="sq-m">Hover for the exon or intron. Selecting with the mouse copies bare sequence.</span>`;
+        document.getElementById('sqFind').value = '';
+        document.getElementById('sqHits').textContent = '';
+        this._sqLayout();
+    }
+
+    _sqLayout() {
+        const sc = document.getElementById('sqScroll');
+        // 100 bases a line when the window has room for it, else 60.
+        this._sqL = sc.clientWidth >= 1080 ? 100 : 60;
+        const n = Math.ceil(this._sq.m.seq.length / this._sqL);
+        this._sqLineH = 20;
+        document.getElementById('sqSpacer').style.height = (n * this._sqLineH) + 'px';
+        sc.scrollTop = 0;
+        this._sqRender();
+    }
+
+    // Draw the lines in view plus a margin; called on scroll.
+    _sqRender() {
+        const s = this._sq;
+        if (!s) return;
+        const sc = document.getElementById('sqScroll'), box = document.getElementById('sqLines');
+        const L = this._sqL, H = this._sqLineH, seq = s.m.seq;
+        const n = Math.ceil(seq.length / L);
+        const first = Math.max(0, Math.floor(sc.scrollTop / H) - 20), last = Math.min(n, Math.ceil((sc.scrollTop + sc.clientHeight) / H) + 20);
+        const hitMask = s.hitMaskFor ? s.hitMaskFor(first * L, last * L) : null;
+        const names = ['sq-flank', 'sq-intron', 'sq-utr', 'sq-cds'];
+        const segNames = (a, b) => s.m.segs.filter(g => g.a < b && g.b > a).map(g => g.name);
+        let html = '';
+        for (let li = first; li < last; li++) {
+            const a = li * L, b = Math.min(seq.length, a + L);
+            let line = '';
+            let k = a;
+            while (k < b) {
+                // Runs of equal class, cut at every 10th base for the visual gap.
+                const c = s.cls[k], hm = hitMask ? hitMask[k - first * L] : 0;
+                let e = k + 1;
+                while (e < b && s.cls[e] === c && (hitMask ? hitMask[e - first * L] : 0) === hm && e % 10 !== 0) e++;
+                let txt = seq.slice(k, e);
+                if (!s.prot) txt = (c & 3) >= 2 ? txt.toUpperCase() : txt.toLowerCase();
+                const cl = names[c & 3] + (c & 4 ? ' sq-hot' : '') + (hm === 2 ? ' sq-cur' : hm ? ' sq-hit' : '') + (k % 10 === 0 && k !== a ? ' sq-g' : '');
+                line += `<span class="${cl}">${txt}</span>`;
+                k = e;
+            }
+            const reg = segNames(a, b).join(' → ');
+            html += `<div class="sq-line" style="top:${li * H}px"><span class="sq-num">${(a + 1).toLocaleString()}</span><span class="sq-seq" title="${this.esc(reg)}">${line}</span><span class="sq-reg">${this.esc(reg)}</span></div>`;
+        }
+        box.innerHTML = html;
+    }
+
+    _sqFind(q) {
+        const s = this._sq;
+        if (!s) return;
+        q = (q || '').trim().toUpperCase().replace(/\s+/g, '');
+        s.hits = []; s.hitIdx = -1; s.hitMaskFor = null;
+        if (q.length >= (s.prot ? 2 : 3)) {
+            const seq = s.m.seq.toUpperCase();
+            const pats = [q];
+            if (!s.prot && document.getElementById('sqBoth')?.checked) {
+                const rc = q.split('').reverse().map(c => ({ A: 'T', T: 'A', G: 'C', C: 'G', N: 'N' }[c] || c)).join('');
+                if (rc !== q) pats.push(rc);
+            }
+            for (const p of pats) {
+                const re = new RegExp(p.replace(/[^A-Z]/g, '').replace(/N/g, s.prot ? 'N' : '[ACGTN]'), 'g');
+                let mm;
+                while ((mm = re.exec(seq)) && s.hits.length < 20000) { s.hits.push([mm.index, mm.index + mm[0].length]); re.lastIndex = mm.index + 1; }
+            }
+            s.hits.sort((x, y) => x[0] - y[0]);
+            s.hitMaskFor = (from, to) => {
+                const mask = new Uint8Array(Math.max(0, to - from));
+                s.hits.forEach(([a, b], i) => {
+                    if (b <= from || a >= to) return;
+                    for (let p = Math.max(a, from); p < Math.min(b, to); p++) mask[p - from] = i === s.hitIdx ? 2 : 1;
+                });
+                return mask;
+            };
+        }
+        document.getElementById('sqHits').textContent = q.length < (s.prot ? 2 : 3) ? (q ? 'type at least ' + (s.prot ? 2 : 3) : '') : `${s.hits.length.toLocaleString()}${s.hits.length >= 20000 ? '+' : ''} match${s.hits.length === 1 ? '' : 'es'}`;
+        if (s.hits.length) this._sqStep(1); else this._sqRender();
+    }
+
+    _sqStep(dir) {
+        const s = this._sq;
+        if (!s?.hits.length) return;
+        s.hitIdx = (s.hitIdx + dir + s.hits.length) % s.hits.length;
+        const [a, b] = s.hits[s.hitIdx];
+        document.getElementById('sqHits').textContent = `${s.hitIdx + 1} of ${s.hits.length.toLocaleString()} · ${(a + 1).toLocaleString()}..${b.toLocaleString()}`;
+        document.getElementById('sqFrom').value = a + 1; document.getElementById('sqTo').value = b;
+        this._sqGoTo(a + 1);
+    }
+
+    _sqGoTo(pos) {
+        const sc = document.getElementById('sqScroll');
+        const li = Math.floor((pos - 1) / this._sqL);
+        sc.scrollTop = Math.max(0, li * this._sqLineH - sc.clientHeight / 3);
+        this._sqRender();
+    }
+
+    _sqText() {
+        const ed = document.getElementById('sqEditWrap');
+        if (ed && ed.style.display !== 'none') return document.getElementById('sqEditBox').value.replace(/\s+/g, '');
+        const s = this._sq;
+        if (s.prot) return s.m.seq;
+        let out = '';
+        for (const g of s.m.segs) { const t2 = s.m.seq.slice(g.a, g.b); out += g.type === 'cds' || g.type === 'utr' ? t2.toUpperCase() : t2.toLowerCase(); }
+        return out;
+    }
+
+    async _sqCopy(text, what) {
+        try { await navigator.clipboard.writeText(text); this.showCopyNotification?.(`Copied ${what}`); }
+        catch (e) { this.showCopyNotification?.('Copy failed; select the text instead.'); }
+    }
+
+    _sqWire(modal) {
+        const close = () => { modal.style.display = 'none'; };
+        modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+        document.getElementById('sqClose').addEventListener('click', close);
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && modal.style.display !== 'none') { e.stopPropagation(); close(); } }, true);
+        document.getElementById('sqScroll').addEventListener('scroll', () => { cancelAnimationFrame(this._sqRaf); this._sqRaf = requestAnimationFrame(() => this._sqRender()); });
+        document.getElementById('sqView').addEventListener('change', (e) => {
+            const s = this._sq; if (!s) return;
+            document.getElementById('sqEditWrap').style.display = 'none'; document.getElementById('sqScroll').style.display = '';
+            this._sqSetView(e.target.value, s.st, s.t, s.genomic);
+        });
+        let ft;
+        document.getElementById('sqFind').addEventListener('input', (e) => { clearTimeout(ft); ft = setTimeout(() => this._sqFind(e.target.value), 200); });
+        document.getElementById('sqFind').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); this._sqStep(e.shiftKey ? -1 : 1); } });
+        document.getElementById('sqBoth').addEventListener('change', () => this._sqFind(document.getElementById('sqFind').value));
+        document.getElementById('sqPrev').addEventListener('click', () => this._sqStep(-1));
+        document.getElementById('sqNext').addEventListener('click', () => this._sqStep(1));
+        document.getElementById('sqGo').addEventListener('keydown', (e) => { if (e.key === 'Enter') this._sqGoTo(parseInt(e.target.value, 10) || 1); });
+        document.getElementById('sqCopyAll').addEventListener('click', () => this._sqCopy(this._sqText(), 'the whole sequence'));
+        document.getElementById('sqCopyRange').addEventListener('click', () => {
+            const txt = this._sqText();
+            const a = Math.max(1, parseInt(document.getElementById('sqFrom').value, 10) || 1), b = Math.min(txt.length, parseInt(document.getElementById('sqTo').value, 10) || txt.length);
+            if (b < a) return;
+            this._sqCopy(txt.slice(a - 1, b), `${a.toLocaleString()}..${b.toLocaleString()} (${(b - a + 1).toLocaleString()} ${this._sq.prot ? 'aa' : 'bases'})`);
+        });
+        document.getElementById('sqFasta').addEventListener('click', () => {
+            const s = this._sq, gene = this._gbGene;
+            const edited = document.getElementById('sqEditWrap').style.display !== 'none';
+            const head = `${gene} ${s.t.tx.id}${s.t.tx.version ? '.' + s.t.tx.version : ''} ${{ genomic: 'genomic, gene strand', mrna: 'mRNA', cds: 'CDS', protein: 'protein' }[s.view]} GRCh38${edited ? ' (edited)' : ''}`;
+            this.downloadFile(this._gbFasta(head, this._sqText()), `${gene}_${s.view}${edited ? '_edited' : ''}.fa`, 'text/plain');
+        });
+        document.getElementById('sqEdit').addEventListener('click', () => {
+            const wrap = document.getElementById('sqEditWrap'), sc = document.getElementById('sqScroll');
+            const on = wrap.style.display === 'none';
+            if (on) document.getElementById('sqEditBox').value = this._sqText().replace(/(.{60})/g, '$1\n');
+            wrap.style.display = on ? '' : 'none'; sc.style.display = on ? 'none' : '';
+            document.getElementById('sqEdit').textContent = on ? 'Annotated view' : 'Edit';
+            if (!on) this._sqRender();
+        });
     }
 
     async _gbDownloadSeq(kind) {
@@ -51870,13 +52149,12 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         return k ? ` <span class="gb-tag gb-tag-${k.kind}" title="${this.esc(k.why)}">${k.kind}</span>` : '';
     }
 
-    // Two rankings through the correlation plot's own scan (_compTopCorrelates,
+    // Co-expression through the correlation plot's own scan (_compTopCorrelates,
     // all lines, strongest r either way, n >= 100), so the Correlation button
-    // reopens the same r. Gene effect against every mRNA is left out: it
-    // mostly ranks markers of the tissues that depend on the gene.
+    // reopens the same r. Rankings against gene effect are left out: they
+    // mostly pick up markers of the tissues that depend on the gene.
     static GB_XCORR = [
         { tx: 'expr', ty: 'expr', key: 'mrnaVsMrna', head: (g) => `Co-expressed with ${g}`, note: (g) => `Genes whose mRNA rises and falls with ${g}'s.` },
-        { tx: 'expr', ty: 'ge', key: 'mrnaVsGeneEffect', head: (g) => `Dependencies that track ${g} mRNA`, note: (g) => `Genes whose gene effect correlates with ${g}'s expression. Negative r: lines that express more ${g} depend more on that gene.` }
     ];
 
     async _gbFillExprCorr(s) {
@@ -51929,7 +52207,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 `<button class="btn btn-sm inspect-btn" style="padding:2px 6px; font-size:10px; background:#6ba544; color:white;" data-gb-scatter="${this.esc(h.gene)}" data-gb-x="${m.tx}" data-gb-y="${m.ty}" title="Open the correlation plot">Correlation</button>`]))
             + `</div>`).join('');
         box.innerHTML = `<div class="gb-sub" style="margin-top:10px;">Expression correlations <span class="gb-m">(mRNA against gene effect and mRNA)</span></div>`
-            + `<div class="gb-xtabs">${tabs}</div>${panels}`
+            + (lists.length > 1 ? `<div class="gb-xtabs">${tabs}</div>` : `<div class="gb-m" style="margin:2px 0;"><b style="color:#374151;">${lists[0].head(g)}</b>${(() => { const k = res[lists[0].key].filter(isNear).length; return k ? ` <span class="gb-near">${k} nearby</span>` : ''; })()}</div>`) + panels
             + `<div class="gb-m" style="margin-top:3px;">Pearson r across the cell lines with both values (hover p for n), strongest in either direction, genes measured in at least 100 lines. `
             + `${g} is at ${this.esc(this.geneLocations?.[gene]?.band || 'an unknown band')}; <span class="gb-near">amber</span> marks genes within ${near} Mb on the same chromosome. Neighbours are often gained or lost together, so their mRNA can correlate through shared copy number rather than shared function.</div>` + fewGe;
         box.querySelectorAll('[data-gb-xtab]').forEach(b => b.addEventListener('click', () => {
@@ -52040,6 +52318,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             return;
         }
         if (act && (act.startsWith('fasta-') || act.startsWith('gbk-'))) { this._gbDownloadSeq(act); return; }
+        if (act === 'seq-view') { this.openSequenceViewer('genomic'); return; }
         if (act === 'copy-ideogram') { this.copyPlotToClipboard('gbIdeogram', 'Chromosome figure'); return; }
         if (act === 'sc-expr-ge') { this._gbScatter(gene, gene, 'expr', 'ge'); return; }
         if (act === 'sc-cn-expr') { this._gbScatter(gene, gene, 'cn', 'expr'); return; }
@@ -52303,7 +52582,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const nb = (h) => { const d = this._gbNeighbour(gene, h.gene); return d ? { band: d.band, mbFromGene: d.mb === null ? null : +d.mb.toFixed(2) } : {}; };
         out.relatedGenes.expressionCorrelations = xc ? Object.fromEntries(CorrelationExplorer.GB_XCORR.filter(m => xc[m.key]).map(m => [m.key, xc[m.key].map(h => ({ gene: h.gene, r: r3(h.r), p: pv(h.p), n: h.n, ...nb(h) }))])) : null;
         out.relatedGenes.expressionCorrelations_readMe = xc
-            ? `Top 10 by |r| (Pearson, all cell lines with both values, genes with at least 100 lines). mrnaVsMrna: co-expression. mrnaVsGeneEffect: this gene\'s mRNA against every gene\'s gene effect. p not corrected for the number of genes tested. band / mbFromGene: cytoband and gap in Mb from this gene (null = another chromosome); neighbours within ${CorrelationExplorer.GB_NEAR_MB} Mb can correlate through shared copy-number changes rather than function.`
+            ? `Top 10 by |r| (Pearson, all cell lines with both values, genes with at least 100 lines). mrnaVsMrna: co-expression. p not corrected for the number of genes tested. band / mbFromGene: cytoband and gap in Mb from this gene (null = another chromosome); neighbours within ${CorrelationExplorer.GB_NEAR_MB} Mb can correlate through shared copy-number changes rather than function.`
             : 'Not computed: expression data or the scan had not finished when the file was made.';
         return out;
     }
@@ -60385,9 +60664,9 @@ ${clone.innerHTML}
         // data area (canvas minus left+right margin for tissue legend /
         // colorbar and top+bottom margin for title / axis) is actually square.
         // Keep the H input in sync so the slider reflects the real number.
-        const LEFT = 60, RIGHT = 170, TOP = 50, BOTTOM = 50;
+        const LEFT = 60, RIGHT = 170, TOP = 50, BOTTOM = 58;
         const MIN_SIDE = 200;
-        const w = parseInt(document.getElementById('clbUmapPlotWidth')?.value) || 700;
+        const w = parseInt(document.getElementById('clbUmapPlotWidth')?.value) || 600;
         const dataSide = Math.max(MIN_SIDE, w - LEFT - RIGHT);
         const width = dataSide + LEFT + RIGHT;
         const height = dataSide + TOP + BOTTOM;
@@ -60468,10 +60747,43 @@ ${clone.innerHTML}
     // Clicking a point in the UMAP/PCA plot opens the inspect panel for that
     // cell line (same UX as clicking its entry in the list above). From there
     // the user can hit the Wiki button, copy the ID, etc.
+    // Click an axis title to pick its component, with the correlation plot's
+    // axis-editor look; it drives the Axes selectors, so the two never disagree.
+    _umapAxisClicks(plotDiv) {
+        plotDiv.removeAllListeners?.('plotly_clickannotation');
+        plotDiv.on('plotly_clickannotation', (ev) => {
+            const role = ev?.annotation?._tsRole;
+            if (role === 'xlabel' || role === 'ylabel') this._umapAxisPicker(role === 'xlabel' ? 'X' : 'Y', ev.event);
+        });
+    }
+
+    _umapAxisPicker(axis, evt) {
+        document.getElementById('axisEditorPopup')?.remove();
+        const src = document.getElementById('clbUmapComp' + axis);
+        if (!src || !src.options.length) return;
+        const box = document.createElement('div');
+        box.id = 'axisEditorPopup';
+        box.style.cssText = 'position:fixed; z-index:10002; background:#fff; border:1px solid #6ba544; border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,0.18); padding:8px 10px; font-size:12px; display:flex; gap:6px; align-items:center;';
+        box.innerHTML = `<span style="color:#6b7280;">${axis} axis</span><select style="font-size:12px; padding:2px 4px; border:1px solid #d1d5db; border-radius:4px;">${[...src.options].map(o => `<option value="${this.esc(o.value)}"${o.value === src.value ? ' selected' : ''}>${this.esc(o.textContent)}</option>`).join('')}</select>`;
+        document.body.appendChild(box);
+        const x = evt?.clientX ?? innerWidth / 2, y = evt?.clientY ?? innerHeight / 2;
+        box.style.left = Math.max(8, Math.min(innerWidth - box.offsetWidth - 8, x - box.offsetWidth / 2)) + 'px';
+        box.style.top = Math.max(8, Math.min(innerHeight - box.offsetHeight - 8, y - box.offsetHeight - 12)) + 'px';
+        const sel = box.querySelector('select');
+        sel.focus();
+        const close = () => { box.remove(); document.removeEventListener('mousedown', outside, true); };
+        const outside = (e) => { if (!box.contains(e.target)) close(); };
+        setTimeout(() => document.addEventListener('mousedown', outside, true), 0);
+        sel.addEventListener('change', () => { src.value = sel.value; src.dispatchEvent(new Event('change', { bubbles: true })); close(); });
+        sel.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } });
+    }
+
     _handleUmapPointClick(eventData) {
         const pt = eventData?.points?.[0];
         if (!pt || !pt.customdata) return;
         const clId = pt.customdata;
+        // Shift-click opens the Wiki on top, as on the app's other dot plots.
+        if (eventData.event?.shiftKey) { this.hideCellLineTooltip(); this.openCellLineWiki(clId); return; }
         if (!this._clbUmapClickedLabels) this._clbUmapClickedLabels = new Set();
         if (this._clbUmapClickedLabels.has(clId)) this._clbUmapClickedLabels.delete(clId);
         else this._clbUmapClickedLabels.add(clId);
@@ -60709,9 +61021,13 @@ ${clone.innerHTML}
         };
 
         const axLabels = this._clbUmapData?.axisLabels || ['UMAP 1', 'UMAP 2'];
+        // The correlation plot's look: faint grid, black zero lines (PCA
+        // axes are centred on 0), Arial, larger ticks.
+        const axStyle = { zeroline: true, zerolinecolor: '#000', zerolinewidth: 1, showgrid: true, gridcolor: '#eeeeee', tickfont: { size: 12 } };
         const baseLayout = {
-            xaxis: { title: axLabels[0], zeroline: false, showgrid: false },
-            yaxis: { title: axLabels[1], zeroline: false, showgrid: false, scaleanchor: 'x', scaleratio: 1 },
+            xaxis: { title: axLabels[0], ...axStyle },
+            yaxis: { title: axLabels[1], ...axStyle, scaleanchor: 'x', scaleratio: 1 },
+            font: { family: 'Arial, Helvetica, sans-serif' },
             hovermode: 'closest',
             dragmode: 'lasso',
             paper_bgcolor: 'white',
@@ -60766,6 +61082,7 @@ ${clone.innerHTML}
                     document.getElementById('clbUmapSelectedCount').textContent = '';
                 });
                 div.on('plotly_click', (eventData) => this._handleUmapPointClick(eventData));
+                if (div.id) this._attachDotHoverSummary(div.id, null, 'Click to label this cell line \u00b7 Shift-click to open its Wiki');
             });
         } else {
             // Single plot, colored by tissue/subtype
@@ -60812,16 +61129,16 @@ ${clone.innerHTML}
                 _tsRole: 'title'
             };
             const umapXAnn = {
-                x: 0.5, y: -0.08, xref: 'paper', yref: 'paper',
+                x: 0.5, y: 0, yshift: -26, xref: 'paper', yref: 'paper',
                 xanchor: 'center', yanchor: 'top',
-                text: axLabels[0], showarrow: false, font: { size: 13 },
+                text: axLabels[0], showarrow: false, font: { size: 14 }, captureevents: true, hovertext: 'Click to choose the component on this axis',
                 _tsRole: 'xlabel'
             };
             const umapYAnn = {
-                x: -0.08, y: 0.5, xref: 'paper', yref: 'paper',
+                x: 0, xshift: -42, y: 0.5, xref: 'paper', yref: 'paper',
                 xanchor: 'center', yanchor: 'middle',
                 text: axLabels[1], textangle: -90,
-                showarrow: false, font: { size: 13 },
+                showarrow: false, font: { size: 14 }, captureevents: true, hovertext: 'Click to choose the component on this axis',
                 _tsRole: 'ylabel'
             };
             const layout = {
@@ -60834,7 +61151,7 @@ ${clone.innerHTML}
                 // the user toggles the coloring mode. 170 leaves room for long
                 // tissue names or a horizontal-title colorbar without overlapping
                 // the axis.
-                margin: { t: 50, r: 170, b: 50, l: 60, autoexpand: false },
+                margin: { t: 50, r: 170, b: 58, l: 60, autoexpand: false },
                 height: dims.height, width: dims.width,
                 legend: { font: { size: 9 }, itemsizing: 'constant', tracegroupgap: 2, x: 1.02, xanchor: 'left', y: 0.5, yanchor: 'middle' }
             };
@@ -60859,6 +61176,8 @@ ${clone.innerHTML}
             plotDiv.removeAllListeners?.('plotly_click');
             plotDiv.removeAllListeners?.('plotly_relayout');
             plotDiv.on('plotly_click', (eventData) => this._handleUmapPointClick(eventData));
+            this._attachDotHoverSummary(plotDiv.id, null, 'Click to label this cell line \u00b7 Shift-click to open its Wiki');
+            this._umapAxisClicks(plotDiv);
             plotDiv.on('plotly_relayout', (data) => this._handleUmapGateShapeRelayout(data));
         }
     }
@@ -61009,21 +61328,23 @@ ${clone.innerHTML}
             showarrow: false, font: { size: 15 }, _tsRole: 'title'
         };
         const geneColorXAnn = {
-            x: 0.5, y: -0.08, xref: 'paper', yref: 'paper',
+            x: 0.5, y: 0, yshift: -26, xref: 'paper', yref: 'paper',
             xanchor: 'center', yanchor: 'top',
-            text: axLabels[0], showarrow: false, font: { size: 13 }, _tsRole: 'xlabel'
+            text: axLabels[0], showarrow: false, font: { size: 14 }, captureevents: true, hovertext: 'Click to choose the component on this axis', _tsRole: 'xlabel'
         };
         const geneColorYAnn = {
-            x: -0.08, y: 0.5, xref: 'paper', yref: 'paper',
+            x: 0, xshift: -42, y: 0.5, xref: 'paper', yref: 'paper',
             xanchor: 'center', yanchor: 'middle',
             text: axLabels[1], textangle: -90,
-            showarrow: false, font: { size: 13 }, _tsRole: 'ylabel'
+            showarrow: false, font: { size: 14 }, captureevents: true, hovertext: 'Click to choose the component on this axis', _tsRole: 'ylabel'
         };
+        const axStyleG = { zeroline: true, zerolinecolor: '#000', zerolinewidth: 1, showgrid: true, gridcolor: '#eeeeee', tickfont: { size: 12 } };
         const layout = {
-            xaxis: { zeroline: false, showgrid: false },
-            yaxis: { zeroline: false, showgrid: false, scaleanchor: 'x', scaleratio: 1 },
+            xaxis: { ...axStyleG },
+            yaxis: { ...axStyleG, scaleanchor: 'x', scaleratio: 1 },
+            font: { family: 'Arial, Helvetica, sans-serif' },
             annotations: [geneColorTitleAnn, geneColorXAnn, geneColorYAnn],
-            margin: { t: 50, r: 170, b: 50, l: 60, autoexpand: false },
+            margin: { t: 50, r: 170, b: 58, l: 60, autoexpand: false },
             height: this._getUmapPlotDimensions().height, width: this._getUmapPlotDimensions().width,
             hovermode: 'closest', dragmode: 'lasso',
             paper_bgcolor: 'white', plot_bgcolor: '#fafafa'
@@ -61046,6 +61367,8 @@ ${clone.innerHTML}
         plotDiv.removeAllListeners?.('plotly_click');
         plotDiv.removeAllListeners?.('plotly_relayout');
         plotDiv.on('plotly_click', (eventData) => this._handleUmapPointClick(eventData));
+        this._attachDotHoverSummary(plotDiv.id, null, 'Click to label this cell line \u00b7 Shift-click to open its Wiki');
+        this._umapAxisClicks(plotDiv);
         plotDiv.on('plotly_relayout', (data) => this._handleUmapGateShapeRelayout(data));
 
         statusEl.textContent = `Colored by ${gene} (${typeLabel})`;
