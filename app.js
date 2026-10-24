@@ -50184,21 +50184,24 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
     }
 
     // Drug-targetable genes, highlight when they show up as essential or highly expressed.
+    // Only genes with an approved or clinical-stage drug acting on the gene's
+    // own product: partners reached through another target (cyclins via
+    // CDKs, BCR via ABL1) and undrugged ones (MYCN, STAT5) are left out.
     _WIKI_DRUG_TARGETS() {
         return new Set([
             'EGFR','ERBB2','ERBB3','ALK','ROS1','RET','MET','FGFR1','FGFR2','FGFR3','FGFR4','KIT','PDGFRA','PDGFRB','FLT3','NTRK1','NTRK2','NTRK3',
-            'BRAF','MAP2K1','MAP2K2','KRAS','MEK1','MEK2',
+            'BRAF','MAP2K1','MAP2K2','KRAS',
             'PIK3CA','PIK3CB','AKT1','AKT2','MTOR',
-            'CDK4','CDK6','CDK2','CDK7','CDK9','CCND1','CCNE1',
-            'BCL2','MCL1','BCLX',
+            'CDK4','CDK6','CDK2','CDK7','CDK9',
+            'BCL2','MCL1','BCL2L1',
             'MDM2','MDM4',
             'PARP1','PARP2',
             'BRD4','EZH2','DOT1L','HDAC1','HDAC2','HDAC6',
-            'JAK1','JAK2','JAK3','STAT3','STAT5A','STAT5B',
+            'JAK1','JAK2','JAK3','STAT3',
             'IDH1','IDH2',
-            'ABL1','BCR',
+            'ABL1',
             'ESR1','AR',
-            'MYC','MYCN'
+            'MYC'
         ]);
     }
 
@@ -50492,6 +50495,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         document.getElementById('gbCloseBtn')?.addEventListener('click', () => this.closeGeneBrowser());
         document.getElementById('gbExportImageBtn')?.addEventListener('click', () => { if (this._gbGene) this.screenshotPopout('gbCards', 'correlate_genebrowser'); });
         document.getElementById('gbMethodsBtn')?.addEventListener('click', () => this.openMethods('genebrowser'));
+        document.getElementById('gbExportCsvBtn')?.addEventListener('click', () => this.exportGeneBrowserCellLinesCSV());
         document.getElementById('gbDownloadBtn')?.addEventListener('click', () => {
             if (!this._gbGene) return;
             this.downloadCellLineWiki({
@@ -54074,10 +54078,10 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             // ── Functional behavior ──────────────────────────────────────
             section('CRISPR dependencies <span style="font-size:11px; color:#6b7280;">, which genes this cell line needs, and which ones hold it back</span>',
                 geSigHtml,
-                'DepMap 26Q1 CRISPRGeneEffect (Chronos). Each gene\'s mean and SD are computed across all screened lines; z-score = (this line\'s gene effect − mean) / SD. Genes every cell needs are removed using the DepMap common-essentials list. Druggable dependencies are matched against a curated panel of about 60 genes with approved or clinical-stage inhibitors.'),
+                'DepMap 26Q1 CRISPRGeneEffect (Chronos). Each gene\'s mean and SD are computed across all screened lines; z-score = (this line\'s gene effect − mean) / SD. Genes every cell needs are removed using the DepMap common-essentials list. Druggable dependencies are matched against a curated panel of 55 genes with an approved or clinical-stage drug acting on the gene itself.'),
             section('Expression profile <span style="font-size:11px; color:#6b7280;">, what is uniquely highly expressed in this cell line</span>',
                 exprSigHtml,
-                'DepMap 26Q1 OmicsExpressionTPMLogp1HumanProteinCodingGenes (log₂-TPM+1). Each gene\'s mean and SD are computed across all lines; z-score = (this line\'s expression − mean) / SD. Gene programs: about 9 curated panels (MYC targets, E2F / S-phase, G2/M, interferon response, EMT, TGF-β, hypoxia, NRF2, stem), each scored as the mean z of its genes and listed when that exceeds 0.75 in either direction. Lineage markers: about 15 per Oncotree lineage. Druggable targets: about 60 genes with approved or clinical-stage inhibitors. Potential FACS markers: about 100 well-known cell-surface antigens (CD molecules, receptor tyrosine kinases, immune checkpoints, antibody-drug and bispecific targets, adhesion molecules), listed above 4 log-TPM.'),
+                'DepMap 26Q1 OmicsExpressionTPMLogp1HumanProteinCodingGenes (log₂-TPM+1). Each gene\'s mean and SD are computed across all lines; z-score = (this line\'s expression − mean) / SD. Gene programs: about 9 curated panels (MYC targets, E2F / S-phase, G2/M, interferon response, EMT, TGF-β, hypoxia, NRF2, stem), each scored as the mean z of its genes and listed when that exceeds 0.75 in either direction. Lineage markers: about 15 per Oncotree lineage. Druggable targets: 55 genes with an approved or clinical-stage drug acting on the gene itself. Potential FACS markers: about 100 well-known cell-surface antigens (CD molecules, receptor tyrosine kinases, immune checkpoints, antibody-drug and bispecific targets, adhesion molecules), listed above 4 log-TPM.'),
             section('Drug response <span style="font-size:11px; color:#6b7280;">, PRISM Repurposing</span>',
                 drugHtml,
                 (this.drugResponse?.dataSource || 'DepMap PRISM Repurposing Secondary.') + ' This screen comes from a different DepMap release than the rest of this page. Curated panel of ' + (this.drugResponse?.panelSize || '~100') + ' compounds; z-scores are computed per compound across all PRISM lines. Viability in a dish is not clinical response: confirm any hit that matters in your own assays.'),
@@ -54443,6 +54447,55 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
     // file keeps the pill/card styling intact and prints cleanly.
     // Export the full per-gene profile for the cell line the wiki is showing.
     // Reuses the same builder as the Cell Line Browser "full profile" export.
+    // The Gene Browser's twin of the wiki's gene-info CSV: this one gene in
+    // every screened cell line, from the same calls the page shows (rare
+    // 1-2-line events included).
+    async exportGeneBrowserCellLinesCSV() {
+        const s = this._gbState, gene = this._gbGene;
+        if (!s || !gene) return;
+        const btn = document.getElementById('gbExportCsvBtn');
+        const label = btn ? btn.textContent : '';
+        if (btn) { btn.textContent = 'Preparing…'; btn.disabled = true; }
+        try {
+            if (!this.expressionLoaded) { try { await this.loadExpressionData(); } catch (e) { /* expr column blank */ } }
+            try { await this.loadCnData(); } catch (e) { /* CN column blank */ }
+            const sani = (v) => String(v == null ? '' : v).replace(/(\d),(?=\d{3}\b)/g, '$1').replace(/,/g, ';').replace(/\s+/g, ' ').trim();
+            const num = (v, d) => (v === null || v === undefined || v !== v) ? '' : v.toFixed(d);
+            const fusionPartners = (cl) => {
+                const p = this.translocations?.geneData?.[gene]?.partners?.[cl] || this._gbRare?.fusion?.[gene]?.[cl];
+                return p ? [].concat(p).join(' ') : '';
+            };
+            const byCl = this.inferredSubtypes?.byCellLine || {};
+            const summary = (document.getElementById('gbSummary')?.textContent || '').trim();
+            const lines = ['# Correlate Gene Browser: one gene across every cell line'];
+            lines.push(`Gene,${sani(gene)}`);
+            if (s.loc) lines.push(`Location,${sani(this._gbLocText(s.loc))}`);
+            if (summary) lines.push(`Summary,${sani(summary)}`);
+            lines.push(`Column key,${sani(`GeneEffect = CRISPR gene effect (Chronos; below ${this._gbDepCut} = dependent); Expression = log2 TPM+1; CN = relative copy number (1.0 = the line's baseline; 3 or more amplified; below 0.3 deep deletion); Hotspot = 0/1/2 hotspot mutation calls with HotspotVariant the specific change where known; AnyMutation = 0/1 hotspot or likely loss-of-function call; FunctionalLoss = 0/1 the app's integrated call; Fusion = 0/1 with its partner genes; blank = not measured`)}`);
+            lines.push(`Data source,${sani(`DepMap ${DEPMAP_VERSION} (depmap.org), copy number DepMap 24Q4; please cite Tsherniak et al. Cell 2017`)}`);
+            lines.push(`Date,${new Date().toISOString().slice(0, 10)}`);
+            lines.push('');
+            lines.push(['CellLineID', 'CellLineName', 'Tissue', 'Subtype', 'GeneEffect', 'Expression', 'CN', 'Hotspot', 'HotspotVariant', 'AnyMutation', 'FunctionalLoss', 'Fusion', 'FusionPartners'].join(','));
+            for (let i = 0; i < s.N; i++) {
+                const cl = s.ids[i];
+                // A codon call (p.G12) beside its specific change (p.G12D) says nothing more.
+                const vs = (byCl[cl]?.hotspots || []).filter(h => h.startsWith(gene + ' ')).map(h => h.slice(gene.length + 1)).filter(v => v !== 'Hotspot');
+                const variants = vs.filter(v => !vs.some(w => w !== v && w.startsWith(v)));
+                const fus = s.fus?.[cl] >= 1;
+                lines.push([
+                    cl, sani(this.getCellLineName(cl) || cl), sani(this.getCellLineLineage(cl) || ''), sani(this.getCellLineSublineage(cl) || ''),
+                    num(s.ge[i], 4), num(this.getExpressionValueByGEIndex(gene, i), 4), num(this.getCnValue?.(gene, cl), 3),
+                    s.hot?.[cl] || 0, sani(variants.join(' ')), s.any?.[cl] >= 1 ? 1 : 0, s.lof?.[cl] >= 1 ? 1 : 0,
+                    fus ? 1 : 0, fus ? sani(fusionPartners(cl)) : ''
+                ].join(','));
+            }
+            this.downloadFile(lines.join('\n'), csvName(`correlate_genebrowser_${gene.replace(/[^A-Za-z0-9-]/g, '')}`), 'text/csv');
+            this.showCopyNotification?.(`Exported ${gene} across ${s.N.toLocaleString()} cell lines`);
+        } finally {
+            if (btn) { btn.textContent = label; btn.disabled = false; }
+        }
+    }
+
     async exportWikiCellLineGenesCSV() {
         const clId = this._wikiCellLineId;
         if (!clId) { alert('Open a cell-line Wiki first.'); return; }

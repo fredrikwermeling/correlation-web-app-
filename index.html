@@ -5165,10 +5165,11 @@
             <div id="gbSubtitle" style="font-size:11px; color:#6b7280; margin-top:2px; min-height:14px;"></div>
           </div>
           <div style="display:flex; align-items:center; gap:8px;">
+            <button id="gbDownloadBtn" class="btn btn-outline btn-sm mobile-hide gb-needs-gene" style="font-size:11px; padding:4px 10px; color:var(--green-700); border-color:var(--green-400);" disabled title="Save this page as a multi-page PDF (charts embedded as images, white background)">Export PDF</button>
             <button id="gbExportImageBtn" class="btn btn-outline btn-sm mobile-hide gb-needs-gene" style="font-size:11px; padding:4px 10px; color:var(--earth-700); border-color:var(--earth-300);" disabled title="Save the page as an image, choosing format, resolution and whether to capture the whole page or just what is on screen">Export image...</button>
+            <button id="gbExportCsvBtn" class="btn btn-outline btn-sm mobile-hide gb-needs-gene" style="font-size:11px; padding:4px 10px; color:var(--earth-700); border-color:var(--earth-300);" disabled title="Export this gene across every cell line (gene effect, expression, copy number, mutations, functional loss and fusions) as a CSV">Export cell line info (.csv)</button>
             <button id="gbMethodsBtn" class="btn btn-outline btn-sm mobile-hide gb-needs-gene" style="font-size:11px; padding:4px 10px;" disabled title="Write out how every number on this page was calculated, as a methods paragraph and as a plain walk-through">Methods</button>
             <button id="gbAnalyzeWithAI" class="btn btn-outline btn-sm mobile-hide gb-needs-gene" style="font-size:11px; padding:4px 10px;" disabled title="Package this gene as one file for a language model, so you can ask questions about it">Export for AI</button>
-            <button id="gbDownloadBtn" class="btn btn-outline btn-sm mobile-hide gb-needs-gene" style="font-size:11px; padding:4px 10px; color:var(--green-700); border-color:var(--green-400);" disabled title="Download this page as a multi-page PDF (charts embedded as images, white background)">Download PDF</button>
             <button id="gbResetBtn" class="btn btn-outline btn-sm gb-needs-gene" style="font-size:11px; padding:4px 10px;" disabled title="Clear the gene and start again">Reset</button>
             <button id="gbCloseBtn" style="background:none; border:none; font-size:24px; cursor:pointer; line-height:1; color:#6b7280;" title="Close the Gene Browser">&times;</button>
           </div>
@@ -5193,10 +5194,10 @@
             <div id="clbWikiSubtitle" style="font-size:11px; color:#6b7280; margin-top:2px;"></div>
           </div>
           <div style="display:flex; align-items:center; gap:8px;">
-            <button id="clbWikiExportGenesBtn" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px; padding:4px 10px; color:var(--earth-700); border-color:var(--earth-300);" title="Export the full per-gene profile for this cell line (GE, Expression, Hotspot, Damaging, Fusion, focal CN amplifications / deletions) as a CSV">Export gene info (.csv)</button>
+            <button id="clbWikiDownloadBtn" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px; padding:4px 10px; color:var(--green-700); border-color:var(--green-400);" title="Save this Wiki as a multi-page PDF (charts embedded as images, white background)">Export PDF</button>
             <button onclick="app.screenshotPopout('clbWikiBody','correlate_wiki')" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px; padding:4px 10px; color:var(--earth-700); border-color:var(--earth-300);" title="Save the wiki as an image, choosing format, resolution and whether to capture the whole page or just what is on screen">Export image...</button>
+            <button id="clbWikiExportGenesBtn" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px; padding:4px 10px; color:var(--earth-700); border-color:var(--earth-300);" title="Export the full per-gene profile for this cell line (GE, Expression, Hotspot, Damaging, Fusion, focal CN amplifications / deletions) as a CSV">Export gene info (.csv)</button>
             <button id="clbWikiAnalyzeWithAI" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px; padding:4px 10px;" title="Package this cell line as one compressed file for a language model, so you can ask questions about it">Export for AI</button>
-            <button id="clbWikiDownloadBtn" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px; padding:4px 10px; color:var(--green-700); border-color:var(--green-400);" title="Download this Wiki as a multi-page PDF (charts embedded as images, white background)">Download PDF</button>
             <button id="clbWikiCloseBtn" style="background:none; border:none; font-size:24px; cursor:pointer; line-height:1; color:#6b7280;" title="Close the wiki">&times;</button>
           </div>
         </div>
@@ -5788,7 +5789,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v90_65"></script>
+    <script src="app.js?v=v90_66"></script>
     <script src="tour.js?v=v89_49"></script>
 </body>
 </html>
