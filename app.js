@@ -7215,6 +7215,16 @@ class CorrelationExplorer {
         });
         document.getElementById('resetNetworkControls')?.addEventListener('click', () => this.resetNetworkControls());
         document.getElementById('networkNodeBorder')?.addEventListener('change', (e) => this.toggleNetworkBorder(e.target.checked));
+        document.getElementById('netFullBtn')?.addEventListener('click', () => this._netFullPage(!document.getElementById('netFullModal')?.contains(document.getElementById('networkWrap'))));
+        document.getElementById('netFullCloseBtn')?.addEventListener('click', () => this._netFullPage(false));
+        document.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape' || getComputedStyle(document.getElementById('netFullModal') || document.body).display === 'none') return;
+            // A popout opened from the network sits above and takes Esc first.
+            const above = (el) => { const cs = getComputedStyle(el); return cs.display !== 'none' && cs.position === 'fixed' && (parseInt(cs.zIndex) || 0) > 1150; };
+            const tsp = document.getElementById('textSettingsPanel');
+            if ((tsp && getComputedStyle(tsp).display !== 'none') || [...document.body.children].some(el => el.id !== 'netFullModal' && above(el))) return;
+            this._netFullPage(false);
+        });
         document.getElementById('fitNetwork').addEventListener('click', () => {
             if (!this.network) return;
             // Fit is also the way back from Compact: put the nodes back to
@@ -13627,6 +13637,7 @@ class CorrelationExplorer {
         const nodeSize = parseInt(document.getElementById('netNodeSize').value);
         const fontSize = parseInt(document.getElementById('netFontSize').value);
         this._netAppliedFontPx = fontSize;
+        this._netFontBoost = 1;
 
         // Create edges
         this.results.correlations.forEach((c, idx) => {
@@ -13989,6 +14000,7 @@ class CorrelationExplorer {
             // already taken hold of the view.
             this.network.setOptions({ physics: { enabled: true } });
             this.physicsEnabled = true;
+            this._netSettleCap();
             let runUserTouched = false;
             const runMarkTouched = () => { runUserTouched = true; };
             this.network.once('dragStart', runMarkTouched);
@@ -14010,6 +14022,7 @@ class CorrelationExplorer {
         // Track drag start
         this.network.on('dragStart', (params) => {
             isDragging = true;
+            this._netDragging = true;
             dragStartPos = params.pointer.canvas;
             // Don't let a queued hover tooltip pop up mid-drag.
             clearTimeout(this._networkTooltipTimer);
@@ -14032,6 +14045,8 @@ class CorrelationExplorer {
 
         // Track drag end
         this.network.on('dragEnd', (params) => {
+            this._netDragging = false;
+            this._netSettleCap();
             // Hand-placed satellites go back on their pin wherever they were
             // dropped, so a later solver release cannot tow them away.
             if (this._dragUnpinned?.length && this.networkData?.nodes) {
@@ -14278,6 +14293,47 @@ class CorrelationExplorer {
 
         // Update edge thickness legend with actual data values
         this.updateEdgeLegend(edgeWidthBase, cutoff);
+    }
+
+    // Full-page network: the real controls, network box and legend move into
+    // #netFullModal (network left, every setting and the legend in a column
+    // on the right)
+    // and back to wherever they came from, the main page or a popout.
+    _netFullPage(on) {
+        const modal = document.getElementById('netFullModal');
+        const wrap = document.getElementById('networkWrap');
+        const tab = document.getElementById('tab-network');
+        if (!modal || !wrap || !tab) return;
+        const controls = this._netFullControls || (this._netFullControls = tab.querySelector('.network-controls-grid'));
+        const legend = document.getElementById('networkLegend');
+        const parts = [controls, wrap, legend].filter(Boolean);
+        const inside = modal.contains(wrap);
+        if (on && !inside) {
+            this._netFullMarks = parts.map(el => { const m = document.createComment('netFull home'); el.before(m); return [m, el]; });
+            document.getElementById('netFullMain').append(wrap);
+            document.getElementById('netFullSide').append(...[controls, legend].filter(Boolean));
+            modal.style.display = 'flex';
+        } else if (!on && inside) {
+            for (const [m, el] of this._netFullMarks || []) if (m.parentNode) m.replaceWith(el);
+            this._netFullMarks = null;
+            modal.style.display = 'none';
+        } else return;
+        const btn = document.getElementById('netFullBtn');
+        if (btn) { btn.innerHTML = on ? '&times; Exit full page' : '&#10530; Full page'; btn.title = on ? 'Back to the normal view' : 'Open the network in a full-window view with all its settings beside it'; }
+        setTimeout(() => { try { this.network?.redraw(); this.network?.fit({ animation: false }); } catch (e) { /* not drawn yet */ } }, 60);
+    }
+
+    // An unlocked network floats, but a layout that never quite reaches the
+    // solver's rest velocity (loose clusters drifting under weak gravity)
+    // would move for ever: stop it a few seconds after each release unless a
+    // node is being dragged. Dragging wakes the solver again.
+    _netSettleCap(ms = 5000) {
+        clearTimeout(this._netCapTimer);
+        const net = this.network;
+        this._netCapTimer = setTimeout(() => {
+            if (net !== this.network || this._netDragging || !this.physicsEnabled) return;
+            if (net.physics && !net.physics.stabilized) { try { net.stopSimulation(); } catch (e) { /* destroyed */ } }
+        }, ms);
     }
 
     resolveEdgeCrossings() {
@@ -14637,11 +14693,19 @@ class CorrelationExplorer {
         return Math.round(Math.max(140, nodeSize * 3 + fontSize * 2) * spread);
     }
 
+    // Label size as drawn: the slider value times the on-screen boost
+    // _matchLabelsToFontSlider set at the last fit.
+    _netLabelPx() {
+        const slider = parseInt(document.getElementById('netFontSize')?.value, 10) || 20;
+        return Math.round(slider * (this._netFontBoost || 1));
+    }
+
     updateNetworkStyle() {
         if (!this.network || !this.networkData) return;
 
         const nodeSize = parseInt(document.getElementById('netNodeSize').value);
-        const fontSize = parseInt(document.getElementById('netFontSize').value);
+        const fontSize = this._netLabelPx();
+        this._netAppliedFontPx = fontSize;
         const edgeWidthBase = parseInt(document.getElementById('netEdgeWidth').value);
         const cutoff = this.results?.cutoff || 0.5;
 
@@ -14851,7 +14915,8 @@ class CorrelationExplorer {
             }
         }
         // Sync node font from slider (slider still controls node label size)
-        const fontSize = parseInt(document.getElementById('netFontSize').value) || 16;
+        const fontSize = this._netLabelPx();
+        this._netAppliedFontPx = fontSize;
 
         // Update all nodes, preserve input/correlated color distinction
         const nodeUpdates = [];
@@ -16753,12 +16818,12 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
 
         // Get current style settings
         const nodeSize = parseInt(document.getElementById('netNodeSize').value);
-        const fontSize = parseInt(document.getElementById('netFontSize').value);
+        const fontSize = this._netLabelPx();
 
         // Re-add hidden nodes with current style
         this.hiddenNodes.forEach(node => {
             node.size = nodeSize;
-            node.font = { size: fontSize, color: '#333' };
+            node.font = this._netFont(fontSize);
             this.networkData.nodes.add(node);
         });
         this.hiddenNodes = [];
@@ -17754,6 +17819,8 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
         // Cap the boost: on a very large network full compensation would give
         // labels wider than the clusters they name.
         const target = Math.round(Math.min(slider / scale, slider * 1.8));
+        // Kept so a later slider move keeps the same on-screen scaling.
+        this._netFontBoost = target / slider;
         if (Math.abs(target - this._netAppliedFontPx) < 0.5) return;
         this._netAppliedFontPx = target;
         try {
@@ -17931,6 +17998,7 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
                 // Re-frame once it settles, unless the user took hold.
                 this.network.setOptions({ physics: { enabled: true } });
                 this.physicsEnabled = true;
+                this._netSettleCap();
                 if (lockBtn) { lockBtn.textContent = 'Lock'; lockBtn.classList.remove('btn-active'); }
                 let shUserTouched = false;
                 const shMarkTouched = () => { shUserTouched = true; };
@@ -51999,6 +52067,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         if (!kind) return;
         this._gbPop = null;
         if (kind === 'net') {
+            this._netFullPage(false);
             this._gbNetPopout(false);
             const el = document.getElementById('correlationCutoff');
             if (el && this._gbNetOwnCut !== undefined && parseFloat(el.value) !== this._gbNetOwnCut) { el.value = this._gbNetOwnCut; el.dispatchEvent(new Event('input', { bubbles: true })); }

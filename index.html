@@ -1255,6 +1255,12 @@
             align-items: stretch;
         }
         .network-controls-grid .control-box { height: 100%; box-sizing: border-box; }
+        .net-full-grid { flex:1; min-height:0; display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:12px; padding:12px; }
+        #netFullMain { display:flex; flex-direction:column; min-height:0; gap:8px; }
+        #netFullMain #networkWrap { flex:1; height:auto !important; min-height:0; }
+        #netFullSide .network-legend { margin:10px 0 0; flex-wrap:wrap; justify-content:flex-start; }
+        #netFullSide { overflow-y:auto; min-height:0; }
+        #netFullSide .network-controls-grid { grid-template-columns:minmax(0,1fr); margin-bottom:0; }
 
         /* Make buttons in network controls smaller. Every view-control /
            export button shares one height, so the single-word second row
@@ -3587,7 +3593,8 @@
                         </div>
                     </div>
 
-                    <div id="networkWrap" style="display:flex; flex-direction:column; height:440px; border:1px solid var(--gray-200); border-radius:6px; background:white;">
+                    <div id="networkWrap" style="position:relative; display:flex; flex-direction:column; height:440px; border:1px solid var(--gray-200); border-radius:6px; background:white;">
+                        <button id="netFullBtn" class="btn btn-outline btn-sm mobile-hide" style="position:absolute; top:6px; right:6px; z-index:5; font-size:11px; padding:2px 9px; background:#fff;" title="Open the network in a full-window view with all its settings beside it">&#10530; Full page</button>
                         <div id="networkHeader" style="display:none; padding:8px 14px; border-bottom:1px solid var(--gray-200); background:#f9fafb; font-size:11px; color:#374151;"></div>
                         <!-- Why the highlighted genes are highlighted. Written
                              by an Enrichr result, editable in the settings
@@ -5111,6 +5118,16 @@
     <!-- Mutation Analysis Modal: box 1 and the mutation results pane are
          moved in here while the mode is active (_mutPopout), so the
          controls are the same elements as before, not copies. -->
+    <div id="netFullModal" style="display:none; position:fixed; inset:0; z-index:1150; background:#f9fafb; flex-direction:column;">
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 16px; border-bottom:1px solid #e5e7eb; background:linear-gradient(90deg,#f3faee,#fff);">
+        <h3 style="margin:0; font-size:16px; color:#4c782e;">Network</h3>
+        <button id="netFullCloseBtn" style="background:none; border:none; font-size:24px; cursor:pointer; line-height:1; color:#6b7280;" title="Close the full-page view (Esc)">&times;</button>
+      </div>
+      <div class="net-full-grid">
+        <div id="netFullMain"></div>
+        <div id="netFullSide"></div>
+      </div>
+    </div>
     <div id="gbNetModal" style="display:none; position:fixed; inset:0; z-index:1100; background:rgba(0,0,0,0.5); align-items:flex-start; justify-content:center; padding:0 20px 20px; overflow-y:auto;">
       <div style="background:#fff; width:100%; max-width:min(98vw, 1500px); margin-top:20px; border-radius:8px; display:flex; flex-direction:column; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);">
         <div style="position:sticky; top:0; z-index:3; display:flex; justify-content:space-between; align-items:center; gap:12px; padding:12px 18px; border-bottom:1px solid #e5e7eb; background:linear-gradient(90deg,#f3faee,#fff); border-radius:8px 8px 0 0;">
@@ -5771,7 +5788,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v90_62"></script>
+    <script src="app.js?v=v90_64"></script>
     <script src="tour.js?v=v89_49"></script>
 </body>
 </html>
