@@ -50205,6 +50205,25 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         ]);
     }
 
+    // Genes with no drug of their own that can still be hit through another
+    // target; shown apart from the druggable list, with the route.
+    _WIKI_INDIRECT_TARGETS() {
+        return {
+            MYCN: 'via Aurora A inhibitors (alisertib) or BET inhibitors, which lower MYCN; none approved for it',
+            CCND1: 'via CDK4/6 inhibitors (palbociclib, ribociclib, abemaciclib)',
+            CCNE1: 'via CDK2 inhibitors, in clinical trials',
+            BCR: 'as BCR-ABL1, via ABL1 inhibitors (imatinib and others)',
+            STAT5A: 'via upstream JAK or BCR-ABL1 inhibitors',
+            STAT5B: 'via upstream JAK or BCR-ABL1 inhibitors'
+        };
+    }
+
+    // BCR is only a route to a drug as BCR-ABL1.
+    _wikiHasBcrAbl(cl) {
+        const p = this.translocations?.geneData?.BCR?.partners?.[cl];
+        return !![].concat(p || []).includes('ABL1') || (this.clinicalFusions?.byCellLine?.[cl] || []).some?.(f => /BCR-?-?ABL1/.test(f.fusion || f));
+    }
+
     // Lineage marker panel, genes whose expression is diagnostic of lineage.
     _WIKI_LINEAGE_MARKERS() {
         return {
@@ -53556,6 +53575,8 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             }
 
             essentialDrugTargets = allUniquelyEss.filter(g => drugTargets.has(g.gene));
+            const indirect = this._WIKI_INDIRECT_TARGETS();
+            const essentialIndirect = allUniquelyEss.filter(g => indirect[g.gene] && (g.gene !== 'BCR' || this._wikiHasBcrAbl(cellLineId)));
             const allPathwayGenes = new Set();
             Object.values(pathways).forEach(p => p.genes.forEach(g => allPathwayGenes.add(g)));
             essentialPathwayHits = allUniquelyEss.filter(g => allPathwayGenes.has(g.gene));
@@ -53563,6 +53584,9 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             const interpLines = [];
             if (essentialDrugTargets.length > 0) {
                 interpLines.push(`<div style="padding:6px 10px; background:#f0fdf4; border-left:3px solid #4c782e; font-size:11px;"><b style="color:#4c782e;">Druggable dependencies unique to this cell line</b>, genes this cell line depends on more than typical AND for which approved or clinical-stage drugs exist: ${essentialDrugTargets.map(g => `<span class="gene-hover clb-gene-link" data-gene="${g.gene}" style="cursor:help;">${this.gi(g.gene)}</span> <span style="color:#9ca3af; font-size:10px;">(z ${fmtZ(g.z)})</span>`).join(', ')}.</div>`);
+            }
+            if (essentialIndirect.length > 0) {
+                interpLines.push(`<div style="padding:6px 10px; background:#f9fafb; border-left:3px solid #9ca3af; font-size:11px;"><b style="color:#4b5563;">Indirectly targetable dependencies</b>, no drug acts on these genes themselves, but they can be reached through another target: ${essentialIndirect.map(g => `<span class="gene-hover clb-gene-link" data-gene="${g.gene}" style="cursor:help;">${this.gi(g.gene)}</span> <span style="color:#9ca3af; font-size:10px;">(z ${fmtZ(g.z)}; ${this.esc(indirect[g.gene])})</span>`).join(', ')}.</div>`);
             }
             if (essentialPathwayHits.length > 0) {
                 const hitsByPathway = {};
@@ -53789,12 +53813,23 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                     .map(([g, v]) => ({ gene: g, val: v, z: zByGene.get(g) }))
                     .sort((a, b) => (b.z ?? -99) - (a.z ?? -99))
                     .slice(0, 10);
-                const drugExprHtml = expressedDrugTargets.length > 0
-                    ? `<div style="margin-top:6px; padding:6px 10px; background:#f0fdf4; border-left:3px solid #4c782e; font-size:11px;"><b style="color:#4c782e;">Highly-expressed druggable targets</b> <span style="color:#9ca3af; font-size:10px;">(TPM &gt; 3; sorted by how unusually high vs cohort)</span>: ${expressedDrugTargets.map(e => {
+                const indirectT = this._WIKI_INDIRECT_TARGETS();
+                const expressedIndirect = [...exprByGene.entries()]
+                    .filter(([g, v]) => indirectT[g] && v > 3.0 && (zByGene.get(g) ?? 0) >= 1 && (g !== 'BCR' || this._wikiHasBcrAbl(cellLineId)))
+                    .map(([g, v]) => ({ gene: g, val: v, z: zByGene.get(g) }))
+                    .sort((a, b) => (b.z ?? -99) - (a.z ?? -99));
+                const drugExprHtml = (expressedDrugTargets.length > 0
+                    ? `<div style="margin-top:6px; padding:6px 10px; background:#f0fdf4; border-left:3px solid #4c782e; font-size:11px;"><b style="color:#4c782e;">Highly-expressed druggable targets</b> <span style="color:#9ca3af; font-size:10px;">(log₂ TPM+1 above 3; sorted by how unusually high vs cohort)</span>: ${expressedDrugTargets.map(e => {
                         const zStr = e.z != null ? ` <span style="color:#9ca3af; font-size:10px;">[z ${fmtZ(e.z)}]</span>` : '';
                         return `<span class="gene-hover clb-gene-link" data-gene="${e.gene}" style="cursor:help;">${this.gi(e.gene)}</span> (${e.val.toFixed(1)})${zStr}`;
                     }).join(', ')}</div>`
-                    : '';
+                    : '')
+                    + (expressedIndirect.length > 0
+                    ? `<div style="margin-top:6px; padding:6px 10px; background:#f9fafb; border-left:3px solid #9ca3af; font-size:11px;"><b style="color:#4b5563;">Unusually high, indirectly targetable</b> <span style="color:#9ca3af; font-size:10px;">(log₂ TPM+1 above 3 and z at least +1; no drug acts on the gene itself)</span>: ${expressedIndirect.map(e => {
+                        const zStr = e.z != null ? `z ${fmtZ(e.z)}; ` : '';
+                        return `<span class="gene-hover clb-gene-link" data-gene="${e.gene}" style="cursor:help;">${this.gi(e.gene)}</span> (${e.val.toFixed(1)}) <span style="color:#9ca3af; font-size:10px;">[${zStr}${this.esc(indirectT[e.gene])}]</span>`;
+                    }).join(', ')}</div>`
+                    : '');
 
                 // Potential FACS markers, well-known cell-surface antigens
                 // (CD molecules, RTKs, immune checkpoints, ADC targets, adhesion
@@ -54078,10 +54113,10 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             // ── Functional behavior ──────────────────────────────────────
             section('CRISPR dependencies <span style="font-size:11px; color:#6b7280;">, which genes this cell line needs, and which ones hold it back</span>',
                 geSigHtml,
-                'DepMap 26Q1 CRISPRGeneEffect (Chronos). Each gene\'s mean and SD are computed across all screened lines; z-score = (this line\'s gene effect − mean) / SD. Genes every cell needs are removed using the DepMap common-essentials list. Druggable dependencies are matched against a curated panel of 55 genes with an approved or clinical-stage drug acting on the gene itself.'),
+                'DepMap 26Q1 CRISPRGeneEffect (Chronos). Each gene\'s mean and SD are computed across all screened lines; z-score = (this line\'s gene effect − mean) / SD. Genes every cell needs are removed using the DepMap common-essentials list. Druggable dependencies are matched against a curated panel of 55 genes with an approved or clinical-stage drug acting on the gene itself; 6 more that can only be reached through another target are listed apart as indirectly targetable.'),
             section('Expression profile <span style="font-size:11px; color:#6b7280;">, what is uniquely highly expressed in this cell line</span>',
                 exprSigHtml,
-                'DepMap 26Q1 OmicsExpressionTPMLogp1HumanProteinCodingGenes (log₂-TPM+1). Each gene\'s mean and SD are computed across all lines; z-score = (this line\'s expression − mean) / SD. Gene programs: about 9 curated panels (MYC targets, E2F / S-phase, G2/M, interferon response, EMT, TGF-β, hypoxia, NRF2, stem), each scored as the mean z of its genes and listed when that exceeds 0.75 in either direction. Lineage markers: about 15 per Oncotree lineage. Druggable targets: 55 genes with an approved or clinical-stage drug acting on the gene itself. Potential FACS markers: about 100 well-known cell-surface antigens (CD molecules, receptor tyrosine kinases, immune checkpoints, antibody-drug and bispecific targets, adhesion molecules), listed above 4 log-TPM.'),
+                'DepMap 26Q1 OmicsExpressionTPMLogp1HumanProteinCodingGenes (log₂-TPM+1). Each gene\'s mean and SD are computed across all lines; z-score = (this line\'s expression − mean) / SD. Gene programs: about 9 curated panels (MYC targets, E2F / S-phase, G2/M, interferon response, EMT, TGF-β, hypoxia, NRF2, stem), each scored as the mean z of its genes and listed when that exceeds 0.75 in either direction. Lineage markers: about 15 per Oncotree lineage. Druggable targets: 55 genes with an approved or clinical-stage drug acting on the gene itself; a further 6 (MYCN, CCND1, CCNE1, BCR, STAT5A, STAT5B) are listed apart as indirectly targetable, with the route. Potential FACS markers: about 100 well-known cell-surface antigens (CD molecules, receptor tyrosine kinases, immune checkpoints, antibody-drug and bispecific targets, adhesion molecules), listed above 4 log-TPM.'),
             section('Drug response <span style="font-size:11px; color:#6b7280;">, PRISM Repurposing</span>',
                 drugHtml,
                 (this.drugResponse?.dataSource || 'DepMap PRISM Repurposing Secondary.') + ' This screen comes from a different DepMap release than the rest of this page. Curated panel of ' + (this.drugResponse?.panelSize || '~100') + ' compounds; z-scores are computed per compound across all PRISM lines. Viability in a dish is not clinical response: confirm any hit that matters in your own assays.'),
@@ -59331,21 +59366,31 @@ ${clone.innerHTML}
             let matrix = [];
             let geneNames = [];
 
+            // Which layer each feature column came from, so a gene in both
+            // (GE + Expression) can be told apart wherever loadings show.
+            let geneSrc = [];
             if (dataType === 'ge' || dataType === 'both') {
                 const result = this._buildVariableGeneMatrix(cellLineIndices, N_TOP_GENES, 'ge', true, customGeneList);
                 matrix = result.matrix;
                 geneNames = result.geneNames;
+                geneSrc = geneNames.map(() => 'ge');
             }
             if (dataType === 'expr' || dataType === 'both') {
                 const result = this._buildVariableGeneMatrix(cellLineIndices, N_TOP_GENES, 'expr', true, customGeneList);
                 if (dataType === 'both' && matrix.length > 0) {
                     for (let i = 0; i < nCL; i++) matrix[i] = matrix[i].concat(result.matrix[i]);
                     geneNames = geneNames.concat(result.geneNames);
+                    geneSrc = geneSrc.concat(result.geneNames.map(() => 'expr'));
                 } else {
                     matrix = result.matrix;
                     geneNames = result.geneNames;
+                    geneSrc = geneNames.map(() => 'expr');
                 }
             }
+            // Gene effect spans about a tenth of mRNA's range, so joined raw
+            // the CRISPR half carried ~1% of each component: give every
+            // feature unit variance so both layers count.
+            if (dataType === 'both') this._zscoreColumns(matrix);
 
             if (matrix.length === 0 || matrix[0].length === 0) {
                 document.getElementById('clbUmapPlot').innerHTML = '<div style="padding:20px;text-align:center;color:#ef4444;">No valid features.</div>';
@@ -59375,7 +59420,7 @@ ${clone.innerHTML}
                     const pcKey = `pc${k + 1}`;
                     pcaLoadings[pcKey] = [];
                     for (let g = 0; g < geneNames.length; g++) {
-                        pcaLoadings[pcKey].push({ gene: geneNames[g], loading: pca.loadings[g][k] });
+                        pcaLoadings[pcKey].push({ gene: geneNames[g], src: geneSrc[g], loading: pca.loadings[g][k] });
                     }
                     pcaLoadings[pcKey].sort((a, b) => Math.abs(b.loading) - Math.abs(a.loading));
                 }
@@ -59402,7 +59447,7 @@ ${clone.innerHTML}
             });
 
             this._clbUmapData = { cellLines, cellLineIndices, x, y, categories, matrix, geneNames,
-                mutStatus: null, splitGene: null, method, axisLabels, pcaLoadings };
+                mutStatus: null, splitGene: null, method, axisLabels, pcaLoadings, geneSrc, mixedSrc: dataType === 'both' };
             this._clbUmapSelectedPoints = new Set();
             this._renderUmapPlot(x, y, cellLines, categories, null, colorBy, null);
             document.getElementById('clbUmapSelectionControls').style.display = 'flex';
@@ -59411,8 +59456,8 @@ ${clone.innerHTML}
 
             if (pcaLoadings) {
                 document.getElementById('clbUmapLoadingsLabel').style.display = 'inline';
-                const top5 = pcaLoadings.pc1.slice(0, 5).map(l => l.gene).join(', ');
-                document.getElementById('clbUmapLoadingsLabel').textContent = `Top PC1 loadings: ${top5}`;
+                const top5 = pcaLoadings.pc1.slice(0, 5).map(l => this._umapFeatLabel(l.gene, l.src)).join(', ');
+                document.getElementById('clbUmapLoadingsLabel').textContent = `Top PC1 loadings${this._umapSrcWord()}: ${top5}`;
             }
         } catch (err) {
             console.error('UMAP from Gate A error:', err);
@@ -59488,21 +59533,31 @@ ${clone.innerHTML}
             let matrix = [];
             let geneNames = [];
 
+            // Which layer each feature column came from, so a gene in both
+            // (GE + Expression) can be told apart wherever loadings show.
+            let geneSrc = [];
             if (dataType === 'ge' || dataType === 'both') {
                 const result = this._buildVariableGeneMatrix(cellLineIndices, N_TOP_GENES, 'ge', true, customGeneList);
                 matrix = result.matrix;
                 geneNames = result.geneNames;
+                geneSrc = geneNames.map(() => 'ge');
             }
             if (dataType === 'expr' || dataType === 'both') {
                 const result = this._buildVariableGeneMatrix(cellLineIndices, N_TOP_GENES, 'expr', true, customGeneList);
                 if (dataType === 'both' && matrix.length > 0) {
                     for (let i = 0; i < nCL; i++) matrix[i] = matrix[i].concat(result.matrix[i]);
                     geneNames = geneNames.concat(result.geneNames);
+                    geneSrc = geneSrc.concat(result.geneNames.map(() => 'expr'));
                 } else {
                     matrix = result.matrix;
                     geneNames = result.geneNames;
+                    geneSrc = geneNames.map(() => 'expr');
                 }
             }
+            // Gene effect spans about a tenth of mRNA's range, so joined raw
+            // the CRISPR half carried ~1% of each component: give every
+            // feature unit variance so both layers count.
+            if (dataType === 'both') this._zscoreColumns(matrix);
 
             if (matrix.length === 0 || matrix[0].length === 0) {
                 const msg = customGeneList && customGeneList.length
@@ -59553,7 +59608,7 @@ ${clone.innerHTML}
                     const pcKey = `pc${k + 1}`;
                     pcaLoadings[pcKey] = [];
                     for (let g = 0; g < geneNames.length; g++) {
-                        pcaLoadings[pcKey].push({ gene: geneNames[g], loading: pca.loadings[g][k] });
+                        pcaLoadings[pcKey].push({ gene: geneNames[g], src: geneSrc[g], loading: pca.loadings[g][k] });
                     }
                     pcaLoadings[pcKey].sort((a, b) => Math.abs(b.loading) - Math.abs(a.loading));
                 }
@@ -59581,7 +59636,7 @@ ${clone.innerHTML}
             });
 
             this._clbUmapData = { cellLines, cellLineIndices, x, y, categories, matrix, geneNames,
-                mutStatus: null, splitGene: null, method, axisLabels, pcaLoadings };
+                mutStatus: null, splitGene: null, method, axisLabels, pcaLoadings, geneSrc, mixedSrc: dataType === 'both' };
             this._clbUmapSelectedPoints = new Set();
             this._renderUmapPlot(x, y, cellLines, categories, null, colorBy, null);
             document.getElementById('clbUmapSelectionControls').style.display = 'flex';
@@ -59791,6 +59846,20 @@ ${clone.innerHTML}
         sel.style.display = '';
     }
 
+    _zscoreColumns(matrix) {
+        const n = matrix.length, p = n ? matrix[0].length : 0;
+        for (let j = 0; j < p; j++) {
+            let m = 0;
+            for (let i = 0; i < n; i++) m += matrix[i][j];
+            m /= n;
+            let v = 0;
+            for (let i = 0; i < n; i++) v += (matrix[i][j] - m) ** 2;
+            const sd = Math.sqrt(v / (n - 1)) || 1;
+            for (let i = 0; i < n; i++) matrix[i][j] = (matrix[i][j] - m) / sd;
+        }
+        return matrix;
+    }
+
     _computePCA(matrix, nComp = 5) {
         const n = matrix.length;
         const p = matrix[0].length;
@@ -59816,7 +59885,11 @@ ${clone.innerHTML}
                 }
             }
             const { eigenvalues, eigenvectors } = this._powerIteration(gram, nc);
-            const totalVar = eigenvalues.reduce((a, b) => a + Math.abs(b), 0) || 1;
+            // Share of the TOTAL variance (the trace), not of the components
+            // computed, which overstated every axis.
+            let totalVar = 0;
+            for (let i = 0; i < n; i++) totalVar += gram[i][i];
+            totalVar = totalVar || 1;
             // Scores: [nc][n] → transpose to [n][nc]
             const scoresT = Array.from({ length: n }, (_, i) =>
                 eigenvectors.map((ev, k) => ev[i] * Math.sqrt(Math.abs(eigenvalues[k])))
@@ -59845,7 +59918,9 @@ ${clone.innerHTML}
                 }
             }
             const { eigenvalues, eigenvectors } = this._powerIteration(cov, nc);
-            const totalVar = eigenvalues.reduce((a, b) => a + Math.abs(b), 0) || 1;
+            let totalVar = 0;
+            for (let j = 0; j < p; j++) totalVar += cov[j][j];
+            totalVar = totalVar || 1;
             const scores = Array.from({ length: n }, (_, i) =>
                 eigenvectors.map(ev => {
                     let s = 0;
@@ -60349,16 +60424,18 @@ ${clone.innerHTML}
         const geneNames = this._clbUmapData.geneNames;
 
         // Top 8 genes by loading magnitude in selected PC plane
+        const srcs = this._clbUmapData.geneSrc || [];
+        const mixed = !!this._clbUmapData.mixedSrc;
         const mags = geneNames.map((g, i) => ({
-            gene: g,
+            gene: g, src: srcs[i],
             lx: loadings[i][compX],
             ly: loadings[i][compY],
             mag: Math.sqrt(loadings[i][compX] ** 2 + loadings[i][compY] ** 2)
         }));
         mags.sort((a, b) => b.mag - a.mag);
         const top = mags.slice(0, 8);
-        const loadTitle = mags.length > top.length ? `Loadings (top ${top.length})`
-            : `Loadings (${top.length} gene${top.length === 1 ? '' : 's'})`;
+        const loadTitle = (mags.length > top.length ? `Loadings (top ${top.length})`
+            : `Loadings (${top.length} gene${top.length === 1 ? '' : 's'})`) + this._umapSrcWord();
         if (top.length === 0) {
             if (sidecar) sidecar.style.display = 'none';
             return;
@@ -60392,32 +60469,38 @@ ${clone.innerHTML}
         svg += `<rect x="${boxLeft}" y="0" width="${boxSize}" height="${boxSize}" fill="white" stroke="#d1d5db" rx="4"/>`;
         svg += `<line x1="${cx}" y1="4" x2="${cx}" y2="${boxSize - 4}" stroke="#e5e7eb" stroke-width="0.5"/>`;
         svg += `<line x1="${boxLeft + 4}" y1="${cy}" x2="${boxRight - 4}" y2="${cy}" stroke="#e5e7eb" stroke-width="0.5"/>`;
-        svg += `<defs><marker id="lah" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="4" markerHeight="4" orient="auto"><path d="M0,1 L10,5 L0,9 z" fill="#b91c1c"/></marker></defs>`;
+        // In a GE + Expression run the arrow colour names the layer: the
+        // label stays the bare symbol so labels don't collide.
+        const arrowCol = (src) => mixed ? (src === 'expr' ? '#b91c1c' : '#4c782e') : '#b91c1c';
+        svg += `<defs><marker id="lah" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="4" markerHeight="4" orient="auto"><path d="M0,1 L10,5 L0,9 z" fill="#b91c1c"/></marker>`
+            + `<marker id="lahGe" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="4" markerHeight="4" orient="auto"><path d="M0,1 L10,5 L0,9 z" fill="#4c782e"/></marker></defs>`;
 
         const labels = [];
         top.forEach(t => {
             const ex = cx + t.lx * scale;
             const ey = cy - t.ly * scale;
             if (Math.abs(t.lx * scale) < 1 && Math.abs(t.ly * scale) < 1) return;
-            svg += `<line x1="${cx}" y1="${cy}" x2="${ex}" y2="${ey}" stroke="#b91c1c" stroke-width="1.4" marker-end="url(#lah)"/>`;
+            svg += `<line x1="${cx}" y1="${cy}" x2="${ex}" y2="${ey}" stroke="${arrowCol(t.src)}" stroke-width="1.4" marker-end="url(#${mixed && t.src !== 'expr' ? 'lahGe' : 'lah'})"/>`;
             const dist = Math.sqrt((ex - cx) ** 2 + (ey - cy) ** 2) || 1;
             const lx = ex + (ex - cx) / dist * 7;
             const ly = ey + (ey - cy) / dist * 7;
             const anchor = lx > cx ? 'start' : 'end';
-            labels.push({ gene: t.gene, x: lx, y: ly, anchor });
+            labels.push({ gene: t.gene, x: lx, y: ly, anchor, col: mixed ? arrowCol(t.src) : '#374151' });
         });
 
-        labels.sort((a, b) => a.y - b.y);
-        for (let i = 1; i < labels.length; i++) {
-            if (labels[i].y - labels[i - 1].y < 11) {
-                labels[i].y = labels[i - 1].y + 11;
-            }
+        // Space labels 11 px apart within each side, then lift a side's stack
+        // if it would run past the bottom of the box.
+        for (const side of ['start', 'end']) {
+            const g = labels.filter(l => l.anchor === side).sort((a, b) => a.y - b.y);
+            for (let i = 1; i < g.length; i++) if (g[i].y - g[i - 1].y < 11) g[i].y = g[i - 1].y + 11;
+            const over = g.length ? g[g.length - 1].y - (svgH - 3) : 0;
+            if (over > 0) g.forEach(l => { l.y -= over; });
         }
 
         labels.forEach(l => {
             const clampX = Math.max(2, Math.min(svgW - 2, l.x));
             const clampY = Math.max(12, Math.min(svgH - 2, l.y));
-            svg += `<text x="${clampX}" y="${clampY}" text-anchor="${l.anchor}" style="font-size:10px;font-style:italic;fill:#374151;" stroke="white" stroke-width="3" paint-order="stroke">${this.esc(l.gene)}</text>`;
+            svg += `<text x="${clampX}" y="${clampY}" text-anchor="${l.anchor}" style="font-size:10px;font-style:italic;fill:${l.col};" stroke="white" stroke-width="3" paint-order="stroke">${this.esc(l.gene)}</text>`;
         });
 
         const axX = this._clbUmapData.axisLabels?.[0]?.split('(')[0].trim() || `PC${compX + 1}`;
@@ -60435,7 +60518,7 @@ ${clone.innerHTML}
                 <div style="height:50px; display:flex; align-items:flex-end; justify-content:center; padding-bottom:8px;">
                     <b style="font-size:14px; color:#111827;">${loadTitle}</b>
                 </div>
-                ${svg}`;
+                ${svg}${mixed ? `<div style="font-size:10px; color:#6b7280; text-align:center; margin-top:4px;"><span style="color:#4c782e; font-weight:600;">green</span> CRISPR gene effect · <span style="color:#b91c1c; font-weight:600;">red</span> mRNA</div>` : ''}`;
         }
     }
 
@@ -60871,7 +60954,7 @@ ${clone.innerHTML}
         const dataTypeLabel = analysisDataType === 'ge' ? 'Gene Effect' :
                               analysisDataType === 'expr' ? 'Expression' : 'GE + Expression';
 
-        let html = `<div style="font-size:9px;color:#9ca3af;margin-bottom:6px;">Click gene to color plot (${dataTypeLabel})</div>`;
+        let html = `<div style="font-size:9px;color:#9ca3af;margin-bottom:6px;">Click a gene to color the plot by it (${dataTypeLabel}${this._clbUmapData.mixedSrc ? '; each gene is tagged CRISPR or mRNA, the layer it came from' : ''})</div>`;
 
         // For PCA, show loadings for the currently selected components
         if (method === 'pca' && pcaLoadings) {
@@ -60888,7 +60971,7 @@ ${clone.innerHTML}
                 html += '<tr style="border-bottom:1px solid #e5e7eb;"><th style="text-align:left;padding:1px 6px;">Gene</th><th style="text-align:right;padding:1px 6px;">Loading</th></tr>';
                 top10.forEach(l => {
                     const color = l.loading > 0 ? '#b91c1c' : '#1d4ed8';
-                    html += `<tr style="cursor:pointer;" onclick="app.applyUmapGeneColor_fromTop('${l.gene}')"><td style="padding:1px 6px;text-decoration:underline;color:#4f46e5;">${this.gi(l.gene)}</td><td style="text-align:right;padding:1px 6px;color:${color};">${l.loading.toFixed(4)}</td></tr>`;
+                    html += `<tr style="cursor:pointer;" onclick="app.applyUmapGeneColor_fromTop('${l.gene}', '${l.src || ''}')"><td style="padding:1px 6px;text-decoration:underline;color:#4f46e5;">${this.gi(l.gene)}${this._clbUmapData.mixedSrc && l.src ? ` <span style="font-size:9px;color:#6b7280;">${l.src === 'expr' ? 'mRNA' : 'CRISPR'}</span>` : ''}</td><td style="text-align:right;padding:1px 6px;color:${color};">${l.loading.toFixed(4)}</td></tr>`;
                 });
                 html += '</table></div>';
             });
@@ -60925,7 +61008,7 @@ ${clone.innerHTML}
                 const rX = covX / (gStd * xStd);
                 const rY = covY / (gStd * yStd);
                 const rCombined = Math.sqrt(rX * rX + rY * rY);
-                correlations.push({ gene: geneNames[g], rX, rY, rCombined });
+                correlations.push({ gene: geneNames[g], src: this._clbUmapData.geneSrc?.[g], rX, rY, rCombined });
             }
 
             correlations.sort((a, b) => b.rCombined - a.rCombined);
@@ -60940,7 +61023,7 @@ ${clone.innerHTML}
             top10.forEach(c => {
                 const colorX = c.rX > 0 ? '#b91c1c' : '#1d4ed8';
                 const colorY = c.rY > 0 ? '#b91c1c' : '#1d4ed8';
-                html += `<tr style="cursor:pointer;" onclick="app.applyUmapGeneColor_fromTop('${c.gene}')"><td style="padding:1px 6px;text-decoration:underline;color:#4f46e5;">${this.gi(c.gene)}</td><td style="text-align:right;padding:1px 6px;color:${colorX};">${c.rX.toFixed(3)}</td><td style="text-align:right;padding:1px 6px;color:${colorY};">${c.rY.toFixed(3)}</td><td style="text-align:right;padding:1px 6px;">${c.rCombined.toFixed(3)}</td></tr>`;
+                html += `<tr style="cursor:pointer;" onclick="app.applyUmapGeneColor_fromTop('${c.gene}', '${c.src || ''}')"><td style="padding:1px 6px;text-decoration:underline;color:#4f46e5;">${this.gi(c.gene)}${this._clbUmapData.mixedSrc && c.src ? ` <span style="font-size:9px;color:#6b7280;">${c.src === 'expr' ? 'mRNA' : 'CRISPR'}</span>` : ''}</td><td style="text-align:right;padding:1px 6px;color:${colorX};">${c.rX.toFixed(3)}</td><td style="text-align:right;padding:1px 6px;color:${colorY};">${c.rY.toFixed(3)}</td><td style="text-align:right;padding:1px 6px;">${c.rCombined.toFixed(3)}</td></tr>`;
             });
             html += '</table>';
         }
@@ -60983,12 +61066,24 @@ ${clone.innerHTML}
         }
     }
 
-    applyUmapGeneColor_fromTop(gene) {
-        // Use the data type that matches the analysis
+    // A loading's name: in a GE + Expression run the same gene can appear
+    // twice, so each carries its layer; otherwise the layer is said once.
+    _umapFeatLabel(gene, src) {
+        if (!this._clbUmapData?.mixedSrc || !src) return gene;
+        return `${gene} (${src === 'expr' ? 'mRNA' : 'CRISPR'})`;
+    }
+
+    _umapSrcWord() {
+        const d = this._clbUmapData;
+        if (!d || d.mixedSrc || !d.geneSrc?.length) return '';
+        return d.geneSrc[0] === 'expr' ? ' (mRNA)' : ' (CRISPR)';
+    }
+
+    applyUmapGeneColor_fromTop(gene, src) {
+        // Colour by the layer the feature came from; without one, the analysis's.
         const analysisDataType = document.getElementById('clbUmapDataType').value;
         document.getElementById('clbUmapColorGene').value = gene;
-        // For 'both', prefer GE; for 'expr' use expression; for 'ge' use GE
-        document.getElementById('clbUmapColorGeneType').value = analysisDataType === 'expr' ? 'expr' : 'ge';
+        document.getElementById('clbUmapColorGeneType').value = src || (analysisDataType === 'expr' ? 'expr' : 'ge');
         this.applyUmapGeneColor();
     }
 
@@ -68278,10 +68373,12 @@ ${clone.innerHTML}
 
         const geneRule = customList.length
             ? `The genes were the ${this._mNum(customList.length)} typed into the gene-list box, taken in the order given, and each gene was then centred and scaled to unit variance across the cell lines.`
-            : `The genes were the 1,000 most variable in the chosen data, with the variance ranked on a subsample of at most 100 cell lines. They were NOT z-scored: the most variable genes are deliberately left on their own scale so the ones that vary most keep their weight.`;
+            : dtRaw === 'both'
+                ? `The features were the 1,000 most variable genes in gene effect and the 1,000 most variable in expression, each ranked on a subsample of at most 100 cell lines, joined into one matrix (a gene can appear once per layer) and each feature centred and scaled to unit variance, so the two layers weigh equally despite expression's wider range.`
+                : `The genes were the 1,000 most variable in the chosen data, with the variance ranked on a subsample of at most 100 cell lines. They were NOT z-scored: the most variable genes are deliberately left on their own scale so the ones that vary most keep their weight.`;
 
         const methodRule = method === 'PCA'
-            ? 'Principal component analysis was computed on the column-centred matrix by power iteration, taking the first 5 components.'
+            ? 'Principal component analysis was computed on the column-centred matrix by power iteration, taking the first 5 components; each axis gives its share of the total variance.'
             : `UMAP was run with the number of neighbours set to the cohort size divided by 3, capped at 15 and never below 5, a minimum distance of 0.3, a spread of 1.5, and ${nCL >= 30 ? 3 : 2} output dimensions. These settings are fixed in the app and are not adjustable from the panel.`;
 
         const condensed = this._mSentences([
