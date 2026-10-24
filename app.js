@@ -51565,6 +51565,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                     <button id="sqEdit" class="btn btn-outline btn-sm" title="Edit the sequence as plain text">Edit</button>
                 </div>
                 <div id="sqLegend" class="sq-legend"></div>
+                <div id="sqOverview" class="sq-ov" title="Click or drag to move through the sequence"></div>
                 <div id="sqScroll" class="sq-scroll" tabindex="0"><div id="sqSpacer"></div><div id="sqLines"></div></div>
                 <div id="sqEditWrap" style="display:none;"><div class="sq-m" style="margin:6px 0;">Plain text, edit freely. The annotation is not carried into edits; Copy all and FASTA use the edited text while this box is open.</div><textarea id="sqEditBox" spellcheck="false"></textarea></div>
             </div>`;
@@ -51604,7 +51605,38 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             + `<span class="sq-m">Hover for the exon or intron. Selecting with the mouse copies bare sequence.</span>`;
         document.getElementById('sqFind').value = '';
         document.getElementById('sqHits').textContent = '';
+        this._sqDrawOverview();
         this._sqLayout();
+    }
+
+    // The whole sequence as a strip: regions to scale, hotspots as red
+    // ticks, search hits as amber ticks, and a window for what is in view.
+    _sqDrawOverview() {
+        const s = this._sq, box = document.getElementById('sqOverview');
+        if (!s || !box) return;
+        const N = s.m.seq.length || 1, W = 1000;
+        const X = (p) => (p / N * W).toFixed(2);
+        const col = { flank: null, intron: null, utr: '#cfe8bb', cds: '#6ba544' };
+        let g = `<line x1="0" y1="14" x2="${W}" y2="14" stroke="#9ca3af" stroke-width="1"/>`;
+        for (const sg of s.m.segs) {
+            if (!col[sg.type]) continue;
+            const h = sg.type === 'cds' ? 14 : 8;
+            g += `<rect x="${X(sg.a)}" y="${14 - h / 2}" width="${Math.max(0.8, (sg.b - sg.a) / N * W).toFixed(2)}" height="${h}" fill="${col[sg.type]}" stroke="${sg.type === 'cds' ? '#2f4f1d' : '#6ba544'}" stroke-width="0.4"/>`;
+        }
+        for (const h of s.m.hot) g += `<line x1="${X(h.a)}" y1="3" x2="${X(h.a)}" y2="25" stroke="#dc2626" stroke-width="1.2"/>`;
+        for (const [a] of (s.hits || []).slice(0, 2000)) g += `<line x1="${X(a)}" y1="4" x2="${X(a)}" y2="24" stroke="#f59e0b" stroke-width="0.8" opacity="0.8"/>`;
+        box.innerHTML = `<svg viewBox="0 0 ${W} 28" preserveAspectRatio="none" width="100%" height="28" style="display:block; cursor:pointer;">${g}<rect id="sqOvWin" x="0" y="0" width="0" height="28" fill="rgba(59,130,246,0.15)" stroke="#2563eb" stroke-width="1"/></svg>`
+            + `<div class="sq-ov-scale"><span>1</span><span>${N.toLocaleString()} ${s.prot ? 'aa' : 'bases'}</span></div>`;
+        this._sqOvWindow();
+    }
+
+    _sqOvWindow() {
+        const s = this._sq, win = document.getElementById('sqOvWin'), sc = document.getElementById('sqScroll');
+        if (!s || !win || !sc) return;
+        const N = s.m.seq.length || 1, L = this._sqL || 60, H = this._sqLineH || 20;
+        const a = Math.floor(sc.scrollTop / H) * L, b = Math.min(N, Math.ceil((sc.scrollTop + sc.clientHeight) / H) * L);
+        win.setAttribute('x', (a / N * 1000).toFixed(2));
+        win.setAttribute('width', Math.max(2, (b - a) / N * 1000).toFixed(2));
     }
 
     _sqLayout() {
@@ -51649,6 +51681,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             html += `<div class="sq-line" style="top:${li * H}px"><span class="sq-num">${(a + 1).toLocaleString()}</span><span class="sq-seq" title="${this.esc(reg)}">${line}</span><span class="sq-reg">${this.esc(reg)}</span></div>`;
         }
         box.innerHTML = html;
+        this._sqOvWindow();
     }
 
     _sqFind(q) {
@@ -51679,6 +51712,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             };
         }
         document.getElementById('sqHits').textContent = q.length < (s.prot ? 2 : 3) ? (q ? 'type at least ' + (s.prot ? 2 : 3) : '') : `${s.hits.length.toLocaleString()}${s.hits.length >= 20000 ? '+' : ''} match${s.hits.length === 1 ? '' : 'es'}`;
+        this._sqDrawOverview();
         if (s.hits.length) this._sqStep(1); else this._sqRender();
     }
 
@@ -51720,6 +51754,19 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         document.getElementById('sqClose').addEventListener('click', close);
         document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && modal.style.display !== 'none') { e.stopPropagation(); close(); } }, true);
         document.getElementById('sqScroll').addEventListener('scroll', () => { cancelAnimationFrame(this._sqRaf); this._sqRaf = requestAnimationFrame(() => this._sqRender()); });
+        const ov = document.getElementById('sqOverview');
+        const ovJump = (e) => {
+            const svg = ov.querySelector('svg'); if (!svg || !this._sq) return;
+            const r = svg.getBoundingClientRect();
+            const f = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+            const sc = document.getElementById('sqScroll');
+            const total = Math.ceil(this._sq.m.seq.length / this._sqL) * this._sqLineH;
+            sc.scrollTop = Math.max(0, f * total - sc.clientHeight / 2);
+        };
+        let ovDrag = false;
+        ov.addEventListener('mousedown', (e) => { ovDrag = true; ovJump(e); e.preventDefault(); });
+        document.addEventListener('mousemove', (e) => { if (ovDrag) ovJump(e); });
+        document.addEventListener('mouseup', () => { ovDrag = false; });
         document.getElementById('sqView').addEventListener('change', (e) => {
             const s = this._sq; if (!s) return;
             document.getElementById('sqEditWrap').style.display = 'none'; document.getElementById('sqScroll').style.display = '';
