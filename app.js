@@ -46749,6 +46749,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         document.getElementById('clbUmapColorGeneClear').addEventListener('click', () => this.clearUmapGeneColor());
         document.getElementById('clbUmapTopGenesBtn').addEventListener('click', () => this.toggleUmapTopGenes());
         document.getElementById('clbUmapClusterStatsBtn')?.addEventListener('click', () => this.showUmapClusterStats());
+        document.getElementById('clbUmapRankBtn')?.addEventListener('click', () => this.rankUmapGeneClasses());
         document.getElementById('clbUmapClearLabelsBtn')?.addEventListener('click', () => this._clearUmapLabels());
         document.getElementById('clbUmapClusterGroupBy')?.addEventListener('change', () => {
             // Different grouping renders a different set of rows, drop any
@@ -59896,6 +59897,26 @@ ${clone.innerHTML}
         this._renderUmapPlot(x, y, cellLines, categories, null, colorBy, null);
     }
 
+    // The cohort the PCA/UMAP menu picks. "Filtered above" takes the cell
+    // lines the Cell Line Browser list currently shows (search, mutation and
+    // custom filters included).
+    _umapCellLineIndices(tissueFilter, subtypeFilter) {
+        const allCellLines = this.metadata.cellLines;
+        const out = [];
+        const visibleSet = tissueFilter === '__visible__' ? new Set(this._clbVisibleCellLines || []) : null;
+        for (let i = 0; i < allCellLines.length; i++) {
+            const cl = allCellLines[i];
+            if (visibleSet) {
+                if (!visibleSet.has(cl)) continue;
+            } else {
+                if (tissueFilter && this.getCellLineLineage(cl) !== tissueFilter) continue;
+                if (subtypeFilter && (this.getCellLineSublineage(cl) || 'Unknown') !== subtypeFilter) continue;
+            }
+            out.push(i);
+        }
+        return out;
+    }
+
     async runCLBUmap() {
         const method = document.getElementById('clbUmapMethod').value;
         const dataType = document.getElementById('clbUmapDataType').value;
@@ -59922,24 +59943,7 @@ ${clone.innerHTML}
 
         try {
             const allCellLines = this.metadata.cellLines;
-            const cellLineIndices = [];
-            // When the user picks "Visible in list above", restrict to the
-            // cell lines currently rendered in the CLB list, this lets them
-            // drive the projection from whatever filters they have active
-            // upstairs (search, mutation, custom, etc.).
-            const visibleSet = (tissueFilter === '__visible__')
-                ? new Set(this._clbVisibleCellLines || [])
-                : null;
-            for (let i = 0; i < allCellLines.length; i++) {
-                const cl = allCellLines[i];
-                if (visibleSet) {
-                    if (!visibleSet.has(cl)) continue;
-                } else {
-                    if (tissueFilter && this.getCellLineLineage(cl) !== tissueFilter) continue;
-                    if (subtypeFilter && (this.getCellLineSublineage(cl) || 'Unknown') !== subtypeFilter) continue;
-                }
-                cellLineIndices.push(i);
-            }
+            const cellLineIndices = this._umapCellLineIndices(tissueFilter, subtypeFilter);
 
             if (cellLineIndices.length < 15) {
                 document.getElementById('clbUmapPlot').innerHTML = `<div style="padding:20px;text-align:center;color:#ef4444;">Need at least 15 cell lines (have ${cellLineIndices.length}).</div>`;
@@ -60296,6 +60300,190 @@ ${clone.innerHTML}
         sel.innerHTML = `<option value="">Highlight gene (${unique.length})…</option>` +
             unique.map(g => `<option value="${g}">${g}</option>`).join('');
         sel.style.display = '';
+    }
+
+    // PC1's share of the total variance, by power iteration straight on the
+    // centred matrix (2np per step), so ranking many gene sets stays fast
+    // where the full PCA's n x n Gram matrix would not.
+    _pc1Share(matrix) {
+        const n = matrix.length, p = n ? matrix[0].length : 0;
+        if (n < 3 || p < 2) return null;
+        const X = new Float64Array(n * p);
+        let trace = 0;
+        for (let j = 0; j < p; j++) {
+            let m = 0;
+            for (let i = 0; i < n; i++) m += matrix[i][j];
+            m /= n;
+            for (let i = 0; i < n; i++) { const d = matrix[i][j] - m; X[i * p + j] = d; trace += d * d; }
+        }
+        if (!trace) return null;
+        let v = new Float64Array(p).fill(1 / Math.sqrt(p));
+        const u = new Float64Array(n);
+        let lam = 0;
+        for (let it = 0; it < 300; it++) {
+            for (let i = 0; i < n; i++) { let s = 0; const o = i * p; for (let j = 0; j < p; j++) s += X[o + j] * v[j]; u[i] = s; }
+            const w = new Float64Array(p);
+            for (let i = 0; i < n; i++) { const ui = u[i], o = i * p; if (ui) for (let j = 0; j < p; j++) w[j] += X[o + j] * ui; }
+            let norm = 0;
+            for (let j = 0; j < p; j++) norm += w[j] * w[j];
+            norm = Math.sqrt(norm);
+            if (!norm) break;
+            let diff = 0;
+            for (let j = 0; j < p; j++) { const x = w[j] / norm; diff += (x - v[j]) ** 2; v[j] = x; }
+            const prev = lam;
+            lam = norm;
+            if (diff < 1e-10 || Math.abs(lam - prev) < 1e-9 * lam) break;
+        }
+        return lam / trace;
+    }
+
+    // Each curated class against random gene sets of the same size, on the
+    // panel's current cell lines and data. Raw PC1 % favours small sets and
+    // lineage-heavy ones; the ratio to size-matched random sets does not.
+    async rankUmapGeneClasses() {
+        const panel = document.getElementById('clbUmapRankPanel');
+        const content = document.getElementById('clbUmapRankContent');
+        const sub = document.getElementById('clbUmapRankSubtitle');
+        if (!panel || !content) return;
+        this._openUmapSidePanel(panel, 'clbUmapRankDragHandle');
+        const dataType = document.getElementById('clbUmapDataType').value;
+        const tissueFilter = document.getElementById('clbUmapTissueFilter').value;
+        const subtypeFilter = document.getElementById('clbUmapSubtypeFilter').value;
+        const job = (this._umapRankJob || 0) + 1;
+        this._umapRankJob = job;
+        const status = (t) => { content.innerHTML = `<div style="padding:10px; color:#6b7280;">${t}</div>`; };
+        if ((dataType === 'expr' || dataType === 'both') && !this.expressionLoaded) {
+            status('Loading expression data...');
+            try { await this.loadExpressionData(); } catch (e) { status('Failed to load expression data.'); return; }
+        }
+        const classes = await this._ensureGeneClasses();
+        if (!classes) { status('Gene classes could not be loaded.'); return; }
+        const idx = this._umapCellLineIndices(tissueFilter, subtypeFilter);
+        if (idx.length < 15) { status(`Need at least 15 cell lines (have ${idx.length}).`); return; }
+        const dataWord = dataType === 'both' ? 'gene effect + expression' : dataType === 'expr' ? 'expression' : 'gene effect';
+        const cohortOpt = document.getElementById('clbUmapTissueFilter').selectedOptions[0]?.textContent || '';
+        if (sub) sub.textContent = `${dataWord}, ${idx.length.toLocaleString()} cell lines`;
+
+        const types = dataType === 'both' ? ['ge', 'expr'] : [dataType];
+        const universe = new Set();
+        if (types.includes('ge')) this.metadata.genes.forEach(g => universe.add(String(g).toUpperCase()));
+        if (types.includes('expr')) this.expressionMetadata.genes.forEach(g => universe.add(String(g).toUpperCase()));
+        const uni = [...universe];
+        const share = (pool) => {
+            let m = [];
+            for (const t of types) {
+                const r = this._buildVariableGeneMatrix(idx, 1000, t, true, null, pool);
+                if (!r.matrix.length || !r.matrix[0].length) continue;
+                m = m.length ? m.map((row, i) => row.concat(r.matrix[i])) : r.matrix;
+            }
+            if (!m.length || m[0].length < 2) return null;
+            if (dataType === 'both') this._zscoreColumns(m);
+            return { pc1: this._pc1Share(m), nGenes: m[0].length };
+        };
+        // Seeded, so the same settings give the same table.
+        let seed = 20261024;
+        const rnd = () => { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+        const randomPool = (k) => {
+            const a = uni.slice();
+            for (let i = 0; i < k; i++) { const j = i + Math.floor(rnd() * (a.length - i)); [a[i], a[j]] = [a[j], a[i]]; }
+            return new Set(a.slice(0, k));
+        };
+        const N_RANDOM = 10;
+        const keys = Object.keys(classes);
+        const total = keys.length * (N_RANDOM + 1);
+        let done = 0;
+        const rows = [];
+        const t0 = performance.now();
+        let lastYield = 0;
+        for (const k of keys) {
+            const pool = new Set(classes[k].genes.filter(g => universe.has(g)));
+            if (pool.size < 10) continue;
+            const real = share(pool);
+            done++;
+            const rand = [];
+            for (let r = 0; r < N_RANDOM; r++) {
+                if (performance.now() - lastYield > 120) {
+                    lastYield = performance.now();
+                    const eta = done > 2 ? Math.round((performance.now() - t0) / done * (total - done) / 1000) : null;
+                    status(`Ranking gene classes... ${Math.round(done / total * 100)}%${eta ? ` (about ${eta} s left)` : ''}`);
+                    await new Promise(res => setTimeout(res, 0));
+                    if (this._umapRankJob !== job) return;
+                }
+                const x = share(randomPool(pool.size));
+                if (x?.pc1 != null) rand.push(x.pc1);
+                done++;
+            }
+            if (!real?.pc1 || !rand.length) continue;
+            rand.sort((a, b) => a - b);
+            const med = rand[Math.floor(rand.length / 2)];
+            rows.push({ key: k, label: classes[k].label, nGenes: real.nGenes, pc1: real.pc1, med, max: rand[rand.length - 1], ratio: real.pc1 / med, nRand: rand.length });
+        }
+        if (this._umapRankJob !== job) return;
+        rows.sort((a, b) => b.ratio - a.ratio);
+        this._umapRank = { rows, dataType, dataWord, nCL: idx.length, cohort: cohortOpt, nRandom: N_RANDOM };
+        this._renderUmapRank();
+    }
+
+    _renderUmapRank() {
+        const content = document.getElementById('clbUmapRankContent');
+        const R = this._umapRank;
+        if (!content || !R) return;
+        if (!R.rows.length) { content.innerHTML = '<div style="padding:10px; color:#6b7280;">No class had enough genes in this data.</div>'; return; }
+        const active = document.getElementById('clbUmapGeneClass')?.value;
+        const td = 'padding:4px 6px; border-bottom:1px solid #f3f4f6;';
+        const body = R.rows.map(r => {
+            const col = r.pc1 > r.max ? '#4c782e' : r.ratio >= 1 ? '#92400e' : '#6b7280';
+            return `<tr class="clb-umap-rank-row" data-key="${r.key}" title="Run the analysis on this class" style="cursor:pointer;${r.key === active ? ' background:#dcfce7;' : ''}">
+                <td style="${td}">${this.esc(r.label)}</td>
+                <td style="${td} text-align:right; color:#6b7280;">${r.nGenes.toLocaleString()}</td>
+                <td style="${td} text-align:right;">${(r.pc1 * 100).toFixed(1)}</td>
+                <td style="${td} text-align:right; color:#6b7280;">${(r.med * 100).toFixed(1)}</td>
+                <td style="${td} text-align:right; font-weight:600; color:${col};">×${r.ratio.toFixed(2)}</td></tr>`;
+        }).join('');
+        const th = 'padding:6px; border-bottom:2px solid #d1d5db;';
+        content.innerHTML = `<table style="width:100%; border-collapse:collapse; font-size:11px;">
+            <thead style="background:#f9fafb;"><tr><th style="${th} text-align:left;">Class</th><th style="${th} text-align:right;" title="Genes in the matrix: the most variable, up to 1,000 per layer">genes</th>
+            <th style="${th} text-align:right;">PC1 %</th><th style="${th} text-align:right;" title="Median PC1 % of ${R.nRandom} random gene sets of the same size">random</th><th style="${th} text-align:right;">ratio</th></tr></thead>
+            <tbody>${body}</tbody></table>
+            <div style="margin-top:6px; color:#6b7280; font-size:10px;"><span style="color:#4c782e; font-weight:600;">Green</span>: above all ${R.nRandom} random sets. Click a class to run the analysis on it.</div>`;
+        content.querySelectorAll('.clb-umap-rank-row').forEach(tr => tr.addEventListener('click', () => {
+            const sel = document.getElementById('clbUmapGeneClass');
+            sel.value = tr.dataset.key;
+            sel.dispatchEvent(new Event('change', { bubbles: true }));
+            const gl = document.getElementById('clbUmapGeneList');
+            if (gl?.value.trim()) { gl.value = ''; gl.dispatchEvent(new Event('input', { bubbles: true })); }
+            document.getElementById('clbUmapMethod').value = 'pca';
+            this.runCLBUmap().then(() => this._renderUmapRank());
+        }));
+    }
+
+    // Floating side panel next to the plot, dragged by its header (the Top
+    // Genes / Cluster stats pattern).
+    _openUmapSidePanel(panel, handleId) {
+        if (!panel.dataset.positioned) {
+            const plotRect = document.getElementById('clbUmapPlot')?.getBoundingClientRect();
+            if (plotRect) {
+                panel.style.left = `${Math.round(Math.min(plotRect.right + 10, Math.max(8, window.innerWidth - 410)))}px`;
+                panel.style.top = `${Math.round(Math.max(10, plotRect.top))}px`;
+            }
+            panel.dataset.positioned = '1';
+            const handle = document.getElementById(handleId);
+            let dragging = false, startX, startY, origLeft, origTop;
+            handle?.addEventListener('mousedown', (e) => {
+                if (e.target.tagName === 'BUTTON') return;
+                dragging = true;
+                startX = e.clientX; startY = e.clientY;
+                origLeft = panel.offsetLeft; origTop = panel.offsetTop;
+                e.preventDefault();
+            });
+            document.addEventListener('mousemove', (e) => {
+                if (!dragging) return;
+                panel.style.left = (origLeft + e.clientX - startX) + 'px';
+                panel.style.top = (origTop + e.clientY - startY) + 'px';
+            });
+            document.addEventListener('mouseup', () => { dragging = false; });
+        }
+        panel.style.display = 'block';
     }
 
     _zscoreColumns(matrix) {
@@ -61569,12 +61757,19 @@ ${clone.innerHTML}
             const axL0 = axLabels[0].split('(')[0].trim();
             const axL1 = axLabels[1].split('(')[0].trim();
             html += `<tr style="border-bottom:1px solid #e5e7eb;"><th style="text-align:left;padding:1px 6px;">Gene</th><th style="text-align:right;padding:1px 6px;">r(${axL0})</th><th style="text-align:right;padding:1px 6px;">r(${axL1})</th><th style="text-align:right;padding:1px 6px;">|r|</th></tr>`;
+            // Strength bands: below 0.3 is weak and drawn faint, 0.3 to 0.5
+            // moderate, so a small r is not read as a finding.
+            const band = (r) => { const a = Math.abs(r); return a < 0.3 ? 'weak' : a < 0.5 ? 'moderate' : 'strong'; };
+            const rCell = (r, signed) => {
+                const b = band(r);
+                const col = !signed ? (b === 'strong' ? '#111827' : b === 'moderate' ? '#92400e' : '#9ca3af') : b === 'weak' ? '#9ca3af' : (r > 0 ? '#b91c1c' : '#1d4ed8');
+                return `<td style="text-align:right;padding:1px 6px;color:${col};${!signed && b === 'strong' ? 'font-weight:600;' : ''}" title="${b} (|r| ${Math.abs(r).toFixed(2)})">${r.toFixed(3)}${!signed && b !== 'strong' ? ` <span style="font-size:9px;">${b}</span>` : ''}</td>`;
+            };
             top10.forEach(c => {
-                const colorX = c.rX > 0 ? '#b91c1c' : '#1d4ed8';
-                const colorY = c.rY > 0 ? '#b91c1c' : '#1d4ed8';
-                html += `<tr style="cursor:pointer;" onclick="app.applyUmapGeneColor_fromTop('${c.gene}', '${c.src || ''}')"><td style="padding:1px 6px;text-decoration:underline;color:#4f46e5;">${this.gi(c.gene)}${this._clbUmapData.mixedSrc && c.src ? ` <span style="font-size:9px;color:#6b7280;">${c.src === 'expr' ? 'mRNA' : 'CRISPR'}</span>` : ''}</td><td style="text-align:right;padding:1px 6px;color:${colorX};">${c.rX.toFixed(3)}</td><td style="text-align:right;padding:1px 6px;color:${colorY};">${c.rY.toFixed(3)}</td><td style="text-align:right;padding:1px 6px;">${c.rCombined.toFixed(3)}</td></tr>`;
+                html += `<tr style="cursor:pointer;" onclick="app.applyUmapGeneColor_fromTop('${c.gene}', '${c.src || ''}')"><td style="padding:1px 6px;text-decoration:underline;color:#4f46e5;">${this.gi(c.gene)}${this._clbUmapData.mixedSrc && c.src ? ` <span style="font-size:9px;color:#6b7280;">${c.src === 'expr' ? 'mRNA' : 'CRISPR'}</span>` : ''}</td>${rCell(c.rX, true)}${rCell(c.rY, true)}${rCell(c.rCombined, false)}</tr>`;
             });
             html += '</table>';
+            html += '<div style="font-size:10px;color:#6b7280;margin-top:4px;">|r| below 0.3 is weak (grey), 0.3 to 0.5 moderate, 0.5 and above strong.</div>';
         }
 
         const content = document.getElementById('clbUmapTopGenesContent');
@@ -68955,6 +69150,7 @@ ${clone.innerHTML}
             + `   Points are coloured by ${v('clbUmapColorBy') === 'subtissue' ? 'subtype' : 'tissue'}${v('clbUmapColorGene') ? `, or by ${v('clbUmapColorGene')} ${v('clbUmapColorGeneType') === 'expr' ? 'expression' : 'gene effect'} where that is set` : ''}.\n`
             + (lasso ? `   ${this._mNum(lasso)} point${lasso === 1 ? ' is' : 's are'} lasso-selected. A lasso is a selection made by hand; it does not change the projection.\n` : '   No lasso selection is active.\n')
             + ((gA || gB) ? `   Gate A holds ${this._mNum(gA)} cell lines and gate B holds ${this._mNum(gB)}. Gates are rectangles placed by hand, not thresholds.\n` : '   No gates were placed on the plot.\n'),
+            ...(this._umapRank?.rows?.length ? [`GENE-CLASS RANKING (Rank classes)\n   For each curated class, PC1's share of the total variance was computed on ${this._umapRank.dataWord} for ${this._mNum(this._umapRank.nCL)} cell lines (${this._umapRank.cohort}), using the class's most variable genes (up to 1,000 per layer) exactly as a run on that class would, and compared with ${this._umapRank.nRandom} random gene sets of the same size drawn from all genes in the data (seeded, so the table is reproducible). The ratio is the class's PC1 share over the random median; raw PC1 shares favour small sets, the ratio does not.\n   Top classes: ${this._umapRank.rows.slice(0, 5).map(r => `${r.label} ${(r.pc1 * 100).toFixed(1)} percent vs ${(r.med * 100).toFixed(1)} random (ratio ${r.ratio.toFixed(2)})`).join('; ')}.\n   A class above random shares more structure than chance among these cell lines; it does not make that class the right one to look at.`] : []),
             'WHAT THIS DOES NOT SAY\nA projection is a summary, not a test. Nothing here carries a p-value, and two groups that separate on the plot have not been shown to differ in any particular gene. Which genes went into the matrix decides most of what the picture looks like, so a plot built on the most variable genes and one built on a chosen gene list are answering different questions.'
         ]);
 
