@@ -14320,7 +14320,11 @@ class CorrelationExplorer {
         } else return;
         const btn = document.getElementById('netFullBtn');
         if (btn) { btn.innerHTML = on ? '&times; Exit full page' : '&#10530; Full page'; btn.title = on ? 'Back to the normal view' : 'Open the network in a full-window view with all its settings beside it'; }
-        setTimeout(() => { try { this.network?.redraw(); this.network?.fit({ animation: false }); } catch (e) { /* not drawn yet */ } }, 60);
+        // vis keeps the canvas size it last measured; size it to the new box
+        // once layout has settled (twice: a note added meanwhile shifts it).
+        const resize = () => { try { this.network?.setSize('100%', '100%'); this._redrawThenFit(); } catch (e) { /* not drawn yet */ } };
+        requestAnimationFrame(() => requestAnimationFrame(resize));
+        setTimeout(resize, 300);
     }
 
     // An unlocked network floats, but a layout that never quite reaches the
