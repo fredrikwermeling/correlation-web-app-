@@ -47470,8 +47470,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         this._updateClbActiveFilterLabel();
         // Keep the UMAP/PCA "Visible in list above" option count in sync with
         // the browser's current filter state.
-        const visOpt = document.querySelector('#clbUmapTissueFilter option[value="__visible__"]');
-        if (visOpt) visOpt.textContent = `Cell lines filtered above (${filtered.length.toLocaleString()})`;
+        this._syncUmapVisibleOpt();
 
         const container = document.getElementById('clbList');
         if (filtered.length === 0) {
@@ -58808,12 +58807,36 @@ ${clone.innerHTML}
 
     // ===== UMAP Dimensionality Reduction =====
 
+    // Text for the PCA/UMAP "filtered above" option: names the Cell Line
+    // Browser's active filters (chip text plus any search) so the choice says
+    // which lines it means; the full text goes in the menu's tooltip.
+    _clbVisibleOptText(n) {
+        const words = [...document.querySelectorAll('#clbActiveFilters .clb-chip')]
+            .map(c => c.textContent.replace(/[\u25BE\u00D7]/g, '').replace(/\s+/g, ' ').trim()).filter(Boolean);
+        const q = document.getElementById('clbSearch')?.value.trim();
+        if (q) words.push(`"${q}"`);
+        const full = words.join(', ');
+        const short = full.length > 34 ? full.slice(0, 33).trimEnd() + '\u2026' : full;
+        const nTxt = `n=${(n || 0).toLocaleString()}`;
+        return { text: words.length ? `Cell lines filtered above (${short}, ${nTxt})` : `Cell lines in the list above (${nTxt})`,
+                 title: words.length ? `Cell lines filtered above: ${full} (${nTxt})` : '' };
+    }
+
+    _syncUmapVisibleOpt() {
+        const sel = document.getElementById('clbUmapTissueFilter');
+        const opt = sel?.querySelector('option[value="__visible__"]');
+        if (!opt) return;
+        const t = this._clbVisibleOptText(this._clbVisibleCellLines?.length || 0);
+        opt.textContent = t.text;
+        opt.title = t.title;
+        sel.title = sel.value === '__visible__' && t.title ? t.title : 'Which cell lines to include: the ones the Cell Line Browser list currently shows (after its search and filters), every cell line, or one tissue';
+    }
+
     populateUmapFilters() {
         // No-op in builds without the UMAP section (V1).
         const tissueSelect = document.getElementById('clbUmapTissueFilter');
         if (!tissueSelect) return;
         const prevValue = tissueSelect.value;
-        const visibleN = this._clbVisibleCellLines?.length || 0;
         tissueSelect.innerHTML = '';
         // "Visible in list above" uses the browser's currently-filtered cell lines
         // as the UMAP/PCA input, handy when the user has narrowed by custom
@@ -58821,7 +58844,6 @@ ${clone.innerHTML}
         // tissue dropdown directly.
         const visOpt = document.createElement('option');
         visOpt.value = '__visible__';
-        visOpt.textContent = `Cell lines filtered above (${visibleN.toLocaleString()})`;
         tissueSelect.appendChild(visOpt);
         const allOpt = document.createElement('option');
         allOpt.value = '';
@@ -58839,6 +58861,7 @@ ${clone.innerHTML}
         // choice otherwise.
         if (prevValue) tissueSelect.value = prevValue;
         else tissueSelect.value = '__visible__';
+        this._syncUmapVisibleOpt();
 
         // These controls live permanently in the page while this runs on every
         // browser open, so wire them exactly once.
@@ -58853,6 +58876,7 @@ ${clone.innerHTML}
     }
 
     _populateUmapSubtypeFilter() {
+        this._syncUmapVisibleOpt();
         const tissue = document.getElementById('clbUmapTissueFilter').value;
         const subtypeSelect = document.getElementById('clbUmapSubtypeFilter');
         subtypeSelect.innerHTML = '<option value="">All subtypes</option>';
@@ -60942,29 +60966,26 @@ ${clone.innerHTML}
             return;
         }
 
-        // Measure the longest gene label so the SVG can be widened enough to
-        // hold it without clipping. The axis square itself stays 182×182;
-        // we extend the SVG horizontally on both sides to give labels room
-        // and center the square in the middle.
+        // Labels stay inside the 182 px square: the arrow scale is the largest
+        // that leaves each label (measured) room between its arrow tip and the
+        // box edge, floored so very long symbols cannot shrink arrows to dots.
         const boxSize = 182;
         const mctx = (document.createElement('canvas')).getContext('2d');
-        mctx.font = '10px Arial, sans-serif';
-        let maxLabelW = 0;
+        mctx.font = 'italic 10px Arial, sans-serif';
+        const half = boxSize / 2;
+        const maxMag = top[0].mag || 1;
+        let scale = (boxSize * 0.35) / maxMag;
         for (const t of top) {
             const w = mctx.measureText(t.gene).width;
-            if (w > maxLabelW) maxLabelW = w;
+            if (Math.abs(t.lx) > 1e-9) scale = Math.min(scale, (half - 7 - w - 6) / Math.abs(t.lx));
+            if (Math.abs(t.ly) > 1e-9) scale = Math.min(scale, (half - 7 - 12) / Math.abs(t.ly));
         }
-        // Each side needs room for the longest label plus a small gap. 24 px
-        // floor covers short symbols; at most 80 px on each side so a
-        // pathological 20-char gene doesn't blow the layout.
-        const sidePad = Math.min(80, Math.max(24, Math.ceil(maxLabelW) + 6));
-        const svgW = boxSize + 2 * sidePad;
+        scale = Math.max(scale, (boxSize * 0.15) / maxMag);
+        const svgW = boxSize;
         const svgH = boxSize;
         const cx = svgW / 2, cy = svgH / 2;
-        const boxLeft = cx - boxSize / 2;
-        const boxRight = cx + boxSize / 2;
-        const maxMag = top[0].mag || 1;
-        const scale = (boxSize * 0.35) / maxMag;
+        const boxLeft = 0;
+        const boxRight = boxSize;
 
         let svg = `<svg width="${svgW}" height="${svgH}" xmlns="http://www.w3.org/2000/svg" style="font-family:Arial,sans-serif; display:block; overflow:visible;">`;
         svg += `<rect x="${boxLeft}" y="0" width="${boxSize}" height="${boxSize}" fill="white" stroke="#d1d5db" rx="4"/>`;
@@ -61002,8 +61023,9 @@ ${clone.innerHTML}
         }
 
         labels.forEach(l => {
-            const clampX = Math.max(2, Math.min(svgW - 2, l.x));
-            const clampY = Math.max(12, Math.min(svgH - 2, l.y));
+            const w = mctx.measureText(l.gene).width;
+            const clampX = l.anchor === 'start' ? Math.max(4, Math.min(svgW - 4 - w, l.x)) : Math.min(svgW - 4, Math.max(4 + w, l.x));
+            const clampY = Math.max(12, Math.min(svgH - 4, l.y));
             const on = this._clbUmapGeneColorActive?.gene === l.gene && (!mixed || this._clbUmapGeneColorActive.colorType === (l.src || 'ge'));
             svg += `<text data-umap-load="${this.esc(l.gene)}" data-umap-src="${l.src || ''}" x="${clampX}" y="${clampY}" text-anchor="${l.anchor}" style="font-size:10px;font-style:italic;fill:${l.col};cursor:pointer;${on ? 'font-weight:700;text-decoration:underline;' : ''}" stroke="white" stroke-width="3" paint-order="stroke">${this.esc(l.gene)}</text>`;
         });
