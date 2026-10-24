@@ -46342,22 +46342,29 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // browser opens on the cell-line list rather than a heavy analysis
         // panel. Plotly needs a resize once the container has real size,
         // otherwise a plot drawn while hidden comes back zero-width.
-        document.getElementById('clbUmapToggle')?.addEventListener('click', () => {
-            const body = document.getElementById('clbUmapBody');
-            const btn = document.getElementById('clbUmapToggle');
-            const hint = document.getElementById('clbUmapToggleHint');
-            if (!body || !btn) return;
-            const open = body.style.display === 'none';
-            body.style.display = open ? '' : 'none';
-            btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-            document.getElementById('clbUmapToggleCaret').innerHTML = open ? '&#9662;' : '&#9656;';
-            if (hint) hint.style.display = open ? 'none' : '';
-            if (open) {
+        // Dimensionality reduction runs in its own large popout, opened from
+        // the browser's header. It moves to body so the browser's scroll box
+        // does not clip it; Plotly needs a resize once it has real size.
+        const umapSec = document.getElementById('clbUmapSection');
+        if (umapSec) {
+            document.body.appendChild(umapSec);
+            const closeUmap = () => { umapSec.style.display = 'none'; };
+            document.getElementById('clbUmapOpenBtn')?.addEventListener('click', () => {
+                umapSec.style.display = 'flex';
+                umapSec.scrollTop = 0;
                 const plot = document.getElementById('clbUmapPlot');
                 if (plot?.data && window.Plotly) { try { Plotly.Plots.resize(plot); } catch (e) { /* not drawn yet */ } }
-                body.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-            }
-        });
+            });
+            document.getElementById('clbUmapCloseBtn')?.addEventListener('click', closeUmap);
+            umapSec.addEventListener('click', (e) => { if (e.target === umapSec) closeUmap(); });
+            document.addEventListener('keydown', (e) => {
+                if (e.key !== 'Escape' || umapSec.style.display === 'none') return;
+                // Anything opened from it sits above and takes Esc first.
+                if ([...document.body.children].some(el => el !== umapSec && el.style?.display && el.style.display !== 'none'
+                    && getComputedStyle(el).position === 'fixed' && (parseInt(getComputedStyle(el).zIndex) || 0) > 1356)) return;
+                closeUmap();
+            });
+        }
 
         // CLB help modal
         document.getElementById('clbExportImageBtn')?.addEventListener('click', async () => {
@@ -60350,7 +60357,7 @@ ${clone.innerHTML}
         // Keep the H input in sync so the slider reflects the real number.
         const LEFT = 60, RIGHT = 170, TOP = 50, BOTTOM = 50;
         const MIN_SIDE = 200;
-        const w = parseInt(document.getElementById('clbUmapPlotWidth')?.value) || 500;
+        const w = parseInt(document.getElementById('clbUmapPlotWidth')?.value) || 700;
         const dataSide = Math.max(MIN_SIDE, w - LEFT - RIGHT);
         const width = dataSide + LEFT + RIGHT;
         const height = dataSide + TOP + BOTTOM;
