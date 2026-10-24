@@ -1061,6 +1061,8 @@
 
         .mut-pop-grid { display: grid; grid-template-columns: minmax(300px, 400px) minmax(0, 1fr); gap: 12px; align-items: start; padding: 16px; background: #f9fafb; border-radius: 0 0 8px 8px; }
         .mut-pop-grid > .card { margin-bottom: 0; }
+        #gbNetModal #resultsCard { margin-bottom: 0; }
+        #gbNetModal #resultsCard > .card-title { display: none; }
         #mutModal #tab-mutation { display: block; padding-top: 0; }
         @media (max-width: 900px) { .mut-pop-grid { grid-template-columns: minmax(0, 1fr); padding: 10px; } }
 
@@ -5109,6 +5111,18 @@
     <!-- Mutation Analysis Modal: box 1 and the mutation results pane are
          moved in here while the mode is active (_mutPopout), so the
          controls are the same elements as before, not copies. -->
+    <div id="gbNetModal" style="display:none; position:fixed; inset:0; z-index:1100; background:rgba(0,0,0,0.5); align-items:flex-start; justify-content:center; padding:0 20px 20px; overflow-y:auto;">
+      <div style="background:#fff; width:100%; max-width:min(98vw, 1500px); margin-top:20px; border-radius:8px; display:flex; flex-direction:column; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);">
+        <div style="position:sticky; top:0; z-index:3; display:flex; justify-content:space-between; align-items:center; gap:12px; padding:12px 18px; border-bottom:1px solid #e5e7eb; background:linear-gradient(90deg,#f3faee,#fff); border-radius:8px 8px 0 0;">
+          <h3 id="gbNetTitle" style="margin:0; font-size:17px; color:#4c782e;">Network</h3>
+          <span style="display:flex; align-items:center; gap:10px;">
+            <button id="gbNetBackBtn" class="btn btn-outline btn-sm" title="Close the network and return to the Gene Browser">&#9666; Back to Gene Browser</button>
+            <button id="gbNetCloseBtn" style="background:none; border:none; font-size:24px; cursor:pointer; line-height:1; color:#6b7280;" title="Close the network and return to the Gene Browser">&times;</button>
+          </span>
+        </div>
+        <div id="gbNetBody" style="padding:16px; background:#f9fafb; border-radius:0 0 8px 8px;"></div>
+      </div>
+    </div>
     <div id="mutModal" style="display:none; position:fixed; inset:0; z-index:1100; background:rgba(0,0,0,0.5); align-items:flex-start; justify-content:center; padding:0 20px 20px; overflow-y:auto;">
       <div style="background:#fff; width:100%; max-width:min(98vw, 1500px); margin-top:20px; border-radius:8px; display:flex; flex-direction:column; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);">
         <div style="position:sticky; top:0; z-index:3; display:flex; justify-content:space-between; align-items:center; padding:12px 18px; border-bottom:1px solid #e5e7eb; background:linear-gradient(90deg,#f3faee,#fff); border-radius:8px 8px 0 0;">
@@ -5757,7 +5771,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v90_61"></script>
+    <script src="app.js?v=v90_62"></script>
     <script src="tour.js?v=v89_49"></script>
 </body>
 </html>

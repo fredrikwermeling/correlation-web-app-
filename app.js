@@ -6938,8 +6938,12 @@ class CorrelationExplorer {
             this._setAnalysisLocked(false);
             this._setAnalysisMode('mutation');
         });
-        const closeMut = () => this._setAnalysisMode(this._lastGeneSetMode || 'analysis');
+        const closeMut = () => { if (this._gbPop === 'mut') { this._gbPopClose(false); return; } this._setAnalysisMode(this._lastGeneSetMode || 'analysis'); };
         document.getElementById('mutModalCloseBtn')?.addEventListener('click', closeMut);
+        const closeNet = () => this._gbPopClose(false);
+        document.getElementById('gbNetCloseBtn')?.addEventListener('click', closeNet);
+        document.getElementById('gbNetBackBtn')?.addEventListener('click', closeNet);
+        document.getElementById('gbNetModal')?.addEventListener('click', (e) => { if (e.target.id === 'gbNetModal') closeNet(); });
         document.getElementById('mutModal')?.addEventListener('click', (e) => { if (e.target.id === 'mutModal') closeMut(); });
         this._filterModeKey = this._modeFilterKey();
         this._syncAnalysisModeButtons();
@@ -50466,9 +50470,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 const x = this._gbNamedCache?.[+set.dataset.gbSet];
                 if (!x) return;
                 if (set.dataset.gbSetDo === 'hm') { this._gbHeatmap(x.genes); return; }
-                this.closeGeneBrowser();
-                this._openGenesFromLink(x.genes.join(','));
-                document.getElementById('resultsCard')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+                this._gbOpenNetwork(x.genes, x.name);
                 return;
             }
             const act = e.target.closest('[data-gb-act]');
@@ -51660,7 +51662,6 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             + `<div class="gb-actions">`
             + `<button class="btn btn-outline btn-sm" data-gb-act="net-codep" title="Run Gene set analysis on ${this.esc(gene)} and these ${top.length} genes, drawn as a correlation network">Network of these genes</button>`
             + (this._hasHeatmap() ? `<button class="btn btn-outline btn-sm" data-gb-act="hm-codep" title="Show ${this.esc(gene)} and these ${top.length} genes as a heatmap across the cell lines">Heatmap</button>` : '')
-            + `<button class="btn btn-outline btn-sm" data-gb-act="expand" title="Search every gene in the screen for ones whose gene effect correlates with ${this.esc(gene)}, drawn as a network (Gene set analysis, Expand my set)">Find more correlated genes</button>`
             + `</div>` : '';
         const scheme = this._gbRelSchematic(gene, top, corum);
         const figure = scheme ? `<div id="gbRelFig" style="background:#fff;">${scheme}</div>`
@@ -51911,13 +51912,9 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         if (act === 'sc-cn-expr') { this._gbScatter(gene, gene, 'cn', 'expr'); return; }
         if (act === 'hm-codep') { this._gbHeatmap([gene, ...coDep]); return; }
         if (act === 'hm-corum') { this._gbHeatmap([gene, ...corum]); return; }
-        // These run on the main page or in the Mutation analysis popout,
-        // which sit below the Gene Browser, so it closes first.
-        if (act === 'net-codep' || act === 'net-corum' || act === 'expand') {
-            const genes = act === 'expand' ? [gene] : [gene, ...(act === 'net-codep' ? coDep : corum)];
-            this.closeGeneBrowser();
-            this._openGenesFromLink(genes.join(','));
-            document.getElementById('resultsCard')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        if (act === 'net-codep' || act === 'net-corum') {
+            this._gbOpenNetwork([gene, ...(act === 'net-codep' ? coDep : corum)],
+                act === 'net-codep' ? `${gene} and its co-dependencies` : `${gene} and its complex partners`);
             return;
         }
         if (act === 'mut' && s) this._gbOpenMutationAnalysis(s);
@@ -51930,6 +51927,85 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const m = document.getElementById('inspectModal');
         const gbZ = parseInt(document.getElementById('gbModal')?.style.zIndex) || 1365;
         if (m) m.style.zIndex = String(gbZ + 10);
+    }
+
+    // The network and Mutation analysis live on the main page, under the
+    // Gene Browser. Opened from it, they run in a popout (the network: the
+    // real results card moved in, like Mutation analysis moves its panes),
+    // and closing that popout, or the browser's back arrow, returns here.
+    _gbOpenNetwork(genes, label) {
+        genes = [...new Set(genes)];
+        // Gene Browser lists are weaker than the main page's default cutoff
+        // expects, so the cutoff drops to where about one link per gene
+        // shows (never below 0.1, never above the user's own), and the
+        // user's value comes back when the popout closes.
+        const el = document.getElementById('correlationCutoff');
+        const own = parseFloat(el?.value) || 0.5;
+        const rows = genes.map(g => this.geneIndex.get(g)).filter(i => i !== undefined).map(i => Float64Array.from(this.getGeneData(i), v => (v === -999 ? NaN : v)));
+        const rs = [];
+        for (let a = 0; a < rows.length; a++) for (let b = a + 1; b < rows.length; b++) {
+            const r = this.pearsonWithSlope(rows[a], rows[b]).correlation;
+            if (r === r) rs.push(Math.abs(r));
+        }
+        rs.sort((x, y) => y - x);
+        const k = rs[Math.min(rs.length - 1, Math.max(0, genes.length - 2))];
+        const cut = k === undefined ? own : Math.min(own, Math.max(0.1, Math.floor(k * 20) / 20));
+        this._gbNetOwnCut = own;
+        if (el && cut !== own) { el.value = cut; el.dispatchEvent(new Event('input', { bubbles: true })); }
+        this.closeGeneBrowser();
+        this._gbNetPopout(true);
+        const t = document.getElementById('gbNetTitle');
+        if (t) t.innerHTML = `Network: ${this._italicizeGenesInHtml(this.esc(label))} <span style="font-size:12px; font-weight:400; color:#6b7280;">(links at |r| ≥ ${cut.toFixed(2)})</span>`;
+        this._gbPopEnter('net');
+        this._openGenesFromLink(genes.join(','));
+    }
+
+    _gbNetPopout(on) {
+        const modal = document.getElementById('gbNetModal');
+        const card = document.getElementById('resultsCard');
+        if (!modal || !card) return;
+        const inside = modal.contains(card);
+        if (on && !inside) {
+            const hold = document.createElement('div');
+            hold.id = 'resultsCardHold';
+            hold.className = card.className;
+            hold.style.height = card.offsetHeight + 'px';
+            hold.style.visibility = 'hidden';
+            card.before(hold);
+            document.getElementById('gbNetBody').appendChild(card);
+            modal.style.display = 'flex';
+            modal.scrollTop = 0;
+        } else if (!on && inside) {
+            document.getElementById('resultsCardHold')?.replaceWith(card);
+            modal.style.display = 'none';
+        }
+        // vis-network measures its box; redraw at the new size.
+        setTimeout(() => { try { this.network?.redraw(); this.network?.fit(); } catch (e) { /* not drawn yet */ } }, 50);
+    }
+
+    // One history step per popout, so the back arrow closes it instead of
+    // leaving the app.
+    _gbPopEnter(kind) {
+        this._gbPop = kind;
+        try { history.pushState({ gbPop: kind }, ''); } catch (e) { /* sandboxed */ }
+        if (!this._gbPopWired) {
+            this._gbPopWired = true;
+            window.addEventListener('popstate', (e) => { if (this._gbPop && !e.state?.gbPop) this._gbPopClose(true); });
+        }
+    }
+
+    _gbPopClose(fromHistory) {
+        const kind = this._gbPop;
+        if (!kind) return;
+        this._gbPop = null;
+        if (kind === 'net') {
+            this._gbNetPopout(false);
+            const el = document.getElementById('correlationCutoff');
+            if (el && this._gbNetOwnCut !== undefined && parseFloat(el.value) !== this._gbNetOwnCut) { el.value = this._gbNetOwnCut; el.dispatchEvent(new Event('input', { bubbles: true })); }
+        }
+        if (kind === 'mut' && document.querySelector('input[name="analysisMode"]:checked')?.value === 'mutation') this._setAnalysisMode(this._lastGeneSetMode || 'analysis');
+        if (!fromHistory && history.state?.gbPop) { try { history.back(); } catch (e) { /* sandboxed */ } }
+        this.openGeneBrowser();
     }
 
     // Same steps as the network's "Open in heatmap": open (which resets),
@@ -51960,6 +52036,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const kind = this._gbMutKind(s.gene);
         if (!kind) return;
         this.closeGeneBrowser();
+        this._gbPopEnter('mut');
         this._setAnalysisLocked(false);
         this._setAnalysisMode('mutation');
         const radio = document.querySelector(`input[name="mutAnalysisType"][value="${kind}"]`);
