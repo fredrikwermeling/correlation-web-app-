@@ -46841,6 +46841,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
 
     openCellLineBrowser() {
+        if (document.getElementById('clbUmapGeneClass')) this._ensureGeneClasses();
         // Reset all filters for a fresh start
         this._oncoprintFilters = {};
         this._activeOncoprintFilters = null;
@@ -58564,6 +58565,8 @@ ${clone.innerHTML}
         document.getElementById('clbUmapSplitType').textContent = '';
         document.getElementById('clbUmapClearSplitBtn').style.display = 'none';
         document.getElementById('clbUmapDataType').value = 'ge';
+        const gcSel = document.getElementById('clbUmapGeneClass');
+        if (gcSel) gcSel.value = '';
         document.getElementById('clbUmapColorBy').value = 'tissue';
         document.getElementById('clbUmapTissueFilter').value = '';
         document.getElementById('clbUmapSubtypeFilter').value = '';
@@ -59363,6 +59366,7 @@ ${clone.innerHTML}
             const nCL = cellLineIndices.length;
             const N_TOP_GENES = 1000;
             const customGeneList = this._parseUmapGeneList();
+            const genePool = customGeneList ? null : await this._umapClassPool();
             let matrix = [];
             let geneNames = [];
 
@@ -59370,13 +59374,13 @@ ${clone.innerHTML}
             // (GE + Expression) can be told apart wherever loadings show.
             let geneSrc = [];
             if (dataType === 'ge' || dataType === 'both') {
-                const result = this._buildVariableGeneMatrix(cellLineIndices, N_TOP_GENES, 'ge', true, customGeneList);
+                const result = this._buildVariableGeneMatrix(cellLineIndices, N_TOP_GENES, 'ge', true, customGeneList, genePool);
                 matrix = result.matrix;
                 geneNames = result.geneNames;
                 geneSrc = geneNames.map(() => 'ge');
             }
             if (dataType === 'expr' || dataType === 'both') {
-                const result = this._buildVariableGeneMatrix(cellLineIndices, N_TOP_GENES, 'expr', true, customGeneList);
+                const result = this._buildVariableGeneMatrix(cellLineIndices, N_TOP_GENES, 'expr', true, customGeneList, genePool);
                 if (dataType === 'both' && matrix.length > 0) {
                     for (let i = 0; i < nCL; i++) matrix[i] = matrix[i].concat(result.matrix[i]);
                     geneNames = geneNames.concat(result.geneNames);
@@ -59447,7 +59451,7 @@ ${clone.innerHTML}
             });
 
             this._clbUmapData = { cellLines, cellLineIndices, x, y, categories, matrix, geneNames,
-                mutStatus: null, splitGene: null, method, axisLabels, pcaLoadings, geneSrc, mixedSrc: dataType === 'both' };
+                mutStatus: null, splitGene: null, method, axisLabels, pcaLoadings, geneSrc, mixedSrc: dataType === 'both', geneClass: genePool ? this._umapClassInfo() : null };
             this._clbUmapSelectedPoints = new Set();
             this._renderUmapPlot(x, y, cellLines, categories, null, colorBy, null);
             document.getElementById('clbUmapSelectionControls').style.display = 'flex';
@@ -59530,6 +59534,7 @@ ${clone.innerHTML}
             const nCL = cellLineIndices.length;
             const N_TOP_GENES = 1000;
             const customGeneList = this._parseUmapGeneList();
+            const genePool = customGeneList ? null : await this._umapClassPool();
             let matrix = [];
             let geneNames = [];
 
@@ -59537,13 +59542,13 @@ ${clone.innerHTML}
             // (GE + Expression) can be told apart wherever loadings show.
             let geneSrc = [];
             if (dataType === 'ge' || dataType === 'both') {
-                const result = this._buildVariableGeneMatrix(cellLineIndices, N_TOP_GENES, 'ge', true, customGeneList);
+                const result = this._buildVariableGeneMatrix(cellLineIndices, N_TOP_GENES, 'ge', true, customGeneList, genePool);
                 matrix = result.matrix;
                 geneNames = result.geneNames;
                 geneSrc = geneNames.map(() => 'ge');
             }
             if (dataType === 'expr' || dataType === 'both') {
-                const result = this._buildVariableGeneMatrix(cellLineIndices, N_TOP_GENES, 'expr', true, customGeneList);
+                const result = this._buildVariableGeneMatrix(cellLineIndices, N_TOP_GENES, 'expr', true, customGeneList, genePool);
                 if (dataType === 'both' && matrix.length > 0) {
                     for (let i = 0; i < nCL; i++) matrix[i] = matrix[i].concat(result.matrix[i]);
                     geneNames = geneNames.concat(result.geneNames);
@@ -59636,7 +59641,7 @@ ${clone.innerHTML}
             });
 
             this._clbUmapData = { cellLines, cellLineIndices, x, y, categories, matrix, geneNames,
-                mutStatus: null, splitGene: null, method, axisLabels, pcaLoadings, geneSrc, mixedSrc: dataType === 'both' };
+                mutStatus: null, splitGene: null, method, axisLabels, pcaLoadings, geneSrc, mixedSrc: dataType === 'both', geneClass: genePool ? this._umapClassInfo() : null };
             this._clbUmapSelectedPoints = new Set();
             this._renderUmapPlot(x, y, cellLines, categories, null, colorBy, null);
             document.getElementById('clbUmapSelectionControls').style.display = 'flex';
@@ -59651,6 +59656,38 @@ ${clone.innerHTML}
             console.error(`${method} error:`, err);
             document.getElementById('clbUmapPlot').innerHTML = `<div style="padding:20px;text-align:center;color:#ef4444;">Computation failed: ${err.message}</div>`;
         }
+    }
+
+    // Curated gene classes from Green Listed (web_data/gene_classes.json),
+    // loaded on first use; fills the Genes menu with each class and its size.
+    async _ensureGeneClasses() {
+        if (this._geneClasses !== undefined) return this._geneClasses;
+        try { this._geneClasses = (await (await fetch(this._dataUrl('web_data/gene_classes.json'))).json()).classes || null; }
+        catch (e) { this._geneClasses = null; }
+        const sel = document.getElementById('clbUmapGeneClass');
+        if (sel && this._geneClasses && sel.options.length <= 1) {
+            for (const [k, c] of Object.entries(this._geneClasses)) {
+                const o = document.createElement('option');
+                o.value = k; o.textContent = `${c.label} (${c.n.toLocaleString()})`;
+                o.title = `${c.description} Source: ${c.source}.`;
+                sel.appendChild(o);
+            }
+        }
+        return this._geneClasses;
+    }
+
+    _umapClassInfo() {
+        const k = document.getElementById('clbUmapGeneClass')?.value;
+        const c = k && this._geneClasses?.[k];
+        return c ? { key: k, label: c.label, source: c.source, n: c.n } : null;
+    }
+
+    async _umapClassPool() {
+        const k = document.getElementById('clbUmapGeneClass')?.value;
+        if (!k) return null;
+        await this._ensureGeneClasses();
+        const c = this._geneClasses?.[k];
+        return c ? new Set(c.genes) : null;
     }
 
     _parseUmapGeneList() {
@@ -59987,7 +60024,9 @@ ${clone.innerHTML}
         return { eigenvalues, eigenvectors };
     }
 
-    _buildVariableGeneMatrix(cellLineIndices, nTopGenes, type, returnGeneNames = false, customGeneList = null) {
+    // pool: an optional Set of upper-case symbols (a curated gene class) the
+    // variance ranking is restricted to.
+    _buildVariableGeneMatrix(cellLineIndices, nTopGenes, type, returnGeneNames = false, customGeneList = null, pool = null) {
         const nCL = cellLineIndices.length;
         let nGenes, getData, allGeneNames;
 
@@ -60050,7 +60089,7 @@ ${clone.innerHTML}
 
             const geneRanking = [];
             for (let g = 0; g < nGenes; g++) {
-                if (variances[g] > 0) geneRanking.push({ idx: g, v: variances[g] });
+                if (variances[g] > 0 && (!pool || pool.has(String(allGeneNames[g]).toUpperCase()))) geneRanking.push({ idx: g, v: variances[g] });
             }
             geneRanking.sort((a, b) => b.v - a.v);
             topGenes = geneRanking.slice(0, nTopGenes).map(r => r.idx);
@@ -60674,7 +60713,8 @@ ${clone.innerHTML}
             }
             const dims = this._getUmapPlotDimensions();
             const method = this._clbUmapData?.method === 'pca' ? 'PCA' : 'UMAP';
-            const titleText = `${method} \u2014 ${dataTypeLabel} (${cellLines.length} cell lines)`;
+            const cls = this._clbUmapData?.geneClass;
+            const titleText = `${method} \u2014 ${dataTypeLabel}${cls ? `, ${cls.label.toLowerCase()}` : ''} (${cellLines.length} cell lines)`;
             const umapTitleAnn = {
                 x: 0.5, y: 1.0, xref: 'paper', yref: 'paper',
                 xanchor: 'center', yanchor: 'bottom',
@@ -68371,7 +68411,10 @@ ${clone.innerHTML}
         const gA = this._umapGateA?.length || (this._umapGateA?.size ?? 0);
         const gB = this._umapGateB?.length || (this._umapGateB?.size ?? 0);
 
-        const geneRule = customList.length
+        const gcls = u.geneClass;
+        const geneRule = !customList.length && gcls
+            ? `The genes were the most variable (up to 1,000 per layer, variance ranked on a subsample of at most 100 cell lines) among the ${this._mNum(gcls.n)} genes of the curated list "${gcls.label}" (source: ${gcls.source}, as curated in Green Listed)${dtRaw === 'both' ? ', from gene effect and from expression, joined and each feature centred and scaled to unit variance so the two layers weigh equally' : ', left on their own scale'}.`
+            : customList.length
             ? `The genes were the ${this._mNum(customList.length)} typed into the gene-list box, taken in the order given, and each gene was then centred and scaled to unit variance across the cell lines.`
             : dtRaw === 'both'
                 ? `The features were the 1,000 most variable genes in gene effect and the 1,000 most variable in expression, each ranked on a subsample of at most 100 cell lines, joined into one matrix (a gene can appear once per layer) and each feature centred and scaled to unit variance, so the two layers weigh equally despite expression's wider range.`
