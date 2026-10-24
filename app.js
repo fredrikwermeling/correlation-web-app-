@@ -51099,8 +51099,9 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
     _gbStructureSvg(gene, st, t, hot) {
         const W = 760, x0 = 34, x1 = W - 34, font = 'Arial, sans-serif';
         const ex = t.exons, n = ex.length;
-        // Hotspot codons placed first: codons closer than a label's width
-        // share one stem, their heads stacked, so labels never collide.
+        // Hotspot codons placed first: each keeps its own stem at its true
+        // position, and its label goes on the lowest row where neither the
+        // label nor the head overlaps another one.
         const hotX = [];
         const intronW0 = n > 1 ? Math.max(5, Math.min(24, 200 / (n - 1))) : 0;
         {
@@ -51115,13 +51116,18 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 if (loc) hotX.push({ ...h, px: xs0[loc.i] + w0[loc.i] * loc.off / ex[loc.i].len });
             }
         }
-        const groups = [];
+        const maxHotN = hotX.length ? Math.max(...hotX.map(h => h.n)) : 1;
+        const rows = [];
         for (const h of hotX.sort((a2, b) => a2.px - b.px)) {
-            const g0 = groups[groups.length - 1];
-            if (g0 && h.px - g0[0].px < 40) g0.push(h); else groups.push([h]);
+            h.r = 3 + 3 * Math.sqrt(h.n / maxHotN);
+            h.text = `${h.label} · ${h.n} line${h.n === 1 ? '' : 's'}`;
+            const lo = h.px - h.r - 3, hi = h.px + 9 + h.text.length * 5.6 + 4;
+            let L = 0;
+            while ((rows[L] || []).some(([a2, b]) => lo < b && hi > a2)) L++;
+            (rows[L] ||= []).push([lo, hi]);
+            h.level = L;
         }
-        const tallest = groups.reduce((m2, g0) => Math.max(m2, g0.length), 0);
-        const mid = 22 + (groups.length ? 18 + tallest * 15 : 0);
+        const mid = 22 + (hotX.length ? 18 + rows.length * 15 : 0);
         const intronW = n > 1 ? Math.max(5, Math.min(24, 200 / (n - 1))) : 0;
         const space = x1 - x0 - intronW * (n - 1);
         const total = ex.reduce((a, e) => a + e.len, 0) || 1;
@@ -51156,24 +51162,22 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         let span = '';
         if (startX !== null && t.protein) {
             const yb = mid + 52;
-            span = `<path d="M${(startX + 10).toFixed(1)},${yb} H${(stopX - 10).toFixed(1)}" stroke="#9ca3af" stroke-width="0.8" stroke-dasharray="2 2"/>`
+            // The rule stops either side of the text rather than running under it.
+            const cdsTxt = `coding ${t.cdsLength.toLocaleString()} nt · ${t.protein.length.toLocaleString()} aa`;
+            const cMid = (startX + stopX) / 2, half = cdsTxt.length * 2.6 + 6;
+            span = (cMid - half > startX + 10 ? `<path d="M${(startX + 10).toFixed(1)},${yb} H${(cMid - half).toFixed(1)}" stroke="#9ca3af" stroke-width="0.8" stroke-dasharray="2 2"/>` : '')
+                + (cMid + half < stopX - 10 ? `<path d="M${(cMid + half).toFixed(1)},${yb} H${(stopX - 10).toFixed(1)}" stroke="#9ca3af" stroke-width="0.8" stroke-dasharray="2 2"/>` : '')
                 + `<text x="${((startX + stopX) / 2).toFixed(1)}" y="${yb + 4}" text-anchor="middle" font-size="9.5" fill="#6b7280" font-family="${font}" stroke="#ffffff" stroke-width="3" paint-order="stroke">coding ${t.cdsLength.toLocaleString()} nt · ${t.protein.length.toLocaleString()} aa</text>`;
         }
-        // Hotspot lollipops: one stem per group, heads stacked upwards,
-        // each labelled to its right with the codon and the line count.
-        let pops = '';
-        if (groups.length) {
-            const maxN = Math.max(...hotX.map(h => h.n));
-            for (const g0 of groups) {
-                const px = g0[0].px, topY = mid - 12 - 15 * g0.length;
-                pops += `<line x1="${px.toFixed(1)}" y1="${mid - 11}" x2="${px.toFixed(1)}" y2="${(topY + 4).toFixed(1)}" stroke="#9ca3af" stroke-width="1"/>`;
-                g0.forEach((h, k2) => {
-                    const y = mid - 18 - 15 * k2;
-                    pops += `<g><title>${this.esc(gene)} ${h.label}: ${h.n} cell line${h.n === 1 ? '' : 's'}${h.detail ? ` (${h.detail})` : ''}</title>`
-                        + `<circle cx="${px.toFixed(1)}" cy="${y.toFixed(1)}" r="${(3 + 3 * Math.sqrt(h.n / maxN)).toFixed(1)}" fill="#dc2626" stroke="#ffffff" stroke-width="1.2"/>`
-                        + `<text x="${(px + 9).toFixed(1)}" y="${(y + 3.5).toFixed(1)}" font-size="10" font-weight="700" fill="#b91c1c" font-family="${font}" stroke="#ffffff" stroke-width="3" paint-order="stroke">${h.label}<tspan font-weight="400" fill="#6b7280"> ${h.n}</tspan></text></g>`;
-                });
-            }
+        // Hotspot lollipops: a stem from the exon to the head on its row,
+        // labelled to the right with the codon and how many lines carry it.
+        // Stems first, so a label's white halo covers any stem passing behind it.
+        let pops = hotX.map(h => `<line x1="${h.px.toFixed(1)}" y1="${mid - 11}" x2="${h.px.toFixed(1)}" y2="${(mid - 18 - 15 * h.level + h.r).toFixed(1)}" stroke="#9ca3af" stroke-width="1"/>`).join('');
+        for (const h of hotX) {
+            const px = h.px.toFixed(1), y = mid - 18 - 15 * h.level;
+            pops += `<g><title>${this.esc(gene)} codon ${h.label}: mutated in ${h.n} cell line${h.n === 1 ? '' : 's'}${h.detail ? ` (${h.detail})` : ''}</title>`
+                + `<circle cx="${px}" cy="${y.toFixed(1)}" r="${h.r.toFixed(1)}" fill="#dc2626" stroke="#ffffff" stroke-width="1.2"/>`
+                + `<text x="${(h.px + 9).toFixed(1)}" y="${(y + 3.5).toFixed(1)}" font-size="10" font-weight="700" fill="#b91c1c" font-family="${font}" stroke="#ffffff" stroke-width="3" paint-order="stroke">${this.esc(h.label)}<tspan font-weight="400" fill="#6b7280"> · ${h.n} line${h.n === 1 ? '' : 's'}</tspan></text></g>`;
         }
         const ends = `<text x="${x0 - 8}" y="${mid + 4}" text-anchor="end" font-size="10" fill="#6b7280" font-family="${font}">5′</text><text x="${x1 + 8}" y="${mid + 4}" font-size="10" fill="#6b7280" font-family="${font}">3′</text>`;
         return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${mid + 62}" width="100%" style="max-width:${W}px; display:block;" role="img" aria-label="Exon structure of ${this.esc(gene)}">${defs}${pops}${g}${labels}${flag(startX, 'ATG')}${flag(stopX, 'Stop')}${span}${ends}</svg>`;
@@ -51268,13 +51272,15 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             this._gbRow('Strand', st.strand === -1 ? 'Minus (read right to left on the chromosome)' : 'Plus'),
             this._gbRow('Exons', `${t.exons.length}${t.protein ? ` <span class="gb-m">(${coding} with coding sequence)</span>` : ''}`),
             this._gbRow('Lengths', `gene ${(span / 1000).toFixed(1)} kb · mRNA ${(t.tx.length || 0).toLocaleString()} nt${t.protein ? ` · coding ${t.cdsLength.toLocaleString()} nt · protein ${t.protein.length.toLocaleString()} aa` : ''}`),
-            hot.length ? this._gbRow('Hotspot codons', hot.map(h => `${e(h.label)} <span class="gb-m">(${h.n})</span>`).join(', ')) : '',
+            hot.length ? this._gbRow('Hotspot codons', hot.map(h => `${e(h.label)} <span class="gb-m">in ${h.n} line${h.n === 1 ? '' : 's'}${h.detail ? ` (${e(h.detail)})` : ''}</span>`).join('; ')
+                + `<div class="gb-m">Protein positions where DepMap calls recurrent hotspot mutations, with the number of cell lines carrying one; the red marks in the figure.</div>`) : '',
         ].join('');
         const btn = (k, txt, title) => `<button class="btn btn-outline btn-sm" data-gb-act="${k}" title="${title}">${txt}</button>`;
         return this._gbDesc('The exons of one transcript, read from 5′ to 3′. Tall boxes are protein-coding, low boxes untranslated (UTR); exons are to scale, introns shortened.' + (hot.length ? ' Red marks are hotspot codons, sized by how many cell lines carry a change there.' : ''))
             + `<div class="gb-kv" style="align-items:center;"><span class="gb-kv-l">Transcript shown</span><span class="gb-kv-v"><select id="gbTxSelect" class="form-control" style="font-size:11px; padding:2px 6px; max-width:460px;">${opts}</select></span></div>`
             + note
             + `<div id="gbStructFig" style="background:#fff; padding:2px 0;">${this._gbStructureSvg(gene, st, t, hot)}</div>`
+            + (hot.length ? `<div class="gb-m" style="margin:-4px 0 2px;"><span style="color:#dc2626;">●</span> Hotspot codons: where DepMap calls recurrent mutations, sized by how many cell lines carry one; hover a mark for the specific changes.</div>` : '')
             + `<div class="gb-m" style="display:flex; justify-content:flex-end; margin:-2px 0 8px;"><button class="btn btn-outline btn-sm mobile-hide" data-gb-act="copy-struct" style="font-size:10px; padding:1px 8px;" title="Copy the exon figure as an image">Copy figure</button></div>`
             + stats
             + `<div class="gb-sub">Download this transcript</div>`
