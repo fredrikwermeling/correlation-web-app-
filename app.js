@@ -52572,8 +52572,9 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 `<button class="btn btn-sm inspect-btn" style="padding:2px 6px; font-size:10px; background:#6ba544; color:white;" data-gb-scatter="${this.esc(h.gene)}" data-gb-x="${m.tx}" data-gb-y="${m.ty}" title="Open the correlation plot">Correlation</button>`]))
             + `</div>`).join('');
         box.innerHTML = `<div class="gb-sub" style="margin-top:10px;">Expression correlations <span class="gb-m">(co-expression)</span></div>`
+            + `<div style="display:flex; flex-wrap:wrap; gap:6px 22px; align-items:flex-start;"><div style="flex:1 1 420px; min-width:0;">`
             + (lists.length > 1 ? `<div class="gb-xtabs">${tabs}</div>` : `<div class="gb-m" style="margin:2px 0;"><b style="color:#374151;">${lists[0].head(g)}</b>${(() => { const k = res[lists[0].key].filter(isNear).length; return k ? ` <span class="gb-near">${k} nearby</span>` : ''; })()}</div>`) + panels
-            + this._gbCoexprHeatmap(gene, (res.mrnaVsMrna || []).map(h => h.gene), isNear)
+            + `</div>${this._gbCoexprHeatmap(gene, (res.mrnaVsMrna || []).map(h => h.gene), isNear)}</div>`
             + `<div class="gb-m" style="margin-top:3px;">Pearson r across the cell lines with both values (hover p for n), strongest in either direction, genes measured in at least 100 lines. `
             + `${g} is at ${this.esc(this.geneLocations?.[gene]?.band || 'an unknown band')}; <span class="gb-near">amber</span> marks genes within ${near} Mb on the same chromosome. Neighbours are often gained or lost together, so their mRNA can correlate through shared copy number rather than shared function.</div>` + fewGe;
         box.querySelectorAll('[data-gb-xtab]').forEach(b => b.addEventListener('click', () => {
@@ -52642,8 +52643,8 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             + [[1, 0], [0, 0.5], [-1, 1]].map(([v, f]) => `<text x="${kx + kw + 5}" y="${ky + 6 + f * kh + 3.5}" font-size="10" fill="#374151">${v > 0 ? '+1' : v < 0 ? '\u22121' : '0'}</text>`).join('')
             + (partners.some(g => isNear({ gene: g })) ? `<text x="${kx}" y="${ky + kh + 26}" font-size="10" fill="#b45309">amber name: nearby gene</text>` : '');
         svg += '</svg>';
-        return `<div class="gb-m" style="margin:10px 0 3px;"><b style="color:#374151;">How these genes correlate with each other</b>: mRNA r for every pair, ordered by r with ${this.gi(gene)}. A red block is a group that rises and falls together; values shown where |r| is 0.5 or more. Click a square for that pair's plot.</div>`
-            + `<div class="gb-coexpr-hm" style="overflow-x:auto;">${svg}</div>`;
+        return `<div style="flex:0 1 ${W}px; max-width:100%; min-width:0;"><div class="gb-m" style="margin:2px 0 3px;"><b style="color:#374151;">How these genes correlate with each other</b>: mRNA r for every pair, ordered by r with ${this.gi(gene)}. A red block is a group that rises and falls together; values shown where |r| is 0.5 or more. Click a square for that pair's plot.</div>`
+            + `<div class="gb-coexpr-hm" style="overflow-x:auto;">${svg}</div></div>`;
     }
 
     // Distance window for "nearby" in the expression-correlation tables.
