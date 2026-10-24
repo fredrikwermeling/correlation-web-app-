@@ -20697,7 +20697,26 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         this.renderSinglePanelPlot(filteredData, gene1, gene2, hotspotGene, hotspotMode, searchTerms, fontSize, filterDesc, transOverlayGene, transOverlayMode, colorByCategory);
     }
 
+    // Under the correlation plot: when an axis is mRNA or copy number and the
+    // two genes sit within GB_NEAR_MB on one chromosome, say so, since shared
+    // copy number alone can make neighbours' mRNA correlate.
+    async _scatterNearNote(gene1, gene2) {
+        const box = document.getElementById('scatterNearNote');
+        if (!box) return;
+        const tx = document.getElementById('xAxisDataType')?.value, ty = document.getElementById('yAxisDataType')?.value;
+        const relevant = gene1 && gene2 && gene1 !== gene2 && [tx, ty].some(t => t === 'expr' || t === 'cn');
+        if (!relevant) { box.innerHTML = ''; return; }
+        await this.loadGeneLocations().catch(() => null);
+        const d = this._gbNeighbour(gene1, gene2);
+        const near = CorrelationExplorer.GB_NEAR_MB;
+        if (!d || d.mb === null || d.mb > near) { box.innerHTML = ''; return; }
+        const a = this.geneLocations?.[gene1]?.band || '';
+        const gap = d.mb < 0.05 ? 'next to each other' : `${d.mb.toFixed(1)} Mb apart`;
+        box.innerHTML = `<span class="gb-near">Nearby genes</span> ${this.gi(gene1)} (${this.esc(a)}) and ${this.gi(gene2)} (${this.esc(d.band)}) are ${gap} on chromosome ${this.esc(d.chr)}. Neighbours are often gained or lost together, so their mRNA can correlate through shared copy number rather than shared function.`;
+    }
+
     renderSinglePanelPlot(filteredData, gene1, gene2, hotspotGene, hotspotMode, searchTerms, fontSize, filterDesc = '', transOverlayGene = '', transOverlayMode = 'none', colorByCategory = '') {
+        this._scatterNearNote(gene1, gene2);
         const _hlMatch = this._highlightMatcher(searchTerms);
         // Calculate stats for each mutation group
         const wt = filteredData.filter(d => d.mutationLevel === 0);
@@ -21518,6 +21537,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
 
     renderThreePanelPlot(filteredData, gene1, gene2, hotspotGene, searchTerms, fontSize, filterDesc = '', isFusion = false, colorByCategory = '') {
+        this._scatterNearNote(gene1, gene2);
         const _hlMatch = this._highlightMatcher(searchTerms);
         const levelField = isFusion ? 'translocationLevel' : 'mutationLevel';
         const wt = filteredData.filter(d => d[levelField] === 0);
@@ -50438,12 +50458,13 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
     _gbSetSubtitle(gene) {
         const el = document.getElementById('gbSubtitle');
         if (!el || this._gbGene !== gene) return;
-        const parts = [gene];
+        const parts = [];
         const loc = this.geneLocations?.[gene];
         if (loc) parts.push(this._gbLocText(loc));
         const syn = this._gbAliases(gene).slice(0, 3);
         if (syn.length) parts.push(syn.join(', '));
-        el.textContent = parts.join('  |  ');
+        el.innerHTML = `<b style="font-size:13px; color:#111827; font-style:italic;">${this.esc(gene)}</b>`
+            + parts.map(x => `  |  ${this.esc(x)}`).join('');
     }
 
     _gbSynonymsOf(gene) {
@@ -50574,6 +50595,8 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 document.querySelectorAll('#gbRelCard [data-gb-codep]').forEach(p2 => { p2.hidden = p2.dataset.gbCodep !== k; });
                 return;
             }
+            const pair = e.target.closest('[data-gb-pair]');
+            if (pair && this._gbGene) { e.preventDefault(); const [a, b] = pair.dataset.gbPair.split('|'); this._gbScatter(a, b, 'expr', 'expr'); return; }
             const sc = e.target.closest('[data-gb-scatter]');
             if (sc && this._gbGene) { e.preventDefault(); this._gbScatter(this._gbGene, sc.dataset.gbScatter, sc.dataset.gbX || 'ge', sc.dataset.gbY || 'ge'); return; }
             const set = e.target.closest('[data-gb-set]');
@@ -52153,12 +52176,12 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         // gene set library), which say what the link is; the database lists
         // below only say that one exists.
         const named = this._gbNamedCache;
-        const sets = named.length ? `<div class="gb-sub">Curated pathways and complexes that include ${g}</div>`
-            + `<div class="gb-m" style="margin-bottom:2px;">Hand-picked member lists the app also uses in the cell line wiki${this._hasHeatmap() ? ' and the heatmap' : ''}. ${g} is highlighted in each; ${this._hasHeatmap() ? 'Network and Heatmap draw' : 'Network draws'} the whole list across the cell lines.</div>`
+        const sets = named.length ? `<details class="gb-details"><summary>Curated pathways and complexes that include ${g}: ${named.length}</summary>`
+            + `<div class="gb-m" style="margin:4px 0 2px;">Hand-picked member lists the app also uses in the cell line wiki${this._hasHeatmap() ? ' and the heatmap' : ''}. ${g} is highlighted in each; ${this._hasHeatmap() ? 'Network and Heatmap draw' : 'Network draws'} the whole list across the cell lines.</div>`
             + named.map((x, k) => `<div class="gb-set"><div><b>${this.esc(x.name)}</b> <span class="gb-m">${this.esc(x.kind)} · ${x.genes.length} genes</span>`
                 + `<span class="gb-set-acts"><button class="gb-scatter-btn" data-gb-set="${k}" data-gb-set-do="net" title="Run Gene set analysis on this set">Network</button>${this._hasHeatmap() ? `<button class="gb-scatter-btn" data-gb-set="${k}" data-gb-set-do="hm" title="Show this set as a heatmap across the cell lines">Heatmap</button>` : ''}</span></div>`
                 + (x.note ? `<div class="gb-m" style="margin:1px 0 3px;">${this._italicizeGenesInHtml(this.esc(x.note))}</div>` : '')
-                + `<div class="gb-chips">${list(x.genes, 24)}</div></div>`).join('') : '';
+                + `<div class="gb-chips">${list(x.genes, 24)}</div></div>`).join('') + `</details>` : '';
         const db = (corum.length || reactome.length) ? `<details class="gb-details"><summary>All database partners: ${corum.length ? `${corum.length} in CORUM complexes` : ''}${corum.length && reactome.length ? ', ' : ''}${reactome.length ? `${reactome.length >= 120 ? 'the 120 closest' : reactome.length} in Reactome pathways` : ''}</summary>`
             + `<div class="gb-m" style="margin:4px 0;">Every protein recorded in a complex with ${g} (CORUM), and the genes sharing a Reactome pathway of 5 to 100 genes with it (at most 120, those sharing the most pathways). This list does not say which complex or pathway each comes from; the CORUM and Reactome sites do.</div>`
             + (corum.length ? `<div class="gb-sub" style="margin-top:6px;">CORUM complex partners</div><div class="gb-chips">${list(corum, 40)}</div>`
@@ -52276,6 +52299,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             + `</div>`).join('');
         box.innerHTML = `<div class="gb-sub" style="margin-top:10px;">Expression correlations <span class="gb-m">(co-expression)</span></div>`
             + (lists.length > 1 ? `<div class="gb-xtabs">${tabs}</div>` : `<div class="gb-m" style="margin:2px 0;"><b style="color:#374151;">${lists[0].head(g)}</b>${(() => { const k = res[lists[0].key].filter(isNear).length; return k ? ` <span class="gb-near">${k} nearby</span>` : ''; })()}</div>`) + panels
+            + this._gbCoexprHeatmap(gene, (res.mrnaVsMrna || []).map(h => h.gene), isNear)
             + `<div class="gb-m" style="margin-top:3px;">Pearson r across the cell lines with both values (hover p for n), strongest in either direction, genes measured in at least 100 lines. `
             + `${g} is at ${this.esc(this.geneLocations?.[gene]?.band || 'an unknown band')}; <span class="gb-near">amber</span> marks genes within ${near} Mb on the same chromosome. Neighbours are often gained or lost together, so their mRNA can correlate through shared copy number rather than shared function.</div>` + fewGe;
         box.querySelectorAll('[data-gb-xtab]').forEach(b => b.addEventListener('click', () => {
@@ -52283,6 +52307,69 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             box.querySelectorAll('[data-gb-xtab]').forEach(x => x.classList.toggle('on', x === b));
             box.querySelectorAll('[data-gb-xpanel]').forEach(x => { x.hidden = x.dataset.gbXpanel !== b.dataset.gbXtab; });
         }));
+    }
+
+    // Pairwise mRNA correlation of the gene and its co-expressed genes, over
+    // the panel's cell lines with both values. Genes ordered by r with the
+    // gene, so a tight module shows as one red block and an anti-correlated
+    // group as a blue band. A cell opens the pair's correlation plot.
+    _gbCoexprHeatmap(gene, partners, isNear) {
+        const genes = [gene, ...partners.filter(g => g !== gene)].filter(g => this.expressionGeneIndex?.has(g));
+        if (genes.length < 3 || !this.expressionData) return '';
+        const nE = this.expressionMetadata.nCellLines;
+        const eIdx = new Map(this.expressionMetadata.cellLines.map((cl, i) => [cl, i]));
+        const cols = this.metadata.cellLines.map(cl => eIdx.get(cl)).filter(i => i !== undefined);
+        const vec = genes.map(g => { const off = this.expressionGeneIndex.get(g) * nE; return cols.map(j => this.expressionData[off + j]); });
+        const k = genes.length;
+        const R = Array.from({ length: k }, () => new Array(k).fill(1));
+        for (let a = 0; a < k; a++) for (let b = a + 1; b < k; b++) {
+            let n = 0, sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0;
+            const x = vec[a], y = vec[b];
+            for (let i = 0; i < x.length; i++) {
+                const u = x[i], v = y[i];
+                if (Number.isNaN(u) || Number.isNaN(v)) continue;
+                n++; sx += u; sy += v; sxx += u * u; syy += v * v; sxy += u * v;
+            }
+            const den = Math.sqrt((n * sxx - sx * sx) * (n * syy - sy * sy));
+            R[a][b] = R[b][a] = n > 2 && den ? (n * sxy - sx * sy) / den : NaN;
+        }
+        const order = [0, ...genes.slice(1).map((_, i) => i + 1).sort((a, b) => R[0][b] - R[0][a])];
+        const cell = 24, font = 'Arial, sans-serif';
+        const mctx = document.createElement('canvas').getContext('2d');
+        mctx.font = 'italic 11px Arial';
+        const lab = Math.ceil(Math.max(...genes.map(g => mctx.measureText(g).width))) + 10;
+        const keyW = 130, W = lab + k * cell + 24 + keyW, H = lab + k * cell + 8;
+        const col = (r) => {
+            if (Number.isNaN(r)) return '#f3f4f6';
+            const t = Math.min(1, Math.abs(r));
+            const [R1, G1, B1] = r >= 0 ? [178, 24, 43] : [33, 102, 172];
+            const mix = (c) => Math.round(255 + (c - 255) * t);
+            return `rgb(${mix(R1)},${mix(G1)},${mix(B1)})`;
+        };
+        const labCol = (g) => g === gene ? '#111827' : isNear({ gene: g }) ? '#b45309' : '#374151';
+        let svg = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="max-width:100%; height:auto; display:block; font-family:${font};">`;
+        order.forEach((gi, p) => {
+            const g = genes[gi], y = lab + p * cell + cell / 2 + 4, x = lab + p * cell + cell / 2;
+            const w = g === gene ? '700' : '400';
+            svg += `<text x="${lab - 6}" y="${y}" text-anchor="end" font-size="11" font-style="italic" font-weight="${w}" fill="${labCol(g)}">${this.esc(g)}</text>`;
+            svg += `<text transform="translate(${x + 4},${lab - 6}) rotate(-90)" font-size="11" font-style="italic" font-weight="${w}" fill="${labCol(g)}">${this.esc(g)}</text>`;
+        });
+        order.forEach((ai, p) => order.forEach((bi, q) => {
+            const r = R[ai][bi], x = lab + q * cell, y = lab + p * cell;
+            if (ai === bi) { svg += `<rect x="${x}" y="${y}" width="${cell}" height="${cell}" fill="#e5e7eb" stroke="#fff"/>`; return; }
+            svg += `<g data-gb-pair="${this.esc(genes[ai])}|${this.esc(genes[bi])}" style="cursor:pointer;"><title>${this.esc(genes[ai])} and ${this.esc(genes[bi])}: r = ${Number.isNaN(r) ? 'n/a' : r.toFixed(2)}. Click to open their correlation plot.</title>`
+                + `<rect x="${x}" y="${y}" width="${cell}" height="${cell}" fill="${col(r)}" stroke="#fff"/>`
+                + (Math.abs(r) >= 0.5 ? `<text x="${x + cell / 2}" y="${y + cell / 2 + 3.5}" text-anchor="middle" font-size="8.5" fill="${Math.abs(r) > 0.7 ? '#fff' : '#111827'}">${r.toFixed(2).replace(/^(-?)0\./, '$1.')}</text>` : '') + `</g>`;
+        }));
+        const kx = lab + k * cell + 24, ky = lab + 4, kw = 14, kh = Math.min(140, k * cell - 30);
+        svg += `<defs><linearGradient id="gbCxGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${col(1)}"/><stop offset="0.5" stop-color="#ffffff"/><stop offset="1" stop-color="${col(-1)}"/></linearGradient></defs>`;
+        svg += `<text x="${kx}" y="${ky - 2}" font-size="10" fill="#6b7280">mRNA r</text>`
+            + `<rect x="${kx}" y="${ky + 6}" width="${kw}" height="${kh}" fill="url(#gbCxGrad)" stroke="#d1d5db"/>`
+            + [[1, 0], [0, 0.5], [-1, 1]].map(([v, f]) => `<text x="${kx + kw + 5}" y="${ky + 6 + f * kh + 3.5}" font-size="10" fill="#374151">${v > 0 ? '+1' : v < 0 ? '\u22121' : '0'}</text>`).join('')
+            + (partners.some(g => isNear({ gene: g })) ? `<text x="${kx}" y="${ky + kh + 26}" font-size="10" fill="#b45309">amber name: nearby gene</text>` : '');
+        svg += '</svg>';
+        return `<div class="gb-m" style="margin:10px 0 3px;"><b style="color:#374151;">How these genes correlate with each other</b>: mRNA r for every pair, ordered by r with ${this.gi(gene)}. A red block is a group that rises and falls together; values shown where |r| is 0.5 or more. Click a square for that pair's plot.</div>`
+            + `<div class="gb-coexpr-hm" style="overflow-x:auto;">${svg}</div>`;
     }
 
     // Distance window for "nearby" in the expression-correlation tables.

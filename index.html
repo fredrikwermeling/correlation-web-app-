@@ -1783,7 +1783,7 @@
         .gb-scope .gb-xtab { font-size:11px; padding:2px 10px; }
         .gb-scope .gb-xtab.on { background:#6ba544; color:#fff; }
         .gb-scope .gb-xtab.on .gb-near { background:#fff7db; }
-        .gb-scope .gb-near { background:#fef3c7; color:#92400e; border-radius:8px; padding:0 6px; font-size:10px; white-space:nowrap; font-weight:600; }
+        .gb-scope .gb-near, #scatterNearNote .gb-near { background:#fef3c7; color:#92400e; border-radius:8px; padding:0 6px; font-size:10px; white-space:nowrap; font-weight:600; }
         .gb-scope .gb-edge:hover .gb-edge-line { stroke:#1e40af; }
         .gb-scope .gb-node:hover circle { stroke-width:2.4; }
         .gb-scope .gb-table { width:auto; min-width:min(100%, 320px); font-size:11.5px; margin-bottom:2px; }
@@ -3955,6 +3955,7 @@
                                     <button class="btn btn-outline btn-sm" id="inspectOpenGEX" style="font-size:10px; padding:2px 8px;">X</button>
                                     <button class="btn btn-outline btn-sm" id="inspectOpenGEY" style="font-size:10px; padding:2px 8px;">Y</button>
                                 </span>
+                                <div id="scatterNearNote" style="font-size:10px; color:#4b5563; line-height:1.35; width:100%;"></div>
                             </div>
                         </div>
 
@@ -5827,7 +5828,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v90_78"></script>
+    <script src="app.js?v=v90_79"></script>
     <script src="tour.js?v=v89_49"></script>
 </body>
 </html>
