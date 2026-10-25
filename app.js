@@ -20868,8 +20868,6 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const sx = Math.sqrt(mean(xs.map(v => (v - mx) ** 2))) || 1, sy = Math.sqrt(mean(ys.map(v => (v - my) ** 2))) || 1;
         const rxy = mean(xs.map((v, i) => (v - mx) * (ys[i] - my))) / (sx * sy);
         const along = xs.map((v, i) => (v - mx) / sx + Math.sign(rxy || 1) * (ys[i] - my) / sy);
-        const slope = rxy * sy / sx;
-        const off = ys.map((v, i) => v - (my + slope * (xs[i] - mx)));
         const skip = new Set([this.currentInspect?.gene1, this.currentInspect?.gene2].filter(Boolean).map(g => String(g).toUpperCase()));
         box.innerHTML = '<span style="color:#6b7280;">Ranking genes...</span>';
         await new Promise(r => setTimeout(r, 0));
@@ -20878,38 +20876,34 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         for (let g = 0; g < names.length; g++) {
             if (skip.has(String(names[g]).toUpperCase())) continue;
             const off0 = g * nL;
-            let k = 0, s = 0, ss = 0, sa = 0, saa = 0, sga = 0, so = 0, soo = 0, sgo = 0;
+            let k = 0, s = 0, ss = 0, sa = 0, saa = 0, sga = 0;
             for (let i = 0; i < n; i++) {
                 const v = data[off0 + cols[i]];
                 if (v !== v || v === -999) continue;
-                const a = along[i], o = off[i];
-                k++; s += v; ss += v * v; sa += a; saa += a * a; sga += v * a; so += o; soo += o * o; sgo += v * o;
+                const a = along[i];
+                k++; s += v; ss += v * v; sa += a; saa += a * a; sga += v * a;
             }
             if (k < Math.max(20, n * 0.7)) continue;
             const vg = k * ss - s * s;
             if (vg <= 1e-9) continue;
             const ra = (k * sga - s * sa) / Math.sqrt(vg * (k * saa - sa * sa));
-            const ro = (k * sgo - s * so) / Math.sqrt(vg * (k * soo - so * so));
-            if (ra === ra || ro === ro) res.push({ g: names[g], ra, ro });
+            if (ra === ra) res.push({ g: names[g], ra });
         }
         const word = { ge: 'gene effect', expr: 'mRNA', cn: 'copy number' }[ct];
         const band = (r) => { const a = Math.abs(r); return a < 0.3 ? 'weak' : a < 0.5 ? 'moderate' : 'strong'; };
-        // Each gene is listed once, under the pattern it explains better, so
-        // the two lists do not repeat the same genes with different numbers.
-        const side = (r) => (Math.abs(r.ro) > Math.abs(r.ra) ? 'ro' : 'ra');
-        const list = (key, title, hint) => {
-            const top = res.filter(r => r[key] === r[key] && side(r) === key).sort((a, b) => Math.abs(b[key]) - Math.abs(a[key])).slice(0, 8);
-            return `<div style="flex:1 1 180px; min-width:0;"><div style="font-weight:600; color:#374151;" title="${hint}">${title}</div>`
-                + top.map(r => {
-                    const b = band(r[key]), col = b === 'weak' ? '#9ca3af' : r[key] > 0 ? '#b91c1c' : '#1d4ed8';
-                    return `<div style="display:flex; justify-content:space-between; gap:8px;"><a href="#" data-cbs-gene="${this.esc(r.g)}" style="color:#4f46e5;">${this.gi(r.g)}</a><span style="color:${col};${b === 'strong' ? ' font-weight:600;' : ''}" title="${b}">${r[key].toFixed(2)}</span></div>`;
-                }).join('') + `</div>`;
+        // One list: the genes that follow the trend line best. A second list
+        // for distance above / below the line was dropped as hard to read.
+        const top = res.sort((a, b) => Math.abs(b.ra) - Math.abs(a.ra)).slice(0, 10);
+        const row = (r) => {
+            const b = band(r.ra), col = b === 'weak' ? '#9ca3af' : r.ra > 0 ? '#b91c1c' : '#1d4ed8';
+            return `<div style="display:flex; justify-content:space-between; gap:8px;"><a href="#" data-cbs-gene="${this.esc(r.g)}" style="color:#4f46e5;">${this.gi(r.g)}</a><span style="color:${col};${b === 'strong' ? ' font-weight:600;' : ''}" title="${b}">${r.ra.toFixed(2)}</span></div>`;
         };
-        box.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:3px;"><span style="color:#374151;">Genes whose <b>${word}</b> best explains the ${n.toLocaleString()} plotted cell lines</span><button type="button" data-cbs-close style="border:none; background:none; color:#9ca3af; cursor:pointer; font-size:14px; line-height:1;" title="Close">&times;</button></div>`
+        const half = Math.ceil(top.length / 2);
+        box.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:3px;"><span style="color:#374151;">Genes whose <b>${word}</b> best follows the trend in the ${n.toLocaleString()} plotted cell lines</span><button type="button" data-cbs-close style="border:none; background:none; color:#9ca3af; cursor:pointer; font-size:14px; line-height:1;" title="Close">&times;</button></div>`
             + `<div style="display:flex; gap:16px; flex-wrap:wrap;">`
-            + list('ra', 'Along the trend', 'r with where each line sits along the trend (both axes together)')
-            + list('ro', 'Above / below the trend', 'r with how far each line sits above (positive) or below the regression line')
-            + `</div><div style="color:#6b7280; font-size:10px; margin-top:3px;">Pearson r. Along the trend, positive (red) means higher toward the right end of the trend line, negative (blue) toward the left end; above / below, positive means higher in the lines above the line. |r| below 0.3 is weak (grey), 0.3 to 0.5 moderate, 0.5 and above strong. Each gene is listed once, under the pattern it explains better. Click a gene to colour by it.</div>`;
+            + `<div style="flex:1 1 180px; min-width:0;">${top.slice(0, half).map(row).join('')}</div>`
+            + `<div style="flex:1 1 180px; min-width:0;">${top.slice(half).map(row).join('')}</div>`
+            + `</div><div style="color:#6b7280; font-size:10px; margin-top:3px;">Pearson r with where each cell line sits along the trend line. Red: higher toward the right end of the trend, blue: higher toward the left end. |r| below 0.3 is weak (grey), 0.3 to 0.5 moderate, 0.5 and above strong. Click a gene to colour by it.</div>`;
     }
 
     // The Color by gene, resolved when typed; a restored or reopened plot only
@@ -40729,8 +40723,18 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         return isNaN(v) ? NaN : v;
     }
 
+    // One load at a time: a second caller used to start its own decode while
+    // the first was finishing, and that run swapped in a zero-filled matrix
+    // and refilled it chunk by chunk after expressionLoaded was already true,
+    // so for a few seconds every gene past the filled part read as 0.
     async loadExpressionData() {
         if (this.expressionLoaded) return;
+        if (this._exprLoading) return this._exprLoading;
+        this._exprLoading = this._loadExpressionDataOnce();
+        try { return await this._exprLoading; } finally { this._exprLoading = null; }
+    }
+
+    async _loadExpressionDataOnce() {
 
         const loadingEl = document.getElementById('exprDataLoadingIndicator');
         const loadingTextEl = document.getElementById('exprDataLoadingText');
@@ -40766,18 +40770,21 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             // between them so the page stays responsive while it decodes and the
             // percentage below can actually paint. Same arithmetic and order as a
             // single pass, so the values are identical.
-            this.expressionData = new Float32Array(int16Data.length);
+            // Filled off to the side and published whole, so nothing reads a
+            // half-decoded matrix.
+            const exprArr = new Float32Array(int16Data.length);
             const _exprLen = int16Data.length, _EXPR_CHUNK = 4000000;
             for (let base = 0; base < _exprLen; base += _EXPR_CHUNK) {
                 const end = Math.min(base + _EXPR_CHUNK, _exprLen);
                 for (let i = base; i < end; i++) {
-                    this.expressionData[i] = (int16Data[i] === naValue) ? NaN : int16Data[i] / scaleFactor;
+                    exprArr[i] = (int16Data[i] === naValue) ? NaN : int16Data[i] / scaleFactor;
                 }
                 if (end < _exprLen) {
                     loadingTextEl.textContent = `Decompressing expression data... ${Math.round(end / _exprLen * 100)}%`;
                     await new Promise(resolve => setTimeout(resolve, 0));
                 }
             }
+            this.expressionData = exprArr;
 
             // Build cell line mapping: for each GE cell line index, find the expression cell line index
             loadingTextEl.textContent = 'Building cell line mapping...';
