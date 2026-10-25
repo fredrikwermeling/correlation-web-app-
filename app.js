@@ -11112,43 +11112,50 @@ class CorrelationExplorer {
         // The measure named in the headers follows the metric: Δ GE for gene
         // effect, Δ Expr when the table ranks mRNA expression.
         const unit = mr.metric === 'expr' ? 'Expr' : 'GE';
-        const cols = [
-            { col: 'gene', label: 'Gene', style: '' },
-            { col: 'n_wt', label: `N (${wtLabel})`, style: 'border-left: 2px solid #2563eb;' },
-            { col: 'mean_wt', label: `Mean ${unit} (${wtLabel})`, style: '' },
-            { col: 'n_mut', label: `N (${mutLbl}${isD ? '' : ' 1+2'})`, style: 'border-left: 2px solid #f97316;' },
-            { col: 'mean_mut', label: `Mean ${unit} (${mutLbl}${isD ? '' : ' 1+2'})`, style: '' },
-            { col: 'diff_mut', label: `Δ ${unit} (1+2v0)`, style: 'border-left: 2px solid #d1d5db;' },
-            { col: 'p_mut', label: 'p-value', style: '' },
+        // Columns come in groups (WT, mutated, mutated vs WT, ...). The group
+        // names sit in a header row of their own above short column names,
+        // in the group's colour, so each column reads as part of its group.
+        const mutAll = `${mutLbl}${isD ? '' : ' 1+2'}`;
+        const mut2 = `${mutLbl} 2${isT ? '+' : ''}`;
+        const vsWord = isT ? 'vs no fusion' : isD ? `vs ${_Lh.ref}` : 'vs WT';
+        const groups = [
+            { label: wtLabel, color: '#2563eb', cols: [{ col: 'n_wt', label: 'N' }, { col: 'mean_wt', label: `Mean ${unit}` }] },
+            { label: mutAll, color: '#f97316', cols: [{ col: 'n_mut', label: 'N' }, { col: 'mean_mut', label: `Mean ${unit}` }] },
+            { label: `${isD ? mutLbl : 'Mut 1+2'} ${vsWord}`, color: '#6b7280', cols: [{ col: 'diff_mut', label: `Δ ${unit}` }, { col: 'p_mut', label: 'p' }] },
         ];
-        // Only show het/hom columns for non-damaging mutations (damaging is binary)
+        // Het/hom columns only for hotspot / fusion calls (damaging is binary).
         if (!isD) {
-            cols.push(
-                { col: 'n_2', label: `N (${mutLbl} 2${isT ? '+' : ''})`, style: 'border-left: 2px solid #dc2626;', cls: 'mut2-col' },
-                { col: 'mean_2', label: `Mean ${unit} (${mutLbl} 2${isT ? '+' : ''})`, style: '', cls: 'mut2-col' },
-                { col: 'diff_2', label: `Δ ${unit} (2v0)`, style: 'border-left: 2px solid #d1d5db;', cls: 'mut2-col' },
-                { col: 'p_2', label: 'p-value (2v0)', style: '', cls: 'mut2-col' },
-                { col: 'diff_2v1', label: `Δ ${unit} (2v1)`, style: 'border-left: 2px solid #d1d5db;', cls: 'mut2-col' },
-                { col: 'p_2v1', label: 'p (2v1)', style: '', cls: 'mut2-col' }
+            groups.push(
+                { label: mut2, color: '#dc2626', cls: 'mut2-col', cols: [{ col: 'n_2', label: 'N' }, { col: 'mean_2', label: `Mean ${unit}` }] },
+                { label: `${isT ? '2+' : 'Mut 2'} ${vsWord}`, color: '#6b7280', cls: 'mut2-col', cols: [{ col: 'diff_2', label: `Δ ${unit}` }, { col: 'p_2', label: 'p' }] },
+                { label: `${isT ? '2+ vs 1' : 'Mut 2 vs Mut 1'}`, color: '#6b7280', cls: 'mut2-col', cols: [{ col: 'diff_2v1', label: `Δ ${unit}` }, { col: 'p_2v1', label: 'p' }] }
             );
         }
-        let headerHTML = '<tr><th></th>';
-        cols.forEach(c => {
-            headerHTML += `<th ${sortClick} data-col="${c.col}" ${tip} class="${c.cls || ''}" style="${thStyle} ${c.style}"${sortAttr(c.col)}>${c.label}${arrow(c.col)}</th>`;
-        });
         if (hasFusion) {
-            const fusionCols = [
-                { col: 'n_fused', label: 'N (Fused)', style: 'border-left: 2px solid #8b5cf6;' },
-                { col: 'mean_fused', label: `Mean ${unit} (F)`, style: '' },
-                { col: 'diff_fused', label: `Δ ${unit} (F)`, style: 'border-left: 2px solid #d1d5db;' },
-                { col: 'p_fused', label: 'p (F)', style: '' }
-            ];
-            fusionCols.forEach(c => {
-                headerHTML += `<th ${sortClick} data-col="${c.col}" class="fusion-col" ${tip} style="${thStyle} ${c.style}"${sortAttr(c.col)}>${c.label}${arrow(c.col)}</th>`;
-            });
+            groups.push(
+                { label: 'Fused', color: '#8b5cf6', cls: 'fusion-col', cols: [{ col: 'n_fused', label: 'N' }, { col: 'mean_fused', label: `Mean ${unit}` }] },
+                { label: 'Fused vs not', color: '#6b7280', cls: 'fusion-col', cols: [{ col: 'diff_fused', label: `Δ ${unit}` }, { col: 'p_fused', label: 'p' }] }
+            );
         }
+        const plain = (h) => String(h).replace(/<[^>]+>/g, '');
+        let groupHTML = '<tr class="mut-group-row"><th colspan="2" style="border-bottom:none; cursor:default;"></th>';
+        let headerHTML = `<tr><th></th><th ${sortClick} data-col="gene" ${tip} style="${thStyle}"${sortAttr('gene')}>Gene${arrow('gene')}</th>`;
+        groups.forEach(g => {
+            const solid = g.color !== '#6b7280';
+            groupHTML += `<th colspan="${g.cols.length}" class="${g.cls || ''}" style="border-left:2px solid ${solid ? g.color : '#d1d5db'}; text-align:center; font-size:12px; font-weight:700; color:${solid ? g.color : '#374151'}; padding:4px 6px; cursor:default; border-bottom:2px solid ${solid ? g.color : '#d1d5db'};">${g.label}</th>`;
+            g.cols.forEach((c, i) => {
+                const st = i === 0 ? `border-left:2px solid ${solid ? g.color : '#d1d5db'};` : '';
+                headerHTML += `<th ${sortClick} data-col="${c.col}" data-group="${this.esc(plain(g.label))}" ${tip} class="${g.cls || ''}" style="${thStyle} ${st}"${sortAttr(c.col)}>${c.label}${arrow(c.col)}</th>`;
+            });
+        });
+        groupHTML += '</tr>';
         headerHTML += '</tr>';
-        thead.innerHTML = headerHTML;
+        thead.innerHTML = groupHTML + headerHTML;
+        // Both header rows stick; the column row sits under the group row.
+        requestAnimationFrame(() => {
+            const h = thead.rows[0]?.offsetHeight || 0;
+            [...(thead.rows[1]?.cells || [])].forEach(c => { c.style.top = h + 'px'; });
+        });
 
         const blurbEl = document.getElementById('mutStatsBlurb');
         if (blurbEl) blurbEl.textContent = this._mutStatsBlurbText(mr, mr.metric);
@@ -11177,14 +11184,14 @@ class CorrelationExplorer {
                 <td>${r.mean_wt.toFixed(2)}</td>
                 <td style="border-left: 2px solid #f97316;">${r.n_mut}${star}</td>
                 <td>${r.mean_mut.toFixed(2)}</td>
-                <td class="${r.diff_mut < 0 ? 'negative' : 'positive'}">${r.diff_mut.toFixed(2)}</td>
+                <td class="${r.diff_mut < 0 ? 'negative' : 'positive'}" style="border-left: 2px solid #d1d5db;">${r.diff_mut.toFixed(2)}</td>
                 <td>${this.formatPValue(r.p_mut)}</td>
             `;
             if (!isD) {
                 html += `
                 <td class="mut2-col" style="border-left: 2px solid #dc2626;">${r.n_2}</td>
                 <td class="mut2-col">${isNaN(r.mean_2) ? '-' : r.mean_2.toFixed(2)}</td>
-                <td class="mut2-col ${r.diff_2 < 0 ? 'negative' : 'positive'}">${isNaN(r.diff_2) ? '-' : r.diff_2.toFixed(2)}</td>
+                <td class="mut2-col ${r.diff_2 < 0 ? 'negative' : 'positive'}" style="border-left: 2px solid #d1d5db;">${isNaN(r.diff_2) ? '-' : r.diff_2.toFixed(2)}</td>
                 <td class="mut2-col">${this.formatPValue(r.p_2)}</td>
                 <td class="mut2-col ${r.diff_2v1 < 0 ? 'negative' : 'positive'}" style="border-left: 2px solid #d1d5db;">${isNaN(r.diff_2v1) ? '-' : r.diff_2v1.toFixed(2)}</td>
                 <td class="mut2-col">${isNaN(r.diff_2v1) ? '-' : this.formatPValue(r.p_2v1)}</td>
@@ -11194,7 +11201,7 @@ class CorrelationExplorer {
                 html += `
                     <td class="fusion-col" style="border-left: 2px solid #8b5cf6;">${r.n_fused || 0}</td>
                     <td class="fusion-col">${isNaN(r.mean_fused) ? '-' : r.mean_fused.toFixed(2)}</td>
-                    <td class="fusion-col ${r.diff_fused < 0 ? 'negative' : 'positive'}">${isNaN(r.diff_fused) ? '-' : r.diff_fused.toFixed(2)}</td>
+                    <td class="fusion-col ${r.diff_fused < 0 ? 'negative' : 'positive'}" style="border-left: 2px solid #d1d5db;">${isNaN(r.diff_fused) ? '-' : r.diff_fused.toFixed(2)}</td>
                     <td class="fusion-col">${isNaN(r.diff_fused) ? '-' : this.formatPValue(r.p_fused)}</td>
                 `;
             }
@@ -11426,9 +11433,11 @@ class CorrelationExplorer {
         const filename = `mutation_analysis_${this.mutationResults?.hotspotGene || 'table'}`;
 
         // Get visible table data
+        // Column headers are the last header row; the group row above is
+        // folded into each one (data-group) so an exported column stays named.
         const headers = [];
-        table.querySelectorAll('thead th').forEach(th => {
-            if (th.offsetParent !== null || th.offsetWidth > 0) headers.push(th.textContent.trim());
+        table.querySelectorAll('thead tr:last-child th').forEach(th => {
+            if (th.offsetParent !== null || th.offsetWidth > 0) headers.push(((th.dataset.group ? th.dataset.group + ' ' : '') + th.textContent).trim());
         });
         const rows = [];
         table.querySelectorAll('tbody tr').forEach(tr => {
