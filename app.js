@@ -25917,7 +25917,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             `Pearson correlations were computed over the cell lines with both values: expression against gene effect, copy number against expression, drug sensitivity (PRISM AUC) against gene effect for compounds annotated to target ${gene}, and ${gene}'s gene effect against that of every other gene in the screen (genes with at least 100 shared lines).`,
             `Genes whose mRNA expression correlated with ${gene}'s mRNA were ranked by absolute Pearson r (genes with at least 100 shared lines).`,
             'Relative copy number of at least 3 was counted as amplification and below 0.3 as deep deletion.',
-            'Complex partners came from CORUM (Steinkamp et al., 2025) and pathway partners from Reactome (Milacic et al., 2024); gene annotation from MyGene.info, transcripts from Ensembl with the MANE Select reference, and genomic sequence from the UCSC Genome Browser (GRCh38).',
+            'Named protein complexes came from EBI Complex Portal (Meldal et al., 2022), further complex partners from CORUM (Steinkamp et al., 2025) and pathways from Reactome (Milacic et al., 2024); gene annotation from MyGene.info, transcripts from Ensembl with the MANE Select reference, and genomic sequence from the UCSC Genome Browser (GRCh38).',
             this._methodsCitation()
         ]);
         const long = this._mBlocks([
@@ -52813,7 +52813,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             + `<div id="gbCpxBox">${this._gbLoading('Loading protein complexes and pathways...')}</div>`
             + sets + db
             + `<div id="gbMouseRow"></div>`;
-        card.outerHTML = this._gbSection('Related genes', body, 'DepMap 26Q1 CRISPRGeneEffect and OmicsExpressionTPMLogp1 (correlations); the app’s curated pathway, complex and gene set lists; EBI Complex Portal (named protein complexes); CORUM complexes (Steinkamp et al. 2025); Reactome pathways (Milacic et al. 2024); mouse orthologs from NCBI HomoloGene (fetched live). References under Links.', 'gbRelCard');
+        card.outerHTML = this._gbSection('Related genes', body, 'DepMap 26Q1 CRISPRGeneEffect and OmicsExpressionTPMLogp1 (correlations); the app’s curated pathway, complex and gene set lists; EBI Complex Portal (named protein complexes, Meldal et al. 2022); CORUM complexes (Steinkamp et al. 2025); Reactome pathways (Milacic et al. 2024); mouse orthologs from NCBI HomoloGene (fetched live). References under Links.', 'gbRelCard');
         this._gbFillExprCorr(s);
         this._gbFillComplexes(gene, corum);
         this._gbMouseOrthologs(gene).then(list => {
@@ -53494,8 +53494,9 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
     static GB_REFS = [
         { name: 'DepMap', what: 'CRISPR gene effect, expression, mutations, fusions, copy number', url: 'https://depmap.org/portal/', cite: 'Tsherniak A et al. Defining a cancer dependency map. Cell 2017;170:564-576. Gene effect: Dempster JM et al. Chronos. Genome Biol 2021;22:343.' },
         { name: 'PRISM', what: 'drug sensitivity', url: 'https://depmap.org/repurposing/', cite: 'Corsello SM et al. Discovering the anticancer potential of non-oncology drugs by systematic viability profiling. Nat Cancer 2020;1:235-248.' },
-        { name: 'CORUM', what: 'protein complex partners', url: 'https://mips.helmholtz-muenchen.de/corum/', cite: 'Steinkamp R et al. CORUM in 2024: protein complexes as drug targets. Nucleic Acids Res 2025;53:D651-D657.' },
-        { name: 'Reactome', what: 'pathway partners', url: 'https://reactome.org/', cite: 'Milacic M et al. The Reactome Pathway Knowledgebase 2024. Nucleic Acids Res 2024;52:D672-D678.' },
+        { name: 'EBI Complex Portal', what: 'named protein complexes: names, descriptions, functions and members', url: 'https://www.ebi.ac.uk/complexportal/', cite: 'Meldal BHM et al. Complex Portal 2022: new curation frontiers. Nucleic Acids Res 2022;50:D578-D586.' },
+        { name: 'CORUM', what: 'further protein complex partners', url: 'https://mips.helmholtz-muenchen.de/corum/', cite: 'Steinkamp R et al. CORUM in 2024: protein complexes as drug targets. Nucleic Acids Res 2025;53:D651-D657.' },
+        { name: 'Reactome', what: 'named pathways and their members', url: 'https://reactome.org/', cite: 'Milacic M et al. The Reactome Pathway Knowledgebase 2024. Nucleic Acids Res 2024;52:D672-D678.' },
         { name: 'NCBI Gene', what: 'gene description and aliases (RefSeq and Alliance of Genome Resources summaries, credited in the text), mouse orthologs (HomoloGene)', url: 'https://www.ncbi.nlm.nih.gov/gene/', cite: 'Brown GR et al. Gene: a gene-centered information resource at NCBI. Nucleic Acids Res 2015;43:D36-D42.' },
         { name: 'MyGene.info', what: 'live access to the NCBI, HGNC, Ensembl, UniProt and OMIM records', url: 'https://mygene.info/', cite: 'Xin J et al. High-performance web services for querying gene and variant annotation. Genome Biol 2016;17:91.' },
         { name: 'Ensembl', what: 'transcripts and exons, GRCh38', url: 'https://www.ensembl.org/', cite: 'Dyer SC et al. Ensembl 2025. Nucleic Acids Res 2025;53:D948-D957.' },
