@@ -7812,7 +7812,7 @@ class CorrelationExplorer {
         document.getElementById('enrichrExportAIBtn')?.addEventListener('click', () => this.exportEnrichrForAI());
 
         // Infographic modal
-        // How it works opens the tour; the long-form page is a button on the
+        // Tour of the app (the nav link) opens the tour; the long-form page is a button on the
         // tour's last page, or opens directly if the tour did not load.
         document.getElementById('showInfoGraphic')?.addEventListener('click', (e) => {
             e.preventDefault();
@@ -19877,6 +19877,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const set = (id, v) => { const el = document.getElementById(id); if (el && v != null) el.value = v; };
             if (pre.hotspotGene) { set('hotspotGene', pre.hotspotGene); set('hotspotMode', pre.hotspotMode || 'color'); }
             if (pre.filterGene) { set('mutationFilterGene', pre.filterGene); set('mutationFilterLevel', pre.filterLevel || '1+2'); }
+            if (pre.colorByGene) {
+                set('colorByCategory', 'gene'); set('colorByGene', pre.colorByGene); set('colorByGeneType', pre.colorByGeneType || 'expr');
+                this._colorByGeneName = String(pre.colorByGene).toUpperCase();
+                this._syncColorByGroupBtn();
+            }
         }
 
         this.updateInspectPlot();
