@@ -8565,14 +8565,20 @@ class CorrelationExplorer {
         const noData = { m: [], o: [], g: [], n: [] };
         const unknown = [];
         for (const g of remaining) { const c = nsCode(g); if (c && noData[c]) noData[c].push(g); else unknown.push(g); }
-        const NO_DATA_LABEL = { n: 'Not screened by DepMap', m: 'microRNAs, not screened by DepMap', o: 'Olfactory receptors, not screened by DepMap', g: 'Mouse genes without a human ortholog' };
-        const listShort = (arr) => arr.slice(0, 8).map(g => this.gi(g)).join(', ') + (arr.length > 8 ? ` +${arr.length - 8} more` : '');
+        const NO_DATA_LABEL = { n: 'No DepMap knockout data', m: 'microRNAs, no DepMap knockout data', o: 'Olfactory receptors, no DepMap knockout data', g: 'Mouse genes without a human ortholog' };
+        // Genes split from an older symbol: DepMap's column carries the old
+        // gene ID, which now belongs to the sibling.
+        const SPLIT_FROM = { DUSP13A: ['DUSP13', 'DUSP13B'] };
+        const listShort = (arr) => arr.slice(0, 8).map(g => {
+            const sp = SPLIT_FROM[g.toUpperCase()];
+            return this.gi(g) + (sp ? ` <span title="DepMap reports the former ${sp[0]} locus, whose gene ID is now ${sp[1]}; its guides likely hit both genes.">(reported as ${this.gi(sp[1])})</span>` : '');
+        }).join(', ') + (arr.length > 8 ? ` +${arr.length - 8} more` : '');
         const noDataHtml = Object.keys(NO_DATA_LABEL).filter(k => noData[k].length).map(k =>
             `<div style="margin-top:4px;"><span style="color:#374151;">${NO_DATA_LABEL[k]} (${noData[k].length}):</span> <span style="color:#6b7280;">${listShort(noData[k])}</span></div>`).join('');
         let noDataBox = '';
         if (noDataHtml) {
             noDataBox = `<div style="${cardStyle}">
-                <div style="font-weight:600; font-size:12px; color:#374151; margin-bottom:2px;">No CRISPR data${qi('These are real genes from CRISPR libraries, but DepMap has no knockout data for them, so they cannot be analysed here. They are left out of the analysis.')}</div>
+                <div style="font-weight:600; font-size:12px; color:#374151; margin-bottom:2px;">No CRISPR data${qi('These are real genes from CRISPR libraries, but DepMap publishes no knockout values for them, usually because too few of their guides passed quality filters. They cannot be analysed here and are left out of the analysis.')}</div>
                 ${noDataHtml}</div>`;
         }
         remaining.length = 0;
