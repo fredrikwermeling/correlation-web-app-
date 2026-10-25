@@ -25781,6 +25781,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             `THE GENE\n   ${gene}${s.loc ? `, ${this._gbLocText(s.loc)}` : ''}. Every number on the page uses all cell lines with data for that layer; no tissue or other filter is applied.`,
             `DEPENDENCY\n   ${this._mNum(nGe)} screened lines. "Dependent" means a gene effect below ${dep}, the app's default dependency cutoff. The wording in the summary (a common essential gene, a dependency in most lines, a selective dependency, a dependency in a few lines, rarely a dependency) follows the common-essentials list first, then the share of lines below the cutoff (50% or more, 5%, 1%).`,
             nEx ? `EXPRESSION\n   ${this._mNum(nEx)} lines. "Expressed" means at least ${ex} log2(TPM+1).` : '',
+            `RANKING AGAINST ALL GENES\n   The sentence at the top of the Dependency and Expression sections ranks the gene's mean across the lines, and its spread (standard deviation), against the same numbers for every gene in the panel. Expression levels: very high (top 10% of genes), high (top 30%), moderate, low (bottom 35%), very low (bottom 15%); "restricted" when it is expressed in under half the lines and cancer type explains at least 30% of the variation. "Varies a lot" means a spread in the top 20% of genes (for gene effect, only when under 60% of lines are below the cutoff and the gene is not common essential). The share explained by cancer type is eta squared: the variance between tissue means over the total, tissues of 5 or more lines; 20% or more is reported as differing with cancer type, 40% or more as strongly tied to it.`,
             `MUTATIONS AND FUSIONS\n   Hotspot, any-mutation, functional-loss and fusion calls as used across the app. Percentages use all ${this._mNum(s.N)} lines as the denominator, including lines that were never sequenced. Specific variants come from the inferred-subtype layer.${s.split ? ` Mutated (${s.split.label}, n = ${s.split.mut.length}) and wild-type (n = ${s.split.wt.length}) lines were compared with a two-sided Welch t-test on gene effect.` : ''}`,
             'COPY NUMBER\n   Gene-level relative copy number (1 = the line\'s own baseline). The app\'s copy-number tiers: amplified from 3, deep deletion below 0.3.',
             this._gbStructure ? `GENE STRUCTURE\n   Exons, transcript, coding and protein lengths of the MANE Select transcript (else the Ensembl canonical one), fetched live from the Ensembl REST API (GRCh38).` : '',
@@ -52277,6 +52278,89 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         card.outerHTML = this._gbSection('About the gene', body, 'Description: NCBI Gene / RefSeq summary via MyGene.info (fetched live). Location: Ensembl GRCh38. Bands: UCSC hg38 cytoBand (G-banding).', 'gbAboutCard');
     }
 
+    // Every gene's mean and SD across the lines, sorted, so one gene's level
+    // and spread can be ranked against the rest. Built once per data type.
+    _gbGeneStats(kind) {
+        const key = kind === 'expr' ? '_gbExprStats' : '_gbGeStats';
+        if (this[key]) return this[key];
+        const data = kind === 'expr' ? this.expressionData : this.geneEffects;
+        const nL = kind === 'expr' ? this.expressionMetadata?.nCellLines : this.nCellLines;
+        const nG = kind === 'expr' ? this.expressionMetadata?.genes?.length : this.nGenes;
+        if (!data || !nL || !nG) return null;
+        const means = [], sds = [];
+        for (let g = 0; g < nG; g++) {
+            let n = 0, sx = 0, sxx = 0;
+            for (let i = g * nL, e = i + nL; i < e; i++) {
+                const v = data[i];
+                if (v !== v || v === -999) continue;
+                n++; sx += v; sxx += v * v;
+            }
+            if (n < 10) continue;
+            const m = sx / n;
+            means.push(m); sds.push(Math.sqrt(Math.max(0, sxx / n - m * m)));
+        }
+        return (this[key] = { means: Float64Array.from(means).sort(), sds: Float64Array.from(sds).sort() });
+    }
+
+    // Share of genes with a lower value (0 to 1).
+    _gbRankIn(sorted, v) {
+        let lo = 0, hi = sorted.length;
+        while (lo < hi) { const m = (lo + hi) >> 1; if (sorted[m] < v) lo = m + 1; else hi = m; }
+        return sorted.length ? lo / sorted.length : NaN;
+    }
+
+    // How much of the spread between lines is down to cancer type: the share
+    // of the variance between tissue means (eta squared, tissues of 5+ lines).
+    _gbTissueShare(groups) {
+        const gs = groups.filter(t => t.vals.length >= 5);
+        const all = gs.flatMap(t => t.vals);
+        if (gs.length < 3 || all.length < 20) return NaN;
+        const m = this.mean(all);
+        const tot = all.reduce((a, v) => a + (v - m) ** 2, 0);
+        const btw = gs.reduce((a, t) => a + t.vals.length * (this.mean(t.vals) - m) ** 2, 0);
+        return tot > 0 ? btw / tot : NaN;
+    }
+
+    // One plain sentence on how the gene behaves across the lines, ranked
+    // against all genes: its level, its spread and whether cancer type drives it.
+    _gbVerdict(kind, s, vals, groups) {
+        const st = this._gbGeneStats(kind);
+        if (!st || vals.length < 10) return '';
+        const m = this.mean(vals);
+        const sd = Math.sqrt(vals.reduce((a, v) => a + (v - m) ** 2, 0) / vals.length);
+        const pm = this._gbRankIn(st.means, m), ps = this._gbRankIn(st.sds, sd);
+        const top = (p) => p >= 0.5 ? `top ${Math.max(1, Math.round((1 - p) * 100))}%` : `bottom ${Math.max(1, Math.round(p * 100))}%`;
+        const eta = this._gbTissueShare(groups);
+        const byT = groups.filter(t => t.vals.length >= 5).map(t => ({ name: t.name, m: this.mean(t.vals) })).sort((a, b) => b.m - a.m);
+        const out = [];
+        if (kind === 'expr') {
+            const word = pm >= 0.9 ? 'Very high expression' : pm >= 0.7 ? 'High expression' : pm >= 0.35 ? 'Moderate expression' : pm >= 0.15 ? 'Low expression' : 'Very low expression';
+            const on = vals.filter(v => v >= this._gbExprCut).length / vals.length;
+            const breadth = on >= 0.9 ? 'in nearly all lines' : on >= 0.5 ? 'in most lines' : on >= 0.1 ? 'in a subset of lines' : on > 0 ? 'in few lines' : 'in no line';
+            // Off in most lines but on in some cancer types: a low mean would
+            // undersell it, so it is called restricted and placed by tissue.
+            const restricted = on < 0.5 && on > 0 && eta >= 0.3;
+            out.push(restricted
+                ? `<b>Restricted expression</b>: on in ${Math.round(on * 100)}% of lines and off in the rest (mean ${this._gbNum(m)} log₂ TPM+1, ${top(pm)} of all genes).`
+                : `<b>${word}</b>: mean ${this._gbNum(m)} log₂ TPM+1, ${top(pm)} of all genes; expressed ${breadth} (${Math.round(on * 100)}%).`);
+            if (ps >= 0.8) out.push(`The level varies a lot between lines (spread in the ${top(ps)} of genes).`);
+            if (eta >= 0.2 && byT.length >= 3) out.push(`${eta >= 0.4 ? 'Strongly tied to' : 'Differs with'} cancer type (tissue explains ${Math.round(eta * 100)}% of the variation): highest in ${byT.slice(0, 2).map(t => this.esc(t.name)).join(' and ')}${restricted ? '' : `, lowest in ${this.esc(byT[byT.length - 1].name)}`}.`);
+            else if (eta === eta) out.push(`Similar across cancer types (tissue explains ${Math.round(eta * 100)}% of the variation).`);
+        } else {
+            // More negative is more essential, so rank from the other end.
+            const pe = 1 - pm;
+            const k = vals.filter(v => v < this._gbDepCut).length / vals.length;
+            out.push(`<b>${this._gbDepWords(s).replace(/^a /, '').replace(/^./, c => c.toUpperCase())}</b>: mean gene effect ${this._gbNum(m)}, more essential than ${Math.round(pe * 100)}% of genes; ${Math.round(k * 100)}% of lines below ${this._gbNum(this._gbDepCut, 1)}.`);
+            // A wide spread means selectivity only when most lines are spared;
+            // a gene nearly every line needs is spread wide by its depth alone.
+            if (ps >= 0.8 && k < 0.6 && !this._commonEssentials?.has(s.gene)) out.push(`The effect varies a lot between lines (spread in the ${top(ps)} of genes).`);
+            byT.sort((a, b) => a.m - b.m);
+            if (eta >= 0.2 && byT.length >= 3) out.push(`${eta >= 0.4 ? 'Strongly tied to' : 'Differs with'} cancer type (tissue explains ${Math.round(eta * 100)}% of the variation): strongest in ${byT.slice(0, 2).map(t => this.esc(t.name)).join(' and ')}.`);
+            else if (eta === eta) out.push(`Similar across cancer types (tissue explains ${Math.round(eta * 100)}% of the variation).`);
+        }
+        return `<div class="gb-verdict">${out.join(' ')}</div>`;
+    }
+
     _gbDependencyCard(s) {
         const v = s.geVals, n = v.length;
         const below = (c) => v.filter(x => x < c).length;
@@ -52291,6 +52375,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             this._gbRow('Common essential', ce ? 'Yes' : 'No'),
         ].join('');
         const body = this._gbDesc('How much cell lines depend on this gene in the CRISPR screen. More negative means the lines grow worse without it; 0 means no effect.')
+            + this._gbVerdict('ge', s, v, this._gbByTissue(s, (i) => s.ge[i]))
             + `<div class="gb-grid"><div><div id="gbGeHist" class="gb-hist"></div><div class="gb-m" style="display:flex; justify-content:flex-end; margin-top:2px;"><button class="btn btn-outline btn-sm mobile-hide" data-gb-copy="gbGeHist" data-gb-copy-label="Gene effect histogram" style="font-size:10px; padding:1px 8px;" title="Copy this figure as an image">Copy figure</button></div></div><div>${stats}</div></div>`
             + `<div class="gb-grid">`
             + `<div>${topT.length ? `<div class="gb-sub">Most dependent tissues <span class="gb-m">(mean gene effect, 5 or more lines)</span></div>${this._gbTissueRows(topT, r => this._gbNum(r.mean), 'Mean')}` : ''}</div>`
@@ -52348,6 +52433,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             }
         }
         const body = this._gbDesc('How much of this gene’s mRNA each cell line makes (bulk RNA-seq, log₂ TPM+1).')
+            + this._gbVerdict('expr', s, vals, this._gbByTissue(s, (i) => ex[i]))
             + `<div class="gb-grid"><div><div id="gbExprHist" class="gb-hist"></div><div class="gb-m" style="display:flex; justify-content:flex-end; margin-top:2px;"><button class="btn btn-outline btn-sm mobile-hide" data-gb-copy="gbExprHist" data-gb-copy-label="Expression histogram" style="font-size:10px; padding:1px 8px;" title="Copy this figure as an image">Copy figure</button></div></div><div>${stats.join('')}${link}</div></div>`
             + `<div class="gb-grid" style="margin-top:6px;"><div><div class="gb-sub">Highest tissues <span class="gb-m">(median)</span></div>${this._gbTissueRows(high, r => this._gbNum(r.med), 'Median')}</div>`
             + `<div><div class="gb-sub">Lowest tissues <span class="gb-m">(median)</span></div>${this._gbTissueRows(low, r => this._gbNum(r.med), 'Median')}</div></div>`
