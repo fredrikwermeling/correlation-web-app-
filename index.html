@@ -2309,6 +2309,7 @@
         #geneEffectModal.ge-condensed #geInlineCompareTable,
         #geneEffectModal.ge-condensed #geGateCompareSection { display: none !important; }
         #geneEffectModal.ge-condensed #geChartContainer { flex: 1 1 100% !important; }
+        #geneEffectModal.ge-condensed #geCondensedHl { display: flex !important; }
         /* The button is a toggle wherever a compact view makes sense, which is
            when this popout was opened over another modal (the browser, the
            wiki). On a top-level popout there is nothing to be compact for, so
@@ -4023,6 +4024,7 @@
                                     <button type="button" class="btn btn-sm btn-outline" data-color-by="subtype" title="Colour by subtype (the 8 largest at first; Groups picks others)">Subtype</button>
                                     <button type="button" class="btn btn-sm btn-outline" data-color-by="disease" title="Colour by disease (the 8 largest at first; Groups picks others)">Disease</button>
                                     <button type="button" class="btn btn-sm btn-outline" data-color-by="medium" title="Colour by culture medium">Medium</button>
+                                    <button type="button" class="btn btn-sm btn-outline" data-color-by="gene" title="Colour each point by a gene's gene effect, mRNA expression or copy number in that cell line">Gene</button>
                                 </div>
                                 <select id="colorByCategory" class="form-control" style="display:none;">
                                     <option value="">None</option>
@@ -4030,7 +4032,17 @@
                                     <option value="subtype" id="colorBySubtypeOption">By subtype</option>
                                     <option value="disease">By disease</option>
                                     <option value="medium">By culture medium</option>
+                                    <option value="gene">By a gene</option>
                                 </select>
+                                <!-- Colour by a gene: a continuous scale, its own key beside the plot. -->
+                                <span id="colorByGeneRow" style="display:none; align-items:center; gap:4px;">
+                                    <input type="text" id="colorByGene" class="form-control" placeholder="Gene" autocomplete="off" style="width:90px; font-size:11px; padding:2px 6px;">
+                                    <select id="colorByGeneType" class="form-control" style="width:auto; font-size:10px; padding:1px 3px;" title="What to colour by: gene effect (CRISPR), mRNA expression or copy number">
+                                        <option value="expr">mRNA</option>
+                                        <option value="ge">GE</option>
+                                        <option value="cn">CN</option>
+                                    </select>
+                                </span>
                                 <!-- Color only the chosen groups; everything else grays out. -->
                                 <button type="button" id="colorByGroupBtn" class="btn btn-sm btn-outline" style="display:none; font-size:10px; padding:2px 6px;" onclick="app.showColorByGroupPicker()">Pick groups...</button>
                                 <input type="hidden" id="colorByPicked" value="">
@@ -4399,6 +4411,8 @@
                     </div>
                 </div>
 
+                <!-- Highlight box while the view is chart-only (the filter bar is hidden). -->
+                <div id="geCondensedHl" class="mobile-hide" style="display:none; align-items:center; gap:6px; margin-bottom:8px;"><span style="font-size:11px; font-weight:600; color:#374151;">Highlight:</span></div>
                 <!-- Summary stats -->
                 <div id="geneEffectSummary" style="background: #f0f9ff; border: 1px solid #0ea5e9; border-radius: 6px; padding: 10px 14px; margin-bottom: 15px; display: none;">
                     <div style="display: flex; gap: 25px; flex-wrap: wrap; font-size: 12px;">
@@ -5885,7 +5899,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v90_97"></script>
+    <script src="app.js?v=v90_99"></script>
     <script src="tour.js?v=v89_49"></script>
 </body>
 </html>

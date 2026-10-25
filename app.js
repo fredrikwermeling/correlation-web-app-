@@ -992,7 +992,7 @@ class CorrelationExplorer {
     // Filter/setting controls captured for "Open in new tab" so the new tab
     // reproduces the same view (not just the gene/pair).
     _GE_NEWTAB_CONTROLS() { return ['geDataType', 'geHotspotGeneSelect', 'geTissueFilter', 'geSubtypeFilter', 'geOncotreeFilter', 'geHotspotFilter', 'geHotspotLevel', 'geFusionFilter', 'geFusionLevel', 'geCnFilter', 'geCnLevel', 'geMinGroupSize', 'geCellLineSearch']; }
-    _SCATTER_NEWTAB_CONTROLS() { return ['inspectGeneX', 'inspectGeneY', 'xAxisDataType', 'yAxisDataType', 'showCorrelationLine', 'showZeroLines', 'scatterDotColor', 'scatterXmin', 'scatterXmax', 'scatterYmin', 'scatterYmax', 'scatterCancerFilter', 'scatterSubtypeFilter', 'scatterOncotreeFilter', 'mutationFilterGene', 'mutationFilterLevel', 'translocationFilterGene', 'translocationFilterLevel', 'scatterCnFilter', 'scatterCnLevel', 'scatterFontSize', 'hotspotGene', 'hotspotMode', 'translocationGene', 'translocationMode', 'colorByCategory', 'colorByPicked', 'colorByLegendStat', 'scatterCellSearch', 'customCellLineFilter', 'scatterWhiteBg']; }
+    _SCATTER_NEWTAB_CONTROLS() { return ['inspectGeneX', 'inspectGeneY', 'xAxisDataType', 'yAxisDataType', 'showCorrelationLine', 'showZeroLines', 'scatterDotColor', 'scatterXmin', 'scatterXmax', 'scatterYmin', 'scatterYmax', 'scatterCancerFilter', 'scatterSubtypeFilter', 'scatterOncotreeFilter', 'mutationFilterGene', 'mutationFilterLevel', 'translocationFilterGene', 'translocationFilterLevel', 'scatterCnFilter', 'scatterCnLevel', 'scatterFontSize', 'hotspotGene', 'hotspotMode', 'translocationGene', 'translocationMode', 'colorByCategory', 'colorByPicked', 'colorByLegendStat', 'colorByGene', 'colorByGeneType', 'scatterCellSearch', 'customCellLineFilter', 'scatterWhiteBg']; }
     _SI_NEWTAB_CONTROLS() { return ['geLeftDeltaCutoff', 'geLeftQCutoff', 'geLeftN', 'geRightDeltaCutoff', 'geRightQCutoff', 'geRightN', 'geInspectSearch', 'geInspectHideThin']; }
     _CA_NEWTAB_CONTROLS() { return ['caTissueFilter', 'caSubtypeFilter', 'caOncotreeFilter', 'caHotspotFilter', 'caHotspotLevel', 'caFusionFilter', 'caFusionLevel', 'caCnFilter', 'caCnLevel']; }
 
@@ -7473,6 +7473,23 @@ class CorrelationExplorer {
         // Changing what the legend states only relabels the traces, but the
         // labels are built during the redraw, so the plot is redrawn.
         document.getElementById('colorByLegendStat')?.addEventListener('change', () => this.updateInspectPlot());
+        const cbGene = document.getElementById('colorByGene');
+        // Expression and copy number load on first use, as for the axes.
+        const cbLoad = async () => {
+            const t = document.getElementById('colorByGeneType')?.value;
+            if (t === 'expr' && !this.expressionLoaded) { try { await this.loadExpressionData(); } catch (e) { /* stays grey */ } }
+            if (t === 'cn' && !this.cnLoaded) { try { await this.loadCnData(); } catch (e) { /* stays grey */ } }
+        };
+        const applyCbGene = async () => {
+            await cbLoad();
+            const has = (g) => this.geneIndex.has(g) || this.expressionGeneIndex?.has(g) || !!this.geneLocations?.[g];
+            this._colorByGeneName = cbGene.value.trim() ? await this._resolveGeneBox(cbGene, has, 'the data') : null;
+            if (this._colorByGeneName) cbGene.value = this._colorByGeneName;
+            this.updateInspectPlot();
+        };
+        cbGene?.addEventListener('change', applyCbGene);
+        cbGene?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); cbGene.blur(); } });
+        document.getElementById('colorByGeneType')?.addEventListener('change', async () => { await cbLoad(); this.updateInspectPlot(); });
         document.getElementById('colorBySeg')?.addEventListener('click', (e) => {
             const b = e.target.closest('[data-color-by]');
             const sel = document.getElementById('colorByCategory');
@@ -20791,6 +20808,15 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         box.innerHTML = `<span class="gb-near">Nearby genes</span> ${this.gi(gene1)} (${this.esc(a)}) and ${this.gi(gene2)} (${this.esc(d.band)}) are ${gap} on chromosome ${this.esc(d.chr)}. Neighbours are often gained or lost together, so their mRNA can correlate through shared copy number rather than shared function.`;
     }
 
+    // The Color by gene, resolved when typed; a restored or reopened plot only
+    // has the box's text, which is used as it stands when the data knows it.
+    _colorByGeneNow() {
+        const raw = (document.getElementById('colorByGene')?.value || '').trim().toUpperCase();
+        if (!raw) return null;
+        if (this._colorByGeneName === raw) return raw;
+        return (this.geneIndex.has(raw) || this.expressionGeneIndex?.has(raw) || this.geneLocations?.[raw]) ? raw : null;
+    }
+
     renderSinglePanelPlot(filteredData, gene1, gene2, hotspotGene, hotspotMode, searchTerms, fontSize, filterDesc = '', transOverlayGene = '', transOverlayMode = 'none', colorByCategory = '') {
         this._scatterNearNote(gene1, gene2);
         const _hlMatch = this._highlightMatcher(searchTerms);
@@ -20903,6 +20929,41 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 hovertemplate: '%{text}<br>x: %{x:.3f}<br>y: %{y:.3f}<extra></extra>',
                 marker: { color: '#dc2626', size: 10, opacity: 0.8 },
                 name: `2+ partners (n=${t2.length}, ${t2Pct}%)`
+            });
+        } else if (colorByCategory === 'gene' && this._colorByGeneNow()) {
+            // A continuous scale from one gene's values in each line. Same
+            // palettes as the PCA / UMAP colour-by-gene: gene effect orange
+            // (dependent) to purple, expression and CN blue to red.
+            const cg = this._colorByGeneNow();
+            const ct = document.getElementById('colorByGeneType')?.value || 'expr';
+            const pos = this._clPosMap || (this._clPosMap = new Map(this.metadata.cellLines.map((cl, i) => [cl, i])));
+            const gi = this.geneIndex.get(cg);
+            const geRow = (ct === 'ge' && gi !== undefined) ? this.geneEffects.subarray(gi * this.nCellLines, (gi + 1) * this.nCellLines) : null;
+            const valOf = (d) => { const i = pos.get(d.cellLineId); if (i === undefined) return NaN; const v = this.getAxisValue(cg, i, ct, geRow); return v === -999 ? NaN : v; };
+            const withV = [], noV = [];
+            filteredData.forEach(d => { const v = valOf(d); if (v === v) withV.push([d, v]); else noV.push(d); });
+            const word = { ge: 'gene effect', expr: 'mRNA', cn: 'copy number' }[ct];
+            if (noV.length) traces.push({
+                x: noV.map(d => d.x), y: noV.map(d => d.y), mode: 'markers', type: 'scatter',
+                text: noV.map(d => `${d.cellLineName}<br>${d.lineage}<br>${cg} ${word}: no data`),
+                hovertemplate: '%{text}<br>x: %{x:.3f}<br>y: %{y:.3f}<extra></extra>',
+                marker: { color: '#d1d5db', size: 8, opacity: 0.5 }, name: `No ${word} value (n=${noV.length})`, showlegend: true
+            });
+            // Low values first so the high end is drawn on top.
+            withV.sort((a, b) => ct === 'ge' ? b[1] - a[1] : a[1] - b[1]);
+            const vs = withV.map(p => p[1]);
+            const lo = Math.min(...vs), hi = Math.max(...vs);
+            traces.push({
+                x: withV.map(p => p[0].x), y: withV.map(p => p[0].y), mode: 'markers', type: 'scatter',
+                text: withV.map(([d, v]) => `${d.cellLineName}<br>${d.lineage}<br>${cg} ${word}: ${v.toFixed(2)}`),
+                hovertemplate: '%{text}<br>x: %{x:.3f}<br>y: %{y:.3f}<extra></extra>',
+                marker: {
+                    size: 10, opacity: 0.85, color: vs, cmin: lo, cmax: hi,
+                    colorscale: ct === 'ge' ? [[0, '#e66101'], [0.5, '#f7f7f7'], [1, '#5e3c99']] : [[0, '#2166ac'], [0.5, '#f7f7f7'], [1, '#b2182b']],
+                    line: { width: 0.5, color: '#6b7280' },
+                    colorbar: { title: { text: `<i>${this.esc(cg)}</i><br>${word}`, side: 'top', font: { size: 11 } }, thickness: 12, len: 0.6, x: 1.02, xanchor: 'left', y: 0.5, yanchor: 'middle', tickfont: { size: 10 } }
+                },
+                name: `${cg} ${word}`, showlegend: false
             });
         } else if (colorByCategory === 'tissue' || colorByCategory === 'subtype' || colorByCategory === 'disease' || colorByCategory === 'medium') {
             // Color by tissue, subtype, disease or culture medium
@@ -21460,6 +21521,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const plotContainer = document.getElementById('scatterPlot');
         const widthEl = document.getElementById('plotWidth');
         const heightEl = document.getElementById('plotHeight');
+        // Room beside the plot for the Color by gene colour key.
+        if (traces.some(t => t.marker?.colorbar)) layout.margin.r = Math.max(layout.margin.r || 0, 95);
         const m = layout.margin;
         let plotAreaW = parseInt(widthEl?.value);
         let plotAreaH = parseInt(heightEl?.value);
@@ -31213,10 +31276,27 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const m = document.getElementById('geneEffectModal');
         if (!btn || !m) return;
         const isCondensed = m.classList.contains('ge-condensed');
+        this._geMoveHighlightBox(isCondensed);
         btn.innerHTML = isCondensed ? '&#10530; Full view' : '&#10529; Chart only';
         btn.title = isCondensed
             ? 'Show the full analysis: filters and the statistics table'
             : 'Back to the chart on its own, without the filters and table';
+    }
+
+    // The chart-only view hides the filter bar, which holds the highlight box.
+    // The same box (with its group picker and name suggestions) moves to a
+    // row above the chart while compact, and back when expanded.
+    _geMoveHighlightBox(condensed) {
+        const input = document.getElementById('geCellLineSearch');
+        const slot = document.getElementById('geCondensedHl');
+        if (!input || !slot) return;
+        const pick = input._groupPicker ? (input._groupPicker.closest('.select-proxy') || input._groupPicker) : null;
+        if (condensed && !slot.contains(input)) {
+            if (!this._geHlHome) { this._geHlHome = document.createComment('geCellLineSearch home'); input.before(this._geHlHome); }
+            slot.append(input, ...(pick ? [pick] : []));
+        } else if (!condensed && slot.contains(input) && this._geHlHome) {
+            this._geHlHome.after(input, ...(pick ? [pick] : []));
+        }
     }
 
     switchGeneEffectView(view) {
@@ -45219,6 +45299,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         });
         if (!btn) return;
         const on = mode === 'tissue' || mode === 'subtype' || mode === 'disease' || mode === 'medium';
+        const gRow = document.getElementById('colorByGeneRow');
+        if (gRow) gRow.style.display = mode === 'gene' ? 'inline-flex' : 'none';
         btn.style.display = on ? '' : 'none';
         const statSel = document.getElementById('colorByLegendStat');
         if (statSel) statSel.style.display = on ? '' : 'none';
@@ -70010,7 +70092,7 @@ document.addEventListener('keyup', (e) => { if (e.key === 'Shift' && window.app)
 document.addEventListener('focusin', (e) => {
     const t = e.target;
     if (!window.app || !t?.matches) return;
-    if (t.matches('#inspectGeneX, #inspectGeneY, #geneEffectSearch, #caGene1Search, #caGene2Search, #compTopGene, .pp-xg, .pp-yg, #ctGeneList, #hmGenes, #clbSortGene, #exprScatterGEGene, #exprScatterExprGene, #caiGeneList, #axisEditorGene, #gbGene, #clbUmapColorGene, #clbUmapSplitGene, #geneTextarea, #askValueInput, #gcGenes')) {
+    if (t.matches('#inspectGeneX, #inspectGeneY, #geneEffectSearch, #caGene1Search, #caGene2Search, #compTopGene, .pp-xg, .pp-yg, #ctGeneList, #hmGenes, #clbSortGene, #exprScatterGEGene, #exprScatterExprGene, #caiGeneList, #axisEditorGene, #gbGene, #colorByGene, #clbUmapColorGene, #clbUmapSplitGene, #geneTextarea, #askValueInput, #gcGenes')) {
         window.app._ensureAliasTables?.();
     }
 });
