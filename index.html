@@ -133,7 +133,7 @@
             background: white;
             margin-bottom: 8px;
             /* The version badge is taken out of the flow below, so the links
-               centre on the logo rather than being pushed left by its width. */
+               center on the logo rather than being pushed left by its width. */
             position: relative;
         }
 
@@ -160,9 +160,9 @@
         #networkPlot .vis-button.vis-zoomOut { display: none !important; }
 
         /* The tree makes the logo image asymmetric: its visible text sits
-           9.55% of the image width left of the image centre. Shift the IMAGE
-           right so the text centres over the app; the tagline and the link
-           row then centre normally, and the distance from the page's left
+           9.55% of the image width left of the image center. Shift the IMAGE
+           right so the text centers over the app; the tagline and the link
+           row then center normally, and the distance from the page's left
            edge to "How it works" equals the distance from the right edge to
            "YouTube". The version badge hangs off the row's right end without
            taking part in the centring. */
@@ -370,15 +370,15 @@
         .clb-toolbar .select-proxy-btn {
             font-family: inherit;
             color: inherit;
-            /* iOS gives a native select a grey ground while the searchable
+            /* iOS gives a native select a gray ground while the searchable
                proxy beside it is white, so the disease box looked unlike its
-               neighbours on a phone. Pin both to white on every platform. */
+               neighbors on a phone. Pin both to white on every platform. */
             background-color: #fff;
         }
 
         /* .form-control gives a green focus ring, which the proxy inherits and
            the plain selects beside it do not, so only the disease box lit up
-           green when pressed. Match the neighbours instead. */
+           green when pressed. Match the neighbors instead. */
         .clb-toolbar .select-proxy-btn:focus {
             border-color: var(--gray-200);
             box-shadow: none;
@@ -455,7 +455,7 @@
             background: var(--gray-100);
         }
 
-        /* Marked with a tick and weight rather than a block of brand colour,
+        /* Marked with a tick and weight rather than a block of brand color,
            which made this one dropdown look unlike every other in the row. */
         .select-proxy-item.is-selected {
             background: transparent;
@@ -1315,7 +1315,7 @@
            becomes the row, with the label taking a full line above. */
         /* Gene box and grid button share a row: the box gives up the width the
            button needs, and the button sits to its right. Only the wrapper is
-           made inline, so neighbouring boxes keep their own layout. */
+           made inline, so neighboring boxes keep their own layout. */
         .filter-input-wrap {
             display: inline-block;
             /* The button is 30px wide and carries a 4px margin, so leaving it
@@ -1958,7 +1958,7 @@
         /* Filter chips are buttons: click to change side or remove. */
         /* One chip everywhere. Size, weight, radius and border live here rather
            than in each call site, so a filter chip looks the same in the browser,
-           the analysis panel and every popout. Colour still comes from the call
+           the analysis panel and every popout. Color still comes from the call
            site, since it carries which kind of filter it is. */
         .clb-chip {
             cursor: pointer;
@@ -2249,7 +2249,7 @@
             to { transform: rotate(360deg); }
         }
         /* Inline busy marker for anything that blocks long enough to look like
-           a click that did nothing. Takes its colour from the text around it,
+           a click that did nothing. Takes its color from the text around it,
            so it works on a button and in a status line alike. */
         .busy-dot {
             display: inline-block; width: 10px; height: 10px; margin-right: 5px;
@@ -2321,7 +2321,7 @@
            it stays hidden once expanded. */
         #geneEffectModal:not(.ge-condensed):not([data-can-condense="1"]) #geExpandFullBtn { display: none; }
         /* ---- Phone / narrow-screen scaling (<=640px) ----
-           Optimised for the popouts where the analysis happens (Cell Line
+           Optimized for the popouts where the analysis happens (Cell Line
            Browser, Gene Effect, Correlation Analysis, scatter Inspect): give
            them the whole screen, shrink the chrome, stack the chart-beside-table
            layouts so the chart spans full width, and let dense toolbars wrap +
@@ -2591,25 +2591,25 @@
                 justify-content: center !important; gap: 4px 14px !important; max-width: 100% !important; }
             .nav-side { white-space: normal !important; display: contents !important; }
             #versionBadge { position: static !important; transform: none !important; margin-left: 0 !important; }
-            /* The shift that centres the wordmark (see the rule outside the
+            /* The shift that centers the wordmark (see the rule outside the
                media queries) needs slack on the right to move into. Filling
                the width leaves none, so the tree was pushed off the screen.
-               Centred, the image's right edge sits at (C+W)/2, and the shift
+               Centered, the image's right edge sits at (C+W)/2, and the shift
                adds 0.0955W on top: W has to stay under ~84% of the width for
                the whole logo to land inside. The shift is a percentage of the
                image itself here, so the two stay in step at any size. */
             .logo-header img {
                 max-width: 84% !important; height: auto !important;
-                /* Half the wordmark-centring shift: the full 9.55% centres
+                /* Half the wordmark-centring shift: the full 9.55% centers
                    the text but reads as the whole logo hanging right on a
                    narrow screen. Half splits the difference. */
                 transform: translateX(4.5%) !important;
             }
             /* The Options row's four buttons were sized for a desktop row, so
-               "Other" overflowed its own button and sat off-centre. */
+               "Other" overflowed its own button and sat off-center. */
             #optionsOtherBtn, .sidebar .card-content > .btn { white-space: normal !important; }
             /* Four equal columns is ~85px each here, too narrow for "Other ▾",
-               which overflowed its own button and sat off-centre. Two per row. */
+               which overflowed its own button and sat off-center. Two per row. */
             #optionsRow { flex-wrap: wrap !important; }
             #optionsRow > * { flex: 1 1 calc(50% - 6px) !important; min-width: calc(50% - 6px) !important; }
             /* Lasso needs a drag on a plot that does not accept drags here. */
@@ -2704,7 +2704,7 @@
             .js-plotly-plot .draglayer {
                 touch-action: pan-y !important;
             }
-            /* Labelled cell lines, listed under the scatter. A tap on a point
+            /* Labeled cell lines, listed under the scatter. A tap on a point
                labels it; the name here opens what the app knows about it, the
                x takes the label off. The height is reserved so the row does not
                appear and shove the rest of the popout down. */
@@ -2796,7 +2796,7 @@
                the bottom with no way to scroll to it. The card is short on a
                phone anyway, most of its sections are hidden here. */
             .clb-detail { max-height: none !important; overflow: visible !important; }
-            /* Close is a labelled button, not a bare glyph: it only needs to be
+            /* Close is a labeled button, not a bare glyph: it only needs to be
                thumb-sized, not the width of the card. */
             #clbDetailCloseBtn {
                 width: auto !important;
@@ -2978,7 +2978,7 @@
     <script>
       var _paq = window._paq = window._paq || [];
       _paq.push(['disableCookies']);
-      // Honour the browser's Do Not Track setting, and keep campaign
+      // Honor the browser's Do Not Track setting, and keep campaign
       // parameters out of the tracked URL. Matches Green Listed.
       _paq.push(['setDoNotTrack', true]);
       _paq.push(['disableCampaignParameters']);
@@ -3040,10 +3040,10 @@
                         <li>Curated cancer-pathway and complex KBs <span style="color:#999;">(in-app)</span></li>
                     </ul>
                     <p style="margin: 12px 0 2px 0; font-weight:600; color:#374151;">Annotations curated for Correlate</p>
-                    <p style="margin: 0 0 0 0; font-size:11px; color:#9ca3af;">Data layers we assembled while building the app, by combining and re-analysing the sources named on each line. They are not taken ready-made from any one database.</p>
+                    <p style="margin: 0 0 0 0; font-size:11px; color:#9ca3af;">Data layers we assembled while building the app, by combining and re-analyzing the sources named on each line. They are not taken ready-made from any one database.</p>
                     <ul style="margin: 4px 0 0 0; padding-left: 18px;">
                         <li>Clinically relevant fusions <span style="color:#999;">(51 driver fusions + 7 KMT2A partners, drawn from <a href="https://cancer.sanger.ac.uk/cosmic" target="_blank" style="color:#0066cc;" rel="noopener noreferrer">COSMIC</a>; each call validated per cell line)</span></li>
-                        <li>Subtype hallmarks KB <span style="color:#999;">(expected driver alterations per cancer type, compiled from the <a href="https://tumourclassification.iarc.who.int/" target="_blank" style="color:#0066cc;" rel="noopener noreferrer">WHO Classification of Tumours</a> 5th ed. 2022, <a href="https://cancer.sanger.ac.uk/cosmic" target="_blank" style="color:#0066cc;" rel="noopener noreferrer">COSMIC</a>, <a href="https://www.oncokb.org/" target="_blank" style="color:#0066cc;" rel="noopener noreferrer">OncoKB</a> and <a href="https://www.nccn.org/guidelines/category_1" target="_blank" style="color:#0066cc;" rel="noopener noreferrer">NCCN guidelines</a>; ~40 Oncotree subtypes)</span></li>
+                        <li>Subtype hallmarks KB <span style="color:#999;">(expected driver alterations per cancer type, compiled from the <a href="https://tumourclassification.iarc.who.int/" target="_blank" style="color:#0066cc;" rel="noopener noreferrer">WHO Classification of Tumors</a> 5th ed. 2022, <a href="https://cancer.sanger.ac.uk/cosmic" target="_blank" style="color:#0066cc;" rel="noopener noreferrer">COSMIC</a>, <a href="https://www.oncokb.org/" target="_blank" style="color:#0066cc;" rel="noopener noreferrer">OncoKB</a> and <a href="https://www.nccn.org/guidelines/category_1" target="_blank" style="color:#0066cc;" rel="noopener noreferrer">NCCN guidelines</a>; ~40 Oncotree subtypes)</span></li>
                         <li>Lehmann TNBC subtypes <span style="color:#999;">(<a href="https://doi.org/10.1172/JCI45014" target="_blank" style="color:#0066cc;" rel="noopener noreferrer">Lehmann <em>JCI</em> 2011</a> + <a href="https://doi.org/10.1371/journal.pone.0157368" target="_blank" style="color:#0066cc;" rel="noopener noreferrer">2016 update</a>; BL1/BL2/IM/M/MSL/LAR for ~22 TNBC lines)</span></li>
                         <li>Focal CN events <span style="color:#999;">(curated panel of ~32 amps + ~14 extended TSG deletions; from <code>OmicsCNGeneWGS.csv</code>)</span></li>
                         <li>HLA copy number <span style="color:#999;">(extracted from <code>OmicsCNGeneWGS.csv</code>; B2M-normalized to control for HLA-C mapping bias)</span></li>
@@ -3073,7 +3073,7 @@
                 <a href="https://www.youtube.com/@fredrikwermeling1330" target="_blank" rel="noopener noreferrer">YouTube</a>
             </span>
             <!-- Positioned off the row's right end (see #versionBadge CSS), so
-                 it sits next to YouTube without moving the centred links. -->
+                 it sits next to YouTube without moving the centered links. -->
         </span>
     </div>
 
@@ -3105,7 +3105,7 @@
                                 <label class="options-menu-item" for="restoreFromExportInput" title="Pick a PNG or SVG saved with Export image, or its .correlate.json settings file, to return to that view">Open saved figure</label>
                             </div>
                         </div>
-                        <!-- Starts in the same quiet outline as its neighbours;
+                        <!-- Starts in the same quiet outline as its neighbors;
                              _armResetAll() turns it solid green once there is
                              actually something to reset (results or filters). -->
                         <button class="btn btn-outline btn-sm" id="resetAppBtn" style="color:var(--green-700); border-color:var(--green-400);" title="Clear the current genes, parameters and results and start over">Reset all</button>
@@ -3583,8 +3583,8 @@
                             </div>
                             <div id="colorGEOptions" style="display: none; margin-left: 20px; margin-bottom: 4px;">
                                 <div class="radio-group-inline">
-                                    <label title="The colour range is stretched over the genes drawn on screen"><input type="radio" name="colorGERange" value="shown" checked> Scale to genes on screen</label>
-                                    <label title="The colour range covers every input gene with data, so a gene keeps its colour when others are hidden"><input type="radio" name="colorGERange" value="input"> Whole input set</label>
+                                    <label title="The color range is stretched over the genes drawn on screen"><input type="radio" name="colorGERange" value="shown" checked> Scale to genes on screen</label>
+                                    <label title="The color range covers every input gene with data, so a gene keeps its color when others are hidden"><input type="radio" name="colorGERange" value="input"> Whole input set</label>
                                 </div>
                             </div>
                             <!-- Gene Statistics options (shown when stats loaded) -->
@@ -3600,7 +3600,7 @@
                                     </div>
                                 </div>
                                 <div class="checkbox-group" style="margin-bottom: 4px;">
-                                    <label title="Colour the nodes by your LFC or FDR instead of by gene effect"><input type="checkbox" id="colorByStats"> Color by LFC / FDR</label>
+                                    <label title="Color the nodes by your LFC or FDR instead of by gene effect"><input type="checkbox" id="colorByStats"> Color by LFC / FDR</label>
                                 </div>
                                 <div id="colorStatsOptions" style="display: none; margin-left: 20px;">
                                     <div class="radio-group-inline" style="margin-bottom: 4px;">
@@ -4000,7 +4000,7 @@
                                 </select>
                                 <button class="btn btn-primary btn-sm" id="updateInspectGenes" style="font-size: 11px; padding: 3px 12px; min-width: 92px; font-weight: 600;">Update</button>
                                 <button class="btn btn-outline btn-sm" id="inspectFindCorrelatesBtn" style="font-size: 11px; padding: 3px 12px; min-width: 92px; color:#5d9239; border-color:#6ba544;" title="Find top GE and Expression correlates of the X-axis gene across the currently-filtered cell lines. Click a result to put it on the Y axis.">Find correlates</button>
-                                <button class="btn btn-outline btn-sm mobile-hide" id="openCompilationBtn" style="font-size: 11px; padding: 3px 12px; color:#5d9239; border-color:#6ba544;" title="A grid of correlation plots, each with its own genes, sharing this plot's filters, highlights and colours">Compilation</button>
+                                <button class="btn btn-outline btn-sm mobile-hide" id="openCompilationBtn" style="font-size: 11px; padding: 3px 12px; color:#5d9239; border-color:#6ba544;" title="A grid of correlation plots, each with its own genes, sharing this plot's filters, highlights and colors">Compilation</button>
                                 <!-- Each axis on its own, in the Gene Effect
                                      view. Sits on the same row as Find
                                      correlates: both take the plot apart into
@@ -4018,7 +4018,7 @@
                             </div>
                         </div>
 
-                        <!-- Colouring has its own box near the top: it was a button and a
+                        <!-- Coloring has its own box near the top: it was a button and a
                              select buried in the Highlight box. The select stays (hidden) as
                              the single source of state; the buttons only drive it. -->
                         <div class="control-box-compact" id="colorByBox" style="grid-column: span 2;">
@@ -4026,11 +4026,11 @@
                                 <span class="control-label" style="font-size:10px; margin:0;">Color by</span>
                                 <div id="colorBySeg" class="color-by-seg" role="group" aria-label="Color the points by">
                                     <button type="button" class="btn btn-sm btn-outline" data-color-by="">None</button>
-                                    <button type="button" class="btn btn-sm btn-outline" data-color-by="tissue" title="Colour every point by tissue of origin">Tissue</button>
-                                    <button type="button" class="btn btn-sm btn-outline" data-color-by="subtype" title="Colour by subtype (the 8 largest at first; Groups picks others)">Subtype</button>
-                                    <button type="button" class="btn btn-sm btn-outline" data-color-by="disease" title="Colour by disease (the 8 largest at first; Groups picks others)">Disease</button>
-                                    <button type="button" class="btn btn-sm btn-outline" data-color-by="medium" title="Colour by culture medium">Medium</button>
-                                    <button type="button" class="btn btn-sm btn-outline" data-color-by="gene" title="Colour each point by a gene's gene effect, mRNA expression or copy number in that cell line">Gene</button>
+                                    <button type="button" class="btn btn-sm btn-outline" data-color-by="tissue" title="Color every point by tissue of origin">Tissue</button>
+                                    <button type="button" class="btn btn-sm btn-outline" data-color-by="subtype" title="Color by subtype (the 8 largest at first; Groups picks others)">Subtype</button>
+                                    <button type="button" class="btn btn-sm btn-outline" data-color-by="disease" title="Color by disease (the 8 largest at first; Groups picks others)">Disease</button>
+                                    <button type="button" class="btn btn-sm btn-outline" data-color-by="medium" title="Color by culture medium">Medium</button>
+                                    <button type="button" class="btn btn-sm btn-outline" data-color-by="gene" title="Color each point by a gene's gene effect, mRNA expression or copy number in that cell line">Gene</button>
                                 </div>
                                 <select id="colorByCategory" class="form-control" style="display:none;">
                                     <option value="">None</option>
@@ -4040,10 +4040,10 @@
                                     <option value="medium">By culture medium</option>
                                     <option value="gene">By a gene</option>
                                 </select>
-                                <!-- Colour by a gene: a continuous scale, its own key beside the plot. -->
+                                <!-- Color by a gene: a continuous scale, its own key beside the plot. -->
                                 <span id="colorByGeneRow" style="display:none; align-items:center; gap:4px;">
                                     <input type="text" id="colorByGene" class="form-control" placeholder="Gene" autocomplete="off" style="width:90px; font-size:11px; padding:2px 6px;">
-                                    <select id="colorByGeneType" class="form-control" style="width:auto; font-size:10px; padding:1px 3px;" title="What to colour by: gene effect (CRISPR), mRNA expression or copy number">
+                                    <select id="colorByGeneType" class="form-control" style="width:auto; font-size:10px; padding:1px 3px;" title="What to color by: gene effect (CRISPR), mRNA expression or copy number">
                                         <option value="expr">mRNA</option>
                                         <option value="ge">GE</option>
                                         <option value="cn">CN</option>
@@ -4061,7 +4061,7 @@
                                     <option value="median">Legend: n + x/y median</option>
                                 </select>
                             </div>
-                            <!-- Genes that explain the points, from Suggest; click one to colour by it. -->
+                            <!-- Genes that explain the points, from Suggest; click one to color by it. -->
                             <div id="colorByGeneSuggest" style="display:none; margin-top:6px; font-size:11px;"></div>
                             <!-- Chosen groups, each removable without reopening the picker. -->
                             <div id="colorByChips" style="display:none; margin-top:3px; flex-wrap:wrap; gap:3px;"></div>
@@ -4243,7 +4243,7 @@
                     <div class="inspect-plot">
                         <div id="scatterPlot"></div>
                         <!-- Phone only: with no hover there is nothing to hover, so
-                             the labelled cell lines are listed here as the way into
+                             the labeled cell lines are listed here as the way into
                              each one's card, wiki or the browser. -->
                         <div id="scatterChipRow"></div>
                         <div id="compareTable" style="display: none; max-height: 500px; overflow-y: auto;"></div>
@@ -5093,7 +5093,7 @@
                         Correlate is an analysis platform built around <strong>CRISPR knockout screens</strong> of more than <strong>1,100 human cancer cell lines</strong> (DepMap), and it integrates <strong>multi-omics data</strong> for the same lines, mRNA expression, hotspot mutations, driver fusions and copy number.
                         Two tools cover the main uses: <strong>Gene set analysis</strong> to discover and present the connections within a gene set and extend it into wider networks,
                         and the <strong>Cell Line Browser</strong> to identify cell lines with the features a project needs.
-                        Outside tools are integrated for further analysis: any gene list can be sent to <strong>Enrichr</strong> for pathway enrichment, and every view has an <strong>Export for AI</strong> that packages its data and settings into one file an AI assistant can analyse.
+                        Outside tools are integrated for further analysis: any gene list can be sent to <strong>Enrichr</strong> for pathway enrichment, and every view has an <strong>Export for AI</strong> that packages its data and settings into one file an AI assistant can analyze.
                         Every view also carries a <strong>Methods</strong> button beside its export buttons: it writes out how the picture on screen was made, as one paragraph ready for a materials and methods section and as a longer plain-language walk-through, both read from the view exactly as it stands.
                     </p>
                 </div>
@@ -5348,7 +5348,7 @@
           </ul>
 
           <p style="margin-top:14px;"><strong>&#9888; Warning marks</strong>: a triangle beside a cell line's name means <a href="https://www.cellosaurus.org/" target="_blank" style="color:#0066cc;" rel="noopener noreferrer">Cellosaurus</a> records a problem with it. 56 of the 1,208 lines are flagged. Hover the mark for the full explanation, or open the line to see it with a link to the source.</p>
-          <p style="margin-top:14px;"><strong>&#129440; Virus marks</strong>: a virus beside a cell line's name means <a href="https://www.cellosaurus.org/" target="_blank" style="color:#0066cc;" rel="noopener noreferrer">Cellosaurus</a> records which virus the line was transformed by. 53 of the 1,208 lines carry one, most often EBV, HPV16/18 or HBV. It matters because viral oncoproteins override host pathways: an HPV-transformed line behaves as p53- and RB-deficient whatever its <em>TP53</em> and <em>RB1</em> sequence says, and an EBV-immortalised lymphoblastoid line is not a tumour line at all. <b>A line without the mark simply has no such record</b>, which is not the same as being free of the virus. The matching quick filters are named &ldquo;Confirmed &hellip;-transformed&rdquo; for that reason.</p>
+          <p style="margin-top:14px;"><strong>&#129440; Virus marks</strong>: a virus beside a cell line's name means <a href="https://www.cellosaurus.org/" target="_blank" style="color:#0066cc;" rel="noopener noreferrer">Cellosaurus</a> records which virus the line was transformed by. 53 of the 1,208 lines carry one, most often EBV, HPV16/18 or HBV. It matters because viral oncoproteins override host pathways: an HPV-transformed line behaves as p53- and RB-deficient whatever its <em>TP53</em> and <em>RB1</em> sequence says, and an EBV-immortalised lymphoblastoid line is not a tumor line at all. <b>A line without the mark simply has no such record</b>, which is not the same as being free of the virus. The matching quick filters are named &ldquo;Confirmed &hellip;-transformed&rdquo; for that reason.</p>
 
           <ul style="margin:4px 0 10px 20px;">
             <li><b>Identity disputed</b> (36 lines): the line is contaminated, misidentified, or a derivative of another line, so a result attributed to it may belong to something else. MKN28 is a MKN74 derivative; KP-1N is a PANC-1 derivative.</li>
@@ -5356,7 +5356,7 @@
             <li><b>Earlier classification corrected</b> (16 lines): the type shown here is already the corrected one, so this is background rather than a warning and carries no marker in the list. SK-N-MC was called a neuroblastoma for years and is an Ewing-family tumor; KE-97 was filed as gastric and is a B-lymphoblastoid line.</li>
             <li>Both sets are available as quick filters, to exclude or to inspect. Nothing is hidden: a flagged line can still be a good experimental model, it just cannot be evidence about the tumor type on its label. Calls that Cellosaurus states as possible rather than settled say so.</li>
           </ul>
-          <p style="margin-top:14px;"><strong>Selecting cell lines</strong>: tick lines (or <b>Select Visible</b>) to build a set for Inspect / Export. <b>Show only my N</b> collapses the list to just your ticked lines and carries the count; it is greyed out until something is ticked, and turns off on Deselect All / Reset. The list fills <b>column by column</b> (down the first column in sort order, then the next).</p>
+          <p style="margin-top:14px;"><strong>Selecting cell lines</strong>: tick lines (or <b>Select Visible</b>) to build a set for Inspect / Export. <b>Show only my N</b> collapses the list to just your ticked lines and carries the count; it is grayed out until something is ticked, and turns off on Deselect All / Reset. The list fills <b>column by column</b> (down the first column in sort order, then the next).</p>
 
           <p style="margin-top:10px;"><strong>Inspect selected vs rest</strong>: compares your selection with the cell lines it is measured against, <b>CRISPR gene effect on the left, mRNA expression on the right</b>. Both columns rank by the size of the difference in either direction, so genes higher and lower in your selection appear together. Each gene carries a Welch's t-test adjusted across all genes tested (Benjamini-Hochberg), shown as <b>q</b> and filterable. The comparison group is yours to choose: <b>all other cell lines</b>, only those <b>sharing a lineage</b> with your selection (taking tissue of origin out of the comparison), a <b>group picked from the tissue table</b>, or a <b>pasted list</b> of names. The two measures cover different cell lines, so each states its own group sizes. Either ranked gene list can be opened in the heatmap (top 10 to 100, or any number), carried over with the inspected cell lines.</p>
           <p style="margin-top:10px;"><strong>Send to another view</strong>: carries the listed cell lines, or just the ticked ones, into the correlation scatter, the gene effect charts or the heatmap, either marking them there or narrowing the view to them, and can set them as the cohort for the mutation and gene set analyses. Each target row explains itself in the popout.</p>
@@ -5573,7 +5573,7 @@
                    compare the two directly instead of either against the rest
                    of the panel. The chips and the compare button reserve their
                    space (visibility:hidden / disabled) rather than appearing
-                   and shoving their neighbours; see _syncClbGateUI. -->
+                   and shoving their neighbors; see _syncClbGateUI. -->
               <span class="clb-group-label" style="color:var(--green-700);">Gates</span>
               <span class="clb-pair">
                 <button id="clbSetGateA" class="btn btn-outline btn-sm" title="Put the ticked cell lines into gate A. The ticks then clear, ready for gate B.">Set Gate A</button>
@@ -5908,7 +5908,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v91_40"></script>
+    <script src="app.js?v=v91_45"></script>
     <script src="tour.js?v=v91_44"></script>
 </body>
 </html>

@@ -1447,14 +1447,14 @@ class CorrelationExplorer {
                         || `${popout.customCellLines.length}/${popout.customCellLines.length} matched`;
                 }
                 this.updateInspectPlot();
-                // Dot colour is the one setting the plot does NOT read while
+                // Dot color is the one setting the plot does NOT read while
                 // drawing: the picker applies it imperatively through its own
                 // onchange, and a restore sets the input's value without
                 // firing one. So the reopened figure came back in the default
-                // blue while the picker showed the saved colour, which is the
+                // blue while the picker showed the saved color, which is the
                 // settings file failing at the one job it has. Skipped when
-                // the plot is coloured by a category, where the per-group
-                // colours are the point and one flat colour would erase them.
+                // the plot is colored by a category, where the per-group
+                // colors are the point and one flat color would erase them.
                 const dc = document.getElementById('scatterDotColor')?.value;
                 if (dc && !document.getElementById('colorByCategory')?.value) {
                     this.applyScatterDotColor(dc);
@@ -3252,7 +3252,7 @@ class CorrelationExplorer {
         const oncoFilters = Object.entries(this._gridFilterMap() || {}).filter(([, v]) => v !== 'none');
         // Recomputed rather than rebuilt when a bar is clicked: a full redraw
         // re-picks which genes the plot shows from the active filters, so the
-        // whole chart restructured under the click. Only the colours change.
+        // whole chart restructured under the click. Only the colors change.
         const computeBarColors = () => {
             const active = Object.entries(this._gridFilterMap() || {}).filter(([, v]) => v !== 'none');
             return sorted.map(s => {
@@ -3307,7 +3307,7 @@ class CorrelationExplorer {
             return {
                 // Stacked, not run together. Side by side, "32 · 42.7%" is
                 // about fifty pixels over a bar with under thirty to itself,
-                // so every label ran into its neighbours and each one looked
+                // so every label ran into its neighbors and each one looked
                 // shifted off its own bar. One above the other halves the
                 // width and keeps each label over the bar it belongs to.
                 x, y: barY[i], text: parts.join('<br>'), align: 'center',
@@ -3341,9 +3341,9 @@ class CorrelationExplorer {
             bargap: 0.3,
             // The invisible click target is a second bar trace on the same
             // axis, and Plotly's default groups bar traces side by side, so
-            // each got half the slot and the visible bar sat off-centre from
+            // each got half the slot and the visible bar sat off-center from
             // the dot column under it. Overlay puts both back on the category
-            // centre, which also puts the count label back over its own bar.
+            // center, which also puts the count label back over its own bar.
             barmode: 'overlay',
             plot_bgcolor: '#fafafa',
             paper_bgcolor: 'white'
@@ -3391,7 +3391,7 @@ class CorrelationExplorer {
                 this.showCopyNotification?.(same
                     ? 'Selection cleared in the grid.'
                     : `${combo.count} cell line${combo.count === 1 ? '' : 's'}: ${names.length ? names.join(' + ') + ' altered' : 'none of these genes altered'}${names.length < upsetGenes.length ? ', the rest wild-type' : ''}. Selected in the grid, press Apply there to use it.`);
-                // Just recolour: the chosen bar goes green and the rest gray,
+                // Just recolor: the chosen bar goes green and the rest gray,
                 // and every bar stays where it was.
                 const cols = computeBarColors();
                 try {
@@ -3579,7 +3579,7 @@ class CorrelationExplorer {
             top = rect.top - 6 - maxH;
         }
         // Never smaller than a usable list; if that no longer fits beside the
-        // button, centre it in the viewport instead.
+        // button, center it in the viewport instead.
         const minH = Math.min(420, usable);
         if (maxH < minH) {
             maxH = minH;
@@ -3941,7 +3941,7 @@ class CorrelationExplorer {
         const geneCounts = [];
         if (gridKind === 'fusion') {
             // Curated driver fusions only. The raw caller output averages more
-            // than 30 partners per line and is mostly passenger and artefact,
+            // than 30 partners per line and is mostly passenger and artifact,
             // so a grid ranked on it would show noise, not drivers.
             const fd = this.clinicalFusions?.fusionData || {};
             for (const name of Object.keys(fd)) {
@@ -4611,7 +4611,7 @@ class CorrelationExplorer {
         this._renderAnalysisSubsetChip();
     }
 
-    // Reset all starts as a quiet outline button like its Options neighbours;
+    // Reset all starts as a quiet outline button like its Options neighbors;
     // it only lights up green once there is something it would actually reset:
     // generated results, or a filter changed away from its default.
     _armResetAll() {
@@ -5982,7 +5982,7 @@ class CorrelationExplorer {
         // line its name says" reads as a verdict on the vial in the user's
         // freezer, which nobody here is in a position to give.
         return (p.kind === 'identity'
-            ? 'This cell line has been reported as incorrectly labelled or cross-contaminated. Open it for the full record.'
+            ? 'This cell line has been reported as incorrectly labeled or cross-contaminated. Open it for the full record.'
             : 'The recorded cancer type for this cell line has been disputed in the literature. Open it for the full record.') + hedge;
     }
 
@@ -5996,14 +5996,14 @@ class CorrelationExplorer {
         const p = this._problemFlag(cellLine);
         if (!p) return '';
         const lead = p.kind === 'identity'
-            ? 'Reported as incorrectly labelled or cross-contaminated'
+            ? 'Reported as incorrectly labeled or cross-contaminated'
             : 'Recorded cancer type has been disputed';
         return full ? `${lead}. ${this._problemDetail(p)}` : `${p.category}`;
     }
 
     // Does this cell line pass the front page's disease (Oncotree) filter?
     // The mutation / gene-set cohort loops call this beside their lineage and
-    // subtype checks, so the third tissue level is honoured everywhere.
+    // subtype checks, so the third tissue level is honored everywhere.
     _paramOncotreePasses(cl) {
         const dis = this.cellLineMetadata?.oncotreeSubtype?.[cl] || '';
         // Several diseases ticked in a Tissue split popup travel as one
@@ -6769,7 +6769,7 @@ class CorrelationExplorer {
             // PI3K / AKT / mTOR
             ['PIK3CA', 'PIK3CB', 'PIK3R1', 'PTEN', 'AKT1', 'AKT2', 'MTOR', 'RICTOR', 'RPTOR',
              'TSC1', 'TSC2', 'RHEB', 'RPS6KB1', 'EIF4EBP1', 'INPP4B', 'PDK1'],
-            // Chromatin remodelling and the paralog pairs within it
+            // Chromatin remodeling and the paralog pairs within it
             ['SMARCA2', 'SMARCA4', 'SMARCB1', 'ARID1A', 'ARID1B', 'ARID2', 'PBRM1', 'BRD4',
              'BRD9', 'EZH2', 'EED', 'SUZ12', 'KMT2A', 'KMT2D', 'CREBBP', 'EP300'],
         ];
@@ -7197,7 +7197,7 @@ class CorrelationExplorer {
             // barnesHut while the network runs forceAtlas2Based, so it was
             // writing to an inactive solver; and once the layout has settled the
             // simulation does not step again, so no physics value moves a node.
-            // Scaling about the centre is also exactly what "how far apart do
+            // Scaling about the center is also exactly what "how far apart do
             // the nodes sit" means, and it is instant and reversible.
             this._applyNetworkSpread();
         });
@@ -7477,8 +7477,8 @@ class CorrelationExplorer {
         // Expression and copy number load on first use, as for the axes.
         const cbLoad = async () => {
             const t = document.getElementById('colorByGeneType')?.value;
-            if (t === 'expr' && !this.expressionLoaded) { try { await this.loadExpressionData(); } catch (e) { /* stays grey */ } }
-            if (t === 'cn' && !this.cnLoaded) { try { await this.loadCnData(); } catch (e) { /* stays grey */ } }
+            if (t === 'expr' && !this.expressionLoaded) { try { await this.loadExpressionData(); } catch (e) { /* stays gray */ } }
+            if (t === 'cn' && !this.cnLoaded) { try { await this.loadCnData(); } catch (e) { /* stays gray */ } }
         };
         const applyCbGene = async () => {
             await cbLoad();
@@ -8606,7 +8606,7 @@ class CorrelationExplorer {
         let noDataBox = '';
         if (noDataHtml) {
             noDataBox = `<div style="${cardStyle}">
-                <div style="font-weight:600; font-size:12px; color:#374151; margin-bottom:2px;">No CRISPR data${qi('These are real genes from CRISPR libraries, but DepMap publishes no knockout values for them, usually because too few of their guides passed quality filters. They cannot be analysed here and are left out of the analysis.')}</div>
+                <div style="font-weight:600; font-size:12px; color:#374151; margin-bottom:2px;">No CRISPR data${qi('These are real genes from CRISPR libraries, but DepMap publishes no knockout values for them, usually because too few of their guides passed quality filters. They cannot be analyzed here and are left out of the analysis.')}</div>
                 ${noDataHtml}</div>`;
         }
         remaining.length = 0;
@@ -9677,7 +9677,7 @@ class CorrelationExplorer {
         });
     }
 
-    // Recognise the shapes Excel writes a date in, and return {month, day}.
+    // Recognize the shapes Excel writes a date in, and return {month, day}.
     // A four-digit year is taken as the year Excel invented, not data.
     _parseExcelDateToken(tok) {
         const MON = { JAN:1, FEB:2, MAR:3, APR:4, MAY:5, JUN:6, JUL:7, AUG:8, SEP:9, OCT:10, NOV:11, DEC:12 };
@@ -9931,7 +9931,7 @@ class CorrelationExplorer {
                     // "how tight are the relationships here" (mean |r| over the
                     // surviving pairs, so a lineage with few but very strong
                     // correlations can win). nPairs is carried so a single
-                    // lucky pair can be recognised as thin evidence.
+                    // lucky pair can be recognized as thin evidence.
                     const meanR = result.correlations.reduce((a, c) => a + Math.abs(c.correlation), 0)
                         / result.correlations.length;
                     results.push({
@@ -10097,7 +10097,7 @@ class CorrelationExplorer {
                 this.results = this.calculateCorrelations(geneList, mode, cutoff, minN, minSlope, cellLineIndices, expandNetwork, includeGrowthRate);
                 // Record the filters these results were computed under. The
                 // banner used to read the live dropdowns, so changing a filter
-                // without re-running relabelled an unchanged network.
+                // without re-running relabeled an unchanged network.
                 this._resultsFilterText = this._composeNetworkFilterText();
                 // Record the actual cohort too (cellLineIndices are indexes
                 // into metadata.cellLines), so anything opened from this
@@ -10552,7 +10552,7 @@ class CorrelationExplorer {
             // Check oncoprint multi-gene filters
             if (this._gridAppliesToAnalysis() && !this._cellLinePassesOncoprintFilters(cellLine)) return;
             // A cell-line subset handed over from the Cell Line Browser. The
-            // gene-set analysis has honoured this since it was added and it is
+            // gene-set analysis has honored this since it was added and it is
             // advertised as a removable chip beside the Run button, but the
             // mutation analysis quietly ignored it, so the same chip narrowed
             // one analysis and not the other.
@@ -10719,7 +10719,7 @@ class CorrelationExplorer {
         const mut1CellIndices = [];
         const mut2CellIndices = [];
         // Lines in scope that were never RNA-sequenced, so no fusion call of
-        // any kind could be made. Counted and reported, never analysed.
+        // any kind could be made. Counted and reported, never analyzed.
         const noCallCellIndices = [];
 
         cellLines.forEach((cellLine, idx) => {
@@ -10747,7 +10747,7 @@ class CorrelationExplorer {
             // Check oncoprint multi-gene filters
             if (this._gridAppliesToAnalysis() && !this._cellLinePassesOncoprintFilters(cellLine)) return;
 
-            // Same subset the gene-set analysis honours, see the note in
+            // Same subset the gene-set analysis honors, see the note in
             // calculateMutationAnalysis.
             if (this._analysisCellLineSubset && !this._analysisCellLineSubset.has(cellLine)) return;
 
@@ -10823,7 +10823,7 @@ class CorrelationExplorer {
         // on the same gene: in Ewing sarcoma the EWSR1-FLI1-negative lines
         // carry EWSR1-ERG or EWSR1-FEV. Reported so the user can judge whether
         // a different partner is a control for their question. FLI1, ERG and
-        // FEV are all ETS factors, so the programmes overlap heavily.
+        // FEV are all ETS factors, so the programs overlap heavily.
         const altFusions = new Map();
         const headGene = String(hotspotGene).split('-')[0].toUpperCase();
         for (const idx of wtCellIndices) {
@@ -11116,7 +11116,7 @@ class CorrelationExplorer {
         const unit = mr.metric === 'expr' ? 'Expr' : 'GE';
         // Columns come in groups (WT, mutated, mutated vs WT, ...). The group
         // names sit in a header row of their own above short column names,
-        // in the group's colour, so each column reads as part of its group.
+        // in the group's color, so each column reads as part of its group.
         const mutAll = `${mutLbl}${isD ? '' : ' 1+2'}`;
         const mut2 = `${mutLbl} 2${isT ? '+' : ''}`;
         const vsWord = isT ? 'vs no fusion' : isD ? `vs ${_Lh.ref}` : 'vs WT';
@@ -11485,7 +11485,7 @@ class CorrelationExplorer {
         } else {
             // Build clean SVG table. Columns are measured, not assumed: at a
             // fixed 70 px every header longer than about ten characters ran
-            // into its neighbours, which is what the column titles were doing.
+            // into its neighbors, which is what the column titles were doing.
             const cellH = 20, pad = 10, titleH = settingsText ? 20 : 0;
             const nCols = headers.length;
             const nRows = visibleRows.length;
@@ -11618,7 +11618,7 @@ class CorrelationExplorer {
         csv += '#\n';
 
         const hasFusion = mr.hasFusionData && mr.isTranslocation;
-        // Column names carry the measure actually analysed: GE columns on an
+        // Column names carry the measure actually analyzed: GE columns on an
         // mRNA run mislabeled every number in the file.
         const M = mr.metric === 'expr' ? 'Expr' : 'GE';
         // Functional loss / amp / del is a BINARY call: the 0/1/2-copy
@@ -12141,7 +12141,7 @@ class CorrelationExplorer {
         // the SVG edge (the absolute clip ceiling would be + right-margin more).
         const geRightMargin = 30;
         // On a phone the popout is measured before its stacked layout has
-        // settled and reads wider than the screen, which centred the title
+        // settled and reads wider than the screen, which centered the title
         // off to the right and let it run past the edge: cap at the viewport.
         const _geMeasuredW = document.getElementById('geneEffectPlot')?.clientWidth || 600;
         const geContainerW = _gePhone ? Math.min(_geMeasuredW, window.innerWidth - 20) : _geMeasuredW;
@@ -13000,7 +13000,7 @@ class CorrelationExplorer {
         };
     }
 
-    // A coloured grid drawn on canvas: row and column labels, a colour scale
+    // A colored grid drawn on canvas: row and column labels, a color scale
     // under it, values in the cells when asked, a hover tooltip and a click.
     // Used by the Matrix tab and by the tour. Sized exactly as given, so a
     // phone scrolls it sideways rather than squeezing it.
@@ -13080,7 +13080,7 @@ class CorrelationExplorer {
             ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.font = `${phone ? 11 : 12}px ${FONT}`;
             ctx.fillText(spec.xLabel, left + nC * cell / 2, gridBottom + 6);
         }
-        // Colour scale under the grid.
+        // Color scale under the grid.
         const by = H - 24, bw = Math.min(180, W - left - 20), bx = left;
         for (let k = 0; k < bw; k++) { ctx.fillStyle = rgb(lerp(k / bw)); ctx.fillRect(bx + k, by, 1, 10); }
         ctx.strokeStyle = '#9ca3af'; ctx.lineWidth = 1; ctx.strokeRect(bx + 0.5, by + 0.5, bw, 10);
@@ -13704,9 +13704,9 @@ class CorrelationExplorer {
         setLabel('colorByGeneEffect', expr ? 'Color by expression' : 'Color by GE');
 
         // The GE / Absolute sub-choice is gone: gene effect always
-        // colours on its signed scale, and the remaining sub-option (scale to
+        // colors on its signed scale, and the remaining sub-option (scale to
         // the shown genes or the whole input set) applies to both measures,
-        // so nothing under the checkbox needs relabelling per basis.
+        // so nothing under the checkbox needs relabeling per basis.
     }
 
     displayNetwork() {
@@ -14347,7 +14347,7 @@ class CorrelationExplorer {
                         this.hiddenNodes.push(node);
                         this.networkData.nodes.remove(nodeId);
                         this.updateRemovedNodesList();
-                        // With the colour scale set to "network only" the range is
+                        // With the color scale set to "network only" the range is
                         // read off the nodes that are actually drawn, so taking one
                         // out changes it. Re-apply immediately rather than waiting
                         // for the user to re-pick the scale.
@@ -14536,7 +14536,7 @@ class CorrelationExplorer {
         setSlider('netEdgeWidth', 3, 'edgeWidthBubble');
         // Spread goes back to 100 through its own apply path (same as the Fit
         // button), so the layout actually widens instead of the meter just
-        // relabelling itself over an unchanged picture.
+        // relabeling itself over an unchanged picture.
         const spreadWas = document.getElementById('netSpread')?.value;
         setSlider('netSpread', 100, 'spreadBubble');
         if (spreadWas && spreadWas !== '100') this._applyNetworkSpread();
@@ -14602,7 +14602,7 @@ class CorrelationExplorer {
     // is easy to cause by enlarging the font or nodes and impossible to notice
     // when the missing part is off-screen.
     // Which nodes are not fully inside the panel. The node's own radius and the
-    // label under it both count: checking the centre alone, as this used to,
+    // label under it both count: checking the center alone, as this used to,
     // called a node half over the edge, or one whose name hangs off the side,
     // perfectly visible.
     _networkNodesOutOfView() {
@@ -14634,7 +14634,7 @@ class CorrelationExplorer {
     // with something already cut off; zooming in afterwards is the user's call.
     _zoomOutUntilNetworkFits() {
         if (!this.network) return;
-        // Recentre first: a node can sit outside because the view is off-centre
+        // Recenter first: a node can sit outside because the view is off-center
         // rather than because it is too zoomed in, and shrinking would not fix that.
         this._redrawThenFit();
         for (let i = 0; i < 40; i++) {
@@ -14704,7 +14704,7 @@ class CorrelationExplorer {
     // Write nodes the user has moved back into the stored layout that Spread
     // scales from, converting out of the current spread factor so the node
     // stays put when the slider next moves. (Spread itself only pulls the
-    // settled layout in towards its centre: scaling up is exactly cancelled by
+    // settled layout in towards its center: scaling up is exactly canceled by
     // the refit zoom, so widening past "fills the panel" is not possible at a
     // fixed node size.)
     _rebaseDraggedNodes(ids) {
@@ -14715,7 +14715,7 @@ class CorrelationExplorer {
         const factor = Math.min(1, ((parseInt(document.getElementById('netSpread')?.value, 10) || 100) / 100)
                                  / ((this._netBaseSpread || 100) / 100)) || 1;
         // Invert about the same anchor the spread was applied around (the view
-        // centre at apply time); the centroid is only the fallback for a drag
+        // center at apply time); the centroid is only the fallback for a drag
         // before any spread has been applied.
         let cx, cy;
         if (this._netSpreadAnchor) {
@@ -14772,7 +14772,7 @@ class CorrelationExplorer {
         }
 
         // Locked by the user: the nodes are ours, scale them in place about
-        // the point being looked at (the view centre) and leave the camera
+        // the point being looked at (the view center) and leave the camera
         // alone. Scaling about the node-mass centroid and re-centring on it
         // panned the view whenever satellites sat off to one side.
         let base = this._netBasePositions;
@@ -15112,13 +15112,13 @@ class CorrelationExplorer {
     }
 
     // Gene-effect values for the genes actually drawn in the network, which is
-    // what the node gradient is scaled to. Falls back to every analysed gene
+    // what the node gradient is scaled to. Falls back to every analyzed gene
     // when the network is not built yet, so the legend always has a range.
-    // The values the colour scale is normalised over. "Genes on screen"
+    // The values the color scale is normalized over. "Genes on screen"
     // (default) uses the drawn nodes; "Whole input set" uses every gene the
-    // analysis holds a value for, so the same gene keeps the same colour
-    // whether or not its neighbours are drawn. Read here, in ONE place, so
-    // the on-screen colours and both export legends can never disagree.
+    // analysis holds a value for, so the same gene keeps the same color
+    // whether or not its neighbors are drawn. Read here, in ONE place, so
+    // the on-screen colors and both export legends can never disagree.
     _networkEffectValues() {
         const all = (this.results?.clusters || []).map(c => c.meanEffect).filter(v => !isNaN(v));
         const range = document.querySelector('input[name="colorGERange"]:checked')?.value || 'shown';
@@ -15156,8 +15156,8 @@ class CorrelationExplorer {
 
     // Expression-mode node color: sequential white -> dark green, the same
     // ramp the heatmap uses for raw expression (_hmSequentialGreen),
-    // normalised to the bounds above. A gene with no expression value gets
-    // the same neutral grey gene-effect mode uses for a missing value.
+    // normalized to the bounds above. A gene with no expression value gets
+    // the same neutral gray gene-effect mode uses for a missing value.
     _networkExprColor(value, bounds) {
         if (value === undefined || isNaN(value)) return '#cccccc';
         const t = Math.max(0, Math.min(1, (value - bounds.lo) / (bounds.hi - bounds.lo)));
@@ -15307,7 +15307,7 @@ class CorrelationExplorer {
         container.querySelectorAll('.gene-hover').forEach(el => {
             // Wired once per element with its own timer. Re-wiring the same
             // buttons on every scatter update stacked handlers that shared one
-            // timer, so leaving cancelled only the last and the rest opened a
+            // timer, so leaving canceled only the last and the rest opened a
             // card after the pointer had gone, with nothing left to close it.
             if (el._geneTipWired) return;
             el._geneTipWired = true;
@@ -16165,7 +16165,7 @@ Results:
             ctx.textAlign = 'left';
             ctx.textBaseline = 'alphabetic';
         }
-        // The highlight caption, under the filter banner and in the same grey
+        // The highlight caption, under the filter banner and in the same gray
         // the app shows it in.
         if (noteLines && noteLines.length) {
             ctx.font = `${noteFs}px Arial`;
@@ -16188,11 +16188,11 @@ Results:
             hiRes = await this._renderNetworkAtScale(renderScale);
         }
         const src = hiRes || networkCanvas;
-        // Centre the network over the legend: the legend centres on the canvas
+        // Center the network over the legend: the legend centers on the canvas
         // below, but the nodes sit wherever the user last panned them, so a
         // node-color legend (or any wide legend) made the two visibly
         // misaligned after the whitespace trim. Shift the network image so the
-        // nodes' bounding-box centre lands on the canvas centre.
+        // nodes' bounding-box center lands on the canvas center.
         let netOffsetX = 0;
         try {
             const positions = this.network.getPositions();
@@ -16452,7 +16452,7 @@ Results:
                 const maxLfc = Math.max(...lfcValues);
 
                 // Draw gradient - Red (negative) to White (0) to Blue (positive).
-                // This is the generic "Colour by stats" LFC feature (any
+                // This is the generic "Color by stats" LFC feature (any
                 // user-pasted differential data), not gene effect, so it keeps
                 // the old red/blue pair unchanged.
                 const gradient = ctx.createLinearGradient(legendX, 0, legendX + gradientWidth, 0);
@@ -16673,7 +16673,7 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
                 const nodeFontSize = (node.font?.size || 16) * scale;
                 const borderW = node.borderWidth != null ? node.borderWidth : 2;
                 // Carry the node's actual border state: highlighted genes
-                // have a coloured, possibly dashed, thicker ring (and dimmed
+                // have a colored, possibly dashed, thicker ring (and dimmed
                 // nodes an opacity) that the PNG kept and this SVG dropped,
                 // exporting a figure whose "Highlighted:" note pointed at
                 // rings that were not drawn.
@@ -16870,7 +16870,7 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
         // Apply user's chosen cm dimensions to the outer svg tag so
         // Illustrator / Inkscape open at the print size requested. Height is
         // the aspect-true one: the dialog can carry a height remembered from
-        // a different view, and honouring it would letterbox or stretch.
+        // a different view, and honoring it would letterbox or stretch.
         svg = svg.replace(/<svg([^>]*)\bwidth="[^"]*"/, `<svg$1width="${svgWCm}cm"`);
         svg = svg.replace(/<svg([^>]*)\bheight="[^"]*"/, `<svg$1height="${svgHCm}cm"`);
         if (!transparentBg && !/<rect[^>]*id="correlateExportBg"/.test(svg)) {
@@ -17071,18 +17071,18 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
             const effectMap = new Map();
             this.results.clusters.forEach(c => effectMap.set(c.gene, c.meanEffect));
 
-            // The scale's values come from the shared helper, which honours
+            // The scale's values come from the shared helper, which honors
             // the "Genes on screen / Whole input set" choice; the export
             // legends read the same helper.
             const effectValues = this._networkEffectValues();
 
             if (this.results?.basis === 'expr') {
                 // Expression values (log2 TPM+1) are never negative, so the
-                // signed gene-effect ramp (centred at 0) pushed all of them
+                // signed gene-effect ramp (centered at 0) pushed all of them
                 // onto one half of the scale while the legend still spanned
                 // the full signed range. Sequential white -> dark green
                 // instead, matching the heatmap's raw-expression look,
-                // normalised to the robust range of the genes actually shown.
+                // normalized to the robust range of the genes actually shown.
                 const bounds = this._networkExprBounds(effectValues);
 
                 this.networkData.nodes.forEach(node => {
@@ -17732,10 +17732,10 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
         let cols, startX, startY;
         if (mode === 'gridRight') {
             // A column to the RIGHT of the network: taller than wide, rows
-            // roughly matching the network's height, centred on it. The
+            // roughly matching the network's height, centered on it. The
             // centring must use the rows the block actually FILLS (from the
             // final column count), not the target row count: when the two
-            // differed the block sat above centre, pressed toward the top.
+            // differed the block sat above center, pressed toward the top.
             let rows = Math.max(Math.round((maxY - minY) / stepY) + 1,
                 Math.ceil(Math.sqrt(loose.length / 2)));
             rows = Math.min(Math.max(rows, 1), loose.length);
@@ -17745,7 +17745,7 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
             startY = (minY + maxY) / 2 - ((actualRows - 1) * stepY) / 2;
         } else {
             // Wider than tall, so the block reads as a footnote strip; roughly
-            // match the network's width and centre the block underneath it.
+            // match the network's width and center the block underneath it.
             cols = Math.max(Math.round((maxX - minX) / stepX) + 1,
                 Math.ceil(Math.sqrt(loose.length * 2)));
             cols = Math.min(cols, loose.length);
@@ -17795,7 +17795,7 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
 
     // Re-render the stored gating figure off screen at exactly the size and
     // background the export is using, so the two panels match in plot size,
-    // font size, alignment and panel colour.
+    // font size, alignment and panel color.
     async _renderGateFigure(width, height, background) {
         const f = this._gateFilter;
         if (!f?.figure) return f?.image || null;
@@ -17901,7 +17901,7 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
     // Fit AFTER a redraw. vis caches each label's absolute position when it
     // draws, and fit() sizes the view from bounding boxes built on that
     // cache. Any hand-placement (component separation, the parked grid, the
-    // recentre) moves nodes without redrawing, so the cached label boxes
+    // recenter) moves nodes without redrawing, so the cached label boxes
     // still sit at the old coordinates and the union comes out as much as
     // the shift too wide -- fit then zooms far out and the network is drawn
     // tiny in a mostly empty panel. One redraw refreshes the cache first.
@@ -18008,7 +18008,7 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
     // Declarative view guard for the window right after Run / Shuffle: for a
     // few seconds, if any node strays outside the visible field (the released
     // solver still micro-adjusts, and event timing proved unreliable), re-fit.
-    // Cancelled the moment the user takes hold of the view.
+    // Canceled the moment the user takes hold of the view.
     _ensureNetworkInView(duration) {
         clearInterval(this._netViewGuardTimer);
         if (!this.network) return;
@@ -18018,13 +18018,13 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
         // of the view instead (any drag or zoom cancels), with a long cap as
         // a backstop; the check itself is a cheap per-node bounds test.
         if (duration == null) duration = 60000;
-        let cancelled = false;
-        const cancel = () => { cancelled = true; clearInterval(this._netViewGuardTimer); };
+        let canceled = false;
+        const cancel = () => { canceled = true; clearInterval(this._netViewGuardTimer); };
         this.network.once('dragStart', cancel);
         this.network.once('zoom', cancel);
         const t0 = Date.now();
         this._netViewGuardTimer = setInterval(() => {
-            if (cancelled || !this.network) { clearInterval(this._netViewGuardTimer); return; }
+            if (canceled || !this.network) { clearInterval(this._netViewGuardTimer); return; }
             if (Date.now() - t0 > duration) { clearInterval(this._netViewGuardTimer); return; }
             const c = document.getElementById('networkPlot');
             if (!c || !c.clientWidth) return;
@@ -18044,9 +18044,9 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
             }
             // Drift can also vacate one side without anything leaving the
             // frame: satellites float back toward the cluster and the picture
-            // ends up sitting off-centre (usually to the left, since the
+            // ends up sitting off-center (usually to the left, since the
             // satellites start on the right). Re-fit when the picture's
-            // centre has wandered from the panel's.
+            // center has wandered from the panel's.
             if (Number.isFinite(minX)) {
                 const offX = Math.abs((minX + maxX) / 2 - c.clientWidth / 2);
                 const offY = Math.abs((minY + maxY) / 2 - c.clientHeight / 2);
@@ -18054,7 +18054,7 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
                 // first fit (central gravity), so a network fitted at the
                 // right size slowly shrinks inside a frame nothing re-sizes.
                 // Treat "much smaller than the panel" like "wandered off
-                // centre": re-fit, unless we are already zoomed all the way in.
+                // center": re-fit, unless we are already zoomed all the way in.
                 const fillW = (maxX - minX) / c.clientWidth;
                 const fillH = (maxY - minY) / c.clientHeight;
                 const shrunk = fillW < 0.62 && fillH < 0.62 && this.network.getScale() < 0.95;
@@ -18888,7 +18888,7 @@ Results:
                 const minLfc = Math.min(...lfcValues);
                 const maxLfc = Math.max(...lfcValues);
 
-                // Generic "Colour by stats" LFC feature, not gene effect;
+                // Generic "Color by stats" LFC feature, not gene effect;
                 // keeps the old red/blue pair unchanged.
                 const gradient = ctx.createLinearGradient(legendX, 0, legendX + gradientWidth, 0);
                 gradient.addColorStop(0, '#b2182b');
@@ -19045,7 +19045,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 const nodeFontSize = (node.font?.size || 16) * scale;
                 const borderW = node.borderWidth != null ? node.borderWidth : 2;
                 // Carry the node's actual border state: highlighted genes
-                // have a coloured, possibly dashed, thicker ring (and dimmed
+                // have a colored, possibly dashed, thicker ring (and dimmed
                 // nodes an opacity) that the PNG kept and this SVG dropped,
                 // exporting a figure whose "Highlighted:" note pointed at
                 // rings that were not drawn.
@@ -19321,7 +19321,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
         // The analysis's alteration filters become the scatter's own filters,
         // so the cohort is the one the network was run on. Setting them only
-        // as a colour overlay, as before, left every cell line on the plot.
+        // as a color overlay, as before, left every cell line on the plot.
         // A value the scatter's control cannot hold (a select without that
         // option) is left unset rather than half-applied.
         const carry = (fromId, toId, levelFrom, levelTo, defLevel) => {
@@ -19337,7 +19337,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             return true;
         };
         const hotOn = carry('paramHotspotGene', 'mutationFilterGene', 'paramHotspotLevel', 'mutationFilterLevel', '1+2');
-        // Colouring by the same gene still says which copies are hit among
+        // Coloring by the same gene still says which copies are hit among
         // the mutated lines; among wild-type lines it would say nothing.
         const paramHotspot = document.getElementById('paramHotspotGene')?.value;
         const paramLevel = document.getElementById('paramHotspotLevel')?.value;
@@ -19775,7 +19775,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Reset color-by dropdown. "By subtype" is always offered now: it was
         // hidden unless a tissue was selected because 70+ colors is unreadable,
         // which the group picker solves instead. Editing the current view from
-        // inside the popout keeps the colouring, like the other settings.
+        // inside the popout keeps the coloring, like the other settings.
         if (!keep) {
             document.getElementById('colorByCategory').value = '';
             const pickedReset = document.getElementById('colorByPicked');
@@ -19883,7 +19883,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 set('colorByCategory', 'gene'); set('colorByGene', pre.colorByGene); set('colorByGeneType', pre.colorByGeneType || 'expr');
                 this._colorByGeneName = String(pre.colorByGene).toUpperCase();
                 this._syncColorByGroupBtn();
-                // The first draw is grey until the lazily loaded matrix is in.
+                // The first draw is gray until the lazily loaded matrix is in.
                 const t = pre.colorByGeneType || 'expr';
                 const load = t === 'expr' && !this.expressionLoaded ? this.loadExpressionData() : t === 'cn' && !this.cnLoaded ? this.loadCnData() : null;
                 if (load) load.then(() => this.updateInspectPlot()).catch(() => { });
@@ -19903,7 +19903,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Settings belong to the pair being looked at, not to the app. Leaving
         // them behind meant the next edge clicked in the network opened with
         // whatever axis types and filters the previous one had, so a plot
-        // labelled GE vs expression appeared without anyone asking for it.
+        // labeled GE vs expression appeared without anyone asking for it.
         this._resetInspectSettings();
         this._lastInspectPair = null;
         this.currentInspect = null;
@@ -20139,19 +20139,19 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // One look for a highlighted cell line in every chart: an orange
     // diamond, and (when a dozen or fewer) the name in a white box with an
     // orange edge. Clicking a dot adds it to the view's highlight box.
-    // fill: per-point colours from _hlFill. When the dots carry a legend
-    // colour, a highlighted dot keeps it and only the shape and the dark rim
+    // fill: per-point colors from _hlFill. When the dots carry a legend
+    // color, a highlighted dot keeps it and only the shape and the dark rim
     // mark it; orange there read as one more legend group.
     _hlMarker(size = 10, fill = null) {
         if (fill) return { size, symbol: 'diamond', color: fill, line: { color: '#111827', width: 2 } };
         return { size, symbol: 'diamond', color: '#f59e0b', line: { color: '#92400e', width: 1.2 } };
     }
 
-    // The legend colour each highlighted point is drawn in, read off the
+    // The legend color each highlighted point is drawn in, read off the
     // traces already built (a legend trace has a legendgroup or shows in the
     // legend). keys: the points' cell-line ids or names; axis: the panel's
     // x axis on multi-panel charts. Null when no point sits in a legend
-    // trace, so uncoloured charts keep the orange.
+    // trace, so uncolored charts keep the orange.
     _hlFill(traces, keys, axis = 'x') {
         const col = new Map();
         traces.forEach(t => {
@@ -20823,7 +20823,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
     // Under the correlation plot: when an axis is mRNA or copy number and the
     // two genes sit within GB_NEAR_MB on one chromosome, say so, since shared
-    // copy number alone can make neighbours' mRNA correlate.
+    // copy number alone can make neighbors' mRNA correlate.
     async _scatterNearNote(gene1, gene2) {
         const box = document.getElementById('scatterNearNote');
         if (!box) return;
@@ -20836,12 +20836,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (!d || d.mb === null || d.mb > near) { box.innerHTML = ''; return; }
         const a = this.geneLocations?.[gene1]?.band || '';
         const gap = d.mb < 0.05 ? 'next to each other' : `${d.mb.toFixed(1)} Mb apart`;
-        box.innerHTML = `<span class="gb-near">Nearby genes</span> ${this.gi(gene1)} (${this.esc(a)}) and ${this.gi(gene2)} (${this.esc(d.band)}) are ${gap} on chromosome ${this.esc(d.chr)}. Neighbours are often gained or lost together, so their mRNA can correlate through shared copy number rather than shared function.`;
+        box.innerHTML = `<span class="gb-near">Nearby genes</span> ${this.gi(gene1)} (${this.esc(a)}) and ${this.gi(gene2)} (${this.esc(d.band)}) are ${gap} on chromosome ${this.esc(d.chr)}. Neighbors are often gained or lost together, so their mRNA can correlate through shared copy number rather than shared function.`;
     }
 
     // Genes whose values (in the chosen measure) best explain the plotted
     // lines: r with each line's place along the trend (the first principal
-    // axis of the standardised x and y) and with its distance above or below
+    // axis of the standardized x and y) and with its distance above or below
     // the regression line. The two plotted genes are left out.
     async _colorByGeneSuggest() {
         const box = document.getElementById('colorByGeneSuggest');
@@ -20905,7 +20905,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             + `<div style="display:flex; gap:16px; flex-wrap:wrap;">`
             + `<div style="flex:1 1 180px; min-width:0;">${top.slice(0, half).map(row).join('')}</div>`
             + `<div style="flex:1 1 180px; min-width:0;">${top.slice(half).map(row).join('')}</div>`
-            + `</div><div style="color:#6b7280; font-size:10px; margin-top:3px;">Pearson r with where each cell line sits along the trend line. Red: higher toward the right end of the trend, blue: higher toward the left end. |r| below 0.3 is weak (grey), 0.3 to 0.5 moderate, 0.5 and above strong. Click a gene to colour by it.</div>`;
+            + `</div><div style="color:#6b7280; font-size:10px; margin-top:3px;">Pearson r with where each cell line sits along the trend line. Red: higher toward the right end of the trend, blue: higher toward the left end. |r| below 0.3 is weak (gray), 0.3 to 0.5 moderate, 0.5 and above strong. Click a gene to color by it.</div>`;
     }
 
     // The Color by gene, resolved when typed; a restored or reopened plot only
@@ -21032,7 +21032,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             });
         } else if (colorByCategory === 'gene' && this._colorByGeneNow()) {
             // A continuous scale from one gene's values in each line. Same
-            // palettes as the PCA / UMAP colour-by-gene: gene effect orange
+            // palettes as the PCA / UMAP color-by-gene: gene effect orange
             // (dependent) to purple, expression and CN blue to red.
             const cg = this._colorByGeneNow();
             const ct = document.getElementById('colorByGeneType')?.value || 'expr';
@@ -21049,9 +21049,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 hovertemplate: '%{text}<br>x: %{x:.3f}<br>y: %{y:.3f}<extra></extra>',
                 marker: { color: '#d1d5db', size: 8, opacity: 0.5 }, name: `No ${word} value (n=${noV.length})`, showlegend: false
             });
-            // The colour bar is the legend here; cell lines without a value
-            // are grey and counted under it instead of in a legend box.
-            const noVNote = noV.length ? `<br><span style="color:#6b7280">grey: no value<br>(n=${noV.length})</span>` : '';
+            // The color bar is the legend here; cell lines without a value
+            // are gray and counted under it instead of in a legend box.
+            const noVNote = noV.length ? `<br><span style="color:#6b7280">gray: no value<br>(n=${noV.length})</span>` : '';
             // Low values first so the high end is drawn on top.
             withV.sort((a, b) => ct === 'ge' ? b[1] - a[1] : a[1] - b[1]);
             const vs = withV.map(p => p[1]);
@@ -21332,7 +21332,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (this.currentInspect?.sparseNote) {
             // The note is a full sentence and easily wider than the canvas,
             // which clips it at both ends. Wrap it on words to the plot width
-            // (plus the margins the centred annotation can spill into).
+            // (plus the margins the centered annotation can spill into).
             const noteSize = Math.round(subSize * 0.85);
             const noteBudget = Math.max(240, _plotW + 60);
             const noteLines = [];
@@ -21466,7 +21466,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             && ((hotspotMode === 'color' && hotspotGene) || (transOverlayMode === 'color' && transOverlayGene));
         const _xLabelRows = xLabelText.includes('<br>') ? 2 : 1;
         const _xLabelFont = sts?.xLabelFontSize || (_isPhone ? 13 : 20);
-        // A wrapped x label is a line taller, and the colour legend under it
+        // A wrapped x label is a line taller, and the color legend under it
         // has to start below its second line rather than across it.
         const _botMargin = colorByCategory ? 100 + (_xLabelRows - 1) * Math.round(_xLabelFont * 1.25)
             : (_legendBelow ? 90 + _xLabelRows * 17 : 60);
@@ -21601,7 +21601,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (sts) {
             layout.xaxis.tickfont = { size: sts.xTickSize };
             layout.yaxis.tickfont = { size: sts.yTickSize };
-            // Merge, do not replace: the colour-by legend sets a monospaced
+            // Merge, do not replace: the color-by legend sets a monospaced
             // family so its columns line up, and assigning a fresh object here
             // dropped it, so applying any text setting broke the alignment.
             layout.legend.font = Object.assign({}, layout.legend.font, { size: sts.legendSize });
@@ -21624,7 +21624,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const plotContainer = document.getElementById('scatterPlot');
         const widthEl = document.getElementById('plotWidth');
         const heightEl = document.getElementById('plotHeight');
-        // Room beside the plot for the Color by gene colour key.
+        // Room beside the plot for the Color by gene color key.
         if (traces.some(t => t.marker?.colorbar)) layout.margin.r = Math.max(layout.margin.r || 0, 95);
         const m = layout.margin;
         let plotAreaW = parseInt(widthEl?.value);
@@ -22122,7 +22122,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // view, so a panel a third as wide came out several times taller than
         // it was wide and had to be shrunk by hand every time.
         const plotAreaH3 = Math.round(plotAreaW3 * COL_W);
-        // Room for the colour legend is reserved here rather than left to
+        // Room for the color legend is reserved here rather than left to
         // Plotly, which otherwise grows the bottom margin out of the plot area:
         // the panels stop being square and every offset above, set in units of
         // that area, lands short (the title ran into the panel headers).
@@ -22226,7 +22226,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         html += '</div>';
         html += '<div style="display: flex; flex-wrap: wrap; gap: 2px;">';
         categories.forEach((cat, i) => {
-            // Same colour and shape as the group's dots, so the chip still
+            // Same color and shape as the group's dots, so the chip still
             // matches once the palette repeats with a new shape.
             const mk = colors ? CorrelationExplorer.categoryMarker(i, 8, 1) : { color: '#999', symbol: 'circle' };
             const color = mk.color;
@@ -22236,7 +22236,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 ? `<span style="color: ${color}; font-size: 10px; line-height: 8px; flex-shrink: 0;">${glyph}</span>`
                 : `<span style="width: 8px; height: 8px; border-radius: 50%; background: ${color}; display: inline-block; flex-shrink: 0;"></span>`;
             html += `${cat}`;
-            if (canDrop && cat !== this.OTHER_GROUP_LABEL) html += `<span class="color-by-x" data-drop="${this.esc(cat)}" title="Stop colouring this group" style="margin-left:2px; color:#9ca3af; font-size:11px; line-height:8px;">&times;</span>`;
+            if (canDrop && cat !== this.OTHER_GROUP_LABEL) html += `<span class="color-by-x" data-drop="${this.esc(cat)}" title="Stop coloring this group" style="margin-left:2px; color:#9ca3af; font-size:11px; line-height:8px;">&times;</span>`;
             html += `</span>`;
         });
         html += '</div>';
@@ -23446,7 +23446,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                         <label title="Rows and panels per row, up to 8 each">Grid <input type="number" id="gcRows" min="1" max="8" style="${num}"> rows × <input type="number" id="gcCols" min="1" max="8" style="${num}"> columns</label>
                         <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;" title="Panels of the same measure on one y range, so they line up; a panel can fit its own data in its editor"><input type="checkbox" id="gcSameRange" checked> Same axis range</label>
                         <label style="display:inline-flex; align-items:center; gap:4px; cursor:pointer;" title="One column per group in each panel, grouped as in the Gene effect popout"><input type="checkbox" id="gcSplit"> Split into groups</label>
-                        <label style="display:inline-flex; align-items:center; gap:4px;" title="Colour the dots by group; the 8 largest get a colour, the rest grey">Colour by <select id="gcColorBy" style="${sel}"><option value="">none</option><option value="tissue">Tissue</option><option value="subtype">Subtype</option><option value="disease">Disease</option></select></label>
+                        <label style="display:inline-flex; align-items:center; gap:4px;" title="Color the dots by group; the 8 largest get a color, the rest gray">Color by <select id="gcColorBy" style="${sel}"><option value="">none</option><option value="tissue">Tissue</option><option value="subtype">Subtype</option><option value="disease">Disease</option></select></label>
                         <span id="gcCohort" style="color:#6b7280; font-size:11px;"></span>
                     </div>
                     <div id="gcFilters" style="display:flex; flex-direction:column; gap:4px; margin-bottom:6px; padding:5px 8px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:6px;"></div>
@@ -23759,7 +23759,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         return out;
     }
 
-    // Colour groups for the dots: the 8 largest of the chosen grouping.
+    // Color groups for the dots: the 8 largest of the chosen grouping.
     _gcLook(ids) {
         const by = this._gcState?.colorBy;
         if (!by) return null;
@@ -23954,7 +23954,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
     // ===== Compilation: a grid of correlation plots =====
     // Every panel uses the correlation popout's own filters (the same chain the
-    // plot uses), its highlighted cell lines and its colour-by groups, so the
+    // plot uses), its highlighted cell lines and its color-by groups, so the
     // panels are directly comparable and the setup is done in one place.
     openCompilation() {
         // Starts fresh on every open; the modal's handlers hold this object,
@@ -23986,9 +23986,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                         <b style="font-size:11px; color:#4b5563;">Cohort &amp; highlights</b>
                         <label>Tissue ${sel('compTissue', 'Same as the correlation plot\'s tissue filter')}</label>
                         <label>Subtype ${sel('compSubtype', 'Same as the correlation plot\'s subtype filter')}</label>
-                        <label>Mutation colour ${sel('compHot', 'Colour points by this gene\'s mutation status')}</label>
-                        <label>Colour by ${sel('compColorBy', 'Colour points by group', '<option value="">none</option><option value="tissue">Tissue</option><option value="subtype">Subtype</option><option value="disease">Disease</option><option value="medium">Culture medium</option>')}</label>
-                        <button type="button" class="btn btn-outline btn-sm" id="compGroups" style="font-size:10px; padding:1px 6px; min-width:122px; visibility:hidden;" title="Pick which groups are coloured; the rest turn grey">Groups...</button>
+                        <label>Mutation color ${sel('compHot', 'Color points by this gene\'s mutation status')}</label>
+                        <label>Color by ${sel('compColorBy', 'Color points by group', '<option value="">none</option><option value="tissue">Tissue</option><option value="subtype">Subtype</option><option value="disease">Disease</option><option value="medium">Culture medium</option>')}</label>
+                        <button type="button" class="btn btn-outline btn-sm" id="compGroups" style="font-size:10px; padding:1px 6px; min-width:122px; visibility:hidden;" title="Pick which groups are colored; the rest turn gray">Groups...</button>
                         <span style="display:inline-flex; gap:4px; align-items:center; white-space:nowrap;"><label title="Typed names and cell lines clicked in the plots">Highlight <input type="text" id="compHl" placeholder="cell lines, comma separated" autocomplete="off" style="width:130px; font-size:11px; padding:2px 6px; border:1px solid #d1d5db; border-radius:4px;"></label>
                         <button type="button" class="btn btn-outline btn-sm" id="compHlCopy" style="font-size:10px; padding:1px 6px;" title="Copy the highlighted cell line names">Copy</button>
                         <button type="button" class="btn btn-outline btn-sm" id="compHlClear" style="font-size:10px; padding:1px 6px;" title="Remove all highlighted and clicked cell lines">Clear</button></span>
@@ -24015,7 +24015,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     <button class="btn btn-outline btn-sm" id="compExportImg">Export image...</button>
                     <button class="btn btn-outline btn-sm" id="compCopy">Copy</button>
                     <button class="btn btn-outline btn-sm" id="compExportAI">Export for AI</button>
-                    <button class="btn btn-outline btn-sm" id="compReset" style="font-size:10px;" title="Clear the panels and the cohort, highlight and colour settings, and go back to the default layout">Reset</button>
+                    <button class="btn btn-outline btn-sm" id="compReset" style="font-size:10px;" title="Clear the panels and the cohort, highlight and color settings, and go back to the default layout">Reset</button>
                     <span id="compStatus" style="font-size:11px; color:#6b7280;"></span>
                     <button class="btn btn-outline btn-sm" id="compClose2" style="margin-left:auto;">Close</button>
                 </div></div>`;
@@ -24431,13 +24431,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const nHl = new Set(allData.filter(look.isHl).map(q => q.cellLineId)).size;
         const note = document.getElementById('compCohortNote');
         if (note) note.textContent = `Cohort: ${nCohort.toLocaleString()} cell lines after the correlation plot's filters`
-            + (nHl ? `; ${nHl} highlighted` : '') + (look.groupsBy ? `; coloured by ${look.groupsBy}` : '');
+            + (nHl ? `; ${nHl} highlighted` : '') + (look.groupsBy ? `; colored by ${look.groupsBy}` : '');
         if (status) status.textContent = '';
     }
 
-    // How points are coloured and which are highlighted, read from the
+    // How points are colored and which are highlighted, read from the
     // correlation plot: its mutation or fusion overlay first, as there, then
-    // its colour-by groups.
+    // its color-by groups.
     _compLook(allData) {
         const terms = this._splitHighlightTerms(document.getElementById('scatterCellSearch')?.value);
         const hl = this._highlightMatcher(terms);
@@ -24925,7 +24925,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const libOpts = Object.entries(lib).filter(([, v]) => v?.genes?.length).map(([k, v]) => `<option value="lib:${this.esc(k)}">${this.esc(v.label)} (${v.genes.length})</option>`).join('');
         sel.innerHTML = '<option value="">All genes</option>'
             + '<optgroup label="Cancer genes">'
-            + '<option value="tsg">Tumour suppressors</option>'
+            + '<option value="tsg">Tumor suppressors</option>'
             + '<option value="onc">Proto-oncogenes</option>'
             + '<option value="hot">Hotspot-mutated genes</option>'
             + '<option value="ess">Common essential genes</option>'
@@ -24948,7 +24948,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const up = (a) => new Set([...a].map(g => String(g).toUpperCase()));
         const panel = (p) => (p || []).map(e => e.gene).filter(Boolean);
         let genes = [], label = '';
-        if (key === 'tsg') { genes = [...panel(this.clinicalCn?.deletionPanel), ...Object.keys(this.functionalLoss?.geneData || {})]; label = 'tumour suppressors'; }
+        if (key === 'tsg') { genes = [...panel(this.clinicalCn?.deletionPanel), ...Object.keys(this.functionalLoss?.geneData || {})]; label = 'tumor suppressors'; }
         else if (key === 'onc') { genes = panel(this.clinicalCn?.amplificationPanel); label = 'proto-oncogenes'; }
         else if (key === 'hot') { genes = (this.mutations?.genes || []).filter(g => !this._isPolymorphicLocus?.(g)); label = 'hotspot-mutated genes'; }
         else if (key === 'ess') { genes = [...(this._commonEssentials || [])]; label = 'common essential genes'; }
@@ -25320,7 +25320,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // The share is counted over all cell lines, or within one tissue.
         const scope = c.tissueMode ? 'tissue' : 'overall';
         // Listed = the genes meeting the criterion; a search also shows
-        // matching genes that miss it, greyed, so a gene can always be found.
+        // matching genes that miss it, grayed, so a gene can always be found.
         const listed = [], found = [];
         let measured = 0;
         const gs = this._ctGeneSet();
@@ -25413,8 +25413,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
 
     // Bars of 0.1 (GE) or 0.25 (mRNA) with an edge on the cutoff, y as % of
-    // the values; bars past the cutoff coloured, a dashed line at the cutoff
-    // labelled with the share. ax is the axis suffix ('' or '2'...).
+    // the values; bars past the cutoff colored, a dashed line at the cutoff
+    // labeled with the share. ax is the axis suffix ('' or '2'...).
     // `c` defaults to the scan's own state; other views pass {measure, cut, dir}.
     _ctHistParts(values, ax, fs = 11, labels = true, unit = 'cell lines', c = this._ct) {
         const size = c.measure === 'expr' ? 0.25 : 0.1;
@@ -25980,7 +25980,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             `WHAT WAS COUNTED\n   For every gene, the cell lines in the cohort with a value for it (n), the percentage of those with a value strictly ${c.dir} ${c.cut}, and the median value. A cell line without a value for a gene is left out of that gene's n.${c.tissueMode && c.focus ? `\n   Tissue differences were switched on with a chosen group, ${c.focus.label}: for each gene, its median in that group and the difference from its median across all cell lines; a gene was listed when at least ${c.minShare}% of the group's lines were past the cutoff, and the table is sorted by the difference unless re-sorted. The p column is a two-sided Welch t-test of the group's values against all other cell lines, not corrected for the number of genes tested.` : ''}${c.tissueMode && !c.focus ? `\n   Tissue differences were switched on: for each gene, the tissue (at least 10 cell lines measured for the gene) whose median lies ${c.dir === 'above' ? 'highest' : 'lowest'} relative to the gene's median across all cell lines, with that median and the difference; a gene was listed when at least ${c.minShare}% of that tissue's lines were past the cutoff, and the table is sorted by the difference unless re-sorted. The p column is a two-sided Welch t-test of the group's values against all other cell lines, not corrected for the number of genes tested.` : ''}`,
             `THE COHORT\n   ${this._mNum(N)} cell lines. Filters: ${this._mListOr(filt, 'none, every cell line with data')}.`,
             `THE TABLE\n   ${this._mNum(c.listed.length)} of ${this._mNum(c.measuredN)} genes listed: those with ${this._ctListWords()}. Rows are ${this._ctSortWords()}.`,
-            `THE CHART\n   One gene (the first in the table unless another was clicked). As a histogram: its values across the cohort as a percentage of cell lines, in bins of ${size} with an edge on the cutoff; bars past the cutoff are coloured and a dashed line marks the cutoff with the share past it. By tissue: one row per tissue, one dot per cell line, the share past the cutoff at the right, tissues ordered by that share; rows can hold fewer than 10 lines.`,
+            `THE CHART\n   One gene (the first in the table unless another was clicked). As a histogram: its values across the cohort as a percentage of cell lines, in bins of ${size} with an edge on the cutoff; bars past the cutoff are colored and a dashed line marks the cutoff with the share past it. By tissue: one row per tissue, one dot per cell line, the share past the cutoff at the right, tissues ordered by that share; rows can hold fewer than 10 lines.`,
             'WHAT THIS DOES NOT SAY\nA share of cell lines past a cutoff describes a distribution; no test was run and no p-value exists in this view. Where a cutoff is drawn is a convention, and a gene just short of it can behave much like one just past it.'
         ]);
         return { title, condensed, long };
@@ -26167,7 +26167,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Re-open inspect with the new genes
         // Changing the genes or the GE / Expr / CN measure from inside the
         // popout is a deliberate edit of the current view, so the filters,
-        // colouring and axis measures the user has set stay put. (The reset
+        // coloring and axis measures the user has set stay put. (The reset
         // exists for arriving at a different pair from the network, where
         // inheriting the previous pair's setup was surprising.)
         this._keepInspectSettings = true;
@@ -26534,13 +26534,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // screen, with each option saying what it is for.
     startGateSelection(gate) {
         document.getElementById('gateShapeMenu')?.remove();
-        const colour = gate === 'A' ? '#2563eb' : '#dc2626';
+        const color = gate === 'A' ? '#2563eb' : '#dc2626';
         const overlay = document.createElement('div');
         overlay.id = 'gateShapeMenu';
         overlay.style.cssText = 'position:fixed; inset:0; z-index:10002; background:rgba(17,24,39,0.28); display:flex; align-items:center; justify-content:center;';
         const card = document.createElement('div');
         card.style.cssText = 'background:#fff; border-radius:10px; box-shadow:0 12px 40px rgba(0,0,0,0.28); padding:18px 20px; width:min(420px, calc(100vw - 40px));';
-        card.innerHTML = `<div style="font-size:14px; font-weight:600; color:#374151; margin-bottom:3px;">Draw gate <span style="color:${colour};">${gate}</span></div>`
+        card.innerHTML = `<div style="font-size:14px; font-weight:600; color:#374151; margin-bottom:3px;">Draw gate <span style="color:${color};">${gate}</span></div>`
             + `<div style="font-size:11px; color:#6b7280; margin-bottom:12px;">Pick a shape, then drag it over the cell lines you want.</div>`;
         const row = document.createElement('div');
         row.style.cssText = 'display:flex; gap:10px;';
@@ -26548,10 +26548,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const b = document.createElement('button');
             b.type = 'button';
             b.style.cssText = 'flex:1; border:1px solid #d1d5db; background:#fff; border-radius:8px; padding:12px 10px; cursor:pointer; text-align:center; font-family:inherit;';
-            b.innerHTML = `<div style="font-size:22px; line-height:1; color:${colour}; margin-bottom:6px;">${glyph}</div>`
+            b.innerHTML = `<div style="font-size:22px; line-height:1; color:${color}; margin-bottom:6px;">${glyph}</div>`
                 + `<div style="font-size:12px; font-weight:600; color:#374151;">${label}</div>`
                 + `<div style="font-size:10px; color:#9ca3af; margin-top:2px;">${blurb}</div>`;
-            b.onmouseenter = () => { b.style.borderColor = colour; b.style.background = '#f9fafb'; };
+            b.onmouseenter = () => { b.style.borderColor = color; b.style.background = '#f9fafb'; };
             b.onmouseleave = () => { b.style.borderColor = '#d1d5db'; b.style.background = '#fff'; };
             b.onclick = () => { close(); this._armGateDraw(gate, mode); };
             return b;
@@ -26766,7 +26766,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         return inside;
     }
 
-    // Where the A/B letter sits: over the shape's top centre, for either
+    // Where the A/B letter sits: over the shape's top center, for either
     // geometry.
     _gateLabelPos(shape) {
         if (shape?.path) {
@@ -26925,7 +26925,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // under each other and can be read down the list. Variable-length tissue
     // names otherwise scattered every value to its own position, which is what
     // made a full legend unreadable. Alignment only holds in a monospaced
-    // face, so the colour-by legend asks for one (see _legendFontFamily).
+    // face, so the color-by legend asks for one (see _legendFontFamily).
     _legendLabel(name, n, statTail) {
         const stat = statTail || '';
         const nCell = `n=${n}`;
@@ -26939,7 +26939,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         return `${short} ${nCell.padStart(N_COL)}${stat}`;
     }
 
-    // Header over the colour-by legend saying what its columns are, so the
+    // Header over the color-by legend saying what its columns are, so the
     // numbers are not left to be guessed at.
     _legendTitleText(mode) {
         const stat = document.getElementById('colorByLegendStat')?.value || 'none';
@@ -27024,7 +27024,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             // Keep the figure itself, not only a picture of it. An export
             // re-renders the chart at its own size with its own background,
             // so a picture taken now would differ in plot size, font size and
-            // panel colour; from the stored figure the gating plot can be
+            // panel color; from the stored figure the gating plot can be
             // re-rendered to match the exported chart exactly.
             gateFigure = {
                 data: JSON.parse(JSON.stringify(el.data || [])),
@@ -28891,7 +28891,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
 
         // Mutation analysis does not read the gene box at all: it picks its own
-        // genes by ranking the whole screen. Leaving box 2 on screen, greyed out
+        // genes by ranking the whole screen. Leaving box 2 on screen, grayed out
         // and still holding the last network's gene list, invited the reading
         // that those genes were about to be used. Hide it outright in this mode.
         const geneCard = document.getElementById('geneInputCard');
@@ -31150,7 +31150,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Remember the open gene/view so "Open in new tab" can serialize it.
         this._geGene = geneUpper;
         this.currentGEView = view;
-        // When a gene link specifies its data type (GE vs Expression), honour it;
+        // When a gene link specifies its data type (GE vs Expression), honor it;
         // otherwise the modal's GE/Expression toggle would "leak" the last
         // choice (e.g. clicking a GE-list gene after viewing an expression gene
         // would wrongly show expression).
@@ -32276,7 +32276,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         const data = this.getGETissueFilteredData();
         const gene = this.currentGeneEffect.gene;
-        // Only meaningful for the knockout measure; expression has no such artefact.
+        // Only meaningful for the knockout measure; expression has no such artifact.
         const _artEl = document.getElementById('geArtefactWarning');
         if (_artEl) {
             const html = (this._geDataType === 'expr' || document.getElementById('geDataType')?.value === 'expr')
@@ -32482,7 +32482,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Calculate dynamic sizing
         const numEntries = stats.length;
         const tickFontSize = _gePhoneLabels ? 11 : (numEntries > 25 ? 12 : numEntries > 15 ? 13 : 14);
-        // Two-row labels need taller rows or they overlap their neighbours.
+        // Two-row labels need taller rows or they overlap their neighbors.
         const boxHeight = (numEntries > 25 ? 22 : numEntries > 15 ? 26 : 32) + (anyTwoRow ? 8 : 0);
         const chartHeight = Math.max(400, numEntries * boxHeight + 100);
 
@@ -34182,7 +34182,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
     async _downloadCanvasAs(canvas, fmt, filename, opts = {}) {
         const { dpi = 300, widthCm, heightCm, metaJson, svg, skipSidecar, second } = opts;
-        // The promise to the user is widthCm. PDF and PPTX honour it (they
+        // The promise to the user is widthCm. PDF and PPTX honor it (they
         // take the cm directly), but PNG and TIFF used to stamp the caller's
         // dpi, which predates the whitespace trim, so a trimmed file printed
         // 5-25% narrower than asked. Stamp the density
@@ -34461,7 +34461,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
 
     // Write a pHYs chunk to a PNG buffer so downstream tools see the right
-    // DPI. `dpi` is dots per inch; the chunk stores pixels-per-metre
+    // DPI. `dpi` is dots per inch; the chunk stores pixels-per-meter
     // (dpi × 39.37). If a pHYs chunk already exists, it's replaced.
     _setPngDpi(arrayBuffer, dpi) {
         const ppm = Math.round(dpi * 39.3701);
@@ -34486,7 +34486,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const dv = new DataView(physData.buffer);
         dv.setUint32(0, ppm);
         dv.setUint32(4, ppm);
-        physData[8] = 1; // unit = metre
+        physData[8] = 1; // unit = meter
         const typeAndData = new Uint8Array(4 + 9);
         typeAndData.set([0x70, 0x48, 0x59, 0x73]); // 'pHYs'
         typeAndData.set(physData, 4);
@@ -34794,7 +34794,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
               adds: 'Measured sensitivity to each compound as area under the dose-response curve, per cell line, with the compound target and mechanism. Lower means more easily killed. A separate screen from CRISPR covering fewer lines, and the derived lines in matchedPairs were never put through it.' },
             { key: 'fullCopyNumber', canonical: 'copy-number',
               words: ['copy-number', 'copy number', 'copynumber', 'cn'],
-              adds: 'Relative copy number for every gene in the matrices, not only the focal one, where 1.0 is diploid. Use it to ask whether a dependency sits in an amplification or a loss; pair it with a region in `genes:` to compare a gene against its neighbours.' },
+              adds: 'Relative copy number for every gene in the matrices, not only the focal one, where 1.0 is diploid. Use it to ask whether a dependency sits in an amplification or a loss; pair it with a region in `genes:` to compare a gene against its neighbors.' },
             { key: 'viralTransformation', canonical: 'virus',
               words: ['virus', 'viral', 'virus-status'],
               adds: 'Which cell lines are recorded as transformed by a virus, and by which. Absence is not evidence of absence.' },
@@ -34820,7 +34820,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             'gene: <gene>         (gene-effect) with measure: ge | expr',
             'tissue: <name>       (any view, optional)',
             'disease: <name>      (any view, optional)',
-            'colour-by: tissue | subtype | disease | medium   (scatter, optional)',
+            'color-by: tissue | subtype | disease | medium   (scatter, optional)',
             'sort: drug | expression | gene-effect | copy-number | interferon | retroelement | medium | name   (cell-lines)',
             'sort-gene: <gene or compound>   (cell-lines, for the sorts that need one)',
             'why: <one line saying what the user should look for>'
@@ -34874,10 +34874,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             else if (key === 'measure' || key === 'data-type') { out.opts.measure = MEAS[val.toLowerCase()] || 'ge'; out.applied.push(`measure: ${out.opts.measure}`); }
             else if (key === 'tissue' || key === 'lineage') { out.opts.tissue = val; out.applied.push(`tissue: ${val}`); }
             else if (key === 'disease' || key === 'subtype') { out.opts.disease = val; out.applied.push(`disease: ${val}`); }
-            else if (key === 'colour-by' || key === 'color-by') {
+            else if (key === 'color-by' || key === 'color-by') {
                 const cb = val.toLowerCase();
                 out.opts.colorBy = /medi|culture/.test(cb) ? 'medium' : cb;
-                out.applied.push(`colour by: ${val}`);
+                out.applied.push(`color by: ${val}`);
             }
             else if (key === 'sort' || key === 'sort-by') {
                 const sv = SORTS[val.toLowerCase()];
@@ -35330,7 +35330,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             : (this._aiLiveSource() ? this._getAICellLines(this._aiLiveSource()).length : 0);
         const genesWord = settings.genes === 'list' ? `${settings.geneList.length} named genes` : 'genes chosen automatically';
         bits.push(`Will export: ${nCl.toLocaleString()} cell lines, ${genesWord}, ${settings.question ? 'with the question' : 'no question'}.`);
-        this._setCaiNote(bits.join(' ') || 'Nothing recognised in that block.');
+        this._setCaiNote(bits.join(' ') || 'Nothing recognized in that block.');
         return true;
     }
 
@@ -35696,12 +35696,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const hotspotOverlayF = document.getElementById('hotspotGene')?.value || '';
             const transOverlayF = document.getElementById('translocationGene')?.value || '';
             const customCLCount = this._customCellLineFilter?.size || 0;
-            // How points are coloured, when set. Distinct from the overlay
-            // genes above: this recolours every point by tissue / subtype /
+            // How points are colored, when set. Distinct from the overlay
+            // genes above: this recolors every point by tissue / subtype /
             // disease rather than by one gene's mutation status.
             const colorBy = document.getElementById('colorByCategory')?.value || '';
             // Names typed onto specific points by clicking them. Not a cohort
-            // filter, a labelling of some of the same points everyone else
+            // filter, a labeling of some of the same points everyone else
             // sees.
             const clickedLabelled = this.clickedCells?.size ? [...this.clickedCells] : null;
             // Grid picks scoped to this scatter alone (distinct from the
@@ -35760,8 +35760,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 customCLCount ? `custom CL list (n=${customCLCount})` : ''
             ].filter(Boolean);
             context.plotDescribesWhat = `A scatter plot. Each point is a cell line. X axis is ${xLabel}, Y axis is ${yLabel}. ${n.toLocaleString()} points.`
-                + (colorBy ? ` Points are coloured by ${colorBy}.` : '')
-                + (clickedLabelled?.length ? ` ${clickedLabelled.length} point(s) carry a visible name label because they were clicked on screen; every other point is unlabelled but present.` : '')
+                + (colorBy ? ` Points are colored by ${colorBy}.` : '')
+                + (clickedLabelled?.length ? ` ${clickedLabelled.length} point(s) carry a visible name label because they were clicked on screen; every other point is unlabeled but present.` : '')
                 + (this._gateFilter ? ` Only the cell lines inside gate ${this._gateFilter.gate} are plotted; the rest of the panel is excluded.` : '');
             description = axesKnown
                 ? `Scatter of ${xLabel} (x) vs ${yLabel} (y)${parts.length ? ', filtered by ' + parts.join(', ') : ''}.`
@@ -36141,7 +36141,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     if (!cmp.length) return {};
                     const tally = (fn) => {
                         const c = {};
-                        for (const cl of cmp) { const k = fn(cl) || 'unlabelled'; c[k] = (c[k] || 0) + 1; }
+                        for (const cl of cmp) { const k = fn(cl) || 'unlabeled'; c[k] = (c[k] || 0) + 1; }
                         return Object.fromEntries(Object.entries(c).sort((a, b) => b[1] - a[1]).slice(0, 12));
                     };
                     return {
@@ -36198,7 +36198,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 delete context.comparisonGroupComposition;
                 const tallyFor = (list, fn) => {
                     const c = {};
-                    for (const cl of list) { const k = fn(cl) || 'unlabelled'; c[k] = (c[k] || 0) + 1; }
+                    for (const cl of list) { const k = fn(cl) || 'unlabeled'; c[k] = (c[k] || 0) + 1; }
                     return Object.fromEntries(Object.entries(c).sort((x, y) => y[1] - x[1]).slice(0, 12));
                 };
                 const compBlock = (list) => ({
@@ -36510,11 +36510,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     ];
                 }
                 description = `Gene set heatmap: ${setLabel} (${d.genes.length} genes) across ${d.orderedCLs.length} cell lines (${cohortWord}${d.lineageLabel ? `, ${d.lineageLabel} only` : ''}), ${sortSummary}, ${measure}, ${scaling}${groupedAtAll ? `, grouped by ${groupWord}` : ''}.`;
-                const colourWord = this._hmScaleWords(d).colour;
-                context.plotDescribesWhat = `A heatmap [colour mode: ${this._hmScaleWords(d).caption}]: each row is one of the ${d.genes.length} genes in the "${setLabel}" set, each column is one cell line (${d.orderedCLs.length} shown, ${sortSummary}). Colour is ${measure}, ${scaling}: ${colourWord}.`
-                    + (d.groups ? ` A coloured band beneath the grid marks the ${visibleGroups.length} group${visibleGroups.length === 1 ? '' : 's'} the columns are split into by ${groupWord}${hiddenGroupKeys.length ? `; ${hiddenGroupKeys.length} more group${hiddenGroupKeys.length === 1 ? '' : 's'} (${hiddenGroupKeys.join(', ')}) were hidden by the user and are not in this file` : ''}.` : '')
-                    + (d.annRows.length ? ` ${d.annRows.length} more coloured band${d.annRows.length === 1 ? '' : 's'} beneath that mark each column's ${d.annRows.map(r => r.attrLabel).join(', ')} respectively.` : '')
-                    + (d.geneTree ? ` A small tree to the left of the gene labels shows how the rows were clustered${d.geneClusterColorOf ? ', its branches coloured by subtree so groups of co-behaving genes stand out' : ''}.` : '')
+                const colourWord = this._hmScaleWords(d).color;
+                context.plotDescribesWhat = `A heatmap [color mode: ${this._hmScaleWords(d).caption}]: each row is one of the ${d.genes.length} genes in the "${setLabel}" set, each column is one cell line (${d.orderedCLs.length} shown, ${sortSummary}). Color is ${measure}, ${scaling}: ${colourWord}.`
+                    + (d.groups ? ` A colored band beneath the grid marks the ${visibleGroups.length} group${visibleGroups.length === 1 ? '' : 's'} the columns are split into by ${groupWord}${hiddenGroupKeys.length ? `; ${hiddenGroupKeys.length} more group${hiddenGroupKeys.length === 1 ? '' : 's'} (${hiddenGroupKeys.join(', ')}) were hidden by the user and are not in this file` : ''}.` : '')
+                    + (d.annRows.length ? ` ${d.annRows.length} more colored band${d.annRows.length === 1 ? '' : 's'} beneath that mark each column's ${d.annRows.map(r => r.attrLabel).join(', ')} respectively.` : '')
+                    + (d.geneTree ? ` A small tree to the left of the gene labels shows how the rows were clustered${d.geneClusterColorOf ? ', its branches colored by subtree so groups of co-behaving genes stand out' : ''}.` : '')
                     + (d.hasTopDendro ? ' A matching tree above the grid shows how the COLUMNS (cell lines) were clustered.' : '');
 
                 // The matrix itself, exactly as drawn: rows and columns in
@@ -36533,7 +36533,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     cellLines: d.orderedCLs.map(cl => this.getCellLineName(cl)),
                     cellLineIds: d.orderedCLs.slice(),
                     valuesAre: this._hmScaleWords(d).caption,
-                    // The measured values ride along whatever the colour mode,
+                    // The measured values ride along whatever the color mode,
                     // so a downstream reading cannot inherit a relative number
                     // as if it were the effect itself.
                     rawValuesAre: d.dataType === 'ge' ? 'CRISPR gene effect (Chronos), as measured' : 'log2 TPM+1, as measured',
@@ -36565,7 +36565,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     context.gates = {
                         A: gateA ? Array.from(gateA) : [],
                         B: gateB ? Array.from(gateB) : [],
-                        readMe: 'User-defined column selections painted by hand on the heatmap, kept by cell line id. They also appear on the figure as the Gates annotation row, which colours every column by the gate it is in (A, B, both, or none) and is drawn '
+                        readMe: 'User-defined column selections painted by hand on the heatmap, kept by cell line id. They also appear on the figure as the Gates annotation row, which colors every column by the gate it is in (A, B, both, or none) and is drawn '
                             + (gatesRow ? 'as one of the bands beneath the grid.' : 'as the block strip, since that row is what the columns are blocked by.')
                             + ' They are a selection, not a threshold: no rule produced them.'
                     };
@@ -36644,7 +36644,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 colorBy: comp.colorBy,
                 highlightedCellLines: comp.highlighted.length ? comp.highlighted : null
             };
-            context.plotDescribesWhat = `A compilation of ${comp.panels.length} correlation plots sharing one cohort, set by the filters of the correlation plot${comp.filters ? ' (' + comp.filters + ')' : ''}${comp.highlighted.length ? `, with ${comp.highlighted.length} cell line(s) highlighted` : ''}${comp.colorBy ? `, coloured by ${comp.colorBy}` : ''}. Panels: ` + comp.panels.map(p => `${p.panel}) ${p.x.gene} vs ${p.y.gene}, r=${p.r}, n=${p.n}`).join('; ') + '.';
+            context.plotDescribesWhat = `A compilation of ${comp.panels.length} correlation plots sharing one cohort, set by the filters of the correlation plot${comp.filters ? ' (' + comp.filters + ')' : ''}${comp.highlighted.length ? `, with ${comp.highlighted.length} cell line(s) highlighted` : ''}${comp.colorBy ? `, colored by ${comp.colorBy}` : ''}. Panels: ` + comp.panels.map(p => `${p.panel}) ${p.x.gene} vs ${p.y.gene}, r=${p.r}, n=${p.n}`).join('; ') + '.';
             description = `${comp.panels.length} correlation plots (${comp.grid} compilation) across ${cellLines.length.toLocaleString()} cell lines.`;
         }
         // The threshold scan describes every gene's share of lines past one
@@ -37283,7 +37283,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                         overallMean: parseFloat(overallMean.toFixed(3)),
                         overallSd: parseFloat(overallSd.toFixed(3)),
                         n: allValues.length,
-                        _readMe: 'byTissue, bySubtype and byOncotreeSubtype are three separate passes, NOT a nesting: a line has an Oncotree subtype only where one was recorded, so the finer groups routinely sum to far less than the coarser group containing them, and the shortfall is unlabelled lines rather than a contradiction. zVsOverall is the group mean in units of the SPREAD ACROSS CELL LINES, which is not a significance test. Score a group with selectivityZ + focalGeneRankAmongGenes where they are present, and calibrate a small group against extras.groupContrastNull. lowN groups are kept deliberately: a flagged small group is less dangerous than a missing one.',
+                        _readMe: 'byTissue, bySubtype and byOncotreeSubtype are three separate passes, NOT a nesting: a line has an Oncotree subtype only where one was recorded, so the finer groups routinely sum to far less than the coarser group containing them, and the shortfall is unlabeled lines rather than a contradiction. zVsOverall is the group mean in units of the SPREAD ACROSS CELL LINES, which is not a significance test. Score a group with selectivityZ + focalGeneRankAmongGenes where they are present, and calibrate a small group against extras.groupContrastNull. lowN groups are kept deliberately: a flagged small group is less dangerous than a missing one.',
                         byTissue: tissueSummary,
                         bySubtype: subtypeSummary,
                         byOncotreeSubtype: oncoSummary
@@ -37429,7 +37429,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     // exactly like a clean bill of health.
                     extras = extras || {};
                     extras.focalGeneVarianceCheck = extras.focalGeneVarianceCheck || {};
-                    extras.focalGeneVarianceCheck.geneEffect = `passed: ${analysisGene} gene effect in this cohort is mean ${overallMean.toFixed(2)}, SD ${overallSd.toFixed(2)}, ${nEssential}/${allValues.length} lines essential (below -0.5). There is real variation to analyse, so correlations against it are not noise by construction. If this had failed, focalGeneVarianceWarning would be present instead.`;
+                    extras.focalGeneVarianceCheck.geneEffect = `passed: ${analysisGene} gene effect in this cohort is mean ${overallMean.toFixed(2)}, SD ${overallSd.toFixed(2)}, ${nEssential}/${allValues.length} lines essential (below -0.5). There is real variation to analyze, so correlations against it are not noise by construction. If this had failed, focalGeneVarianceWarning would be present instead.`;
                 }
 
                 // Expression-axis variance warning, fires when the focal
@@ -37878,7 +37878,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             nTotal: cellLines.length,
             dataStructure: {
                 cellLineOrder: 'Array of DepMap cell line IDs. Defines column order for geneEffect and expression matrices. Length = nTotal.',
-                cellLineMetadata: 'Object keyed by cell line ID. Per cell line: name, tissue, subtype, mutations (gene → {hotspot: 0|1|2 where 0 = wild type, 1 = one copy carries the hotspot, 2 = both copies or multiple hits; damaging: bool, a likely loss-of-function variant; caveat?: "polymorphic_locus"}. The list per line is every call DepMap makes for it, not a top N, so its length varies by line because mutational burden does; a gene absent from a line was called wild type), clinicalFusions (curated driver fusion calls with tier), inferred (DepMap inferred subtypes, specificVariants like KRAS p.G12D, namedFusions, functionalLoss, msi. Every field in `inferred` is emitted ONLY when it is true or non-empty, so absence means the call was not made and never means it was made negative. functionalLoss covers exactly eight tumour suppressors and no others (TP53, CDKN2A, MTAP, APC, PTEN, NF1, RB1, VHL): a gene outside those eight is never listed here however deleted it is, so absence for any other gene says nothing at all. It is an integrated copy-number + mutation + expression call, so a line can be listed with no damaging coding mutation anywhere, deletion alone being enough), signatures, whose numbers are useless without their scales, so: ploidy (average copies per locus, ~2 is diploid, ~4 after a whole-genome doubling), wgd (boolean, whole-genome doubled), cin (chromosomal instability, 0 to 1, higher is more rearranged), lohFraction (fraction of the genome under loss of heterozygosity, 0 to 1), msiScore (continuous microsatellite-instability score; it is NOT a percentage and has no fixed ceiling. Do not invent a threshold for it: use inferred.msi as the call, and read msiScore only as a severity gradient underneath that call), aneuploidy (count of chromosome arms called aneuploid, out of 39). These are emitted only where DepMap computed them, so a line missing them was not measured rather than measured as normal; the boolean flags among them are emitted only when true, so an absent flag means not called rather than called negative, cnEvents ({ amplifications: [{gene, cn, tier}], deletions: [{gene, cn, tier}] }, curated focal CN events from a clinically actionable panel; amp tier is "amp" (CN ≥ 3.0) or "strong_amp" (≥ 5.0); deletion tier is "del" (CN ≤ 0.5) or "deep_del" (≤ 0.3) on DepMap relative-CN scale where 1.0 = diploid; the 8 TSGs in inferred.functionalLoss are NOT duplicated here), lehmannTnbc ({ tnbcType6, tnbcType4 }, Lehmann TNBC subtype assignments from JCI 2011 / PLOS ONE 2016 for the ~22 panel cell lines that overlap DepMap; six-class: BL1, BL2, IM, M, MSL, LAR; four-class collapses IM/MSL as immune/stromal contamination), class1AntigenPresentation (ABSENT on a line means either not compromised or never assessed, and the two cannot be told apart here; { status: "reduced" | "likely_lost", reasons: [...], evidence: { b2mDamaging?, classOneExprMeanZ?, classOneCn? } }, functional inference combining B2M damaging mutations + HLA-A/B/C expression z-score vs cohort + B2M-normalized HLA copy number; only emitted when class-I presentation looks compromised; NOT allele-specific LOH detection). Also per cell line where available: donor ({ age in years, ageCategory, sex, primaryOrMetastasis, collectionSite } describing the patient the line came from, not how the line behaves in culture), sexChromosomes ({ status, yLinkedExpr, xistExpr, chrXCn? }: the measured sex-chromosome state of the line in culture, as opposed to donor.sex. yLinkedExpr is the mean log-TPM of six Y-linked genes, xistExpr the XIST log-TPM, chrXCn the median relative copy number over non-pseudoautosomal chrX genes where 1.0 is the line\'s own modal baseline so one X in a diploid line reads about 0.5. status is one of y_present, y_loss (annotated male with Y-linked expression below 1: FUNCTIONAL loss of Y, an expression call that cannot separate a missing Y from a silent one), xist_present, xi_lost (annotated female, XIST below 1, chrXCn below 0.75: the inactive X is gone and X-linked genes are haploid), xist_silenced (annotated female, XIST below 1, two X copies retained: the inactive X eroded or the active X was duplicated, both transcribed), both_low (no Y-linked expression and no XIST, annotation cannot split it). Emitted ONLY for lines with expression data, so an absent field means not measured, never a normal result) and rrid (the Cellosaurus accession, the unambiguous identifier to quote when ordering or citing a line), oncotreeSubtype / oncotreeCode (finer than `subtype`, which is the Oncotree disease GROUP and cannot separate CLL from DLBCL or myeloma), p53Function ({ pLoss, tp53GeneEffect, p53TargetScore?, depmapCall, readouts, verdict? }: whether p53 WORKS, as opposed to the genomic call in inferred.functionalLoss. pLoss is the probability that p53 is lost from a logistic model fitted to DepMap\'s own TP53 calls on two readouts: the TP53 knockout effect (positive where p53 is active, since removing it lets cells outgrow the pool) and p53TargetScore, the mean z-score of 18 direct p53 target genes (CDKN1A, MDM2, EDA2R, ZMAT3, ...). Probabilities are out-of-fold, so no line is judged by a model that saw its own label. verdict "active_despite_loss" marks a TP53 loss call the data contradict (pLoss below 0.1): do not put such a line in a TP53-null group without checking its variant. verdict "low_without_call" marks an intact call where p53 looks inactive (pLoss above 0.9); p53 can be held down without a TP53 lesion (MDM2 / MDM4, viral proteins, low basal signalling), so read it as "pathway quiet", not "TP53 lost". Only TP53 is checked; for the other genes in functionalLoss no reliable functional readout exists here), culture ({ medium, mediumFamily, base, serum, supplements?, source, why?, screenMedia?, modelDefault? }: the growth medium. medium is the DepMap formulation string as written (e.g. "RPMI + 10% FBS + 2mM Glutamine"), mediumFamily its base normalised to RPMI | DMEM | DMEM-F12 | F12 | IMDM | MEM | McCoy | L-15 | other | unknown (mixtures other than DMEM:F12 are "other"), serum { type, pct } or "serum-free". source is "screen" when it is the medium of the screen condition behind this line\'s gene effect (DepMap ScreenSequenceMap -> ModelCondition), "model_default" when the screen conditions record no medium (typical of Sanger screens) and the model\'s default is used instead, and "missing" when neither exists; why says which. screenMedia lists every medium when the line\'s screens ran in more than one, and modelDefault gives the model\'s default when the screen used a different one. Media differ in nutrients that some dependencies hinge on: RPMI has no iron salts and no hypoxanthine, DMEM:F12 has both, so a dependency on iron uptake or purine, folate / one-carbon, serine-glycine, cystine, pyruvate or glutamine handling can reflect the medium rather than the line. Blood lines are nearly all in RPMI, so test it WITHIN a tissue before crediting a lineage), retroelements ({ totalCpm, line1Cpm, hervkCpm, svaCpm, activeElements, retroelementHigh }, RNA-seq reads over 750 full-length intergenic LINE-1 / HERV-K / SVA elements, unique reads only, counts per million, from public CCLE hg19 alignments; retroelementHigh marks the top decile of MEASURED lines, a runtime cutoff around 80 CPM. Emitted ONLY for lines with a public alignment: 669 of the 1,208 panel lines are covered, so a line without this field was never measured and that is NOT a value of zero. The distribution is heavily right-skewed (median around 40 CPM, maximum 856), so read it as a percentile rather than a z-score. This is element TRANSCRIPTION, not retrotransposition: new genomic insertions cannot be seen in RNA, and poly-A selected RNA-seq cannot assign reads to individual loci, so treat it as an aggregate signal. If a group in this file was built by sorting on this measure, this is the axis that produced it), interferonScore (mean z-score across a curated interferon-stimulated-gene panel, computed across the whole expression cohort, so 0 is the panel average and +1 is a standard deviation high; emitted only where at least 60 % of the panel genes are measured in that line. Higher retroelement signal is associated with greater ADAR1 dependency (r = -0.18, p = 2.6e-06, n = 669), and that association survives controlling for this score (partial r = -0.15), so the two are related but not interchangeable), growthRate (CRISPR-inferred proliferation, on a relative scale where 1.0 is a typical line in the panel and higher is faster, NOT doublings per day; the standard alternative explanation for a modest dependency, so compare it between your groups before crediting a difference in dependency), meanGeneEffect + meanGeneEffectPercentile (that line\'s mean across the whole gene-effect matrix, and where that mean ranks among EVERY screened cell line in the release, not just the ones in this file; the "is this screen globally sick" control, so a percentile near 0 means the line looks sensitive to almost any knockout and a strong-looking dependency in it deserves less weight) and focalGeneZWithinLine (the focal gene\'s z against that line\'s OWN dependency distribution, the "is this gene unusual for this line" control). The `caveat: "polymorphic_locus"` flag marks HLA / MIC / KIR genes, calls in these highly polymorphic regions typically reflect germline allelic divergence from GRCh38, not somatic events.',
+                cellLineMetadata: 'Object keyed by cell line ID. Per cell line: name, tissue, subtype, mutations (gene → {hotspot: 0|1|2 where 0 = wild type, 1 = one copy carries the hotspot, 2 = both copies or multiple hits; damaging: bool, a likely loss-of-function variant; caveat?: "polymorphic_locus"}. The list per line is every call DepMap makes for it, not a top N, so its length varies by line because mutational burden does; a gene absent from a line was called wild type), clinicalFusions (curated driver fusion calls with tier), inferred (DepMap inferred subtypes, specificVariants like KRAS p.G12D, namedFusions, functionalLoss, msi. Every field in `inferred` is emitted ONLY when it is true or non-empty, so absence means the call was not made and never means it was made negative. functionalLoss covers exactly eight tumor suppressors and no others (TP53, CDKN2A, MTAP, APC, PTEN, NF1, RB1, VHL): a gene outside those eight is never listed here however deleted it is, so absence for any other gene says nothing at all. It is an integrated copy-number + mutation + expression call, so a line can be listed with no damaging coding mutation anywhere, deletion alone being enough), signatures, whose numbers are useless without their scales, so: ploidy (average copies per locus, ~2 is diploid, ~4 after a whole-genome doubling), wgd (boolean, whole-genome doubled), cin (chromosomal instability, 0 to 1, higher is more rearranged), lohFraction (fraction of the genome under loss of heterozygosity, 0 to 1), msiScore (continuous microsatellite-instability score; it is NOT a percentage and has no fixed ceiling. Do not invent a threshold for it: use inferred.msi as the call, and read msiScore only as a severity gradient underneath that call), aneuploidy (count of chromosome arms called aneuploid, out of 39). These are emitted only where DepMap computed them, so a line missing them was not measured rather than measured as normal; the boolean flags among them are emitted only when true, so an absent flag means not called rather than called negative, cnEvents ({ amplifications: [{gene, cn, tier}], deletions: [{gene, cn, tier}] }, curated focal CN events from a clinically actionable panel; amp tier is "amp" (CN ≥ 3.0) or "strong_amp" (≥ 5.0); deletion tier is "del" (CN ≤ 0.5) or "deep_del" (≤ 0.3) on DepMap relative-CN scale where 1.0 = diploid; the 8 TSGs in inferred.functionalLoss are NOT duplicated here), lehmannTnbc ({ tnbcType6, tnbcType4 }, Lehmann TNBC subtype assignments from JCI 2011 / PLOS ONE 2016 for the ~22 panel cell lines that overlap DepMap; six-class: BL1, BL2, IM, M, MSL, LAR; four-class collapses IM/MSL as immune/stromal contamination), class1AntigenPresentation (ABSENT on a line means either not compromised or never assessed, and the two cannot be told apart here; { status: "reduced" | "likely_lost", reasons: [...], evidence: { b2mDamaging?, classOneExprMeanZ?, classOneCn? } }, functional inference combining B2M damaging mutations + HLA-A/B/C expression z-score vs cohort + B2M-normalized HLA copy number; only emitted when class-I presentation looks compromised; NOT allele-specific LOH detection). Also per cell line where available: donor ({ age in years, ageCategory, sex, primaryOrMetastasis, collectionSite } describing the patient the line came from, not how the line behaves in culture), sexChromosomes ({ status, yLinkedExpr, xistExpr, chrXCn? }: the measured sex-chromosome state of the line in culture, as opposed to donor.sex. yLinkedExpr is the mean log-TPM of six Y-linked genes, xistExpr the XIST log-TPM, chrXCn the median relative copy number over non-pseudoautosomal chrX genes where 1.0 is the line\'s own modal baseline so one X in a diploid line reads about 0.5. status is one of y_present, y_loss (annotated male with Y-linked expression below 1: FUNCTIONAL loss of Y, an expression call that cannot separate a missing Y from a silent one), xist_present, xi_lost (annotated female, XIST below 1, chrXCn below 0.75: the inactive X is gone and X-linked genes are haploid), xist_silenced (annotated female, XIST below 1, two X copies retained: the inactive X eroded or the active X was duplicated, both transcribed), both_low (no Y-linked expression and no XIST, annotation cannot split it). Emitted ONLY for lines with expression data, so an absent field means not measured, never a normal result) and rrid (the Cellosaurus accession, the unambiguous identifier to quote when ordering or citing a line), oncotreeSubtype / oncotreeCode (finer than `subtype`, which is the Oncotree disease GROUP and cannot separate CLL from DLBCL or myeloma), p53Function ({ pLoss, tp53GeneEffect, p53TargetScore?, depmapCall, readouts, verdict? }: whether p53 WORKS, as opposed to the genomic call in inferred.functionalLoss. pLoss is the probability that p53 is lost from a logistic model fitted to DepMap\'s own TP53 calls on two readouts: the TP53 knockout effect (positive where p53 is active, since removing it lets cells outgrow the pool) and p53TargetScore, the mean z-score of 18 direct p53 target genes (CDKN1A, MDM2, EDA2R, ZMAT3, ...). Probabilities are out-of-fold, so no line is judged by a model that saw its own label. verdict "active_despite_loss" marks a TP53 loss call the data contradict (pLoss below 0.1): do not put such a line in a TP53-null group without checking its variant. verdict "low_without_call" marks an intact call where p53 looks inactive (pLoss above 0.9); p53 can be held down without a TP53 lesion (MDM2 / MDM4, viral proteins, low basal signalling), so read it as "pathway quiet", not "TP53 lost". Only TP53 is checked; for the other genes in functionalLoss no reliable functional readout exists here), culture ({ medium, mediumFamily, base, serum, supplements?, source, why?, screenMedia?, modelDefault? }: the growth medium. medium is the DepMap formulation string as written (e.g. "RPMI + 10% FBS + 2mM Glutamine"), mediumFamily its base normalized to RPMI | DMEM | DMEM-F12 | F12 | IMDM | MEM | McCoy | L-15 | other | unknown (mixtures other than DMEM:F12 are "other"), serum { type, pct } or "serum-free". source is "screen" when it is the medium of the screen condition behind this line\'s gene effect (DepMap ScreenSequenceMap -> ModelCondition), "model_default" when the screen conditions record no medium (typical of Sanger screens) and the model\'s default is used instead, and "missing" when neither exists; why says which. screenMedia lists every medium when the line\'s screens ran in more than one, and modelDefault gives the model\'s default when the screen used a different one. Media differ in nutrients that some dependencies hinge on: RPMI has no iron salts and no hypoxanthine, DMEM:F12 has both, so a dependency on iron uptake or purine, folate / one-carbon, serine-glycine, cystine, pyruvate or glutamine handling can reflect the medium rather than the line. Blood lines are nearly all in RPMI, so test it WITHIN a tissue before crediting a lineage), retroelements ({ totalCpm, line1Cpm, hervkCpm, svaCpm, activeElements, retroelementHigh }, RNA-seq reads over 750 full-length intergenic LINE-1 / HERV-K / SVA elements, unique reads only, counts per million, from public CCLE hg19 alignments; retroelementHigh marks the top decile of MEASURED lines, a runtime cutoff around 80 CPM. Emitted ONLY for lines with a public alignment: 669 of the 1,208 panel lines are covered, so a line without this field was never measured and that is NOT a value of zero. The distribution is heavily right-skewed (median around 40 CPM, maximum 856), so read it as a percentile rather than a z-score. This is element TRANSCRIPTION, not retrotransposition: new genomic insertions cannot be seen in RNA, and poly-A selected RNA-seq cannot assign reads to individual loci, so treat it as an aggregate signal. If a group in this file was built by sorting on this measure, this is the axis that produced it), interferonScore (mean z-score across a curated interferon-stimulated-gene panel, computed across the whole expression cohort, so 0 is the panel average and +1 is a standard deviation high; emitted only where at least 60 % of the panel genes are measured in that line. Higher retroelement signal is associated with greater ADAR1 dependency (r = -0.18, p = 2.6e-06, n = 669), and that association survives controlling for this score (partial r = -0.15), so the two are related but not interchangeable), growthRate (CRISPR-inferred proliferation, on a relative scale where 1.0 is a typical line in the panel and higher is faster, NOT doublings per day; the standard alternative explanation for a modest dependency, so compare it between your groups before crediting a difference in dependency), meanGeneEffect + meanGeneEffectPercentile (that line\'s mean across the whole gene-effect matrix, and where that mean ranks among EVERY screened cell line in the release, not just the ones in this file; the "is this screen globally sick" control, so a percentile near 0 means the line looks sensitive to almost any knockout and a strong-looking dependency in it deserves less weight) and focalGeneZWithinLine (the focal gene\'s z against that line\'s OWN dependency distribution, the "is this gene unusual for this line" control). The `caveat: "polymorphic_locus"` flag marks HLA / MIC / KIR genes, calls in these highly polymorphic regions typically reflect germline allelic divergence from GRCh38, not somatic events.',
                 geneEffect: 'Object keyed by gene name. Each value is an array of CRISPR gene effect scores aligned to cellLineOrder. Negative = essential. null = missing. READ THIS BEFORE CONCLUDING ANYTHING FROM A GENE YOU CANNOT FIND: this matrix is VARIANCE-FILTERED and carries a fraction of the release, so a gene missing from it was DROPPED FOR LOW VARIANCE ACROSS THE PANEL, which is not the same as scoring near zero and is never evidence that it is not a partner. `matrixCoverage` says how many genes of the release survived the filter here. If your question turns on a specific gene that is absent, say so and ask for it by name in a Custom export (see notIncluded.howToAskForMore); naming genes disables the filter for them. Always included regardless of the variance threshold: the focal gene, every gene named in topCoessentials, and every gene the user typed into a multi-gene view, so any precomputed number about them can be recomputed from this file.',
                 expression: 'Object keyed by gene name. Each value is an array of log2(TPM+1) RNA expression values aligned to cellLineOrder. null = missing. Variance-filtered in the same way as geneEffect, with the same warning: a gene absent from here was dropped for low variance, not measured as flat, and `matrixCoverage` gives the counts. Always included regardless of the variance threshold: the focal gene where there is one, the genes surfaced in topCorrelates, the focal gene\'s pathway / complex partners, and every gene the user typed into a multi-gene view. Partner sources are layered: hand-curated high-value complexes (NEDD8/CRL, Proteasome, Hippo, MYC, TP53, BRCA, mTOR, BCL2, splicing) → CORUM physical protein complexes (~5000 human genes) → wiki cancer pathways (RAS/MAPK, PI3K, RTK family, etc.) → Reactome pathway / signaling-cascade co-members (~10000 human genes; broad parents filtered out, only pathways with 5-100 genes kept). So for SMARCA4 you get the BAF subunits via CORUM; for MCM4 the MCM2-7 helicase; for IL4R the JAK/STAT cascade via Reactome; for arbitrary genes you typically get something useful from at least one of the four layers.',
                 topCorrelates: 'Optional. Top 30 expression-vs-GE correlates of the focal gene: { gene, r (Pearson, focal-gene GE vs partner expression across the cohort), n }. Gated at n >= max(50, 0.6 * cohortSize) to drop partial-coverage genes. Polarity: positive r means high partner expression covaries with weaker focal-gene dependency (less negative GE).',
@@ -37905,7 +37905,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     genesBelowThreshold: `Genes filtered out of the matrices by the data tier in force (${tierLabel}). A gene absent from geneEffect or expression was dropped by that filter or is missing from DepMap; it is not evidence of no effect. The focal gene and its named correlates are always kept.`
                 } : {}),
                 cellLinesOutsideCohort: 'Only the cohort described in `context` is here. Cell lines excluded by the active filters are absent by design; conclusions apply to this cohort, not to DepMap as a whole.',
-                rawFusionCalls: 'Only curated / validated driver fusions are here. The full raw RNA-seq fusion output (largely passengers and read-through artefacts) is NOT.',
+                rawFusionCalls: 'Only curated / validated driver fusions are here. The full raw RNA-seq fusion output (largely passengers and read-through artifacts) is NOT.',
                 viralTransformation: 'Cellosaurus records which cell lines were transformed by a virus (EBV, HPV16/18, HBV, KSHV, HTLV-1). Those calls are NOT in this file. They matter because viral oncoproteins override host pathways: an HPV-transformed line behaves as p53- and RB-deficient whatever its TP53 and RB1 sequence says, and an EBV-immortalised lymphoblastoid line is not a tumor line at all. The app shows the status on each cell line, and "Confirmed virus-transformed" is one of its curated collections. Note that absence of a record is not evidence a line is free of the virus.',
                 identityWarnings: 'Cellosaurus identity / contamination flags and STR profiles are NOT here. A handful of lines in DepMap are misidentified; the app shows a warning triangle on those.',
                 neverInThisApp: 'Proteomics, methylation, metabolomics and drug-combination screens are not part of this app at all. DepMap publishes some of them separately; they cannot be exported from here.',
@@ -37936,7 +37936,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                         + '. Note this covers ONLY those five opt-in layers. It is not a list of what the file holds: mutation calls, fusion calls, curated copy-number events, microsatellite-instability status, ploidy and genome-instability signatures, proliferation rate and Oncotree disease labels are core per-line content and are always carried, whatever it says here. Before deciding something is missing, check whatIsInThisFile.perCellLineAttributes, which answers that directly.',
                     tissueNamesThatResolve: tissues,
                     diseaseAndSubtypeNames: 'Not listed here, there are too many. Take them from cellLineMetadata in this file: `subtype` is the disease group and `oncotreeSubtype` the finer label, and either is a legal value for disease: or subtype:. Matching ignores case and accepts a partial name, so disease:Melanoma takes cutaneous, acral and mucosal melanoma alike. Anything that resolves to no cell lines is reported back rather than silently ignored.',
-                    notes: 'One instruction per line, order does not matter, and anything you leave out is left as the dialog currently has it, so write every line that matters rather than relying on what a previous export set. ONE REQUEST, NOT SEVERAL: if you have three open questions, do not send three blocks. Take the union of the genes they need, the widest cohort any of them requires and the union of the layers, and ask once, then answer all three from the one file. Each round costs the user a dialog, an export and an upload. Split only when the answer to the first would change what the second should ask for, and say that is why. Ask only for what the questions need: a file carrying everything is slower to read and may be too large to attach. If the question is about where a gene sits relative to its neighbours, name a region in `genes:` as well, since copy number is only carried for the genes in the matrices.',
+                    notes: 'One instruction per line, order does not matter, and anything you leave out is left as the dialog currently has it, so write every line that matters rather than relying on what a previous export set. ONE REQUEST, NOT SEVERAL: if you have three open questions, do not send three blocks. Take the union of the genes they need, the widest cohort any of them requires and the union of the layers, and ask once, then answer all three from the one file. Each round costs the user a dialog, an export and an upload. Split only when the answer to the first would change what the second should ask for, and say that is why. Ask only for what the questions need: a file carrying everything is slower to read and may be too large to attach. If the question is about where a gene sits relative to its neighbors, name a region in `genes:` as well, since copy number is only carried for the genes in the matrices.',
                     whatTheParserForgives: 'Write the block however you normally would. Markdown bullets, numbered lines, **bold** keys and surrounding ``` fences are all stripped before parsing. Keys are matched loosely, so cell-lines / lines / gene-list / max-genes / compounds all reach the right setting, and `tissue: Skin` works as well as `cohort: tissue:Skin`. A bare group name resolves too: `cohort: Melanoma` finds the melanoma lines rather than hunting for a cell line of that name. What it will NOT do is read prose, so do not write a sentence and hope.',
                     whatItCannotDo: 'It sets what goes in ONE export. It cannot define two groups to be compared against each other: there is a single `cohort:` and no comparison arm. If the question is a contrast, put BOTH sides in `cohort:` and split them yourself in the reading, using the mutation, tissue and disease fields in cellLineMetadata, which is usually better anyway because you can see both sides line by line. It also cannot fetch anything the app does not already hold, which is what `neverInThisApp` lists.',
                     whatChangesTheCohort: 'IMPORTANT, this is the one thing that catches assistants out. Naming a cohort other than `view` REPLACES the cell lines, and any precomputed result belonging to the view on screen is then dropped rather than carried into a file it no longer describes. So a request that narrows the genes but keeps `cohort: view`, or that names the same lines the view already had, KEEPS that view\'s analysis. A request that names a different cohort gets matrices and annotation but no precomputed contrast, and you compute what you need yourself. Choose accordingly: to deepen the current analysis, leave the cohort alone; to ask a different question, name the new cohort and expect to do the statistics.'
@@ -37960,7 +37960,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 { when: 'always', text: "Step 2 - Confirm scope: If the question names a disease, subtype, or gene-defined subset narrower than the stratification groups available in `extras`, define that subset explicitly by cell line FIRST and test it as a group, using `questionScope` if present. Do not answer a subgroup question from marginal summaries computed at a coarser granularity: a question can read as specific ('is IPO5 interesting in CLL') and still not be self-contained, because the cohort it names is not a group the file defines. Skip this step only when the question's cohort is already the export's cohort. If the question is instead open-ended ('explain the variability', 'what drives X'), present the overview with 2-3 candidate angles and ask which to pursue." },
                 { when: 'scans', text: "Step 2b - Before concluding a subgroup effect is ABSENT, check whether the precomputed scans could have detected it at that scope. topCorrelates / topCoessentials / topExpressionCorrelates are cohort-wide (see `scanScope`); an effect confined to a few lines is invisible in them by construction. Recompute inside the group, and score the group against extras.groupContrastNull for its size and against focalGeneRankAmongGenes, rather than eyeballing per-line percentiles: one line at the 6th percentile is unremarkable, four lines all there is not." },
                 { when: 'always', text: "Step 2d - Check the culture medium before interpreting a metabolic or nutrient-uptake dependency. Genes for iron uptake (TFRC and its pathway), purine and folate / one-carbon synthesis, serine-glycine, cystine (SLC7A11), pyruvate or glutamine handling can look essential because of what the medium lacks rather than anything about the line: RPMI has no iron salts and no hypoxanthine, DMEM:F12 has both. Look at extras.focalGeneMediumSummary where present, or group cellLineMetadata[id].culture.mediumFamily yourself, and always test it WITHIN a tissue, because blood lines are almost all in RPMI and a panel-wide medium effect can be lineage in disguise (and a lineage or co-dependency pattern can be the medium in disguise). The medium is the screen's own where DepMap records it (culture.source \"screen\") and the model's default otherwise; either way a medium effect is a likely confounder to name, not a proven cause." },
-                { when: 'always', text: "Step 2c - Do not enter the data through the raw per-line leaderboard. The lines with the most negative score for any gene are disproportionately lines whose whole screen reads sensitive, so a straight sort surfaces the same tumour-suppressor-loss lines whatever gene you ask about, across unrelated tissues, and it is easy to mistake that for a finding. Enter through the grouped summaries, and check meanGeneEffectPercentile on any line before naming it." },
+                { when: 'always', text: "Step 2c - Do not enter the data through the raw per-line leaderboard. The lines with the most negative score for any gene are disproportionately lines whose whole screen reads sensitive, so a straight sort surfaces the same tumor-suppressor-loss lines whatever gene you ask about, across unrelated tissues, and it is easy to mistake that for a finding. Enter through the grouped summaries, and check meanGeneEffectPercentile on any line before naming it." },
                 { when: 'groups', text: "Step 3 - Deep analysis: Work data-first. Use the precomputed extras (focalGeneTissueSummary for per-tissue/subtype means, focalGeneMutationSummary for driver-mutation effects) before scanning the matrix gene-by-gene. Characterize unbiased genome-wide hits and annotate by pathway before testing hypothesis-driven candidate gene lists. After finding one explanatory model, actively search for alternative or complementary axes. Report all major signals, not just the first plausible one." },
                 { when: 'always', text: "Step 3b - Name the gaps, then ask ONCE. If answering the question properly would need something in `notIncluded` (drug response, genome-wide copy number, viral transformation status, cell lines outside this cohort), say so plainly and tell the user which export would supply it, and do not treat an absent layer as a negative result. When several open questions each need something, do NOT send the user round the export loop once per question: work out what they need between them and ask for it in ONE request. That means the union of the genes, the widest cohort any of them requires, and the union of the layers. Every round costs the user a dialog, an export and an upload, and costs you the thread; the only reason to split is when the answer to the first question would change what the second one should ask for, and if that is the reason, say so." },
                 { when: 'always', text: "Step 3a - SHOW, do not only tell. Any claim resting on a shape in the data deserves a figure, and you have the raw matrices to draw one: a scatter with the fit and its r, a distribution split by the groups you are contrasting, a per-lineage forest of the same statistic, a 2x2 of two thresholds. Prefer one figure that carries the argument over three that decorate it, label the axes in the reader's words rather than the file's field names, and say in the caption what the reader should conclude and what the figure cannot settle. Where the point is about something the APP can already draw, do both: give the figure and a CORRELATE-VIEW block (see howToDirectTheUser) so the user can open that same view themselves and click around it. WHENEVER YOU HAND OVER A BLOCK OF EITHER KIND, name where it goes in the same breath: 'paste this into Options > Other > \"Paste from AI\" and press Apply'; both kinds of block go into the same box. The user does not know the menu, and a block with no destination is a block they cannot use." },
@@ -38038,7 +38038,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Assay context the model would otherwise have to guess at.
         exportData.assayNotes = {
             geneEffectProcessing: 'Gene effect scores are Chronos-processed and already copy-number-corrected by DepMap; do not re-correct for CN or attribute correlations between genes on different chromosomes to shared CN artifacts.',
-            pooledScreenCellAutonomy: 'These are POOLED screens: every knockout grows in one well alongside thousands of differently edited neighbours, so a gene only shows a phenotype when losing it changes that cell\'s OWN fitness. Anything whose product is SECRETED AND SHARED is therefore invisible here, because the neighbours keep supplying it: a ligand, and everything upstream of it in a secretion-dependent loop, reads as null however important it is. Interferon is the worked example. IFNB1, cGAS, STING1, TBK1, IRF3, MAVS and the RNA sensors all sit upstream of secreted interferon and score near zero; IFNAR1, IFNAR2, JAK1, TYK2, STAT2 and IRF9 sit downstream, are cell-autonomous, and score strongly. That boundary is an artefact of the assay format, NOT evidence that sensing does not matter. So do not read a null upstream score as ruling a pathway out, and do not compare an upstream gene with a downstream one as though the two were measured on equal terms. Separating those arms needs an arrayed screen, or a pooled one with the ligand blocked in the medium, which is bench work rather than another export.',
+            pooledScreenCellAutonomy: 'These are POOLED screens: every knockout grows in one well alongside thousands of differently edited neighbors, so a gene only shows a phenotype when losing it changes that cell\'s OWN fitness. Anything whose product is SECRETED AND SHARED is therefore invisible here, because the neighbors keep supplying it: a ligand, and everything upstream of it in a secretion-dependent loop, reads as null however important it is. Interferon is the worked example. IFNB1, cGAS, STING1, TBK1, IRF3, MAVS and the RNA sensors all sit upstream of secreted interferon and score near zero; IFNAR1, IFNAR2, JAK1, TYK2, STAT2 and IRF9 sit downstream, are cell-autonomous, and score strongly. That boundary is an artifact of the assay format, NOT evidence that sensing does not matter. So do not read a null upstream score as ruling a pathway out, and do not compare an upstream gene with a downstream one as though the two were measured on equal terms. Separating those arms needs an arrayed screen, or a pooled one with the ligand blocked in the medium, which is bench work rather than another export.',
             correlationCalibration: 'Calibration for Pearson r between two genes\' gene-effect profiles across this panel: random gene pairs have median |r| around 0.05; catalogued complex or pathway partners typically reach |r| 0.3-0.6; |r| above about 0.7 approaches the reliability ceiling of the assay for well-measured genes, i.e. the two profiles agree to within screen noise.',
             groupComparisonCalibration: 'Calibration for comparing a GROUP of cell lines against the rest, which the pairwise-r calibration above does not cover. Three things settle it, and per-line percentiles settle none of them: (1) extras.groupContrastNull gives what a random group of that size does by chance, so a group z is read against its own size rather than against 1.0; (2) groupZSdAcrossGenes on each group is the empirical gene-level null and is typically near 0.6-0.7, not 1.0, so a group z of -1.96 is a larger effect than it looks; (3) focalGeneRankAmongGenes places the gene against every other gene in the file on the same contrast, which is the number that actually answers "is this competitive with this group\'s known dependencies". Also check the two per-line controls before believing a group effect: a low meanGeneEffectPercentile across the group means the screens are globally sensitive, and a focalGeneZWithinLine near zero means the gene is not unusual within those lines.'
         };
@@ -38358,7 +38358,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                         say(has(m => m?.donor), 'donor age, age category, sex, primary-vs-metastasis and collection site, at cellLineMetadata[id].donor'),
                         say(has(m => m?.sexChromosomes), 'the measured sex-chromosome state of the line in culture (functional loss of Y, XIST silenced with one or two X copies, with the numbers behind the call), at cellLineMetadata[id].sexChromosomes; absent means not measured'),
                         say(has(m => m?.p53Function), 'a data-driven check on the TP53 call (probability that p53 is lost, from the TP53 knockout effect and p53 target-gene expression), at cellLineMetadata[id].p53Function'),
-                        say(has(m => m?.culture && m.culture.source !== 'missing'), 'the culture medium (raw formulation, normalised family, serum, supplements), at cellLineMetadata[id].culture. source says where it came from: "screen" is the medium of the CRISPR screen itself, "model_default" the model\'s default where the screen records none, "missing" lines say why'),
+                        say(has(m => m?.culture && m.culture.source !== 'missing'), 'the culture medium (raw formulation, normalized family, serum, supplements), at cellLineMetadata[id].culture. source says where it came from: "screen" is the medium of the CRISPR screen itself, "model_default" the model\'s default where the screen records none, "missing" lines say why'),
                         say(has(m => m?.oncotreeCode), 'the Oncotree disease CODE, at cellLineMetadata[id].oncotreeCode'),
                         say(has(m => m?.rrid), 'the Cellosaurus RRID identifier, at cellLineMetadata[id].rrid'),
                         say(has(m => m?.signatures?.wgd != null), 'whole-genome doubling status, at cellLineMetadata[id].signatures.wgd'),
@@ -38386,7 +38386,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                         _readMe: 'You can do more than answer: you can put the user in front of the exact plot you are arguing from. Write a CORRELATE-VIEW block, in a code fence, and tell them to paste it into Options > Other > "Paste from AI". The app opens that view with those settings. Use it whenever your reasoning rests on something visible, a correlation you want them to see holding inside one lineage, a gene whose dependency splits by tissue, a list ordered by a measure you are citing. It is the difference between describing a picture and showing it. This is NOT the export request block: that one (notIncluded.howToAskForMore) builds a new FILE for you to read, this one opens a VIEW for the user to look at. Either box accepts either block and hands it to the other, so a mistake here costs nothing.',
                         syntax: this._aiViewSyntax(),
                         examples: [
-                            'CORRELATE-VIEW v1\n# paste into Options > Other > "Paste from AI"\nview: scatter\nx: ADAR\ny: USP18\ntissue: Lung\nwhy: the correlation should still hold inside a single lineage, which is what rules out a tissue artefact',
+                            'CORRELATE-VIEW v1\n# paste into Options > Other > "Paste from AI"\nview: scatter\nx: ADAR\ny: USP18\ntissue: Lung\nwhy: the correlation should still hold inside a single lineage, which is what rules out a tissue artifact',
                             'CORRELATE-VIEW v1\n# paste into Options > Other > "Paste from AI"\nview: gene-effect\ngene: ADAR\nmeasure: ge\nwhy: see how the dependency is distributed across tissues before trusting any one group mean',
                             'CORRELATE-VIEW v1\n# paste into Options > Other > "Paste from AI"\nview: cell-lines\nsort: retroelement\ntissue: Head and Neck\nwhy: the lines at the top are the ones the retroelement argument rests on'
                         ],
@@ -38595,7 +38595,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             } else if (source === 'heatmap') {
                 // Also not a Plotly chart: the same composed canvas Export
                 // image / Copy use (labels + dendrogram, grid + group strip,
-                // colour legend, group legend), so the picture matches what
+                // color legend, group legend), so the picture matches what
                 // was on screen exactly.
                 const canvas = this._hmComposeCanvas(2, '#ffffff');
                 if (canvas) _pngUrl = canvas.toDataURL('image/png');
@@ -39672,7 +39672,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (typeof id !== 'string' || !id) return;
             if (eventData.event?.shiftKey) { this.hideCellLineTooltip?.(); this.openCellLineWiki(id); return; }
             // A phone has no Shift, so the wiki was simply unreachable from a
-            // dot. Tapping a dot that is already labelled opens it instead,
+            // dot. Tapping a dot that is already labeled opens it instead,
             // which also matches how the label reads as a thing you can press.
             const hlBox = plotId === 'geneEffectPlot' ? 'geCellLineSearch' : null;
             if (window.innerWidth <= 640 && (hlBox ? this._hlBoxHas(hlBox, id) : this._dotHasLabel?.(plotId, id))) {
@@ -39695,7 +39695,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         });
     }
 
-    // The cell lines currently labelled on a plot, listed under it so the names
+    // The cell lines currently labeled on a plot, listed under it so the names
     // can be read and copied rather than only picked off the chart.
     _renderLabeledCellLines(plotId) {
         // Each plot needs its own row of chips; this used to write only into the
@@ -39713,14 +39713,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             + names.map(x => `<span class="clb-chip" data-lbl="${this.esc(x.id)}" title="Click to remove this label" `
                 + `style="background:#eef2ff; color:#3730a3; border:1px solid #c7d2fe; padding:1px 7px; border-radius:10px; font-size:10px; font-weight:600;">`
                 + `${this.esc(x.name)} &times;</span>`).join(' ')
-            + ` <button type="button" class="btn btn-outline btn-sm js-copy-labelled" style="font-size:9px; padding:1px 7px;" title="Copy these cell line names, one per line">Copy names</button>`;
+            + ` <button type="button" class="btn btn-outline btn-sm js-copy-labeled" style="font-size:9px; padding:1px 7px;" title="Copy these cell line names, one per line">Copy names</button>`;
         host.querySelectorAll('[data-lbl]').forEach(chip => {
             chip.addEventListener('click', () => {
                 const keep = (el.layout.annotations || []).filter(a => a._dotLabel !== chip.dataset.lbl);
                 Plotly.relayout(plotId, { annotations: keep }).then(() => this._renderLabeledCellLines(plotId));
             });
         });
-        host.querySelector('.js-copy-labelled')?.addEventListener('click', () => {
+        host.querySelector('.js-copy-labeled')?.addEventListener('click', () => {
             navigator.clipboard?.writeText(names.map(x => x.name).join('\n'));
             this.showCopyNotification?.(`Copied ${names.length} cell line name${names.length === 1 ? '' : 's'}`);
         });
@@ -41573,7 +41573,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // Float the results beside the network instead of over everything. The
     // network stays live underneath, so a term can be clicked and its genes
     // watched lighting up, rather than clicked, dismissed, and then looked at.
-    // The mark style and colour used for highlighted genes. Two panels offer
+    // The mark style and color used for highlighted genes. Two panels offer
     // these controls (network Settings and Enrichr), and they are the same
     // setting, so both route through here: state, redraw, then write the new
     // values back into whichever of the two panels is on screen.
@@ -41749,7 +41749,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // The network can run on either basis (gene effect / Chronos, or
         // mRNA expression, box 1's "Correlate against" toggle); carry
         // whichever one the analysis actually used, the same flag the
-        // network's own colour-by code branches on.
+        // network's own color-by code branches on.
         const dtSel = document.getElementById('hmDataType');
         if (dtSel) dtSel.value = this.results?.basis === 'expr' ? 'expr' : 'ge';
         { const sc = document.getElementById('hmScale'); if (sc && dtSel) sc.value = this._hmDefaultScaleFor(dtSel.value); }
@@ -41895,20 +41895,20 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 note: `cohort from the mutation analysis (${this._mutResultsCellLines.length} lines)`
             };
         }
-        // One annotation row for the analysed alteration, marked as the
+        // One annotation row for the analyzed alteration, marked as the
         // blocks so the mutated/
         // fused lines land to one side instead of the split only showing up
-        // as extra colour.
+        // as extra color.
         let annMode = null;
         if (mr.isTranslocation) {
             // The annotation row's own fusion mode has no validation of its
             // own (_hmResolveAnnotationRows never drops a fusion row, unlike
             // its hotspot/CN branches), so a pair the fusion machinery
             // cannot actually call here would silently draw an all-one-
-            // colour row instead of failing loudly. Checked here instead:
+            // color row instead of failing loudly. Checked here instead:
             // the row only goes in if it would show a real split on the
             // analysis' own cohort, the same _geFusionPasses the annotation
-            // row itself would use to colour it.
+            // row itself would use to color it.
             const cohort = this._mutResultsCellLines || [];
             const fusedN = cohort.filter(cl => this._geFusionPasses(cl, mr.hotspotGene)).length;
             if (fusedN > 0 && fusedN < cohort.length) annMode = 'fusion';
@@ -42308,7 +42308,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                  + `<select id="enrichrHlStyle" title="How highlighted genes are marked in the network. The same setting as Mark in the network's Settings panel." style="font-size:11px; padding:2px 5px; border:1px solid #d1d5db; border-radius:4px;" onchange="app.setNetworkHighlightLook({style:this.value})">`
                  + _opt('dashed', 'Dashed ring') + _opt('ring', 'Solid ring') + _opt('fill', 'Filled') + _opt('dim', 'Fade the rest')
                  + '</select>'
-                 + `<input type="color" id="enrichrHlColor" value="${_co}" title="Mark colour, shared with the network's Settings panel" style="width:30px; height:22px; padding:0; border:1px solid #d1d5db; border-radius:4px; background:none; cursor:pointer;" oninput="app.setNetworkHighlightLook({color:this.value})">`
+                 + `<input type="color" id="enrichrHlColor" value="${_co}" title="Mark color, shared with the network's Settings panel" style="width:30px; height:22px; padding:0; border:1px solid #d1d5db; border-radius:4px; background:none; cursor:pointer;" oninput="app.setNetworkHighlightLook({color:this.value})">`
                  + '</div>' + html;
         }
         contentEl.innerHTML = focusRow + html;
@@ -42552,7 +42552,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             virus_transformed: {
                 label: 'Confirmed virus-transformed (any agent)',
                 category: 'Viral transformation',
-                description: '<b>Inclusion:</b> cell lines with a curated Cellosaurus <i>Transformant</i> record naming a virus, i.e. lines documented to have been transformed or immortalised by that virus. <b>Why it matters:</b> viral oncoproteins rewire the pathways most experiments are aimed at. EBV-transformed lymphoblastoid lines are not tumour lines at all, and HPV E6/E7 inactivate p53 and RB, so a line can read as TP53-wild-type by sequence while behaving as p53-null. <b>Important caveat:</b> this records what a line was transformed BY, it is not a survey of infection. A cell line outside this collection has no curated transformant record, which is not evidence that it carries no virus.'
+                description: '<b>Inclusion:</b> cell lines with a curated Cellosaurus <i>Transformant</i> record naming a virus, i.e. lines documented to have been transformed or immortalised by that virus. <b>Why it matters:</b> viral oncoproteins rewire the pathways most experiments are aimed at. EBV-transformed lymphoblastoid lines are not tumor lines at all, and HPV E6/E7 inactivate p53 and RB, so a line can read as TP53-wild-type by sequence while behaving as p53-null. <b>Important caveat:</b> this records what a line was transformed BY, it is not a survey of infection. A cell line outside this collection has no curated transformant record, which is not evidence that it carries no virus.'
             },
             virus_ebv: {
                 label: 'Confirmed EBV-transformed',
@@ -42567,12 +42567,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             virus_hbv: {
                 label: 'Confirmed HBV-transformed',
                 category: 'Viral transformation',
-                description: '<b>Inclusion:</b> Cellosaurus records the line as transformed by hepatitis B virus, typically hepatocellular carcinoma lines carrying integrated HBV. <b>Why it matters:</b> integration is mutagenic and the HBx protein drives a transcriptional programme of its own, so these lines carry a different biology from HBV-unrelated liver lines. <b>Caveat:</b> absence from this list means no curated record, not an HBV-negative result.'
+                description: '<b>Inclusion:</b> Cellosaurus records the line as transformed by hepatitis B virus, typically hepatocellular carcinoma lines carrying integrated HBV. <b>Why it matters:</b> integration is mutagenic and the HBx protein drives a transcriptional program of its own, so these lines carry a different biology from HBV-unrelated liver lines. <b>Caveat:</b> absence from this list means no curated record, not an HBV-negative result.'
             },
             drug_selected_pairs: {
                 label: 'Derived line with its parent',
                 category: 'Matched pairs',
-                description: '<b>Inclusion:</b> both members of every matched pair in the panel. Eight pairs are a parental line beside a version of it grown in a drug until it survived it (A-375 with A-375_DAB_R, and so on); one is a parental line beside a version with a gene knocked down in it (A549 with A549_CRAF_KD, a RAF1 knockdown, not a drug exposure). <b>Why it matters:</b> these are the same line twice, not two lines. Anything they differ in is what that change did; anything they share is the background they both came from, which is what makes them the cleanest comparison the panel offers. <b>Read the other way round,</b> a pair not recognised as a pair is the most misleading thing in the panel: a striking difference between two cell lines that are the same cell line. The relationship is read off the DepMap name, not from a curated field.',
+                description: '<b>Inclusion:</b> both members of every matched pair in the panel. Eight pairs are a parental line beside a version of it grown in a drug until it survived it (A-375 with A-375_DAB_R, and so on); one is a parental line beside a version with a gene knocked down in it (A549 with A549_CRAF_KD, a RAF1 knockdown, not a drug exposure). <b>Why it matters:</b> these are the same line twice, not two lines. Anything they differ in is what that change did; anything they share is the background they both came from, which is what makes them the cleanest comparison the panel offers. <b>Read the other way round,</b> a pair not recognized as a pair is the most misleading thing in the panel: a striking difference between two cell lines that are the same cell line. The relationship is read off the DepMap name, not from a curated field.',
             },
             drug_selected_derivative: {
                 label: 'Derived lines only (no parents)',
@@ -42606,8 +42606,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             },
             swi_snf: {
                 label: 'SWI/SNF (BAF/PBAF) complex deficient',
-                category: 'Chromatin remodelling, SWI/SNF complex',
-                description: '<b>Inclusion:</b> damaging mutation in any of <b>ARID1A, ARID1B, ARID2, SMARCA4, SMARCB1, PBRM1</b>, the cancer-relevant tumor-suppressor subunits of the SWI/SNF (BAF / PBAF) ATP-dependent nucleosome-remodelling complex. <b>Mechanism:</b> loss of one subunit disrupts complex assembly and gene-expression regulation, often creating a synthetic-lethal dependency on a paralog (e.g. SMARCA4-mutant lines depend on SMARCA2). <b>Scope caveat:</b> this is <em>one specific complex</em>, not the whole chromatin machinery, histone writers / readers / erasers (KMTs, KDMs, HATs, HDACs, BRDs), DNA-methylation enzymes (DNMTs, TETs), etc. are not captured here.'
+                category: 'Chromatin remodeling, SWI/SNF complex',
+                description: '<b>Inclusion:</b> damaging mutation in any of <b>ARID1A, ARID1B, ARID2, SMARCA4, SMARCB1, PBRM1</b>, the cancer-relevant tumor-suppressor subunits of the SWI/SNF (BAF / PBAF) ATP-dependent nucleosome-remodeling complex. <b>Mechanism:</b> loss of one subunit disrupts complex assembly and gene-expression regulation, often creating a synthetic-lethal dependency on a paralog (e.g. SMARCA4-mutant lines depend on SMARCA2). <b>Scope caveat:</b> this is <em>one specific complex</em>, not the whole chromatin machinery, histone writers / readers / erasers (KMTs, KDMs, HATs, HDACs, BRDs), DNA-methylation enzymes (DNMTs, TETs), etc. are not captured here.'
             },
             nrf2: {
                 label: 'KEAP1–NRF2 pathway activated',
@@ -42662,7 +42662,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             xi_lost: {
                 label: 'Inactive X lost (female, XIST off, one X copy)',
                 category: 'Sex chromosomes',
-                description: '<b>Inclusion:</b> the XIST-silenced female lines whose median chrX relative copy number is below 0.75, i.e. about one X copy against a diploid baseline. <b>Why:</b> with the inactive X gone there is nothing to silence, so XIST is off for a trivial reason, and the line carries a single active X: X-linked genes are effectively haploid, the same state as a male line that has lost its Y. <b>Method:</b> XIST expression plus chrX copy number. <b>Caveat:</b> the copy-number median can be pulled toward 1.0 by partial X gains, so a line with a complex X karyotype may land in the neighbouring filter instead.'
+                description: '<b>Inclusion:</b> the XIST-silenced female lines whose median chrX relative copy number is below 0.75, i.e. about one X copy against a diploid baseline. <b>Why:</b> with the inactive X gone there is nothing to silence, so XIST is off for a trivial reason, and the line carries a single active X: X-linked genes are effectively haploid, the same state as a male line that has lost its Y. <b>Method:</b> XIST expression plus chrX copy number. <b>Caveat:</b> the copy-number median can be pulled toward 1.0 by partial X gains, so a line with a complex X karyotype may land in the neighboring filter instead.'
             },
             xist_silenced: {
                 label: 'XIST silenced, two X copies retained (female)',
@@ -42672,7 +42672,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             ifn_high: {
                 label: 'Interferon-high (type I ISG signature)',
                 category: 'Immunology',
-                description: '<b>Inclusion:</b> cell lines whose mean z-score across 34 type-I interferon-stimulated genes is at least +0.5, i.e. half a standard deviation above the panel on average. <b>Why:</b> tumour-cell-intrinsic interferon signalling shapes immune visibility, and is the readout for viral mimicry, where de-repressed endogenous nucleic acid drives an interferon response. IFN-high lines are also where ADAR1 dependency concentrates. <b>Method:</b> mean of per-gene z-scores over the whole expression cohort, so the score says how a line sits relative to the panel rather than in absolute units. Lines measured on fewer than 60% of the genes are left unscored. <b>Caveat:</b> this is the cell-intrinsic signature only. There is no immune infiltrate in a cell line, so it does not report on the interferon environment of a tumour.'
+                description: '<b>Inclusion:</b> cell lines whose mean z-score across 34 type-I interferon-stimulated genes is at least +0.5, i.e. half a standard deviation above the panel on average. <b>Why:</b> tumor-cell-intrinsic interferon signalling shapes immune visibility, and is the readout for viral mimicry, where de-repressed endogenous nucleic acid drives an interferon response. IFN-high lines are also where ADAR1 dependency concentrates. <b>Method:</b> mean of per-gene z-scores over the whole expression cohort, so the score says how a line sits relative to the panel rather than in absolute units. Lines measured on fewer than 60% of the genes are left unscored. <b>Caveat:</b> this is the cell-intrinsic signature only. There is no immune infiltrate in a cell line, so it does not report on the interferon environment of a tumor.'
             },
             ifn_low: {
                 label: 'Interferon-low (type I ISG signature)',
@@ -42692,7 +42692,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             retro_hervk_high: {
                 label: 'HERV-K-high (retroelement family)',
                 category: 'Immunology',
-                description: '<b>Inclusion:</b> the top tenth of measured lines by HERV-K transcription (350 full-length proviruses and solo LTRs), about 58 CPM and above. <b>Why:</b> HERV-K is the youngest human endogenous retrovirus family; its de-repression is described in melanoma, germ-cell tumours and several other cancers, and its products can be immunogenic. <b>Method:</b> unique RNA-seq reads over the elements, counts per million, from the public CCLE alignments. <b>Caveat:</b> transcription only; 669 of 1,208 lines measured.'
+                description: '<b>Inclusion:</b> the top tenth of measured lines by HERV-K transcription (350 full-length proviruses and solo LTRs), about 58 CPM and above. <b>Why:</b> HERV-K is the youngest human endogenous retrovirus family; its de-repression is described in melanoma, germ-cell tumors and several other cancers, and its products can be immunogenic. <b>Method:</b> unique RNA-seq reads over the elements, counts per million, from the public CCLE alignments. <b>Caveat:</b> transcription only; 669 of 1,208 lines measured.'
             },
             retro_sva_high: {
                 label: 'SVA-high (retroelement family)',
@@ -42891,7 +42891,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             sox2_amp: {
                 label: 'SOX2 amp',
                 category: 'Focal amplifications',
-                description: '<b>Inclusion:</b> focal amplification of <b>SOX2</b>. <b>Mechanism:</b> lineage-survival oncogene; SOX2-positive cells maintain a stem-like state. <b>Disease:</b> lung squamous, oesophageal, HNSCC.'
+                description: '<b>Inclusion:</b> focal amplification of <b>SOX2</b>. <b>Mechanism:</b> lineage-survival oncogene; SOX2-positive cells maintain a stem-like state. <b>Disease:</b> lung squamous, esophageal, HNSCC.'
             },
 
             // Focal deletions from the curated panel. CN-only, and CN ≤ 0.5
@@ -42953,7 +42953,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             fat1_del: {
                 label: 'FAT1 focal deletion',
                 category: 'Focal deletions',
-                description: '<b>Inclusion:</b> focal CN deletion of <b>FAT1</b>. <b>Mechanism:</b> atypical cadherin, a brake on WNT and Hippo signaling; loss releases both. <b>Disease:</b> head and neck squamous carcinoma, oesophageal, cervical. <b>Therapy:</b> none direct; associated with resistance to CDK4/6 inhibition.'
+                description: '<b>Inclusion:</b> focal CN deletion of <b>FAT1</b>. <b>Mechanism:</b> atypical cadherin, a brake on WNT and Hippo signaling; loss releases both. <b>Disease:</b> head and neck squamous carcinoma, esophageal, cervical. <b>Therapy:</b> none direct; associated with resistance to CDK4/6 inhibition.'
             },
             fbxw7_del: {
                 label: 'FBXW7 focal deletion',
@@ -43122,12 +43122,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             fusion_ss18_ssx: {
                 label: 'SS18-SSX1 / SS18-SSX2+ (synovial sarcoma)',
                 category: 'Disease-defining fusions',
-                description: '<b>Inclusion:</b> clinical-fusion call SS18-SSX1 or SS18-SSX2. <b>Disease:</b> synovial sarcoma, soft-tissue sarcoma of young adults. <b>Mechanism:</b> the fusion sequesters BAF / SWI-SNF chromatin-remodelling activity at aberrant loci; reactivates polycomb-repressed gene programmes. <b>Therapy:</b> EZH2 inhibitors and EZH1/2 dual inhibitors in trials; emerging BRD9 degraders.'
+                description: '<b>Inclusion:</b> clinical-fusion call SS18-SSX1 or SS18-SSX2. <b>Disease:</b> synovial sarcoma, soft-tissue sarcoma of young adults. <b>Mechanism:</b> the fusion sequesters BAF / SWI-SNF chromatin-remodeling activity at aberrant loci; reactivates polycomb-repressed gene programs. <b>Therapy:</b> EZH2 inhibitors and EZH1/2 dual inhibitors in trials; emerging BRD9 degraders.'
             },
             fusion_pax3_foxo1: {
                 label: 'PAX3-FOXO1+ (alveolar RMS)',
                 category: 'Disease-defining fusions',
-                description: '<b>Inclusion:</b> clinical-fusion call PAX3-FOXO1 (also PAX7-FOXO1 if present). <b>Disease:</b> alveolar rhabdomyosarcoma, pediatric / AYA. <b>Mechanism:</b> chimeric transcription factor that drives a myogenic-stalled oncogenic program (super-enhancer remodelling). <b>Therapy:</b> CDK4/6, BRD4, MEK inhibitors in trials; targeting the fusion-TF axis remains an unmet need.'
+                description: '<b>Inclusion:</b> clinical-fusion call PAX3-FOXO1 (also PAX7-FOXO1 if present). <b>Disease:</b> alveolar rhabdomyosarcoma, pediatric / AYA. <b>Mechanism:</b> chimeric transcription factor that drives a myogenic-stalled oncogenic program (super-enhancer remodeling). <b>Therapy:</b> CDK4/6, BRD4, MEK inhibitors in trials; targeting the fusion-TF axis remains an unmet need.'
             },
             fusion_tmprss2_erg: {
                 label: 'TMPRSS2-ERG+ (prostate)',
@@ -43359,7 +43359,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             /non-cancerous|unknown|^$/i.test(meta.primaryDisease?.[cl] || '')
         ).slice(0, 10).map(cl => ({
             ...nameOf(cl),
-            reason: `same lineage (${meta.lineage?.[cl]}), filed as "${meta.primaryDisease?.[cl] || 'unclassified'}" rather than a disease. Some of these are patient-derived lines of the disease in question that were classified by culture behaviour instead. Check each before including or excluding it.`
+            reason: `same lineage (${meta.lineage?.[cl]}), filed as "${meta.primaryDisease?.[cl] || 'unclassified'}" rather than a disease. Some of these are patient-derived lines of the disease in question that were classified by culture behavior instead. Check each before including or excluding it.`
         }));
 
         const viaFine = best.hits.some(cl => new RegExp(best.re).test(meta.oncotreeSubtype?.[cl] || meta.oncotreeCode?.[cl] || ''));
@@ -43468,7 +43468,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
 
     // True when a gene is measured widely enough to be worth ranking. Always
-    // true when the threshold is 0, so the old behaviour is one field away.
+    // true when the threshold is 0, so the old behavior is one field away.
     _geneHasEnoughCoverage(geneIdx, cov, minCov) {
         if (!minCov) return true;
         const c = cov || this._geneCoverage();
@@ -43513,7 +43513,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const depmapStripped = this.cellLineMetadata?.strippedCellLineName?.[cellLineId] || '';
         const ourStripped = String(full).toUpperCase().replace(/[^A-Z0-9]/g, '');
         if (full && depmapStripped && ourStripped !== String(depmapStripped).toUpperCase()) {
-            bits.push(`<p style="margin:0 0 8px;"><b>Name.</b> The catalogue name is <b>${esc(full)}</b>. `
+            bits.push(`<p style="margin:0 0 8px;"><b>Name.</b> The catalog name is <b>${esc(full)}</b>. `
                 + `DepMap's own shortened form of it, <code>${esc(depmapStripped)}</code>, is not simply that name with the `
                 + `punctuation removed, a character has been lost somewhere in the pipeline, so it reads as a different line. `
                 + `This app shows <code>${esc(ourStripped)}</code> instead, derived from the full name. `
@@ -43549,7 +43549,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (virus) {
             bits.push(`<p style="margin:0 0 8px;"><b>Established by viral transformation.</b> `
                 + esc(virus.map(h => `${h.name} (${h.agent})`).join('; '))
-                + `. Viral oncoproteins override host pathways, so this line can behave as though a tumour suppressor `
+                + `. Viral oncoproteins override host pathways, so this line can behave as though a tumor suppressor `
                 + `is lost while its sequence says otherwise.</p>`);
         }
 
@@ -43621,7 +43621,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
 
     // ===== Gene set library =====
-    // Sets for the heatmap: compact, well-known programmes rather than whole
+    // Sets for the heatmap: compact, well-known programs rather than whole
     // hallmark collections, so a heatmap stays readable and every gene is one
     // a reader can argue with. Each carries a note saying what it reads out
     // and, where it matters, what it cannot tell you.
@@ -43629,7 +43629,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         return {
             ifn_type1: { label: 'Interferon, type I', category: 'Immune',
                 genes: this._ISG_SETS().intrinsic.genes,
-                note: 'Interferon-stimulated genes a tumour cell expresses itself. The cell line has no immune infiltrate, so this is cell-intrinsic signalling only.' },
+                note: 'Interferon-stimulated genes a tumor cell expresses itself. The cell line has no immune infiltrate, so this is cell-intrinsic signalling only.' },
             ifn_gamma: { label: 'Interferon gamma response', category: 'Immune',
                 genes: ['CXCL9','CXCL10','CXCL11','IDO1','GBP1','GBP2','GBP4','GBP5','STAT1','IRF1','HLA-DRA','CIITA','SOCS1','PSMB9','TAP1','NLRC5'],
                 note: 'Type II interferon output. Overlaps type I at STAT1 and the proteasome subunits, but the chemokines and CIITA are gamma-specific.' },
@@ -43665,13 +43665,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 note: 'Proliferation. Useful mostly as a control: many apparent differences between lines are really differences in how fast they divide.' },
             emt: { label: 'EMT / mesenchymal', category: 'Cell state',
                 genes: ['VIM','CDH2','FN1','SNAI1','SNAI2','ZEB1','ZEB2','TWIST1','SPARC','TGFB1','SERPINE1','ITGB1','MMP2','COL1A1','TAGLN'],
-                note: 'Mesenchymal programme. In cell lines this is often a stable identity rather than an ongoing transition.' },
+                note: 'Mesenchymal program. In cell lines this is often a stable identity rather than an ongoing transition.' },
             hypoxia: { label: 'Hypoxia', category: 'Cell state',
                 genes: ['CA9','VEGFA','SLC2A1','LDHA','PGK1','ADM','NDRG1','P4HA1','ALDOA','ENO1','BNIP3','EGLN3','HK2'],
                 note: 'HIF output. Cultured cells are not hypoxic, so a high score usually means constitutive HIF activity, for example VHL-null kidney lines.' },
             senescence: { label: 'Senescence / SASP', category: 'Cell state',
                 genes: ['CDKN1A','CDKN2A','IL6','CXCL8','IGFBP7','SERPINE1','IL1A','IL1B','MMP1','MMP3','CCL2','TNFRSF10C'],
-                note: 'The secretory programme of senescent cells. Proliferating lines can still score high on the secreted half, so read it with the cell cycle set.' },
+                note: 'The secretory program of senescent cells. Proliferating lines can still score high on the secreted half, so read it with the cell cycle set.' },
             apoptosis: { label: 'Apoptosis core', category: 'Cell state',
                 genes: ['BAX','BAK1','BCL2','BCL2L1','MCL1','BID','BBC3','PMAIP1','BAD','CASP3','CASP7','CASP8','CASP9','APAF1','XIAP','BIRC5'],
                 note: 'The intrinsic pathway plus its guardians. Which anti-apoptotic gene a line leans on (BCL2, BCL2L1 or MCL1) is the actionable part.' },
@@ -43722,7 +43722,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                         'IRF7', 'IRF9', 'BST2', 'XAF1', 'HERC5', 'USP18', 'RIGI', 'IFIH1',
                         'CMPK2', 'EPSTI1', 'LY6E', 'SAMD9', 'SAMD9L', 'IFITM1', 'IFITM3',
                         'PARP9', 'DTX3L'],
-                note: 'Interferon-stimulated genes a tumour cell expresses itself. Use this one for cell lines.'
+                note: 'Interferon-stimulated genes a tumor cell expresses itself. Use this one for cell lines.'
             },
             clinical6: {
                 label: 'Type I IFN, clinical 6-gene',
@@ -44329,7 +44329,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             }
 
             // Breast subtypes, called against fixed expression levels:
-            // receptor expression here is bimodal, not centred, so a median
+            // receptor expression here is bimodal, not centered, so a median
             // split says nothing about how many lines are positive. Values
             // are DepMap log2(TPM+1); the cutoffs sit in the empty middle of
             // each distribution:
@@ -44581,7 +44581,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             'DNA repair / damage response',
             'Genome, ploidy / instability',
             'Viral transformation',
-            'Chromatin remodelling, SWI/SNF complex',
+            'Chromatin remodeling, SWI/SNF complex',
             'Oxidative-stress response',
             'Active expression programs',
             'Expression signature'
@@ -44821,7 +44821,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             'Genome, ploidy / instability',
             'Viral transformation',
             // Pathway / functional state
-            'Chromatin remodelling, SWI/SNF complex',
+            'Chromatin remodeling, SWI/SNF complex',
             'Oxidative-stress response',
             'Active expression programs',
             'Expression signature'
@@ -45200,9 +45200,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Explicitly emptied: color nothing, everything goes to the gray bucket.
         if (raw === 'none') return new Set();
         if (!raw) {
-            // Nothing chosen yet. Tissues are few enough to colour them all.
+            // Nothing chosen yet. Tissues are few enough to color them all.
             // Subtypes and diseases run to 70+ across the panel, so they
-            // colour the 8 largest of those shown (all of them when there are
+            // color the 8 largest of those shown (all of them when there are
             // no more than 8, as in a one-tissue view); coloring none left a
             // legend of nothing but "Not selected". `available` is largest first.
             const mode = document.getElementById('colorByCategory')?.value;
@@ -45468,7 +45468,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
     // Phone only. A tap labels a point, but a phone has no hover, so nothing
     // the app knows about that cell line was reachable from the scatter. The
-    // labelled lines are listed under the plot instead: the name opens a menu
+    // labeled lines are listed under the plot instead: the name opens a menu
     // into its card, wiki or the browser, the x takes the label off. On a
     // desktop hover already does all of this, so the row stays hidden there.
     _renderScatterPhoneChips(names) {
@@ -45825,7 +45825,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         this.showCopyNotification?.('Quick filters exported. Paste the file into an LLM to ask about them.');
     }
 
-    // Shared by the highlight and colour-by chip rows.
+    // Shared by the highlight and color-by chip rows.
     copyNamesToClipboard(names, what) {
         const list = [...new Set(names || [])].filter(Boolean);
         if (!list.length) { this.showCopyNotification?.('Nothing to copy.'); return; }
@@ -46089,7 +46089,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                         put('width', w + 'px');
                         put('max-width', 'none');
                         // Only pin the left once the card is free of the flow,
-                        // otherwise a centred card jumps to the corner.
+                        // otherwise a centered card jumps to the corner.
                         if (getComputedStyle(card).position === 'fixed') put('left', (r.right - w) + 'px');
                     } else {
                         put('height', Math.max(MIN_H, Math.min(window.innerHeight - r.top - 8, m.clientY - r.top)) + 'px');
@@ -46157,7 +46157,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const h = Math.min(rect.height, vh - 2 * margin);
         // A wide panel anchored under its button opens off to one side and, on
         // a small screen, runs off the edge. Once it is wide enough that its
-        // position no longer says anything useful, centre it instead of
+        // position no longer says anything useful, center it instead of
         // shoving it back from whichever edge it hit.
         const wide = w > vw * 0.5;
         const left = wide
@@ -46497,7 +46497,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const sortGeneWrap = document.getElementById('clbSortGeneWrap');
             if (sortGeneWrap) sortGeneWrap.style.visibility = needsGene ? 'visible' : 'hidden';
             // Retroelement measurement chooser, same reserved-space trick,
-            // shown only for the retro sort so it never shoves neighbours.
+            // shown only for the retro sort so it never shoves neighbors.
             const sortRetroWrap = document.getElementById('clbSortRetroWrap');
             if (sortRetroWrap) sortRetroWrap.style.visibility = (mode === 'retro') ? 'visible' : 'hidden';
             if (clbSortGene) {
@@ -47767,7 +47767,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 return this.getCellLineName(a).localeCompare(this.getCellLineName(b));
             };
         } else {
-            // Name sort honours the direction button too, so the list can run
+            // Name sort honors the direction button too, so the list can run
             // Z to A. It used to drop `dir`, which made the control look dead.
             secondaryCmp = (a, b) => this.getCellLineName(a).localeCompare(this.getCellLineName(b)) * dir;
         }
@@ -48210,7 +48210,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
 
     // Is this alteration filter currently asking for the wild-type side? Used
-    // to grey the chip, so "kept because altered" and "kept because not
+    // to gray the chip, so "kept because altered" and "kept because not
     // altered" never look alike.
     _filterIsWildType(kind, value) {
         if (kind === 'hotspot') return value === '0' || value === 'wt';
@@ -49260,9 +49260,9 @@ The average of ${r.used.length} interferon-stimulated genes, each turned into a 
 
 0 is typical. Above +0.5 counts as interferon-high here, below -0.5 as interferon-low.
 
-Why it matters: tumour-cell-intrinsic interferon signalling shapes how visible a line is to the immune system, and it is the readout for viral mimicry, where de-repressed endogenous nucleic acid drives an interferon response.
+Why it matters: tumor-cell-intrinsic interferon signalling shapes how visible a line is to the immune system, and it is the readout for viral mimicry, where de-repressed endogenous nucleic acid drives an interferon response.
 
-Caveat: a cell line has no immune infiltrate, so this is the cell's own signalling only, not the interferon environment of a tumour.`;
+Caveat: a cell line has no immune infiltrate, so this is the cell's own signalling only, not the interferon environment of a tumor.`;
                 const band = ifn >= 0.5 ? 'interferon-high' : ifn <= -0.5 ? 'interferon-low' : 'typical';
                 const ifnHelpSpan = ` <span style="color:#9ca3af; font-size:10px; cursor:help; border:1px solid #d1d5db; border-radius:50%; padding:0 4px;" title="${helpIfn.replace(/"/g, '&quot;')}">?</span>`;
                 top += `<div class="clb-stat-row"><span class="clb-stat-label">Interferon score${ifnHelpSpan}</span>`
@@ -49676,7 +49676,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         return `${c.measure}, ${c.direction}`;
     }
 
-    // Same two colours the heatmap gates use, so A and B mean the same thing
+    // Same two colors the heatmap gates use, so A and B mean the same thing
     // wherever they appear.
     _clbGateColors() { return { A: '#7c3aed', B: '#0891b2' }; }
 
@@ -50120,7 +50120,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             // Expression is the reliable leg. Copy number on its own only
             // raises a flag when there is no expression to check it against,
             // and then only at the stronger threshold; a CN dip with normal
-            // HLA expression is a mapping artefact, not lost presentation.
+            // HLA expression is a mapping artifact, not lost presentation.
             out.status = 'reduced';
         } else if (hasExprData || hasCnData) {
             out.status = 'intact';
@@ -50297,7 +50297,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             'Receptor tyrosine kinases':{ genes: ['EGFR', 'ERBB2', 'ERBB3', 'MET', 'KIT', 'PDGFRA', 'PDGFRB', 'FGFR1', 'FGFR2', 'FGFR3', 'FGFR4', 'ALK', 'ROS1', 'RET', 'NTRK1', 'NTRK2', 'NTRK3', 'FLT3'], ts: [], note: 'Cell-surface receptors. Often the upstream cause of MAPK or PI3K activation. Many have approved inhibitors. The mutation panel below misses gene amplification and fusions, both are common driver mechanisms here, so a clean panel does not rule the pathway out.' },
             'WNT / beta-catenin':       { genes: ['APC', 'CTNNB1', 'AXIN1', 'AXIN2', 'RNF43'], ts: ['APC', 'AXIN1', 'AXIN2', 'RNF43'], note: 'Stem-cell-like proliferation. Hyperactivation drives most colorectal cancer.' },
             'MYC / MAX':                { genes: ['MYC', 'MYCN', 'MYCL', 'MAX'], ts: ['MAX'], note: 'Master proliferation regulator. Often deregulated by translocation or amplification rather than point mutation.' },
-            'SWI/SNF chromatin':        { genes: ['ARID1A', 'ARID1B', 'ARID2', 'SMARCA4', 'SMARCA2', 'SMARCB1', 'PBRM1', 'BRD7'], ts: ['ARID1A', 'ARID1B', 'ARID2', 'SMARCA4', 'SMARCA2', 'SMARCB1', 'PBRM1', 'BRD7'], note: 'Chromatin-remodelling complex. Loss of one subunit can create dependency on a paralog (synthetic lethality).' },
+            'SWI/SNF chromatin':        { genes: ['ARID1A', 'ARID1B', 'ARID2', 'SMARCA4', 'SMARCA2', 'SMARCB1', 'PBRM1', 'BRD7'], ts: ['ARID1A', 'ARID1B', 'ARID2', 'SMARCA4', 'SMARCA2', 'SMARCB1', 'PBRM1', 'BRD7'], note: 'Chromatin-remodeling complex. Loss of one subunit can create dependency on a paralog (synthetic lethality).' },
             'Epigenetic writers':       { genes: ['KMT2A', 'KMT2B', 'KMT2C', 'KMT2D', 'CREBBP', 'EP300', 'EZH2', 'DNMT3A', 'TET2', 'ASXL1', 'IDH1', 'IDH2'], ts: ['KMT2C', 'KMT2D', 'CREBBP', 'EP300', 'TET2', 'ASXL1'], note: 'Histone and DNA methylation machinery. Dysregulation is especially common in hematological cancers.' },
             'Homologous recombination repair': { genes: ['BRCA1', 'BRCA2', 'PALB2', 'ATM', 'ATR', 'CHEK1', 'CHEK2', 'RAD51', 'RAD51C', 'RAD51D', 'FANCA', 'FANCC', 'FANCD2', 'BRIP1', 'BARD1'], ts: ['BRCA1', 'BRCA2', 'PALB2', 'ATM', 'ATR', 'CHEK1', 'CHEK2', 'RAD51C', 'RAD51D', 'FANCA', 'FANCC', 'FANCD2', 'BRIP1', 'BARD1'], note: 'High-fidelity DNA double-strand break repair. Loss leads to PARP-inhibitor sensitivity.' },
             'Mismatch repair':          { genes: ['MLH1', 'MSH2', 'MSH6', 'PMS2', 'EPCAM'], ts: ['MLH1', 'MSH2', 'MSH6', 'PMS2', 'EPCAM'], note: 'Corrects DNA replication errors. Loss causes microsatellite instability and a hypermutated genome, classic checkpoint-immunotherapy responder.' },
@@ -51204,10 +51204,10 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         ['12', 133.28, 35.5], ['13', 114.36, 17.7], ['14', 107.04, 17.2], ['15', 101.99, 19.0], ['16', 90.34, 36.8], ['17', 83.26, 25.1],
         ['18', 80.37, 18.5], ['19', 58.62, 26.2], ['20', 64.44, 28.1], ['21', 46.71, 12.0], ['22', 50.82, 15.0], ['X', 156.04, 60.6], ['Y', 57.23, 10.4]];
 
-    // G-band shades (UCSC gieStain), grey for the other chromosomes and green
+    // G-band shades (UCSC gieStain), gray for the other chromosomes and green
     // for the gene's own.
     static GB_STAIN = {
-        grey: { gneg: '#ffffff', gpos25: '#d9d9d9', gpos50: '#a8a8a8', gpos75: '#737373', gpos100: '#3f3f3f', gvar: '#c3cbdb', stalk: '#ececec', acen: '#c9c9c9' },
+        gray: { gneg: '#ffffff', gpos25: '#d9d9d9', gpos50: '#a8a8a8', gpos75: '#737373', gpos100: '#3f3f3f', gvar: '#c3cbdb', stalk: '#ececec', acen: '#c9c9c9' },
         green: { gneg: '#f4faef', gpos25: '#cde6b8', gpos50: '#9fcb7f', gpos75: '#6ba544', gpos100: '#3e6625', gvar: '#b9d9a3', stalk: '#e3f0d9', acen: '#b4d49c' }
     };
 
@@ -51227,7 +51227,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
     }
 
     // A chromosome outline (rounded ends, waist at the centromere) along an
-    // axis: a0..a1 along it, centred on o across it, w wide.
+    // axis: a0..a1 along it, centered on o across it, w wide.
     _gbChromPath(o, a0, ac, a1, w, horiz) {
         const r = w / 2, pin = Math.max(1, w * 0.16);
         const n = Math.max(0.5, Math.min(w * 0.45, ac - a0 - r * 0.6, a1 - ac - r * 0.6));
@@ -51276,7 +51276,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         let out = '';
         all.forEach((c, i) => {
             const x = slot * i + slot / 2, on = c.name === chr;
-            out += this._gbChromSvg(`gbcO${c.name}`, c, x, top, top + H * c.len / max, bw, false, on ? 'green' : 'grey', on ? 1 : 0.75);
+            out += this._gbChromSvg(`gbcO${c.name}`, c, x, top, top + H * c.len / max, bw, false, on ? 'green' : 'gray', on ? 1 : 0.75);
             out += `<text x="${x.toFixed(1)}" y="${top + H + 15}" text-anchor="middle" font-size="9.5" fill="${on ? '#4c782e' : '#9ca3af'}" font-weight="${on ? 700 : 400}" font-family="Open Sans, Arial, sans-serif">${c.name}</text>`;
             if (on && pos != null) {
                 const y = top + H * pos / max;
@@ -51502,7 +51502,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 + `<text x="${((startX + stopX) / 2).toFixed(1)}" y="${yb + 4}" text-anchor="middle" font-size="9.5" fill="#6b7280" font-family="${font}" stroke="#ffffff" stroke-width="3" paint-order="stroke">coding ${t.cdsLength.toLocaleString()} nt · ${t.protein.length.toLocaleString()} aa</text>`;
         }
         // Hotspot lollipops: a stem from the exon to the head on its row,
-        // labelled to the right with the codon and how many lines carry it.
+        // labeled to the right with the codon and how many lines carry it.
         // Stems first, so a label's white halo covers any stem passing behind it.
         let pops = hotX.map(h => `<line x1="${h.px.toFixed(1)}" y1="${mid - 11}" x2="${h.px.toFixed(1)}" y2="${(mid - 18 - 15 * h.level + h.r).toFixed(1)}" stroke="#9ca3af" stroke-width="1"/>`).join('');
         for (const h of hotX) {
@@ -51615,7 +51615,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             + (hot.length ? `<div class="gb-m" style="margin:-4px 0 2px;"><span style="color:#dc2626;">●</span> Hotspot codons: where DepMap calls recurrent mutations, sized by how many cell lines carry one; hover a mark for the specific changes.</div>` : '')
             + `<div class="gb-m" style="display:flex; justify-content:flex-end; margin:-2px 0 8px;"><button class="btn btn-outline btn-sm mobile-hide" data-gb-act="copy-struct" style="font-size:10px; padding:1px 8px;" title="Copy the exon figure as an image">Copy figure</button></div>`
             + stats
-            + `<div class="gb-actions" style="margin:6px 0 2px;"><button class="btn btn-sm" data-gb-act="seq-view" style="background:#6ba544; color:#fff; border-color:#6ba544;" title="Open the sequence with exons, introns and hotspot codons coloured; search, copy and edit it">View sequence</button></div>`
+            + `<div class="gb-actions" style="margin:6px 0 2px;"><button class="btn btn-sm" data-gb-act="seq-view" style="background:#6ba544; color:#fff; border-color:#6ba544;" title="Open the sequence with exons, introns and hotspot codons colored; search, copy and edit it">View sequence</button></div>`
             + `<div class="gb-sub">Download this transcript</div>`
             + `<div class="gb-m" style="margin-bottom:4px;">GenBank (.gb) opens in SnapGene, Benchling, ApE and most sequence editors with the exons, coding sequence and translation${hot.length ? ' and the hotspot codons' : ''} annotated. FASTA is the bare sequence.</div>`
             + `<div class="gb-actions mobile-hide" style="margin-top:2px;">`
@@ -51744,7 +51744,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             }
             return s2;
         };
-        // A label every editor shows, and ApE's own colours (other editors
+        // A label every editor shows, and ApE's own colors (other editors
         // ignore the ApEinfo qualifiers).
         const look = (label, col) => [['label', label], ['ApEinfo_fwdcolor', col], ['ApEinfo_revcolor', col]];
         const txv = `${t.tx.id}${t.tx.version ? '.' + t.tx.version : ''}`;
@@ -51803,7 +51803,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
 
     // ===== Sequence viewer =====
     // One transcript's sequence in a popout: genomic (exons upper case and
-    // coloured, introns lower case), mRNA, coding or protein. Only the lines
+    // colored, introns lower case), mRNA, coding or protein. Only the lines
     // in view are drawn, so a megabase gene scrolls as freely as a short one.
     // Position numbers sit outside the selectable text, so a mouse copy is
     // bare sequence.
@@ -52968,7 +52968,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             + (lists.length > 1 ? `<div class="gb-xtabs">${tabs}</div>` : `<div class="gb-m" style="margin:2px 0;"><b style="color:#374151;">${lists[0].head(g)}</b>${(() => { const k = res[lists[0].key].filter(isNear).length; return k ? ` <span class="gb-near">${k} nearby</span>` : ''; })()}</div>`) + notes
             + `${panels}</div><div class="gb-relfig">${hm.fig}</div>`
             + `<div class="gb-relleft"><div class="gb-m" style="margin-top:3px;">Pearson r across the cell lines with both values (hover p for n), strongest in either direction, genes measured in at least 100 lines. `
-            + `${g} is at ${this.esc(this.geneLocations?.[gene]?.band || 'an unknown band')}; <span class="gb-near">amber</span> marks genes within ${near} Mb on the same chromosome. Neighbours are often gained or lost together, so their mRNA can correlate through shared copy number rather than shared function.</div></div>`
+            + `${g} is at ${this.esc(this.geneLocations?.[gene]?.band || 'an unknown band')}; <span class="gb-near">amber</span> marks genes within ${near} Mb on the same chromosome. Neighbors are often gained or lost together, so their mRNA can correlate through shared copy number rather than shared function.</div></div>`
             + `<div class="gb-relfig">${hm.cap}</div></div>` + fewGe;
         // The heatmap's grid (not its column labels) starts level with the table.
         const level = () => {
@@ -53196,8 +53196,8 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
 
     // Co-dependencies in a column on the right (sorted by r), complex
     // partners on the left, the gene in the middle; curved links leave it
-    // sideways so no line crosses a name. Network colours: green nodes with
-    // a dark outline, blue links thicker for higher r, dashed grey for CORUM.
+    // sideways so no line crosses a name. Network colors: green nodes with
+    // a dark outline, blue links thicker for higher r, dashed gray for CORUM.
     // A link opens the correlation plot, a gene its gene effect view.
     _gbRelSchematic(gene, top, corum, neg = false) {
         const cset = new Set(corum);
@@ -53531,7 +53531,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const nb = (h) => { const d = this._gbNeighbour(gene, h.gene); return d ? { band: d.band, mbFromGene: d.mb === null ? null : +d.mb.toFixed(2) } : {}; };
         out.relatedGenes.expressionCorrelations = xc ? Object.fromEntries(CorrelationExplorer.GB_XCORR.filter(m => xc[m.key]).map(m => [m.key, xc[m.key].map(h => ({ gene: h.gene, r: r3(h.r), p: pv(h.p), n: h.n, ...nb(h) }))])) : null;
         out.relatedGenes.expressionCorrelations_readMe = xc
-            ? `Top 10 by |r| (Pearson, all cell lines with both values, genes with at least 100 lines). mrnaVsMrna: co-expression. p not corrected for the number of genes tested. band / mbFromGene: cytoband and gap in Mb from this gene (null = another chromosome); neighbours within ${CorrelationExplorer.GB_NEAR_MB} Mb can correlate through shared copy-number changes rather than function.`
+            ? `Top 10 by |r| (Pearson, all cell lines with both values, genes with at least 100 lines). mrnaVsMrna: co-expression. p not corrected for the number of genes tested. band / mbFromGene: cytoband and gap in Mb from this gene (null = another chromosome); neighbors within ${CorrelationExplorer.GB_NEAR_MB} Mb can correlate through shared copy-number changes rather than function.`
             : 'Not computed: expression data or the scan had not finished when the file was made.';
         return out;
     }
@@ -55627,7 +55627,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         if (wgdEl && (arrs.WGD_yes + arrs.WGD_no) > 0) {
             const isWgd = gs.WGD === true;
             const isKnown = gs.WGD != null;
-            // Same two colours as every other wiki histogram: the cohort bar in
+            // Same two colors as every other wiki histogram: the cohort bar in
             // the muted hue, this cell line's own bar in the marker red.
             const colors = [
                 (isKnown && !isWgd) ? '#dc2626' : '#6b93b8',
@@ -56807,7 +56807,7 @@ ${clone.innerHTML}
         } else {
             this._geInspectCustom = parsed.matched;
             this._geInspectCustomNote = parsed.unmatched.length
-                ? `${parsed.matched.size} matched. Not recognised: ${parsed.unmatched.slice(0, 8).join(', ')}${parsed.unmatched.length > 8 ? ` and ${parsed.unmatched.length - 8} more` : ''}.`
+                ? `${parsed.matched.size} matched. Not recognized: ${parsed.unmatched.slice(0, 8).join(', ')}${parsed.unmatched.length > 8 ? ` and ${parsed.unmatched.length - 8} more` : ''}.`
                 : `${parsed.matched.size} cell line${parsed.matched.size === 1 ? '' : 's'} matched.`;
         }
         this._geInspectScope = 'custom';
@@ -57512,7 +57512,7 @@ ${clone.innerHTML}
             const n = countOf(c.id);
             const on = c.id === active;
             const dead = n === 0;
-            // A type with no rows stays where it is, greyed out and saying why,
+            // A type with no rows stays where it is, grayed out and saying why,
             // rather than vanishing and changing the shape of the row.
             const title = dead
                 ? `No ${c.label.toLowerCase()} rows for these two groups, so there is nothing to filter to`
@@ -57899,12 +57899,12 @@ ${clone.innerHTML}
     }
 
     // Volcano for one measure: the difference against its significance.
-    // Genes passing the sidebar cutoffs are drawn in colour, the rest grey,
+    // Genes passing the sidebar cutoffs are drawn in color, the rest gray,
     // so the plot and the table below it always agree.
     // Place volcano labels once the chart is drawn (the data-to-pixel mapping
     // is only known after Plotly resolves its axes). Greedy, strongest hit
     // first: each label tries spots around its dot at growing distance and
-    // takes the one that covers no other label, no coloured dot and crosses
+    // takes the one that covers no other label, no colored dot and crosses
     // no other leader line, staying on its own side of zero. A label the user
     // dragged keeps its spot and counts as an obstacle.
     _spreadVolcanoLabels(el) {
@@ -57933,7 +57933,7 @@ ${clone.innerHTML}
                 ax: fixed ? fixed.ax : null, ay: fixed ? fixed.ay : null, fixed: !!fixed });
         });
         if (!items.length) return;
-        // Coloured dots (the ones a reader looks at) are obstacles; the grey
+        // Colored dots (the ones a reader looks at) are obstacles; the gray
         // cloud below the cutoffs is not, or nothing near zero could be named.
         const dots = [];
         (el.data || []).forEach((t, ti) => {
@@ -58014,7 +58014,7 @@ ${clone.innerHTML}
     }
 
     // Per-side label curation on the inspect volcanos: names clicked on or
-    // off, genes hidden from the chart, and how many are labelled
+    // off, genes hidden from the chart, and how many are labeled
     // automatically in each direction. Survives cutoff redraws; reset when
     // the inspect is opened afresh.
     _geVolcanoState(side) {
@@ -58044,19 +58044,19 @@ ${clone.innerHTML}
         if (!host) return;
         const st = this._geVolcanoState(side);
         const el = document.getElementById(`ge${side}Volcano`);
-        const labelled = (el?.layout?.annotations || []).filter(a => a._dotLabel && a._dotLabel !== true).map(a => a._dotLabel);
+        const labeled = (el?.layout?.annotations || []).filter(a => a._dotLabel && a._dotLabel !== true).map(a => a._dotLabel);
         const hidden = [...st.hidden];
         const chip = (g, kind) => `<span class="clb-chip" data-${kind}="${this.esc(g)}" title="${kind === 'lbl' ? 'Click to remove this label' : 'Click to show this gene again'}" `
             + `style="background:${kind === 'lbl' ? '#eef2ff' : '#f3f4f6'}; color:${kind === 'lbl' ? '#3730a3' : '#6b7280'}; border:1px solid ${kind === 'lbl' ? '#c7d2fe' : '#e5e7eb'}; padding:1px 7px; border-radius:10px; font-size:10px; font-weight:600; cursor:pointer;${kind === 'hid' ? ' text-decoration:line-through;' : ''}">`
             + `${this.gi(g)} &times;</span>`;
         host.innerHTML = `
             <div style="display:flex; gap:4px; flex-wrap:wrap; align-items:center; font-size:10px; color:#6b7280;">
-                <span style="font-weight:600;">Labels (${labelled.length}):</span>
-                ${labelled.map(g => chip(g, 'lbl')).join(' ')}
+                <span style="font-weight:600;">Labels (${labeled.length}):</span>
+                ${labeled.map(g => chip(g, 'lbl')).join(' ')}
                 <label style="display:inline-flex; align-items:center; gap:3px; margin-left:auto; white-space:nowrap;" title="How many genes are named automatically in each direction, the strongest first. Click any dot to name it whatever this says.">auto per side
                     <input type="number" class="js-auto-n" min="0" max="12" value="${st.autoN}" style="width:38px; font-size:10px; padding:1px 3px; border:1px solid #d1d5db; border-radius:3px;"></label>
                 <button type="button" class="btn btn-outline btn-sm js-clear" style="font-size:9px; padding:1px 6px;" title="Remove every label from this chart">Clear</button>
-                <button type="button" class="btn btn-outline btn-sm js-copy" style="font-size:9px; padding:1px 6px;" title="Copy the labelled gene names, one per line"${labelled.length ? '' : ' disabled'}>Copy</button>
+                <button type="button" class="btn btn-outline btn-sm js-copy" style="font-size:9px; padding:1px 6px;" title="Copy the labeled gene names, one per line"${labeled.length ? '' : ' disabled'}>Copy</button>
             </div>
             ${hidden.length ? `<div style="display:flex; gap:4px; flex-wrap:wrap; align-items:center; font-size:10px; color:#6b7280; margin-top:3px;">
                 <span style="font-weight:600;">Hidden (${hidden.length}):</span> ${hidden.map(g => chip(g, 'hid')).join(' ')}
@@ -58066,11 +58066,11 @@ ${clone.innerHTML}
         host.querySelectorAll('[data-hid]').forEach(c => c.addEventListener('click', () => { st.hidden.delete(c.dataset.hid); this._redrawGEVolcano(side); }));
         host.querySelector('.js-unhide')?.addEventListener('click', () => { st.hidden.clear(); this._redrawGEVolcano(side); });
         host.querySelector('.js-clear')?.addEventListener('click', () => {
-            st.added.clear(); for (const g of labelled) st.removed.add(g); this._redrawGEVolcano(side);
+            st.added.clear(); for (const g of labeled) st.removed.add(g); this._redrawGEVolcano(side);
         });
         host.querySelector('.js-copy')?.addEventListener('click', () => {
-            navigator.clipboard?.writeText(labelled.join('\n'));
-            this.showCopyNotification?.(`Copied ${labelled.length} gene name${labelled.length === 1 ? '' : 's'}`);
+            navigator.clipboard?.writeText(labeled.join('\n'));
+            this.showCopyNotification?.(`Copied ${labeled.length} gene name${labeled.length === 1 ? '' : 's'}`);
         });
         host.querySelector('.js-auto-n')?.addEventListener('change', (e) => {
             st.autoN = Math.max(0, Math.min(12, parseInt(e.target.value, 10) || 0));
@@ -58113,7 +58113,7 @@ ${clone.innerHTML}
         // direction and stagger them.
         // Searched genes: their own trace, in amber so it reads as "you asked
         // for this one" rather than as another point on the diverging scale,
-        // and always labelled whatever the cutoffs are set to.
+        // and always labeled whatever the cutoffs are set to.
         const found = { x: [], y: [], t: [] };
         const foundLab = [];
         for (const r of (searchRows || [])) {
@@ -58128,7 +58128,7 @@ ${clone.innerHTML}
         const labelable = shownRows.filter(r => isFinite(r.delta) && yOf(r) != null && !st.removed.has(r.gene));
         const lab = [...labelable.filter(r => r.delta < 0).slice(0, st.autoN),
                      ...labelable.filter(r => r.delta > 0).slice(0, st.autoN)];
-        // Searched genes are always labelled, and never twice.
+        // Searched genes are always labeled, and never twice.
         const labNames = new Set(lab.map(r => r.gene));
         for (const r of foundLab) if (!labNames.has(r.gene)) { lab.push(r); labNames.add(r.gene); }
         if (st.added.size) {
@@ -58223,7 +58223,7 @@ ${clone.innerHTML}
             yaxis: { title: { text: anyQ ? '−log10(q)' : '|Δ|', font: { size: 9 } }, tickfont: { size: 9 } },
             // Placed properly once the chart is drawn, see below. Alternating
             // the labels above and below their dot was not enough: the hits
-            // worth labelling are the ones that cluster, so two of them at
+            // worth labeling are the ones that cluster, so two of them at
             // almost the same height still overprinted.
             // The gene labels come first so their indices line up with `lab`
             // in _spreadVolcanoLabels; the heading annotations sit after them.
@@ -58683,7 +58683,7 @@ ${clone.innerHTML}
         const cutLeft = applySort(rows.filter(r => Math.abs(r.delta) >= leftCut && passQ(r, leftQ) && passCov(r, 'left')), this._geInspectSort.left).slice(0, leftN);
         const cutRight = applySort(exprRows.filter(r => Math.abs(r.delta) >= rightCut && passQ(r, rightQ) && passCov(r, 'right')), this._geInspectSort.right).slice(0, rightN);
         // Marked on the volcano: the rows the table shows, capped. Marking
-        // and labelling every match froze the tab for a minute on a
+        // and labeling every match froze the tab for a minute on a
         // one-letter search (thousands of labels to spread).
         const MARK_CAP = 12;
         const foundLeft = terms.length ? leftRows.slice(0, MARK_CAP) : [];
@@ -58736,7 +58736,7 @@ ${clone.innerHTML}
             return t;
         };
         // The diagnosis for an empty table belongs IN the table, under the
-        // headings, where the missing rows would have been. As small grey
+        // headings, where the missing rows would have been. As small gray
         // text above it, it read as a caption and went unread, so an empty
         // table looked like an answer rather than a cutoff to loosen.
         const leftMsg = hint(leftRows.length, leftCut, leftQ, rows, 'left');
@@ -58963,7 +58963,7 @@ ${clone.innerHTML}
             if (subtype) lines.push(`Subtype,${sani(subtype)}`);
             if (summary) lines.push(`Summary,${sani(summary)}`);
         }
-        lines.push(`Column key,${sani('GE = CRISPR gene effect; Expr = log2 TPM+1; Hotspot = 0/1/2; Damaging = 0/1; Fusion = 0/1/2; CancerCN = curated cancer-driver focal call (tier:relativeCN) only for the ~30 driver genes in the curated panel; blank otherwise; CN = relative copy number for EVERY gene (1.0 = baseline; >1 gain; <1 loss) so an amplicon shows many neighbouring genes with high CN; Chr/Cytoband = GRCh38 gene location')}`);
+        lines.push(`Column key,${sani('GE = CRISPR gene effect; Expr = log2 TPM+1; Hotspot = 0/1/2; Damaging = 0/1; Fusion = 0/1/2; CancerCN = curated cancer-driver focal call (tier:relativeCN) only for the ~30 driver genes in the curated panel; blank otherwise; CN = relative copy number for EVERY gene (1.0 = baseline; >1 gain; <1 loss) so an amplicon shows many neighboring genes with high CN; Chr/Cytoband = GRCh38 gene location')}`);
         lines.push(`Data source,${sani(`DepMap ${DEPMAP_VERSION} (depmap.org); please cite Tsherniak et al. Cell 2017`)}`);
         lines.push(`Date,${new Date().toISOString().slice(0, 10)}`);
         lines.push('');
@@ -61232,7 +61232,7 @@ ${clone.innerHTML}
     }
 
     // PC1's share of the total variance, by power iteration straight on the
-    // centred matrix (2np per step), so ranking many gene sets stays fast
+    // centered matrix (2np per step), so ranking many gene sets stays fast
     // where the full PCA's n x n Gram matrix would not.
     _pc1Share(matrix) {
         const n = matrix.length, p = n ? matrix[0].length : 0;
@@ -61267,7 +61267,7 @@ ${clone.innerHTML}
     }
 
     // Each curated class against random gene sets of the same size, on the
-    // panel's current cell lines and data. Raw PC1 % favours small sets and
+    // panel's current cell lines and data. Raw PC1 % favors small sets and
     // lineage-heavy ones; the ratio to size-matched random sets does not.
     async rankUmapGeneClasses() {
         const panel = document.getElementById('clbUmapRankPanel');
@@ -61848,7 +61848,7 @@ ${clone.innerHTML}
         const titleH = 50;
         const gap = 10;
         const totalW = plotW + gap + loadW;
-        // GE + Expression: the arrow colours need their key in the picture.
+        // GE + Expression: the arrow colors need their key in the picture.
         const keyH = this._clbUmapData?.mixedSrc ? 18 : 0;
         const totalH = Math.max(plotH, titleH + loadH + keyH);
 
@@ -61946,8 +61946,8 @@ ${clone.innerHTML}
         this._clbUmapData._compX = compX;
         this._clbUmapData._compY = compY;
 
-        // A gene colouring survives the redraw: switching axes or showing the
-        // loadings is not a request to go back to tissue colours.
+        // A gene coloring survives the redraw: switching axes or showing the
+        // loadings is not a request to go back to tissue colors.
         const geneColor = this._clbUmapGeneColorActive;
         if (geneColor) {
             document.getElementById('clbUmapColorGene').value = geneColor.gene;
@@ -62108,7 +62108,7 @@ ${clone.innerHTML}
         svg += `<rect x="${boxLeft}" y="0" width="${boxSize}" height="${boxSize}" fill="white" stroke="#d1d5db" rx="4"/>`;
         svg += `<line x1="${cx}" y1="4" x2="${cx}" y2="${boxSize - 4}" stroke="#e5e7eb" stroke-width="0.5"/>`;
         svg += `<line x1="${boxLeft + 4}" y1="${cy}" x2="${boxRight - 4}" y2="${cy}" stroke="#e5e7eb" stroke-width="0.5"/>`;
-        // In a GE + Expression run the arrow colour names the layer: the
+        // In a GE + Expression run the arrow color names the layer: the
         // label stays the bare symbol so labels don't collide.
         const arrowCol = (src) => mixed ? (src === 'expr' ? '#b91c1c' : '#4c782e') : '#b91c1c';
         svg += `<defs><marker id="lah" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="4" markerHeight="4" orient="auto"><path d="M0,1 L10,5 L0,9 z" fill="#b91c1c"/></marker>`
@@ -62120,7 +62120,7 @@ ${clone.innerHTML}
             const ey = cy - t.ly * scale;
             if (Math.abs(t.lx * scale) < 1 && Math.abs(t.ly * scale) < 1) return;
             const on = this._clbUmapGeneColorActive?.gene === t.gene && (!mixed || this._clbUmapGeneColorActive.colorType === (t.src || 'ge'));
-            svg += `<g data-umap-load="${this.esc(t.gene)}" data-umap-src="${t.src || ''}" style="cursor:pointer;"><title>${this.esc(t.gene)}: click to colour the plot by it</title>`
+            svg += `<g data-umap-load="${this.esc(t.gene)}" data-umap-src="${t.src || ''}" style="cursor:pointer;"><title>${this.esc(t.gene)}: click to color the plot by it</title>`
                 + `<line x1="${cx}" y1="${cy}" x2="${ex}" y2="${ey}" stroke="${arrowCol(t.src)}" stroke-width="${on ? 2.6 : 1.4}" marker-end="url(#${mixed && t.src !== 'expr' ? 'lahGe' : 'lah'})"/>`
                 + `<line x1="${cx}" y1="${cy}" x2="${ex}" y2="${ey}" stroke="transparent" stroke-width="10"/></g>`;
             const dist = Math.sqrt((ex - cx) ** 2 + (ey - cy) ** 2) || 1;
@@ -62162,7 +62162,7 @@ ${clone.innerHTML}
                 <div style="height:50px; display:flex; align-items:flex-end; justify-content:center; padding-bottom:8px;">
                     <b style="font-size:14px; color:#111827;">${loadTitle}</b>
                 </div>
-                ${svg}${mixed ? `<div style="font-size:10px; color:#6b7280; text-align:center; margin-top:4px;"><span style="color:#4c782e; font-weight:600;">green</span> CRISPR gene effect · <span style="color:#b91c1c; font-weight:600;">red</span> mRNA</div>` : ''}<div style="font-size:10px; color:#9ca3af; text-align:center; margin-top:2px;">Click a gene to colour the plot by it</div>`;
+                ${svg}${mixed ? `<div style="font-size:10px; color:#6b7280; text-align:center; margin-top:4px;"><span style="color:#4c782e; font-weight:600;">green</span> CRISPR gene effect · <span style="color:#b91c1c; font-weight:600;">red</span> mRNA</div>` : ''}<div style="font-size:10px; color:#9ca3af; text-align:center; margin-top:2px;">Click a gene to color the plot by it</div>`;
             if (!sidecar._loadClick) {
                 sidecar._loadClick = true;
                 sidecar.addEventListener('click', (e) => {
@@ -62236,7 +62236,7 @@ ${clone.innerHTML}
 
         const axLabels = this._clbUmapData?.axisLabels || ['UMAP 1', 'UMAP 2'];
         // The correlation plot's look: faint grid, black zero lines (PCA
-        // axes are centred on 0), Arial, larger ticks.
+        // axes are centered on 0), Arial, larger ticks.
         const axStyle = { zeroline: true, zerolinecolor: '#000', zerolinewidth: 1, showgrid: true, gridcolor: '#eeeeee', tickfont: { size: 12 } };
         const baseLayout = {
             xaxis: { title: axLabels[0], ...axStyle },
@@ -62508,7 +62508,7 @@ ${clone.innerHTML}
         const typeLabel = colorType === 'ge' ? 'Gene Effect' : 'Expression';
         // Gene effect has its own palette (orange = dependency
         // at vMin, purple = dispensable at vMax), so it never uses the same
-        // colours as expression for the opposite meaning. Expression keeps
+        // colors as expression for the opposite meaning. Expression keeps
         // the universal blue -> white -> red, red = high (at vMax).
         const geColorscale = colorType === 'ge'
             ? [[0, '#e66101'], [0.5, '#f7f7f7'], [1, '#5e3c99']]
@@ -62698,7 +62698,7 @@ ${clone.innerHTML}
                 html += `<tr style="cursor:pointer;" onclick="app.applyUmapGeneColor_fromTop('${c.gene}', '${c.src || ''}')"><td style="padding:1px 6px;text-decoration:underline;color:#4f46e5;">${this.gi(c.gene)}${this._clbUmapData.mixedSrc && c.src ? ` <span style="font-size:9px;color:#6b7280;">${c.src === 'expr' ? 'mRNA' : 'CRISPR'}</span>` : ''}</td>${rCell(c.rX, true)}${rCell(c.rY, true)}${rCell(c.rCombined, false)}</tr>`;
             });
             html += '</table>';
-            html += '<div style="font-size:10px;color:#6b7280;margin-top:4px;">|r| below 0.3 is weak (grey), 0.3 to 0.5 moderate, 0.5 and above strong.</div>';
+            html += '<div style="font-size:10px;color:#6b7280;margin-top:4px;">|r| below 0.3 is weak (gray), 0.3 to 0.5 moderate, 0.5 and above strong.</div>';
         }
 
         const content = document.getElementById('clbUmapTopGenesContent');
@@ -62753,7 +62753,7 @@ ${clone.innerHTML}
     }
 
     applyUmapGeneColor_fromTop(gene, src) {
-        // Colour by the layer the feature came from; without one, the analysis's.
+        // Color by the layer the feature came from; without one, the analysis's.
         const analysisDataType = document.getElementById('clbUmapDataType').value;
         document.getElementById('clbUmapColorGene').value = gene;
         document.getElementById('clbUmapColorGeneType').value = src || (analysisDataType === 'expr' ? 'expr' : 'ge');
@@ -62801,7 +62801,7 @@ ${clone.innerHTML}
             .sort((x, y) => x._tsRole.localeCompare(y._tsRole));
         // An annotation marked as the subtitle must never be mistaken for the
         // title, which is what happened on a chart whose annotations begin
-        // with the subtitle because it has no labelled points ahead of it.
+        // with the subtitle because it has no labeled points ahead of it.
         const ann0 = titleAnn || anns.find(a => a._tsRole !== 'subtitle');
         const usesAnnotationTitle = !!titleAnn || (ann0 && !ann0._gateAnnotation && ann0.xref === 'paper');
         // For annotation-based titles, the real title size is in the inline span, not annotation font.size
@@ -62982,14 +62982,14 @@ ${clone.innerHTML}
             ${this._tsHasBoxTraces(plotEl) ? `
             <div style="border-top:1px solid #e5e7eb;margin:6px 0;"></div>
             <div style="font-weight:600;margin-bottom:2px;color:#1f2937;font-size:11px;">Box Color Scheme</div>
-            <div style="font-size:10px;color:#6b7280;margin-bottom:4px;line-height:1.45;">How each box is coloured. All of them read the group's <b>mean</b> gene effect, they differ only in how they show it.</div>
+            <div style="font-size:10px;color:#6b7280;margin-bottom:4px;line-height:1.45;">How each box is colored. All of them read the group's <b>mean</b> gene effect, they differ only in how they show it.</div>
             <div style="display:flex;flex-wrap:wrap;gap:4px;">
-                <button onclick="app._tsColorScheme('essential')" class="ts-color-btn" title="By what the mean says: red where the group needs the gene to survive (mean below -0.5), green where knocking it out helps (mean above 0), grey in between. The box outline is dark when that group differs from the rest at p &lt; 0.05." style="font-size:10px;padding:3px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:linear-gradient(90deg,#dc2626 33%,#9ca3af 33%,#9ca3af 66%,#22c55e 66%);">Essential</button>
-                <button onclick="app._tsColorScheme('bw')" class="ts-color-btn" title="One grey for every box, for a figure that has to print in black and white." style="font-size:10px;padding:3px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:#e5e7eb;">B&W</button>
-                <button onclick="app._tsColorScheme('blue')" class="ts-color-btn" title="One colour, darker the more essential the group, so the ordering is visible without a legend." style="font-size:10px;padding:3px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:linear-gradient(90deg,#1e40af,#93c5fd);">Blue</button>
+                <button onclick="app._tsColorScheme('essential')" class="ts-color-btn" title="By what the mean says: red where the group needs the gene to survive (mean below -0.5), green where knocking it out helps (mean above 0), gray in between. The box outline is dark when that group differs from the rest at p &lt; 0.05." style="font-size:10px;padding:3px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:linear-gradient(90deg,#dc2626 33%,#9ca3af 33%,#9ca3af 66%,#22c55e 66%);">Essential</button>
+                <button onclick="app._tsColorScheme('bw')" class="ts-color-btn" title="One gray for every box, for a figure that has to print in black and white." style="font-size:10px;padding:3px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:#e5e7eb;">B&W</button>
+                <button onclick="app._tsColorScheme('blue')" class="ts-color-btn" title="One color, darker the more essential the group, so the ordering is visible without a legend." style="font-size:10px;padding:3px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:linear-gradient(90deg,#1e40af,#93c5fd);">Blue</button>
                 <button onclick="app._tsColorScheme('redblue')" class="ts-color-btn" title="Diverging around the middle of the range: ${tsIsExpr ? 'red at one end, blue at the other' : 'orange at one end, purple at the other'}. Good when both directions matter." style="font-size:10px;padding:3px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:linear-gradient(90deg,${tsIsExpr ? '#dc2626,#f5f5f5 50%,#2563eb' : '#e66101,#f7f7f7 50%,#5e3c99'});">${tsIsExpr ? 'Red-Blue' : 'Orange-Purple'}</button>
-                <button onclick="app._tsColorScheme('viridis')" class="ts-color-btn" title="Viridis, a colour scale that stays readable in greyscale and to colour-blind readers." style="font-size:10px;padding:3px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:linear-gradient(90deg,#440154,#31688e,#35b779,#fde725);">Viridis</button>
-                <button onclick="app._tsColorScheme('steelblue')" class="ts-color-btn" title="One colour for every box, so nothing in the colouring competes with the data." style="font-size:10px;padding:3px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:#4682b4;color:white;">Uniform</button>
+                <button onclick="app._tsColorScheme('viridis')" class="ts-color-btn" title="Viridis, a color scale that stays readable in greyscale and to color-blind readers." style="font-size:10px;padding:3px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:linear-gradient(90deg,#440154,#31688e,#35b779,#fde725);">Viridis</button>
+                <button onclick="app._tsColorScheme('steelblue')" class="ts-color-btn" title="One color for every box, so nothing in the coloring competes with the data." style="font-size:10px;padding:3px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:#4682b4;color:white;">Uniform</button>
             </div>
             ` : ''}
             ${plotDivId === 'geneEffectPlot' ? `
@@ -63969,8 +63969,8 @@ ${clone.innerHTML}
         set('hmGeneMinN', '1');
         // Default hierarchy: lineage blocks ordered by median
         // score, or disease blocks when the open-time cohort is already one
-        // lineage (a lineage strip with one colour says nothing). TP53
-        // hotspot rides below as colour only, the most generally useful
+        // lineage (a lineage strip with one color says nothing). TP53
+        // hotspot rides below as color only, the most generally useful
         // annotation.
         const defCohort = (this._clbVisibleCellLines?.length) ? this._clbVisibleCellLines : (this.metadata?.cellLines || []);
         const defLineages = new Set();
@@ -64088,7 +64088,7 @@ ${clone.innerHTML}
         let opts;
         if (row.mode === 'cluster') {
             // No off state: a clusters row with Sort off did nothing at all
-            // (no colours to paint, no order to impose), which read as a
+            // (no colors to paint, no order to impose), which read as a
             // broken control. The row clusters
             // while it exists; its x removes it.
             opts = [['tree', 'Tree order']];
@@ -64120,7 +64120,7 @@ ${clone.innerHTML}
     // The block + sort structure implied by this._hmAnnRows, shared by the
     // toolbar syncs, the row renderer and the redraw so all three agree on
     // which rows are actually doing something. The hierarchy IS the row
-    // order: the TOPMOST row whose Sort is on makes the blocks (colour
+    // order: the TOPMOST row whose Sort is on makes the blocks (color
     // strip, labels, legend, Min n, drill) and sets the block order; every
     // other sorted row sorts WITHIN those blocks, top-down. A topmost sorted
     // continuous row cannot form blocks, so it sorts every column and ends
@@ -64170,7 +64170,7 @@ ${clone.innerHTML}
     // what sort? Returns null, { kind:'row', idx } or { kind:'cluster' }.
     // Exactly the row the user marked as the blocks, regardless of
     // where it sits in the list; every other row shows its structure through
-    // its own colour band instead.
+    // its own color band instead.
     _hmGroupSpecFromRows() {
         const info = this._hmSortChainInfo();
         if (info.blockIdx < 0) return null;
@@ -64220,11 +64220,11 @@ ${clone.innerHTML}
         }
         if (!info.inert.includes(rowIdx)) return '';
         if (info.blockIsCluster) {
-            return 'The clustering row makes the blocks and fixes the order inside them, so this row only adds colour';
+            return 'The clustering row makes the blocks and fixes the order inside them, so this row only adds color';
         }
         return info.stopKind === 'cluster'
-            ? 'The clustering row above already fixes the column order, so this row only adds colour'
-            : 'The value sort above already fixes the column order, so this row only adds colour';
+            ? 'The clustering row above already fixes the column order, so this row only adds color'
+            : 'The value sort above already fixes the column order, so this row only adds color';
     }
 
     _hmSyncClusterControls() {
@@ -64259,7 +64259,7 @@ ${clone.innerHTML}
             kSel.title = !clusterOn
                 ? 'Set the clusters row\'s Sort to Tree order first'
                 : (clusterCuttable
-                    ? 'No split draws the dendrogram with no coloured band; Auto or a number cuts the tree into that many coloured clusters'
+                    ? 'No split draws the dendrogram with no colored band; Auto or a number cuts the tree into that many colored clusters'
                     : 'A cluster count needs one tree over the whole cohort; with a sorted row above, this row clusters inside each block instead');
             kSel.style.opacity = (!clusterOn || !clusterCuttable) ? '0.45' : '1';
         }
@@ -64397,11 +64397,11 @@ ${clone.innerHTML}
         ];
         const CATEGORICAL_MODES = new Set(['lineage', 'subtype', 'disease']);
         const KINDS = [
-            ['hotspot', 'e.g. BRAF', 'Colour this row by this gene\'s hotspot mutation status (0 / 1 / 2 copies)'],
-            ['fusion', 'e.g. EWSR1', 'Colour this row by whether this gene is fused'],
-            ['cn', 'e.g. MYC', 'Colour this row by this gene\'s curated amplification / deletion status'],
-            ['ge', 'e.g. MYC', 'Colour this row by this gene\'s CRISPR gene effect, coloured from lowest to highest across the shown lines'],
-            ['expr', 'e.g. MYC', 'Colour this row by this gene\'s mRNA expression, coloured from lowest to highest across the shown lines']
+            ['hotspot', 'e.g. BRAF', 'Color this row by this gene\'s hotspot mutation status (0 / 1 / 2 copies)'],
+            ['fusion', 'e.g. EWSR1', 'Color this row by whether this gene is fused'],
+            ['cn', 'e.g. MYC', 'Color this row by this gene\'s curated amplification / deletion status'],
+            ['ge', 'e.g. MYC', 'Color this row by this gene\'s CRISPR gene effect, colored from lowest to highest across the shown lines'],
+            ['expr', 'e.g. MYC', 'Color this row by this gene\'s mRNA expression, colored from lowest to highest across the shown lines']
         ];
         const VALUE_KINDS = new Set(['ge', 'expr']);
         const cap = (k) => k.charAt(0).toUpperCase() + k.slice(1);
@@ -64431,7 +64431,7 @@ ${clone.innerHTML}
             const scoreNote = this._hmAnnRowKind(row.mode) === 'meta'
                 ? ' The median gene score options order the groups by the median, over each group\'s cell lines, of the per-line score (that line\'s mean of the shown genes).'
                 : '';
-            const sortSel = `<select class="hm-ann-row-sortsel" data-idx="${i}" style="width:200px; font-size:11px; opacity:${inertReason ? '0.45' : '1'};"${inertReason ? ' disabled' : ''} title="${this.esc(inertReason || ((isBlock ? 'This row is first with Sort on, so it splits the columns into blocks and this choice orders the blocks.' : dir ? 'Sorts inside the blocks made by the rows above, top row first.' : 'Sort: off, this row only paints colours.') + scoreNote))}">${this._hmSortOptionsHtml(row)}</select>`;
+            const sortSel = `<select class="hm-ann-row-sortsel" data-idx="${i}" style="width:200px; font-size:11px; opacity:${inertReason ? '0.45' : '1'};"${inertReason ? ' disabled' : ''} title="${this.esc(inertReason || ((isBlock ? 'This row is first with Sort on, so it splits the columns into blocks and this choice orders the blocks.' : dir ? 'Sorts inside the blocks made by the rows above, top row first.' : 'Sort: off, this row only paints colors.') + scoreNote))}">${this._hmSortOptionsHtml(row)}</select>`;
             // Lineage, subtype, disease, the clusters row and the gates row
             // need no gene; the box shown for them is disabled and cleared
             // rather than hidden outright, the same present-but-disabled
@@ -64442,11 +64442,11 @@ ${clone.innerHTML}
             const disabled = isCluster || isGates || CATEGORICAL_MODES.has(row.mode);
             const activeKind = disabled ? 'hotspot' : row.mode;
             // The cluster row's gene slot carries its ONE setting instead: cut
-            // the tree into coloured clusters, or leave it tree order only
+            // the tree into colored clusters, or leave it tree order only
             // (default, no band, no Cluster groups).
             const kVal = this._hmClusterKValue();
             const clusterKSlot = `<span class="filter-input-wrap" style="position:relative; width:130px; display:inline-block;">
-                <select id="hmClusterK" style="width:124px; font-size:11px;" title="No split draws the dendrogram and orders the columns with no coloured band; Auto or a number cuts the tree into that many coloured clusters (needs one tree over the whole cohort, so the row must be first)">
+                <select id="hmClusterK" style="width:124px; font-size:11px;" title="No split draws the dendrogram and orders the columns with no colored band; Auto or a number cuts the tree into that many colored clusters (needs one tree over the whole cohort, so the row must be first)">
                     <option value="0"${kVal === '0' ? ' selected' : ''}>No split (tree only)</option>
                     <option value="auto"${kVal === 'auto' ? ' selected' : ''}>Auto clusters</option>
                     ${[2,3,4,5,6,7,8].map(k => `<option value="${k}"${kVal === String(k) ? ' selected' : ''}>${k} clusters</option>`).join('')}
@@ -64464,7 +64464,7 @@ ${clone.innerHTML}
             // Reorder arrows: row order IS sort order (Row 1 forms the
             // outermost blocks), so moving a row here has a direct, visible
             // effect once its arrows are on. First row's up and last row's
-            // down are disabled in place (greyed, not hidden) rather than
+            // down are disabled in place (grayed, not hidden) rather than
             // removed, so the arrow pair never shifts.
             const orderTitle = 'Row order is sort order: rows sort inside the blocks from the top down';
             const isFirst = i === 0, isLast = i === rows.length - 1;
@@ -64913,11 +64913,11 @@ ${clone.innerHTML}
             : stopAt < 0 ? toggledRows
             : (stopKind === 'continuous' ? toggledRows.slice(0, stopAt + 1) : toggledRows.slice(0, stopAt));
         const clusterCells = blockIsCluster || stopKind === 'cluster';
-        // The visible group structure (colour strip, staggered labels,
+        // The visible group structure (color strip, staggered labels,
         // legend with click-to-hide and double-click drill, per-group n and
         // median, Min n) is single-level and comes from the block row alone,
         // wherever it sits in the list. Every other row shows its structure
-        // through its own colour band instead.
+        // through its own color band instead.
         const groupSpec = !blockRow ? null
             : blockIsCluster ? { kind: 'cluster' }
             : { kind: 'row', mode: blockRow.mode, gene: blockRow.gene, dir: blockRow.sortDir, sortKey: blockRow.sortKey || null, rowIdx: blockRow.idx, label: this._hmAnnRowLabel(blockRow.mode, blockRow.gene) };
@@ -65195,7 +65195,7 @@ ${clone.innerHTML}
     }
 
     // Hotspot mutation level for a hotspot-mode annotation row: same
-    // hotspot-then-damaging fallback as the group-by gene box, so a tumour
+    // hotspot-then-damaging fallback as the group-by gene box, so a tumor
     // suppressor scored only by loss-of-function still shows something.
     _hmAnn2HotspotLevel(cl, gene) {
         const mm = this._mutCalls(gene);
@@ -65448,13 +65448,13 @@ ${clone.innerHTML}
             const tree = this._hmClusterTree(genes, scaledRows);
             orderedGenes = tree.order;
             geneTree = tree.root;
-            // Colour the gene tree's branches by subtree (opt-in
+            // Color the gene tree's branches by subtree (opt-in
             // via the hmGeneClusterK select : "Tree order
             // only", the default, keeps the tree plain gray). The tree is
             // cut with the same machinery the column tree uses, either at
             // the silhouette-picked k (Auto, needs 6+ genes to say anything
             // a 2-3 branch tree doesn't) or at the picked group count, and
-            // each cut subtree's branches take one colour from the group
+            // each cut subtree's branches take one color from the group
             // palette, top to bottom. Display only: row order and the grid
             // are untouched. The auto k is cached like the column tree's,
             // in its own slot so the two caches never evict each other.
@@ -65568,7 +65568,7 @@ ${clone.innerHTML}
         let clustersActive = false;  // true once the tree above was actually cut into k>=2 synthetic groups
         let belowMinCount = 0;
         // Cell line -> "Cluster n", filled only when the tree was actually
-        // cut: the Cell-line clusters row's own colour band reads this rather
+        // cut: the Cell-line clusters row's own color band reads this rather
         // than any static value function, since a cluster only exists once
         // the ordering has run (see _hmBuildAnnotation2's 'cluster' branch).
         let clusterAssign = null;
@@ -65614,7 +65614,7 @@ ${clone.innerHTML}
             // categories, in its own rank order (_hmAnnRowRankMap, altered/
             // biggest first, which is also what its arrows off means; 'asc'
             // flips it), fed through the same group machinery the
-            // colour strip, staggered labels, legend, drill-down and Min n
+            // color strip, staggered labels, legend, drill-down and Min n
             // have always used.
             const valueFor = this._hmAnnRowValueFor(outerRow.mode, outerRow.gene);
             const rankMap = this._hmAnnRowRankMap(outerRow.mode, outerRow.gene, cohort, outerRow.sortKey || null, clScore, clMag);
@@ -65627,7 +65627,7 @@ ${clone.innerHTML}
             // Below the minimum group size, an entry is dropped outright
             // (not just hidden): it never reaches the legend, the grid, the
             // CSV or any other group's score, unlike a manually hidden group
-            // which keeps a greyed legend entry.
+            // which keeps a grayed legend entry.
             let entries = Array.from(byKey.entries());
             belowMinCount = entries.filter(([, cellLines]) => cellLines.length < minGroupSize).length;
             if (minGroupSize > 1) entries = entries.filter(([, cellLines]) => cellLines.length >= minGroupSize);
@@ -65651,7 +65651,7 @@ ${clone.innerHTML}
             }));
             // The order is fixed once here, by the row's own convention, and
             // does NOT depend on which entries are hidden: clicking a legend
-            // entry greys it in place rather than reshuffling its neighbours.
+            // entry grays it in place rather than reshuffling its neighbors.
             const dirMul = outerRow.dir === 'asc' ? -1 : 1;
             groups.sort((a, b) => (((rankMap.get(a.key) ?? 0) - (rankMap.get(b.key) ?? 0)) * dirMul) || a.key.localeCompare(b.key));
             // An alteration row's blocks keep the fixed mutation/CN/fusion
@@ -65668,7 +65668,7 @@ ${clone.innerHTML}
             }
             hiddenCount = groups.filter(g => g.hidden).length;
 
-            // Hidden groups keep their legend entry (greyed, still
+            // Hidden groups keep their legend entry (grayed, still
             // clickable) but contribute nothing to the grid, the per-group
             // score/median of anyone else, the CSV, or the AI export: they
             // are simply left out of the visible set built below.
@@ -65716,7 +65716,7 @@ ${clone.innerHTML}
             // dendrogram above the grid. With k>=2 the tree is also cut into
             // k synthetic groups ("Cluster 1".."Cluster k", in left-to-right
             // tree order) fed through the exact same group machinery a
-            // categorical row's blocks use: colour strip, staggered labels,
+            // categorical row's blocks use: color strip, staggered labels,
             // legend with click-to-hide and double-click drill. Min-n is
             // deliberately NOT applied to clusters, they are a partition of
             // the shown cohort, not an optional bucket, so none are dropped
@@ -65778,7 +65778,7 @@ ${clone.innerHTML}
             // No row is blocking. A clusters row that is only SORTING still
             // has work to do here: with nothing sorting above it,
             // one tree over the whole cohort sets the order and draws the
-            // dendrogram, and a cluster count colours the row's own band
+            // dendrogram, and a cluster count colors the row's own band
             // without ever making a group strip; with rows sorting above it,
             // it clusters inside each of their runs, exactly as it does
             // inside a blocking row's blocks.
@@ -65795,7 +65795,7 @@ ${clone.innerHTML}
                             clusterK = this._hmAutoClusterK(tree, cohort, cohortVectors, `${dataType}|${scaleMode}|${genes.join(',')}`);
                         }
                         if (clusterK >= 2 && cohort.length >= clusterK) {
-                            // Colours for the clusters row's own band only:
+                            // Colors for the clusters row's own band only:
                             // no groups, so no strip, no legend of blocks,
                             // no drill and no Min n.
                             const cut = this._hmCutColumnClusters(tree, clusterK);
@@ -65824,10 +65824,10 @@ ${clone.innerHTML}
             || looseClusterRoots.some(r => r.n >= 4);
         const hasTopDendro = clusterCells && ((!!colTree && hiddenCount === 0 && cohort.length >= 4) || anyGroupTree);
 
-        // Colour domain: z-score is always clamped to +-2.5; raw expression
+        // Color domain: z-score is always clamped to +-2.5; raw expression
         // is scaled to the data's own range; raw gene effect is symmetric
         // around 0 so a depleted line and an enriched one read as mirror
-        // colours.
+        // colors.
         // Gene effect as measured gets a FIXED, asymmetric scale: white at 0,
         // orange saturating at -2, purple at +1, the same for every row and
         // every cohort. Relative-to-median is fixed at 1.5 units either way.
@@ -65851,7 +65851,7 @@ ${clone.innerHTML}
         // One built strip per annotation row, in order. A row fails to build
         // when there are no columns to draw (orderedCLs empty), and the
         // clusters row also draws nothing unless the tree was actually cut
-        // into clusters this redraw (tree order alone has no colours to show).
+        // into clusters this redraw (tree order alone has no colors to show).
         let clusterColorByKey = new Map((groups || []).map(g => [g.key, g.color]));
         if (!clusterColorByKey.size && clusterAssign && clusterAssign.size) {
             // Clusters without a group strip (nothing is blocking): the
@@ -65900,13 +65900,13 @@ ${clone.innerHTML}
         this._hmPaintAndWire(cohortNote + clusterNote);
     }
 
-    // Fixed colour per category for the rows whose categories mean the same
+    // Fixed color per category for the rows whose categories mean the same
     // thing everywhere: the alteration rows (the oncoprint mutation grid's
     // blue pair for 1/2 copies; red for amplification, blue for deletion, to
     // match the CN filter dropdown's swatches) and the gates row (the same
     // purple/teal the Gate A/B buttons and chips use, red where the two
     // overlap). One map, read by the block strip and the annotation band
-    // alike, so a category can never be one colour in the strip and another
+    // alike, so a category can never be one color in the strip and another
     // in the band.
     _HM_FIXED_CAT_COLORS() {
         return {
@@ -65926,7 +65926,7 @@ ${clone.innerHTML}
 
     // Per cell-line category label for one annotation row (mode + gene),
     // shared by _hmBuildAnnotation2 (the strip painter) and the "annotation
-    // rows" sort, so a cell line's colour and its sort rank can never
+    // rows" sort, so a cell line's color and its sort rank can never
     // disagree about what category it's in.
     _hmAnnRowValueFor(mode, gene) {
         if (mode === 'gates') {
@@ -66094,9 +66094,9 @@ ${clone.innerHTML}
     }
 
     // Qualitative palette for the group annotation strip: distinct at a
-    // glance, muted enough that the red/blue data colours in the grid still
+    // glance, muted enough that the red/blue data colors in the grid still
     // read as the dominant signal, and cycled if there are more groups than
-    // colours.
+    // colors.
     _HM_GROUP_PALETTE() {
         return ['#4c78a8', '#f58518', '#54a24b', '#b79a20', '#439894', '#e45756',
                 '#d67195', '#b279a2', '#9e765f', '#8c8c8c', '#6a9f58', '#c47ba0'];
@@ -66137,12 +66137,12 @@ ${clone.innerHTML}
         };
     }
 
-    // One annotation row's strip: a colour per column plus legend entries
+    // One annotation row's strip: a color per column plus legend entries
     // for the categories present. Hotspot and CN reuse the app's existing
     // conventions (oncoprint blue pair; red amplification / blue deletion)
     // and fusion the shared "altered" red, so a reader who has seen those
     // elsewhere reads this the same way; lineage/subtype/disease get palette
-    // cycles coloured by how common each category is in what's drawn. Also
+    // cycles colored by how common each category is in what's drawn. Also
     // returns `values` (raw category per column) for the tooltip. Each
     // legend entry carries n and, when Show median is on, the category's
     // median of the SAME per-line score the group labels use (clScore
@@ -66151,10 +66151,10 @@ ${clone.innerHTML}
     _hmBuildAnnotation2(mode, gene, orderedCLs, clScore, showMedian, extra = {}) {
         if (mode === 'none' || !orderedCLs.length) return null;
         const attrLabelEarly = this._hmAnnRowLabel(mode, gene);
-        // The clusters row: coloured by the assignment this redraw actually
+        // The clusters row: colored by the assignment this redraw actually
         // produced (threaded in from the ordering section), not by any static
         // value function, since a cluster only exists once the tree has been
-        // built and cut. No cut, no band: tree order alone has no colours to
+        // built and cut. No cut, no band: tree order alone has no colors to
         // show, so the row simply doesn't take up a strip.
         if (mode === 'cluster') {
             const assign = extra.clusterAssign;
@@ -66170,10 +66170,10 @@ ${clone.innerHTML}
             }));
             return { mode, gene, attrLabel: attrLabelEarly, colors: values.map(v => colorByKey.get(v) || '#e5e7eb'), legend, values };
         }
-        // The two continuous rows: one gene's value per cell line, coloured
+        // The two continuous rows: one gene's value per cell line, colored
         // on the same z-vs-all-lines basis and the same palettes the grid
         // uses for that measure, so a reader who has learned the grid's
-        // colours reads this band the same way. The legend carries the drawn
+        // colors reads this band the same way. The legend carries the drawn
         // range as a gradient chip rather than a category list.
         if (mode === 'ge' || mode === 'expr') {
             const dt = mode === 'ge' ? 'ge' : 'expr';
@@ -66184,8 +66184,8 @@ ${clone.innerHTML}
             const present = raws.filter(v => !Number.isNaN(v));
             const lo = present.length ? Math.min(...present) : NaN;
             const hi = present.length ? Math.max(...present) : NaN;
-            // Colours span the range of the SHOWN lines, edge to edge of the
-            // palette. The old z-vs-all-lines colouring with a fixed +-2.5
+            // Colors span the range of the SHOWN lines, edge to edge of the
+            // palette. The old z-vs-all-lines coloring with a fixed +-2.5
             // domain went flat whenever the cohort's own spread was small
             // against the whole panel (an 8-line Eye cohort's TP53
             // expression band was one washed-out pink); the legend prints
@@ -66200,7 +66200,7 @@ ${clone.innerHTML}
                 ? [0, 0.25, 0.5, 0.75, 1].map(t => span ? colorAt(lo + t * span) : colorAt(lo))
                 : ['#f3f4f6'];
             const label = present.length
-                ? `${attrLabelEarly}: ${lo.toFixed(2)} to ${hi.toFixed(2)} ${unit}, coloured across this range`
+                ? `${attrLabelEarly}: ${lo.toFixed(2)} to ${hi.toFixed(2)} ${unit}, colored across this range`
                 : `${attrLabelEarly}: no data in these lines`;
             return { mode, gene, attrLabel: attrLabelEarly, colors, legend: [{ label, color: gradStops[gradStops.length - 1], gradStops }], values };
         }
@@ -66323,7 +66323,7 @@ ${clone.innerHTML}
 
     _hmDefaultScaleFor(dataType) { return dataType === 'expr' ? 'zall' : 'raw'; }
 
-    // The words for the colour scale, in one place: the legend caption, the
+    // The words for the color scale, in one place: the legend caption, the
     // hint line, the exported image, the CSV corner, the Methods text and
     // Export for AI all read these, so the mode can never be described two
     // ways. The purple end is never called "high": on gene effect a positive
@@ -66339,14 +66339,14 @@ ${clone.innerHTML}
             w.sentence = ge
                 ? 'Values are the measured Chronos gene effect, on one fixed scale for every row and every cohort (orange saturates at -2, purple at +1), so a square can be read on its own and compared across plots.'
                 : 'Values were left on their original log2 TPM+1 scale and were not z-scored.';
-            w.colour = ge ? 'orange = dependency (negative gene effect), white = no effect, purple = knockout favours growth (positive gene effect)' : 'white is low, dark green is high';
-            w.legend = ge ? 'orange = dependency · purple = knockout favours growth' : 'white = low · dark green = high';
+            w.color = ge ? 'orange = dependency (negative gene effect), white = no effect, purple = knockout favors growth (positive gene effect)' : 'white is low, dark green is high';
+            w.legend = ge ? 'orange = dependency · purple = knockout favors growth' : 'white = low · dark green = high';
         } else if (m === 'med') {
             const unit = ge ? 'gene effect units' : 'log2 TPM+1 units';
             w.caption = `Relative to the panel median (${unit})`;
             w.short = `each cell minus the gene's median across all ${nAll} lines, in ${unit}`;
-            w.sentence = `Each value is the measured ${ge ? 'gene effect' : 'expression (log2 TPM+1)'} minus that gene's median across all ${nAll} cell lines with data, so it says how this line differs from the typical line in ${unit}, not in units of the gene's spread. The colour scale saturates at 1.5 units either way.`;
-            w.colour = ge
+            w.sentence = `Each value is the measured ${ge ? 'gene effect' : 'expression (log2 TPM+1)'} minus that gene's median across all ${nAll} cell lines with data, so it says how this line differs from the typical line in ${unit}, not in units of the gene's spread. The color scale saturates at 1.5 units either way.`;
+            w.color = ge
                 ? 'blue-green = more essential in this line than in the typical line, brown = less essential here than in the typical line'
                 : 'blue = expressed lower in this line than in the typical line, red = expressed higher';
             w.legend = ge ? 'blue-green = more essential than typical · brown = less essential than typical' : 'blue = lower than typical · red = higher than typical';
@@ -66359,7 +66359,7 @@ ${clone.innerHTML}
                 : ge
                     ? `Values were z-scored per gene, with the mean and standard deviation taken across all ${nAll} cell lines that have a value in the full matrix rather than only the ones shown, so a value of +2 means high against the whole panel.`
                     : `Values were z-scored per gene, with the mean and standard deviation taken across all ${nAll} CRISPR-screened cell lines that have expression data rather than only the ones shown, so a value of +2 means high against the whole panel.`;
-            w.colour = ge
+            w.color = ge
                 ? 'orange = more essential than typical for this gene (below the panel mean), purple = less essential than typical (above the panel mean); this is relative to the gene\'s own spread, not the measured effect'
                 : 'blue is low, red is high';
             w.legend = ge ? 'orange = below panel mean · purple = above panel mean' : 'blue = low · red = high';
@@ -66424,8 +66424,8 @@ ${clone.innerHTML}
         // Nearest-neighbor chain (Murtagh): exact for a reducible linkage
         // (average linkage is one), so it always finds the same merges a
         // full best-pair rescan would, but in O(n^2) total instead of
-        // O(n^3): follow a stack of nearest-neighbour pointers from any
-        // active slot until the top two are each other's nearest neighbour
+        // O(n^3): follow a stack of nearest-neighbor pointers from any
+        // active slot until the top two are each other's nearest neighbor
         // (a reciprocal pair, always safe to merge for a reducible
         // linkage), merge them, then resume from whatever is left on the
         // stack instead of restarting the chain from scratch.
@@ -66521,7 +66521,7 @@ ${clone.innerHTML}
     // Cuts a column dendrogram into k contiguous clusters by repeatedly
     // splitting the active subtree with the highest merge height. Leaves are
     // never reordered, so every part is a contiguous run of the tree's own
-    // leaf order, which lets the grid, branch colours and group strip agree
+    // leaf order, which lets the grid, branch colors and group strip agree
     // on the same column ranges. Returns parts left-to-right as { node,
     // leaves }; `node` is the actual tree node so the painter can match
     // branches by reference. May return fewer than k parts.
@@ -66653,7 +66653,7 @@ ${clone.innerHTML}
     // transposed at paint time, adding `colorFor` (node => color) to tint a
     // cut cluster's branches. `minLeaves` (top dendrogram only, from the
     // Tree detail setting) collapses an internal node with fewer leaves into
-    // a single stem centred on its column span; leaf counts are precomputed
+    // a single stem centered on its column span; leaf counts are precomputed
     // so the per-node check is O(1), and a collapsed cut-cluster root keeps
     // its tint.
     _hmDendroLayout(root, leafRowIndex, cellH, dendroW, colorFor, minLeaves) {
@@ -66688,10 +66688,10 @@ ${clone.innerHTML}
             const [r1, r2] = leafYRange(node.right);
             return [Math.min(l1, r1), Math.max(l2, r2)];
         };
-        // `color` threads the nearest ancestor cluster's colour down to
-        // every descendant segment; a node becomes the new colour only when
+        // `color` threads the nearest ancestor cluster's color down to
+        // every descendant segment; a node becomes the new color only when
         // colorFor names one for it (i.e. it IS a cut cluster's root), so
-        // branches above every cut stay null (grey) all the way down until
+        // branches above every cut stay null (gray) all the way down until
         // the walk crosses into a cluster.
         const layout = (node, color) => {
             if (node.leaf !== undefined) {
@@ -66753,7 +66753,7 @@ ${clone.innerHTML}
         // Gene effect (raw and both z modes): gene effect has its own palette
         // rather than
         // expression's blue/red, so the two data types never disagree on what
-        // a colour means. The normalized position is negated here rather
+        // a color means. The normalized position is negated here rather
         // than duplicating the diverging ramp with a mirrored copy.
         // Most gene effects sit between -1 and +0.3, so a straight ramp to
         // the anchors leaves the grid pale. A gamma below 1 lifts the middle
@@ -66771,7 +66771,7 @@ ${clone.innerHTML}
     }
 
     // t in [-1,1]: -1 teal (#01665e), 0 white, 1 brown (#8c510a). ColorBrewer
-    // BrBG, colourblind-safe. Only the relative-to-median mode uses it, so a
+    // BrBG, colorblind-safe. Only the relative-to-median mode uses it, so a
     // panel-relative picture can never be mistaken for measured gene effect.
     _hmDivergingColorRel(t) {
         const lerp = (a, b, f) => Math.round(a + (b - a) * f);
@@ -66790,7 +66790,7 @@ ${clone.innerHTML}
     }
 
     // t in [-1,1]: -1 purple (#5e3c99), 0 white, 1 orange (#e66101). ColorBrewer
-    // PuOr, colourblind-safe. Gene effect only: orange marks the
+    // PuOr, colorblind-safe. Gene effect only: orange marks the
     // negative/dependency direction, purple the positive/dispensable one, so
     // the same red/blue pair used for expression never means the opposite
     // number here. Same ramp math as _hmDivergingColor, different endpoints.
@@ -66813,7 +66813,7 @@ ${clone.innerHTML}
     // them); the rest place round-robin across the 3 rows, and the counter
     // only advances for a group that actually got a label. Collision is
     // checked only against the previous label in the SAME row, and overhang
-    // into a neighbouring band is fine.
+    // into a neighboring band is fine.
     _hmBuildGroupLabelPlan(groups, cellW, groupLabelText) {
         if (!groups) return { rows: 0, items: [] };
         const eligible = groups.filter(g => !g.hidden && g.count >= 3);
@@ -66827,7 +66827,7 @@ ${clone.innerHTML}
         const ROWS = 3, GAP = 4, MIN_CHARS = 6;
         const lastRightX = new Array(ROWS).fill(-Infinity);
         const items = [];
-        // Labels are clamped inside the canvas: an edge group's centred text
+        // Labels are clamped inside the canvas: an edge group's centered text
         // otherwise runs off the left or right and gets clipped mid-word.
         const gridW = Math.max(...groups.filter(g => !g.hidden).map(g => g.endCol)) * cellW;
         let maxRow = -1;
@@ -66941,7 +66941,7 @@ ${clone.innerHTML}
         d.groupLabelPlan = groupLabelPlan;
         const groupExtra = d.groups ? (GROUP_STRIP_H + GROUP_TICK_H + groupLabelPlan.rows * GROUP_LABEL_ROW_H) : 0;
         // Each annotation row sits directly under the previous one (the
-        // first row right under the group section as a whole: colour band,
+        // first row right under the group section as a whole: color band,
         // ticks and labels together), same 14px height per row, with no
         // ticks/labels of its own: each row's legend line, prefixed with
         // its attribute name, does that job instead. Zero height when there
@@ -66955,10 +66955,10 @@ ${clone.innerHTML}
         const gridH = geneAreaH + groupExtra + ann2Extra;
         const legendW = 300, legendH = 84;
 
-        // `plain` skips the light-grey background fill: fine on screen (it
+        // `plain` skips the light-gray background fill: fine on screen (it
         // reads as the panel's own background there), but on an exported
         // figure meant for a slide or a paper it shows up as an unwanted
-        // grey box around the labels/grid, so the export composer paints
+        // gray box around the labels/grid, so the export composer paints
         // over the chosen background (white or transparent) instead.
         const paintLabels = (ctx, opts = {}) => {
             if (!opts.plain) {
@@ -66968,14 +66968,14 @@ ${clone.innerHTML}
             if (hasDendro) {
                 const leafRowIndex = new Map(d.orderedGenes.map((g, i) => [g, i]));
                 // Tree detail (hmTreeDetailGenes, top toolbar row): same
-                // collapse-to-a-stem behaviour as the cell-line tree above
+                // collapse-to-a-stem behavior as the cell-line tree above
                 // the grid, applied to the gene tree's own branches. Row
                 // order and gene labels are untouched either way, only how
                 // finely the merges themselves are drawn.
                 const minLeaves = this._hmEffectiveMinLeaves(hmS.treeDetailGenes, nGenes);
-                // Branch colouring by cut subtree: same
-                // colour-threading and batched per-colour stroking the
-                // column dendrogram uses; segments above the cut stay grey.
+                // Branch coloring by cut subtree: same
+                // color-threading and batched per-color stroking the
+                // column dendrogram uses; segments above the cut stay gray.
                 const geneColorFor = d.geneClusterColorOf ? (node => d.geneClusterColorOf.get(node)) : undefined;
                 const segments = this._hmDendroLayout(d.geneTree, leafRowIndex, cellH, dendroW, geneColorFor, minLeaves);
                 const byColor = new Map();
@@ -67000,7 +67000,7 @@ ${clone.innerHTML}
             d.orderedGenes.forEach((g, rowIdx) => ctx.fillText(g, labelW - 6, rowIdx * cellH + cellH / 2));
 
             // Titles for the strip rows below the gene grid: nothing on
-            // screen or in an export otherwise says what the colour bands
+            // screen or in an export otherwise says what the color bands
             // mean, so each gets its own right-aligned label in the same
             // gutter the gene names use, trimmed with an ellipsis rather
             // than running under the grid.
@@ -67049,9 +67049,9 @@ ${clone.innerHTML}
                 ctx.fillRect(0, 0, gridW, geneAreaH);
             }
             // An all-NA column (no value for any shown gene, "Hide lines
-            // without data" left unchecked) is hatched instead of coloured
+            // without data" left unchecked) is hatched instead of colored
             // by value, so it reads as "no data" rather than a pale, weak
-            // z-score; a partial column keeps the plain per-cell colour
+            // z-score; a partial column keeps the plain per-cell color
             // below, individual gaps and all included.
             const noDataFill = (d.allNACellLines && d.allNACellLines.size) ? ctx.createPattern(this._hmNoDataTile(), 'repeat') : null;
             d.orderedGenes.forEach((g, rowIdx) => {
@@ -67080,7 +67080,7 @@ ${clone.innerHTML}
                 // A near-white block (an alteration row's wild-type, the gates
                 // row's ungated lines) shares the same fill (#f3f4f6) as the
                 // surrounding panel, so without an outline it reads as a gap
-                // rather than a colour meaning "no event". Same f3f4f6 +
+                // rather than a color meaning "no event". Same f3f4f6 +
                 // #d1d5db pairing used elsewhere in the app for a near-white
                 // swatch (e.g. the oncoprint filter legend).
                 {
@@ -67109,7 +67109,7 @@ ${clone.innerHTML}
                 // rows each sits on was decided in the layout step (so the
                 // reserved height was known before gridH was fixed); this
                 // just executes that stored plan; small groups (n<3) were
-                // never in it, and their colour band + legend entry are
+                // never in it, and their color band + legend entry are
                 // already drawn above regardless.
                 const plan = d.groupLabelPlan;
                 if (plan && plan.items.length) {
@@ -67137,7 +67137,7 @@ ${clone.innerHTML}
             // section above (or beneath the gene rows, when there's no
             // primary grouping), each aligned to the same columns, in row
             // order. No ticks or per-segment text of their own; the legend
-            // below the grid carries the labelling.
+            // below the grid carries the labeling.
             d.annRows.forEach((row, i) => {
                 const y2 = geneAreaH + groupExtra + i * ANN2_STRIP_H;
                 d.orderedCLs.forEach((cl, colIdx) => {
@@ -67160,8 +67160,8 @@ ${clone.innerHTML}
         // Column (top) dendrogram: the transpose of the gene tree, reusing
         // _hmDendroLayout with x/y swapped when stroking (screen x = column
         // position, screen y = depth, 0 at the top). Segments carry the cut
-        // cluster's colour, inherited by descendants; branches above every
-        // cut stroke grey. Ungrouped draws the single whole-cohort tree
+        // cluster's color, inherited by descendants; branches above every
+        // cut stroke gray. Ungrouped draws the single whole-cohort tree
         // (d.colTree); grouped draws one small tree per innermost block
         // (d.groups[].clusterRoots). Both share leafColIndex, built from the
         // FINAL orderedCLs, so a group's tree lands on exactly its own
@@ -67212,7 +67212,7 @@ ${clone.innerHTML}
         // redraws and needs the previous frame wiped. On a freshly created
         // export canvas it does the opposite of what's wanted: composited
         // AFTER the background fill, it punches a transparent rectangle
-        // through it, which most viewers render as a grey or chequered box
+        // through it, which most viewers render as a gray or chequered box
         // sitting around the legend. `plain` skips it.
         const paintLegend = (ctx, opts = {}) => {
             if (!opts.plain) ctx.clearRect(0, 0, legendW, legendH);
@@ -67246,15 +67246,15 @@ ${clone.innerHTML}
                 ctx.textAlign = 'center';
                 ctx.fillText('-1', xOf(-1), barY + barH + 4);
             }
-            // Caption states exactly what the colours mean: the
+            // Caption states exactly what the colors mean: the
             // scale mode, and for raw values, the actual unit, so it never
             // has to be inferred from the Scaling select alone.
             ctx.textAlign = 'left';
             ctx.font = '10px Arial';
             ctx.fillStyle = '#9ca3af';
-            // The mode is named on the plot itself, with the colours tied to
+            // The mode is named on the plot itself, with the colors tied to
             // biology rather than to "high" and "low", so a picture that
-            // leaves the app still says what its colours mean.
+            // leaves the app still says what its colors mean.
             const words = this._hmScaleWords(d);
             ctx.font = 'bold 10px Arial';
             ctx.fillStyle = '#4b5563';
@@ -67273,7 +67273,7 @@ ${clone.innerHTML}
         };
 
         // Group legend: name, swatch and n per group (plus every hidden
-        // group, greyed, so it stays clickable to bring back), wrapping
+        // group, grayed, so it stays clickable to bring back), wrapping
         // across lines rather than scrolling, since it sits below the grid
         // rather than inside its horizontal scroller. Laid out once here
         // (logical coordinates) so the same layout drives the on-screen
@@ -67318,8 +67318,8 @@ ${clone.innerHTML}
                 ctx.fillStyle = it.hidden ? '#9ca3af' : '#374151';
                 ctx.fillText(it.text, it.x + it.swatch + 4, it.y + 3 + it.swatch / 2);
                 if (it.hidden) {
-                    // A strike-through, not just a colour change, so the
-                    // hidden state reads even to a colour-blind viewer.
+                    // A strike-through, not just a color change, so the
+                    // hidden state reads even to a color-blind viewer.
                     ctx.strokeStyle = '#9ca3af';
                     ctx.beginPath();
                     ctx.moveTo(it.x, it.y + 3 + it.swatch / 2);
@@ -67329,7 +67329,7 @@ ${clone.innerHTML}
             });
         };
 
-        // Annotation-row legends: plain colour chips, no click/hide behaviour
+        // Annotation-row legends: plain color chips, no click/hide behavior
         // (that's the primary group legend's job), each entry already
         // prefixed with its row's attribute name (e.g. "BRAF mutation: One
         // copy") so rows can't be confused for one another. One legend LINE
@@ -67521,7 +67521,7 @@ ${clone.innerHTML}
             const sw = this._hmScaleWords(d);
             const scaleWord = sw.short;
             const dataWord = d.dataType === 'expr' ? 'mRNA expression' : 'CRISPR gene effect';
-            const colourWord = sw.colour.charAt(0).toUpperCase() + sw.colour.slice(1) + '.';
+            const colourWord = sw.color.charAt(0).toUpperCase() + sw.color.slice(1) + '.';
             const groupWord = this._hmGroupSourceLabel(d);
             // Silenced genes are dropped from
             // nGenes/orderedGenes already, so the plain count alone would
@@ -67950,7 +67950,7 @@ ${clone.innerHTML}
     // order is currently drawn) is toggled into the armed gate as a block,
     // keyed by cell line id so the gate survives a later re-sort. Dragging
     // over a range that is ALREADY ENTIRELY in the gate removes it instead,
-    // the toggle behaviour the spec calls for; a mixed range (some in, some
+    // the toggle behavior the spec calls for; a mixed range (some in, some
     // not) adds the missing ones rather than removing the ones already
     // there, since "drag to add" is the more common gesture. A plain click
     // (no movement) gates exactly the one column under the pointer.
@@ -68072,7 +68072,7 @@ ${clone.innerHTML}
     }
 
     // Renders the "Silenced: DUSP4, MYC. Click to restore." note,
-    // same grey style as the hint line above it. Only exists (the div is
+    // same gray style as the hint line above it. Only exists (the div is
     // otherwise empty and hidden) when something is actually silenced,
     // mirroring hmScrollHint's own show-only-when-relevant text.
     _hmRenderSilencedNote(d) {
@@ -68303,7 +68303,7 @@ ${clone.innerHTML}
         const line1 = `${setLabel}, ${measureWord}`;
         const swc = this._hmScaleWords(d);
         const scaleWord = swc.caption + '.';
-        const colourWord = swc.colour.charAt(0).toUpperCase() + swc.colour.slice(1) + '.';
+        const colourWord = swc.color.charAt(0).toUpperCase() + swc.color.slice(1) + '.';
         // The sort line right beside this already names WHAT the blocks are,
         // so this only adds how many, same split the on-screen hint uses.
         const groupWord = d.groups
@@ -68361,7 +68361,7 @@ ${clone.innerHTML}
 
     // Total export/copy canvas size: the caption, the top dendrogram band
     // (when Cluster cell lines drew one), the grid (with its group strip and
-    // second row, if any), the colour legend, and the group and second-row
+    // second row, if any), the color legend, and the group and second-row
     // legends where those apply. Kept as one function so image export,
     // clipboard copy and the on-screen layout can't drift apart.
     _hmTotalCanvasSize(d) {
@@ -68374,7 +68374,7 @@ ${clone.innerHTML}
     }
 
     // Composes the whole picture (caption, labels + dendrogram, grid +
-    // group strip + second row, colour legend, group legend, second-row
+    // group strip + second row, color legend, group legend, second-row
     // legend) onto one canvas at the given scale. Used by Export image,
     // Copy and the AI export's companion PNG, so the three can never drift
     // apart into three slightly different pictures. Painted in logical
@@ -68393,7 +68393,7 @@ ${clone.innerHTML}
         ctx.scale(scale, scale);
         if (background !== 'transparent') { ctx.fillStyle = background; ctx.fillRect(0, 0, totalW, totalH); }
         this._hmPaintCaption(ctx, this._hmCaptionGeometry(d));
-        // `plain: true` drops the on-screen light-grey panel fills: an
+        // `plain: true` drops the on-screen light-gray panel fills: an
         // export is meant to sit on a slide or a page, not the app's own
         // background, so only the data cells and the chosen background
         // (white or transparent) should show.
@@ -68447,7 +68447,7 @@ ${clone.innerHTML}
         const csvField = (s) => `"${String(s).replace(/"/g, '""')}"`;
         const measureWord = d.dataType === 'expr' ? 'mRNA expression' : 'CRISPR gene effect';
         const scaleWord = this._hmScaleWords(d).short;
-        const colourWord = this._hmScaleWords(d).colour;
+        const colourWord = this._hmScaleWords(d).color;
         const cohortMode = document.getElementById('hmCohort')?.value || 'visible';
         const cohortWord = { visible: 'cell lines the browser is filtered to', selected: 'ticked cell lines', all: 'all cell lines' }[cohortMode] || cohortMode;
         const lineageWord = d.lineageLabel ? `${d.lineageLabel} only` : 'all lineages';
@@ -68502,7 +68502,7 @@ ${clone.innerHTML}
             csv += csvField(r.attrLabel) + ',' + d.orderedCLs.map((cl, i) => csvField(r.values?.[i] ?? '')).join(',') + '\n';
         });
         csv += rows.join('\n') + '\n';
-        // The measured values travel with any relative colouring, as a
+        // The measured values travel with any relative coloring, as a
         // second block, so the file never carries only a relative number.
         if (d.scaleMode !== 'raw') {
             const rawWord = d.dataType === 'ge' ? 'gene effect as measured (Chronos)' : 'log2 TPM+1 as measured';
@@ -68534,10 +68534,10 @@ ${clone.innerHTML}
     // Clamps the tree detail setting to the size of the ONE tree it's about
     // to draw: a 14-leaf group tree draws essentially full even at Very
     // coarse/Minimal (a small tree has nothing to gain from collapsing),
-    // while a 1,000-leaf tree still honours the setting as chosen. Shared by
+    // while a 1,000-leaf tree still honors the setting as chosen. Shared by
     // both the gene tree (paintLabels) and every cell-line tree
     // (paintDendroTop, called once per root since a per-group tree's own
-    // leaf count differs from its neighbours').
+    // leaf count differs from its neighbors').
     _hmEffectiveMinLeaves(val, nLeaves) {
         return Math.min(this._hmTreeDetailMinLeaves(val), Math.max(1, Math.floor(nLeaves / 4)));
     }
@@ -68818,7 +68818,7 @@ ${clone.innerHTML}
         // The cluster split choice lives in state now (; the select
         // is rendered on the cluster row itself when one exists).
         this._hmClusterKChoice = state.clusterK != null ? String(state.clusterK) : '0';
-        // Older files predate the gene-tree colour select; they drew plain
+        // Older files predate the gene-tree color select; they drew plain
         // gray trees, so absent means
         // Tree order only rather than inheriting whatever is on screen.
         set('hmGeneClusterK', state.geneClusterK != null ? String(state.geneClusterK) : '0');
@@ -69331,13 +69331,13 @@ ${clone.innerHTML}
                 ? `${searchTerms.length} search term${searchTerms.length === 1 ? ' was' : 's were'} typed into the cell-line search box, and matching points are drawn in orange on top of the same data. `
                 : 'No cell-line search was active, so no points are picked out in orange. ')
             + (clicked ? `${clicked} point${clicked === 1 ? ' carries' : 's carry'} a name label because ${clicked === 1 ? 'it was' : 'they were'} clicked on screen. ` : 'No points were clicked, so no names are drawn beside them. ')
-            + (colorBy ? `Points are coloured by ${colorBy}. ` : 'Points are not coloured by any category. ')
+            + (colorBy ? `Points are colored by ${colorBy}. ` : 'Points are not colored by any category. ')
             + (overlayHot ? `Points are split by ${overlayHot} hotspot mutation status as an overlay. ` : '')
             + (overlayFus ? `Points are split by ${overlayFus} fusion status as an overlay. ` : '')
             + (this._gateA?.length || this._gateB?.length
                 ? `${this._gateA?.length ? `Gate A encloses ${this._mNum(this._gateA.length)} points` : ''}${this._gateA?.length && this._gateB?.length ? ' and gate' : this._gateB?.length ? 'Gate' : ''}${this._gateB?.length ? ` B encloses ${this._mNum(this._gateB.length)} points` : ''}, drawn by hand on the plot; a gate marks its points unless it is applied as a filter, which the WHICH CELL LINES section above would then say. `
                 : '')
-            + 'Highlighting, labelling, colouring and gating are drawn on top of the same points; none of them add or remove a cell line, so none of them change n, r, p or the slope.',
+            + 'Highlighting, labeling, coloring and gating are drawn on top of the same points; none of them add or remove a cell line, so none of them change n, r, p or the slope.',
             tissueOpen
                 ? 'THE BY-TISSUE CHART\n'
                 + 'The By Tissue chart in this popout repeats the same correlation within each tissue that has at least 3 cell lines on the plot, using the same Pearson coefficient. Its p-value is a different test from the one above: a Fisher z test comparing that tissue\'s correlation with the correlation across all the other cell lines on the plot. A tissue with only a handful of lines can reach r = 1 by chance, which is why the z values are clamped just short of 1.'
@@ -69506,7 +69506,7 @@ ${clone.innerHTML}
             + `   The remainder were sorted by |r| and cut at 500. ${this._mNum(rows.length)} row${rows.length === 1 ? ' is' : 's are'} listed${rows.length >= 500 ? ', which is the cap, so genes that cleared the 0.2 cutoff but ranked below 500 are missing from the list and every one of them is weaker than every row shown' : ''}.\n`
             + '   A gene missing from the list is therefore usually a gene whose correlation was too WEAK to keep, which is the opposite of untested.',
             scatterGene
-                ? `THE SCATTER PLOT\nEach point is one cell line. The horizontal axis is ${target} gene effect, the vertical axis is ${scatterGene} expression. Points are coloured by the cell line's genotype for the stratifying gene. The r, slope and n printed on the plot are recomputed on the points that belong to the subgroup, not on any background points shown for context, and no p is printed there.`
+                ? `THE SCATTER PLOT\nEach point is one cell line. The horizontal axis is ${target} gene effect, the vertical axis is ${scatterGene} expression. Points are colored by the cell line's genotype for the stratifying gene. The r, slope and n printed on the plot are recomputed on the points that belong to the subgroup, not on any background points shown for context, and no p is printed there.`
                 : null,
             `WHAT THIS DOES NOT SAY\nA correlation between one gene's expression and another gene's dependency does not show that the first controls the second. Within a small subgroup, one or two unusual cell lines can carry a large r on their own.`
         ]);
@@ -69729,7 +69729,7 @@ ${clone.innerHTML}
         const measureWords = this._methodsMeasureWords(measure);
 
         const scaleSentence = this._hmScaleWords(d).sentence;
-        const colourWord = this._hmScaleWords(d).colour;
+        const colourWord = this._hmScaleWords(d).color;
 
         // The ordering hierarchy, row by row, as the annotation rows carry it.
         const rows = this._hmAnnRows || [];
@@ -69765,14 +69765,14 @@ ${clone.innerHTML}
             let role;
             if (isBlock) {
                 role = k === 'cluster'
-                    ? 'makes the blocks: the columns are ordered by the clustering tree and the tree is cut into the clusters the coloured strip and the legend show'
-                    : 'makes the blocks, the ones the coloured strip and the legend show';
+                    ? 'makes the blocks: the columns are ordered by the clustering tree and the tree is cut into the clusters the colored strip and the legend show'
+                    : 'makes the blocks, the ones the colored strip and the legend show';
             } else if (!row.sortDir) {
-                role = 'colour only, neither of its toggles is on so it does not touch the order';
+                role = 'color only, neither of its toggles is on so it does not touch the order';
             } else if (info.inert.includes(i)) {
                 // No direction word here: naming one would describe an order
                 // this row is not in fact imposing.
-                return `   ${i + 1}. ${label} (${kindWord(row.mode)}): colour only, another row already fixes the order completely.`;
+                return `   ${i + 1}. ${label} (${kindWord(row.mode)}): color only, another row already fixes the order completely.`;
             } else {
                 const within = hasBlockRow ? ' within each block' : ' across the whole cohort';
                 role = k === 'continuous' ? `orders the columns by this value${within}`
@@ -69791,7 +69791,7 @@ ${clone.innerHTML}
 
         const gateA = this._hmGates?.A?.size || 0;
         const gateB = this._hmGates?.B?.size || 0;
-        // Is the gates row doing anything to the order, or only colouring?
+        // Is the gates row doing anything to the order, or only coloring?
         const gatesRowActive = rows.some((r, i) => r.mode === 'gates' && (i === info.blockIdx || (r.sortDir && !info.inert.includes(i))));
         const silenced = d.silencedGeneNames || [];
         const missing = d.missingGenes || [];
@@ -69825,12 +69825,12 @@ ${clone.innerHTML}
 
         const long = this._mBlocks([
             this._methodsHeaderBlock(title, measure),
-            `WHAT THE PICTURE SHOWS\nEach row is one gene, each column is one cell line. The colour of a square is that gene's ${measureWords} in that cell line: ${colourWord}. A gray square means no value for that gene in that cell line.\nGenes drawn: ${this._mNum(d.genes.length)}. Cell lines drawn: ${this._mNum(d.orderedCLs.length)}.`,
+            `WHAT THE PICTURE SHOWS\nEach row is one gene, each column is one cell line. The color of a square is that gene's ${measureWords} in that cell line: ${colourWord}. A gray square means no value for that gene in that cell line.\nGenes drawn: ${this._mNum(d.genes.length)}. Cell lines drawn: ${this._mNum(d.orderedCLs.length)}.`,
             `THE COLOUR SCALE\n${scaleSentence}`
-            + (d.scaleMode === 'z' ? '\nBecause the scale is built from the cell lines on screen, changing which cell lines are shown changes every colour: a gene that looks high here is high RELATIVE TO THESE LINES only.' : '')
-            + (d.scaleMode === 'zall' ? '\nBecause the scale is built from the whole panel, the colours stay comparable if the cohort changes.' : '')
-            + (d.scaleMode === 'med' ? '\nBecause every row is centred on its own panel median but NOT divided by its spread, one unit means the same distance in every row; a gene that barely varies across the panel gives small numbers here rather than inflated ones.' : '')
-            + (d.scaleMode === 'raw' ? '\nValues as measured mean a gene that is simply high or low everywhere fills its row with one colour, which is honest but can drown out the differences between cell lines.' : ''),
+            + (d.scaleMode === 'z' ? '\nBecause the scale is built from the cell lines on screen, changing which cell lines are shown changes every color: a gene that looks high here is high RELATIVE TO THESE LINES only.' : '')
+            + (d.scaleMode === 'zall' ? '\nBecause the scale is built from the whole panel, the colors stay comparable if the cohort changes.' : '')
+            + (d.scaleMode === 'med' ? '\nBecause every row is centered on its own panel median but NOT divided by its spread, one unit means the same distance in every row; a gene that barely varies across the panel gives small numbers here rather than inflated ones.' : '')
+            + (d.scaleMode === 'raw' ? '\nValues as measured mean a gene that is simply high or low everywhere fills its row with one color, which is honest but can drown out the differences between cell lines.' : ''),
             'WHICH CELL LINES\n'
             + `   ${this._hmCohortPhrase(d.orderedCLs.length)}\n`
             + (this._hmDrillCells ? `   The view was then drilled into ${this._hmDrillLabel || 'one group'}, so only that group is on screen; the Back button returns to the full cohort.\n` : '')
@@ -69847,10 +69847,10 @@ ${clone.innerHTML}
             + (missing.length ? `   ${this._mNum(missing.length)} requested gene${missing.length === 1 ? ' was' : 's were'} not in the matrix and could not be drawn: ${missing.join(', ')}.\n` : '   Every requested gene was found in the matrix.\n')
             + (silenced.length ? `   ${this._mNum(silenced.length)} gene${silenced.length === 1 ? ' was' : 's were'} silenced by clicking its label and is excluded from the grid, the ordering, the score, the clustering and the .csv, exactly as if it had never been entered: ${silenced.join(', ')}.\n` : '   No genes were silenced.\n')
             + (d.geneTree
-                ? `   The rows were reordered by clustering the genes: average-linkage hierarchical clustering on correlation distance, where the distance between two genes is 1 minus the Pearson correlation of their profiles across the cell lines shown. The tree beside the labels is that clustering${d.geneClusterColorOf ? ', with its branches coloured by subtree so groups of genes that behave alike stand out; the colouring is display only and does not change the row order' : ''}.\n`
+                ? `   The rows were reordered by clustering the genes: average-linkage hierarchical clustering on correlation distance, where the distance between two genes is 1 minus the Pearson correlation of their profiles across the cell lines shown. The tree beside the labels is that clustering${d.geneClusterColorOf ? ', with its branches colored by subtree so groups of genes that behave alike stand out; the coloring is display only and does not change the row order' : ''}.\n`
                 : '   The rows are in the order the genes were given; they were not clustered.\n'),
             'HOW THE COLUMNS WERE ORDERED\n'
-            + 'The order is carried entirely by the annotation rows beneath the grid, through two separate choices per row. At most ONE row is marked as the blocks: it splits the columns into contiguous blocks wherever it sits in the list, and its own arrows set the order of those blocks. Every other row whose sort arrows are on sorts inside those blocks, read from the top down. A row with neither toggle on only adds colour.\n'
+            + 'The order is carried entirely by the annotation rows beneath the grid, through two separate choices per row. At most ONE row is marked as the blocks: it splits the columns into contiguous blocks wherever it sits in the list, and its own arrows set the order of those blocks. Every other row whose sort arrows are on sorts inside those blocks, read from the top down. A row with neither toggle on only adds color.\n'
             + (rowLines.length ? rowLines.join('\n') : '   There are no annotation rows.')
             + (hasBlockRow ? '' : '\n   No row is marked as the blocks, so the columns are one run rather than a set of blocks.')
             // A cluster row ends the chain, and a tree order leaves nothing
@@ -69864,10 +69864,10 @@ ${clone.innerHTML}
                 : '')
             + (d.hasTopDendro ? '\n   The tree drawn above the grid is that same cell-line clustering.' : ''),
             groups
-                ? `THE BLOCKS\n   The coloured strip under the grid marks ${this._mNum(visibleGroups.length)} block${visibleGroups.length === 1 ? '' : 's'}: ${visibleGroups.map(g => `${g.key} (n=${g.count})`).join(', ')}.\n   ${d.showMedian ? (visibleGroups.some(g => g.medianIsMag) ? 'The number printed on each block is the median, over its cell lines, of the mean absolute value across the shown genes; this is what orders the blocks.' : 'The number printed on each block is the median score of its cell lines.') : 'No per-block numbers are printed; switch on Show median to add them.'}`
+                ? `THE BLOCKS\n   The colored strip under the grid marks ${this._mNum(visibleGroups.length)} block${visibleGroups.length === 1 ? '' : 's'}: ${visibleGroups.map(g => `${g.key} (n=${g.count})`).join(', ')}.\n   ${d.showMedian ? (visibleGroups.some(g => g.medianIsMag) ? 'The number printed on each block is the median, over its cell lines, of the mean absolute value across the shown genes; this is what orders the blocks.' : 'The number printed on each block is the median score of its cell lines.') : 'No per-block numbers are printed; switch on Show median to add them.'}`
                 : 'THE BLOCKS\n   No row is marked as the blocks, so there is no group strip and no legend of blocks. Turn on the blocks toggle of a category, alteration or gates row to split the columns into blocks.',
             (gateA || gateB)
-                ? `GATES\n   Gate A holds ${this._mNum(gateA)} cell line${gateA === 1 ? '' : 's'} and gate B holds ${this._mNum(gateB)}. Gates are ranges of columns painted by hand across the grid, kept by cell line identity so re-sorting does not lose them. They are a selection, not a threshold: their bounds are wherever they were dragged to, and no rule produced them. They appear as the Gates annotation row, which colours each column by the gate it is in (A, B, both, or none) and, like any other row, can sort or block the columns; ${gatesRowActive ? 'here that row is doing so, and it is named in the ordering above.' : 'here it is colour only, so the gates change neither the ordering nor any number in the figure.'}`
+                ? `GATES\n   Gate A holds ${this._mNum(gateA)} cell line${gateA === 1 ? '' : 's'} and gate B holds ${this._mNum(gateB)}. Gates are ranges of columns painted by hand across the grid, kept by cell line identity so re-sorting does not lose them. They are a selection, not a threshold: their bounds are wherever they were dragged to, and no rule produced them. They appear as the Gates annotation row, which colors each column by the gate it is in (A, B, both, or none) and, like any other row, can sort or block the columns; ${gatesRowActive ? 'here that row is doing so, and it is named in the ordering above.' : 'here it is color only, so the gates change neither the ordering nor any number in the figure.'}`
                 : 'GATES\n   No cell-line gates were set on the grid, so there is no Gates annotation row.',
             'WHAT THIS DOES NOT SAY\nA heatmap shows pattern, not significance: no test was run and no p-value or false discovery rate exists anywhere in this view. Blocks that look different are not thereby shown to be different.'
             + ((d.geneTree || d.clustersActive)
@@ -69996,7 +69996,7 @@ ${clone.innerHTML}
             'WHAT THE VOLCANO PLOT SHOWS\n'
             + `   Horizontal axis: the difference in means, side A minus side B.\n`
             + `   Vertical axis: ${canTest ? 'minus log10 of q, so higher is more confident' : 'the size of the difference, since no q exists to plot'}.\n`
-            + '   Gray points fall below the cutoffs and are not in the table; coloured points are the ones the table lists; amber points are matches for whatever is typed in the search box. The strongest few in each direction carry a label.',
+            + '   Gray points fall below the cutoffs and are not in the table; colored points are the ones the table lists; amber points are matches for whatever is typed in the search box. The strongest few in each direction carry a label.',
             'WHAT THE TABLE SHOWS, AND WHAT IT LEAVES OUT\n'
             + `   Gene effect side: genes with |difference| of at least ${leftDelta}${canTest ? ` and q of at most ${leftQ}` : ''}, strongest first, capped at ${this._mNum(leftN)} rows.\n`
             + (exprRows ? `   Expression side: genes with |difference| of at least ${rightDelta}${canTest ? ` and q of at most ${rightQ}` : ''}, capped at ${this._mNum(rightN)} rows.\n` : '   Expression data is not loaded, so there is no expression side.\n')
@@ -70046,16 +70046,16 @@ ${clone.innerHTML}
 
         const gcls = u.geneClass;
         const geneRule = !customList.length && gcls
-            ? `The genes were the most variable (up to 1,000 per layer, variance ranked on a subsample of at most 100 cell lines) among the ${this._mNum(gcls.n)} genes of the curated list "${gcls.label}" (source: ${gcls.source}, as curated in Green Listed)${dtRaw === 'both' ? ', from gene effect and from expression, joined and each feature centred and scaled to unit variance so the two layers weigh equally' : ', left on their own scale'}.`
+            ? `The genes were the most variable (up to 1,000 per layer, variance ranked on a subsample of at most 100 cell lines) among the ${this._mNum(gcls.n)} genes of the curated list "${gcls.label}" (source: ${gcls.source}, as curated in Green Listed)${dtRaw === 'both' ? ', from gene effect and from expression, joined and each feature centered and scaled to unit variance so the two layers weigh equally' : ', left on their own scale'}.`
             : customList.length
-            ? `The genes were the ${this._mNum(customList.length)} typed into the gene-list box, taken in the order given, and each gene was then centred and scaled to unit variance across the cell lines.`
+            ? `The genes were the ${this._mNum(customList.length)} typed into the gene-list box, taken in the order given, and each gene was then centered and scaled to unit variance across the cell lines.`
             : dtRaw === 'both'
-                ? `The features were the 1,000 most variable genes in gene effect and the 1,000 most variable in expression, each ranked on a subsample of at most 100 cell lines, joined into one matrix (a gene can appear once per layer) and each feature centred and scaled to unit variance, so the two layers weigh equally despite expression's wider range.`
+                ? `The features were the 1,000 most variable genes in gene effect and the 1,000 most variable in expression, each ranked on a subsample of at most 100 cell lines, joined into one matrix (a gene can appear once per layer) and each feature centered and scaled to unit variance, so the two layers weigh equally despite expression's wider range.`
                 : `The genes were the 1,000 most variable in the chosen data, with the variance ranked on a subsample of at most 100 cell lines. They were NOT z-scored: the most variable genes are deliberately left on their own scale so the ones that vary most keep their weight.`;
 
         const methodRule = method === 'PCA'
-            ? 'Principal component analysis was computed on the column-centred matrix by power iteration, taking the first 5 components; each axis gives its share of the total variance.'
-            : `UMAP was run with the number of neighbours set to the cohort size divided by 3, capped at 15 and never below 5, a minimum distance of 0.3, a spread of 1.5, and ${nCL >= 30 ? 3 : 2} output dimensions. These settings are fixed in the app and are not adjustable from the panel.`;
+            ? 'Principal component analysis was computed on the column-centered matrix by power iteration, taking the first 5 components; each axis gives its share of the total variance.'
+            : `UMAP was run with the number of neighbors set to the cohort size divided by 3, capped at 15 and never below 5, a minimum distance of 0.3, a spread of 1.5, and ${nCL >= 30 ? 3 : 2} output dimensions. These settings are fixed in the app and are not adjustable from the panel.`;
 
         const condensed = this._mSentences([
             this._methodsDataSentence(kind),
@@ -70076,10 +70076,10 @@ ${clone.innerHTML}
                 ? `   A principal component is a direction through the data along which the cell lines spread out most; the first explains the most, the second the next most, and so on.${explained ? `\n   Variance explained by the first components: ${explained.slice(0, 5).map((e, i) => `PC${i + 1} ${(e * 100).toFixed(1)} percent`).join(', ')}.` : ''}\n   Distances on a PCA plot are meaningful in the plotted directions, and the components can be read back to the genes that drive them (the loadings option shows this).`
                 : '   UMAP is a non-linear method: it preserves which cell lines are near each other, and it does NOT preserve distances between clusters. How far apart two groups sit on a UMAP plot is not a measure of how different they are, and the size of a cluster is not a measure of anything. Re-running UMAP will move the picture even on the same data.'),
             'MARKS ON THE PLOT\n'
-            + `   Points are coloured by ${v('clbUmapColorBy') === 'subtissue' ? 'subtype' : 'tissue'}${v('clbUmapColorGene') ? `, or by ${v('clbUmapColorGene')} ${v('clbUmapColorGeneType') === 'expr' ? 'expression' : 'gene effect'} where that is set` : ''}.\n`
+            + `   Points are colored by ${v('clbUmapColorBy') === 'subtissue' ? 'subtype' : 'tissue'}${v('clbUmapColorGene') ? `, or by ${v('clbUmapColorGene')} ${v('clbUmapColorGeneType') === 'expr' ? 'expression' : 'gene effect'} where that is set` : ''}.\n`
             + (lasso ? `   ${this._mNum(lasso)} point${lasso === 1 ? ' is' : 's are'} lasso-selected. A lasso is a selection made by hand; it does not change the projection.\n` : '   No lasso selection is active.\n')
             + ((gA || gB) ? `   Gate A holds ${this._mNum(gA)} cell lines and gate B holds ${this._mNum(gB)}. Gates are rectangles placed by hand, not thresholds.\n` : '   No gates were placed on the plot.\n'),
-            ...(this._umapRank?.rows?.length ? [`GENE-CLASS RANKING (Rank classes)\n   For each curated class, PC1's share of the total variance was computed on ${this._umapRank.dataWord} for ${this._mNum(this._umapRank.nCL)} cell lines (${this._umapRank.cohort}), using the class's most variable genes (up to 1,000 per layer) exactly as a run on that class would, and compared with ${this._umapRank.nRandom} random gene sets of the same size drawn from all genes in the data (seeded, so the table is reproducible). The ratio is the class's PC1 share over the random median; raw PC1 shares favour small sets, the ratio does not.\n   Top classes: ${this._umapRank.rows.slice(0, 5).map(r => `${r.label} ${(r.pc1 * 100).toFixed(1)} percent vs ${(r.med * 100).toFixed(1)} random (ratio ${r.ratio.toFixed(2)})`).join('; ')}.\n   A class above random shares more structure than chance among these cell lines; it does not make that class the right one to look at.`] : []),
+            ...(this._umapRank?.rows?.length ? [`GENE-CLASS RANKING (Rank classes)\n   For each curated class, PC1's share of the total variance was computed on ${this._umapRank.dataWord} for ${this._mNum(this._umapRank.nCL)} cell lines (${this._umapRank.cohort}), using the class's most variable genes (up to 1,000 per layer) exactly as a run on that class would, and compared with ${this._umapRank.nRandom} random gene sets of the same size drawn from all genes in the data (seeded, so the table is reproducible). The ratio is the class's PC1 share over the random median; raw PC1 shares favor small sets, the ratio does not.\n   Top classes: ${this._umapRank.rows.slice(0, 5).map(r => `${r.label} ${(r.pc1 * 100).toFixed(1)} percent vs ${(r.med * 100).toFixed(1)} random (ratio ${r.ratio.toFixed(2)})`).join('; ')}.\n   A class above random shares more structure than chance among these cell lines; it does not make that class the right one to look at.`] : []),
             'WHAT THIS DOES NOT SAY\nA projection is a summary, not a test. Nothing here carries a p-value, and two groups that separate on the plot have not been shown to differ in any particular gene. Which genes went into the matrix decides most of what the picture looks like, so a plot built on the most variable genes and one built on a chosen gene list are answering different questions.'
         ]);
 
@@ -70270,7 +70270,7 @@ document.addEventListener('keydown', (e) => {
 document.addEventListener('keyup', (e) => { if (e.key === 'Shift' && window.app) window.app._shiftHeld = false; });
 
 // The synonym tables (6 MB) load the first time any gene box is used, so a
-// synonym typed there is recognised by the time it is submitted.
+// synonym typed there is recognized by the time it is submitted.
 document.addEventListener('focusin', (e) => {
     const t = e.target;
     if (!window.app || !t?.matches) return;
