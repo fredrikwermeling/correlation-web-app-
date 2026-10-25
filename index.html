@@ -1737,6 +1737,11 @@
         .gb-scope .gb-summary { font-size:13px; line-height:1.6; }
         .gb-scope .gb-m { font-size:10px; color:#6b7280; }
         .gb-scope .gb-sub { font-weight:600; color:#374151; font-size:12px; margin:12px 0 4px; }
+        /* The main parts of a card (Related genes: co-dependencies, co-expression,
+           complexes, pathways): a divider and a heading the data below hangs from. */
+        .gb-scope .gb-part { font-size:14px; font-weight:700; color:#3f6b25; margin:20px 0 6px; padding-top:12px; border-top:1px solid #e5e7eb; }
+        .gb-scope .gb-part.gb-part-first { margin-top:6px; padding-top:0; border-top:none; }
+        .gb-scope .gb-part > .gb-m { font-size:11px; font-weight:400; }
         .gb-scope .gb-loading, .gb-scope .gb-empty { font-size:11px; color:#9ca3af; padding:4px 0; }
         .gb-scope .gb-empty { font-size:12px; color:#6b7280; }
         .gb-scope .gb-grid { display:grid; grid-template-columns:minmax(0,1.1fr) minmax(0,1fr); gap:14px; align-items:start; }
@@ -5879,7 +5884,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v90_95"></script>
+    <script src="app.js?v=v90_96"></script>
     <script src="tour.js?v=v89_49"></script>
 </body>
 </html>

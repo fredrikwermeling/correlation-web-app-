@@ -52543,8 +52543,8 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             + `<button class="gb-scatter-btn gb-xtab on" data-gb-codep-tab="pos">Positive r <span class="gb-m" style="color:inherit; font-weight:400;">(co-dependent)</span></button>`
             + (anti.length ? `<button class="gb-scatter-btn gb-xtab" data-gb-codep-tab="neg">Negative r <span class="gb-m" style="color:inherit; font-weight:400;">(opposite)</span></button>` : '')
             + `</div>` : '';
-        const coHead = top.length ? `<div class="gb-sub">Co-dependencies <span class="gb-m">(${nDep >= 10 ? `positive: lines that depend on ${g} also depend on these; negative: they depend on these less` : `genes whose gene effect varies with ${g}'s; few lines depend on ${g}, so this is shared variation rather than shared dependency`})</span></div>` + coTabs
-            : `<div class="gb-sub">Co-dependencies</div><div class="gb-m">${s.geVals.length < 100 ? `None listed: ${g} was screened in only ${s.geVals.length} lines, and a co-dependency needs at least 100 lines screened for both genes.` : 'No gene correlates positively with it.'}</div>`;
+        const coHead = top.length ? `<div class="gb-sub gb-part gb-part-first">Co-dependencies <span class="gb-m">(${nDep >= 10 ? `positive: lines that depend on ${g} also depend on these; negative: they depend on these less` : `genes whose gene effect varies with ${g}'s; few lines depend on ${g}, so this is shared variation rather than shared dependency`})</span></div>` + coTabs
+            : `<div class="gb-sub gb-part gb-part-first">Co-dependencies</div><div class="gb-m">${s.geVals.length < 100 ? `None listed: ${g} was screened in only ${s.geVals.length} lines, and a co-dependency needs at least 100 lines screened for both genes.` : 'No gene correlates positively with it.'}</div>`;
         const coBlocks = block(top, false) + block(anti, true);
         // Named sets the app already curates (cancer pathway panel, complexes,
         // gene set library), which say what the link is; the database lists
@@ -52668,7 +52668,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 `<button class="btn btn-sm inspect-btn" style="padding:2px 6px; font-size:10px; background:#6ba544; color:white;" data-gb-scatter="${this.esc(h.gene)}" data-gb-x="${m.tx}" data-gb-y="${m.ty}" title="Open the correlation plot">Correlation</button>`]))
             + `</div>`).join('');
         const hm = this._gbCoexprHeatmap(gene, (res.mrnaVsMrna || []).map(h => h.gene), isNear);
-        box.innerHTML = `<div class="gb-sub" style="margin-top:10px;">Expression correlations <span class="gb-m">(co-expression)</span></div>`
+        box.innerHTML = `<div class="gb-sub gb-part">Expression correlations <span class="gb-m">(co-expression)</span></div>`
             + `<div class="gb-relgrid"><div class="gb-relleft">`
             + (lists.length > 1 ? `<div class="gb-xtabs">${tabs}</div>` : `<div class="gb-m" style="margin:2px 0;"><b style="color:#374151;">${lists[0].head(g)}</b>${(() => { const k = res[lists[0].key].filter(isNear).length; return k ? ` <span class="gb-near">${k} nearby</span>` : ''; })()}</div>`) + notes
             + `${panels}</div><div class="gb-relfig">${hm.fig}</div>`
@@ -52826,11 +52826,11 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             + `<div class="gb-chips">${byR(c.genes).map(x => this._gbRChip(gene, x)).join('')}</div></div>`;
         const SHOW = 5;
         const cpxHtml = cpx.length
-            ? `<div class="gb-sub" style="margin-top:12px;">Protein complexes <span class="gb-m">(${cpx.length} named complex${cpx.length === 1 ? '' : 'es'} containing ${g}, EBI Complex Portal)</span></div>`
+            ? `<div class="gb-sub gb-part">Protein complexes <span class="gb-m">(${cpx.length} named complex${cpx.length === 1 ? '' : 'es'} containing ${g}, EBI Complex Portal)</span></div>`
                 + `<div class="gb-m" style="margin:0 0 4px;">The number on each protein is how closely its gene effect follows ${g}'s across the cell lines (r; <span style="background:rgba(37,99,235,.35); padding:0 3px; border-radius:3px;">blue</span> together, <span style="background:rgba(220,38,38,.3); padding:0 3px; border-radius:3px;">red</span> opposite). Members of a complex that works as one unit tend to be co-dependent; a member that does not follow may have another role, a redundant paralog, or too little effect to measure. Most co-dependent complexes first.</div>`
                 + cpx.slice(0, SHOW).map(card).join('')
                 + (cpx.length > SHOW ? `<details class="gb-details"><summary>${cpx.length - SHOW} more complex${cpx.length - SHOW === 1 ? '' : 'es'}</summary>${cpx.slice(SHOW).map(card).join('')}</details>` : '')
-            : `<div class="gb-sub" style="margin-top:12px;">Protein complexes</div><div class="gb-m">No named complex in EBI Complex Portal contains ${g}${corum.length ? '; CORUM partners are listed below' : ''}.</div>`;
+            : `<div class="gb-sub gb-part">Protein complexes</div><div class="gb-m">No named complex in EBI Complex Portal contains ${g}${corum.length ? '; CORUM partners are listed below' : ''}.</div>`;
         const pws = d.pathways.filter(p => p.genes.includes(gene))
             .sort((a, b) => a.genes.length - b.genes.length);
         // A pathway's median says little (most members are unrelated), so the
@@ -52847,7 +52847,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             + `<div class="gb-chips">${byR(p.genes).map(x => this._gbRChip(gene, x)).join('')}</div></div></details>`;
         const PSHOW = 8;
         const pwHtml = pws.length
-            ? `<div class="gb-sub" style="margin-top:12px;">Pathways <span class="gb-m">(${pws.length} Reactome pathway${pws.length === 1 ? '' : 's'} of 5 to 150 genes containing ${g}, most specific first)</span></div>`
+            ? `<div class="gb-sub gb-part">Pathways <span class="gb-m">(${pws.length} Reactome pathway${pws.length === 1 ? '' : 's'} of 5 to 150 genes containing ${g}, most specific first)</span></div>`
                 + `<div class="gb-m" style="margin:0 0 4px;">Beside each pathway: its members whose gene effect follows ${g}'s (r 0.3 or more). Click a pathway for all its genes.</div>`
                 + pws.slice(0, PSHOW).map(pw).join('')
                 + (pws.length > PSHOW ? `<details class="gb-details"><summary>${pws.length - PSHOW} more pathway${pws.length - PSHOW === 1 ? '' : 's'}</summary>${pws.slice(PSHOW).map(pw).join('')}</details>` : '')
