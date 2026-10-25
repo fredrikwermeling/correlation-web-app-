@@ -19881,6 +19881,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 set('colorByCategory', 'gene'); set('colorByGene', pre.colorByGene); set('colorByGeneType', pre.colorByGeneType || 'expr');
                 this._colorByGeneName = String(pre.colorByGene).toUpperCase();
                 this._syncColorByGroupBtn();
+                // The first draw is grey until the lazily loaded matrix is in.
+                const t = pre.colorByGeneType || 'expr';
+                const load = t === 'expr' && !this.expressionLoaded ? this.loadExpressionData() : t === 'cn' && !this.cnLoaded ? this.loadCnData() : null;
+                if (load) load.then(() => this.updateInspectPlot()).catch(() => { });
             }
         }
 
@@ -20890,19 +20894,22 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
         const word = { ge: 'gene effect', expr: 'mRNA', cn: 'copy number' }[ct];
         const band = (r) => { const a = Math.abs(r); return a < 0.3 ? 'weak' : a < 0.5 ? 'moderate' : 'strong'; };
+        // Each gene is listed once, under the pattern it explains better, so
+        // the two lists do not repeat the same genes with different numbers.
+        const side = (r) => (Math.abs(r.ro) > Math.abs(r.ra) ? 'ro' : 'ra');
         const list = (key, title, hint) => {
-            const top = res.filter(r => r[key] === r[key]).sort((a, b) => Math.abs(b[key]) - Math.abs(a[key])).slice(0, 8);
+            const top = res.filter(r => r[key] === r[key] && side(r) === key).sort((a, b) => Math.abs(b[key]) - Math.abs(a[key])).slice(0, 8);
             return `<div style="flex:1 1 180px; min-width:0;"><div style="font-weight:600; color:#374151;" title="${hint}">${title}</div>`
                 + top.map(r => {
                     const b = band(r[key]), col = b === 'weak' ? '#9ca3af' : r[key] > 0 ? '#b91c1c' : '#1d4ed8';
                     return `<div style="display:flex; justify-content:space-between; gap:8px;"><a href="#" data-cbs-gene="${this.esc(r.g)}" style="color:#4f46e5;">${this.gi(r.g)}</a><span style="color:${col};${b === 'strong' ? ' font-weight:600;' : ''}" title="${b}">${r[key].toFixed(2)}</span></div>`;
                 }).join('') + `</div>`;
         };
-        box.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:3px;"><span style="color:#374151;">Genes whose <b>${word}</b> best explains the ${n.toLocaleString()} plotted lines</span><button type="button" data-cbs-close style="border:none; background:none; color:#9ca3af; cursor:pointer; font-size:14px; line-height:1;" title="Close">&times;</button></div>`
+        box.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:3px;"><span style="color:#374151;">Genes whose <b>${word}</b> best explains the ${n.toLocaleString()} plotted cell lines</span><button type="button" data-cbs-close style="border:none; background:none; color:#9ca3af; cursor:pointer; font-size:14px; line-height:1;" title="Close">&times;</button></div>`
             + `<div style="display:flex; gap:16px; flex-wrap:wrap;">`
             + list('ra', 'Along the trend', 'r with where each line sits along the trend (both axes together)')
             + list('ro', 'Above / below the trend', 'r with how far each line sits above (positive) or below the regression line')
-            + `</div><div style="color:#6b7280; font-size:10px; margin-top:3px;">Pearson r. Along the trend, positive (red) means higher toward the right end of the trend line, negative (blue) toward the left end; above / below, positive means higher in the lines above the line. |r| below 0.3 is weak (grey), 0.3 to 0.5 moderate, 0.5 and above strong. Click a gene to colour by it.</div>`;
+            + `</div><div style="color:#6b7280; font-size:10px; margin-top:3px;">Pearson r. Along the trend, positive (red) means higher toward the right end of the trend line, negative (blue) toward the left end; above / below, positive means higher in the lines above the line. |r| below 0.3 is weak (grey), 0.3 to 0.5 moderate, 0.5 and above strong. Each gene is listed once, under the pattern it explains better. Click a gene to colour by it.</div>`;
     }
 
     // The Color by gene, resolved when typed; a restored or reopened plot only
@@ -21044,8 +21051,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 x: noV.map(d => d.x), y: noV.map(d => d.y), mode: 'markers', type: 'scatter',
                 text: noV.map(d => `${d.cellLineName}<br>${d.lineage}<br>${cg} ${word}: no data`),
                 hovertemplate: '%{text}<br>x: %{x:.3f}<br>y: %{y:.3f}<extra></extra>',
-                marker: { color: '#d1d5db', size: 8, opacity: 0.5 }, name: `No ${word} value (n=${noV.length})`, showlegend: true
+                marker: { color: '#d1d5db', size: 8, opacity: 0.5 }, name: `No ${word} value (n=${noV.length})`, showlegend: false
             });
+            // The colour bar is the legend here; cell lines without a value
+            // are grey and counted under it instead of in a legend box.
+            const noVNote = noV.length ? `<br><span style="color:#6b7280">grey: no value<br>(n=${noV.length})</span>` : '';
             // Low values first so the high end is drawn on top.
             withV.sort((a, b) => ct === 'ge' ? b[1] - a[1] : a[1] - b[1]);
             const vs = withV.map(p => p[1]);
@@ -21058,7 +21068,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     size: 10, opacity: 0.85, color: vs, cmin: lo, cmax: hi,
                     colorscale: ct === 'ge' ? [[0, '#e66101'], [0.5, '#f7f7f7'], [1, '#5e3c99']] : [[0, '#2166ac'], [0.5, '#f7f7f7'], [1, '#b2182b']],
                     line: { width: 0.5, color: '#6b7280' },
-                    colorbar: { title: { text: `<i>${this.esc(cg)}</i><br>${word}`, side: 'top', font: { size: 11 } }, thickness: 12, len: 0.6, x: 1.02, xanchor: 'left', y: 0.5, yanchor: 'middle', tickfont: { size: 10 } }
+                    colorbar: { title: { text: `<i>${this.esc(cg)}</i><br>${word}${noVNote}`, side: 'top', font: { size: 11 } }, thickness: 12, len: 0.6, x: 1.02, xanchor: 'left', y: 0.5, yanchor: 'middle', tickfont: { size: 10 } }
                 },
                 name: `${cg} ${word}`, showlegend: false
             });
@@ -21540,7 +21550,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             },
             hovermode: 'closest',
             margin: { t: topMargin, r: _isPhone ? 14 : 30, b: _botMargin, l: _isPhone ? 52 : 96, autoexpand: false },
-            showlegend: (hotspotMode === 'color' && hotspotGene) || (transOverlayMode === 'color' && transOverlayGene) || !!colorByCategory,
+            showlegend: (hotspotMode === 'color' && hotspotGene) || (transOverlayMode === 'color' && transOverlayGene) || (!!colorByCategory && colorByCategory !== 'gene'),
             legend: colorByCategory ? {
                 orientation: 'h',
                 x: 0.5,
