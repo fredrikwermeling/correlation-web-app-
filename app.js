@@ -52015,6 +52015,18 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const code = { flank: 0, intron: 1, utr: 2, cds: 3 };
         for (const s of m.segs) cls.fill(code[s.type], s.a, s.b);
         for (const h of m.hot) for (let p = h.a; p < h.b; p++) cls[p] |= 4;
+        // Start and stop codon: the first and last three coding bases, found
+        // by class so a codon split across an exon boundary is marked whole.
+        // Bit 32 start, bit 64 stop; DNA views only.
+        let hasStart = false, hasStop = false;
+        if (view !== 'protein' && t.protein) {
+            const cdsPos = [];
+            for (let p = 0; p < cls.length && cdsPos.length < 3; p++) if ((cls[p] & 3) === 3) cdsPos.push(p);
+            if (cdsPos.length === 3) { cdsPos.forEach(p => { cls[p] |= 32; }); hasStart = true; }
+            const endPos = [];
+            for (let p = cls.length - 1; p >= 0 && endPos.length < 3; p--) if ((cls[p] & 3) === 3) endPos.push(p);
+            if (endPos.length === 3) { endPos.forEach(p => { cls[p] |= 64; }); hasStop = true; }
+        }
         const key = `${st.gene || this._gbGene}|${t.tx.id}|${view}`;
         const store = (this._sqOpsStore ||= new Map());
         if (!store.has(key)) store.set(key, []);
@@ -52026,6 +52038,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const sw = (c, t2) => `<span class="sq-chip ${c}">${t2}</span>`;
         document.getElementById('sqLegend').innerHTML = `${m.seq.length.toLocaleString()} ${dna ? 'bases' : 'amino acids'} · `
             + (view === 'genomic' ? sw('sq-cds', 'EXON coding') + sw('sq-utr', 'EXON untranslated') + sw('sq-intron', 'intron') : view === 'mrna' ? sw('sq-cds', 'coding') + sw('sq-utr', 'UTR') : '')
+            + (hasStart ? sw('sq-cds sq-start', 'start codon') : '') + (hasStop ? sw('sq-cds sq-stop', 'stop codon') : '')
             + (m.hot.length ? sw('sq-cds sq-hot', 'hotspot codon') : '')
             + sw('sq-ins', 'inserted') + sw('sq-del', 'deleted')
             + `<span class="sq-m">Hover for the exon or intron. <span class="sq-xkey"></span> marks where one exon meets the next.</span>`;
@@ -52197,7 +52210,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 while (e < b && s.cls[e] === c && (hitMask ? hitMask[e - first * L] : 0) === hm && e % 10 !== 0 && e !== caret && !bnd.has(e)) e++;
                 let txt = seq.slice(k, e);
                 if (!s.prot) txt = (c & 3) >= 2 ? txt.toUpperCase() : txt.toLowerCase();
-                const cl = names[c & 3] + (c & 4 ? ' sq-hot' : '') + (c & 8 ? ' sq-ins' : '') + (c & 16 ? ' sq-del' : '') + (hm === 2 ? ' sq-cur' : hm ? ' sq-hit' : '') + (k % 10 === 0 && k !== a ? ' sq-g' : '') + (bnd.has(k) ? ' sq-jn' : '');
+                const cl = names[c & 3] + (c & 4 ? ' sq-hot' : '') + (c & 32 ? ' sq-start' : '') + (c & 64 ? ' sq-stop' : '') + (c & 8 ? ' sq-ins' : '') + (c & 16 ? ' sq-del' : '') + (hm === 2 ? ' sq-cur' : hm ? ' sq-hit' : '') + (k % 10 === 0 && k !== a ? ' sq-g' : '') + (bnd.has(k) ? ' sq-jn' : '');
                 line += (k === caret ? '<span class="sq-caret"></span>' : '') + `<span class="${cl}" data-a="${k}">${txt}</span>`;
                 k = e;
             }
