@@ -14328,6 +14328,10 @@ class CorrelationExplorer {
         const parts = [controls, wrap, legend].filter(Boolean);
         const inside = modal.contains(wrap);
         if (on && !inside) {
+            // The normal panel's size, so the full page can draw the same
+            // picture (labels in the same proportion to nodes), only larger.
+            const pl = document.getElementById('networkPlot');
+            if (pl?.clientWidth) this._netNormalBox = { w: pl.clientWidth, h: pl.clientHeight };
             this._netFullMarks = parts.map(el => { const m = document.createComment('netFull home'); el.before(m); return [m, el]; });
             document.getElementById('netFullMain').append(wrap);
             document.getElementById('netFullSide').append(...[controls, legend].filter(Boolean));
@@ -17840,6 +17844,13 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
         let scale = 0;
         try { scale = this.network.getScale(); } catch (e) { return; }
         if (!scale || !isFinite(scale)) return;
+        // In the full page, compensate as the normal panel would: the bigger
+        // panel then enlarges nodes and labels together instead of giving the
+        // labels a different proportion.
+        const pl = document.getElementById('networkPlot'), nb = this._netNormalBox;
+        if (nb && pl?.clientWidth && document.getElementById('netFullModal')?.contains(pl)) {
+            scale *= Math.min(nb.w / pl.clientWidth, nb.h / pl.clientHeight);
+        }
         // Cap the boost: on a very large network full compensation would give
         // labels wider than the clusters they name.
         const target = Math.round(Math.min(slider / scale, slider * 1.8));
