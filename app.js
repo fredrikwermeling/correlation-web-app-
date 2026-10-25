@@ -50703,6 +50703,8 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 if (grp.dataset.gbGrpDo === 'hm') this._gbHeatmap(x.genes); else this._gbOpenNetwork(x.genes, x.name);
                 return;
             }
+            const cp = e.target.closest('[data-gb-copy]');
+            if (cp) { this.copyPlotToClipboard(cp.dataset.gbCopy, cp.dataset.gbCopyLabel || 'Figure'); return; }
             const clamp = e.target.closest('.gb-clamp');
             if (clamp) { clamp.classList.toggle('open'); return; }
             const act = e.target.closest('[data-gb-act]');
@@ -52289,7 +52291,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             this._gbRow('Common essential', ce ? 'Yes' : 'No'),
         ].join('');
         const body = this._gbDesc('How much cell lines depend on this gene in the CRISPR screen. More negative means the lines grow worse without it; 0 means no effect.')
-            + `<div class="gb-grid"><div><div id="gbGeHist" class="gb-hist"></div></div><div>${stats}</div></div>`
+            + `<div class="gb-grid"><div><div id="gbGeHist" class="gb-hist"></div><div class="gb-m" style="display:flex; justify-content:flex-end; margin-top:2px;"><button class="btn btn-outline btn-sm mobile-hide" data-gb-copy="gbGeHist" data-gb-copy-label="Gene effect histogram" style="font-size:10px; padding:1px 8px;" title="Copy this figure as an image">Copy figure</button></div></div><div>${stats}</div></div>`
             + `<div class="gb-grid">`
             + `<div>${topT.length ? `<div class="gb-sub">Most dependent tissues <span class="gb-m">(mean gene effect, 5 or more lines)</span></div>${this._gbTissueRows(topT, r => this._gbNum(r.mean), 'Mean')}` : ''}</div>`
             + `<div><div class="gb-sub">Most dependent cell lines</div>${this._gbTopLines(topL, 'Gene effect')}</div></div>`
@@ -52346,7 +52348,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             }
         }
         const body = this._gbDesc('How much of this gene’s mRNA each cell line makes (bulk RNA-seq, log₂ TPM+1).')
-            + `<div class="gb-grid"><div><div id="gbExprHist" class="gb-hist"></div></div><div>${stats.join('')}${link}</div></div>`
+            + `<div class="gb-grid"><div><div id="gbExprHist" class="gb-hist"></div><div class="gb-m" style="display:flex; justify-content:flex-end; margin-top:2px;"><button class="btn btn-outline btn-sm mobile-hide" data-gb-copy="gbExprHist" data-gb-copy-label="Expression histogram" style="font-size:10px; padding:1px 8px;" title="Copy this figure as an image">Copy figure</button></div></div><div>${stats.join('')}${link}</div></div>`
             + `<div class="gb-grid" style="margin-top:6px;"><div><div class="gb-sub">Highest tissues <span class="gb-m">(median)</span></div>${this._gbTissueRows(high, r => this._gbNum(r.med), 'Median')}</div>`
             + `<div><div class="gb-sub">Lowest tissues <span class="gb-m">(median)</span></div>${this._gbTissueRows(low, r => this._gbNum(r.med), 'Median')}</div></div>`
             + `<div class="gb-sub">Highest-expressing cell lines</div>${this._gbTopLines(topL, 'log₂ TPM+1')}`
@@ -52428,7 +52430,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             link,
         ].join('');
         const body = this._gbDesc('Gene-level copy number relative to each line’s own baseline: above 1 is a gain, below 1 a loss.')
-            + `<div class="gb-grid"><div><div id="gbCnHist" class="gb-hist"></div></div><div>${stats}</div></div>`
+            + `<div class="gb-grid"><div><div id="gbCnHist" class="gb-hist"></div><div class="gb-m" style="display:flex; justify-content:flex-end; margin-top:2px;"><button class="btn btn-outline btn-sm mobile-hide" data-gb-copy="gbCnHist" data-gb-copy-label="Copy number histogram" style="font-size:10px; padding:1px 8px;" title="Copy this figure as an image">Copy figure</button></div></div><div>${stats}</div></div>`
             + ((ampT.length || delT.length) ? `<div class="gb-grid"><div>${ampT.length ? `<div class="gb-sub">Tissues most often amplified</div>${this._gbTissueRows(ampT, r => this._gbFmtPct(r.k, r.n), 'Amplified')}` : ''}</div>`
                 + `<div>${delT.length ? `<div class="gb-sub">Tissues most often deleted</div>${this._gbTissueRows(delT, r => this._gbFmtPct(r.k, r.n), 'Deleted')}` : ''}</div></div>` : '')
             + (s.exprVec ? `<div class="gb-actions"><button class="btn btn-outline btn-sm" data-gb-act="sc-cn-expr" title="A scatter of each cell line's copy number of this gene against its expression">Copy number vs expression scatter</button></div>` : '');
@@ -52751,8 +52753,8 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             + `<rect x="${kx}" y="${ky + 6}" width="${kw}" height="${kh}" fill="url(#gbCxGrad)" stroke="#d1d5db"/>`
             + [[1, 0], [0, 0.5], [-1, 1]].map(([v, f]) => `<text x="${kx + kw + 5}" y="${ky + 6 + f * kh + 3.5}" font-size="10" fill="#374151">${v > 0 ? '+1' : v < 0 ? '\u22121' : '0'}</text>`).join('');
         svg += '</svg>';
-        return `<div class="gb-relfig"><div class="gb-coexpr-hm" style="overflow-x:auto;">${svg}</div>`
-            + `<div class="gb-m" style="margin-top:2px;"><b style="color:#374151;">How these genes correlate with each other</b>: mRNA r for every pair, ordered by r with ${this.gi(gene)}. The first row and column are ${this.gi(gene)} itself; a red block is a group that rises and falls together${partners.some(g => isNear({ gene: g })) ? '; <span style="color:#b45309;">amber names</span> are nearby genes' : ''}. Click a square for that pair's plot.</div></div>`;
+        return `<div class="gb-relfig"><div id="gbCoexprHm" class="gb-coexpr-hm" style="overflow-x:auto; background:#fff;">${svg}</div>`
+            + `<div class="gb-m" style="margin-top:2px;"><b style="color:#374151;">How these genes correlate with each other</b>: mRNA r for every pair, ordered by r with ${this.gi(gene)}. The first row and column are ${this.gi(gene)} itself; a red block is a group that rises and falls together${partners.some(g => isNear({ gene: g })) ? '; <span style="color:#b45309;">amber names</span> are nearby genes' : ''}. Click a square for that pair's plot.</div><div class="gb-m" style="display:flex; justify-content:flex-end; margin-top:2px;"><button class="btn btn-outline btn-sm mobile-hide" data-gb-copy="gbCoexprHm" data-gb-copy-label="Co-expression heatmap" style="font-size:10px; padding:1px 8px;" title="Copy this figure as an image">Copy figure</button></div></div>`;
     }
 
     async _loadComplexes() {
