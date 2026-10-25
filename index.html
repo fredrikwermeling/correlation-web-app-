@@ -3745,9 +3745,13 @@
                 <!-- Matrix Tab: the whole set against itself -->
                 <div class="tab-content" id="tab-matrix">
                     <div class="tip-box">
-                        <strong>Tip:</strong> Every pair in the set, including the ones below the cutoff, on the same cell lines the network was built from. Click a cell to open that pair's scatter. Rows follow the network's clusters.
+                        <strong>Tip:</strong> The genes against each other, every pair including those below the cutoff, on the same cell lines the network was built from. Click a cell to open that pair's scatter. Rows follow the network's clusters.
                     </div>
                     <div class="table-controls">
+                        <select id="matrixGeneSet" class="form-control" style="width:auto; font-size:11px; padding:2px 6px;" title="Which genes the grid shows. At most 40 either way, those with the strongest correlation kept.">
+                            <option value="linked" selected>Genes linked above the cutoff</option>
+                            <option value="all">All genes (top 40 by r)</option>
+                        </select>
                         <label style="display:inline-flex; align-items:center; gap:4px; font-size:11px; color:#374151; cursor:pointer; white-space:nowrap;"><input type="checkbox" id="matrixShowValues" checked> Show values</label>
                         <label style="display:inline-flex; align-items:center; gap:4px; font-size:11px; color:#374151; cursor:pointer; white-space:nowrap;" title="Order the genes by the network's clusters; unticked, they follow the order you entered them in"><input type="checkbox" id="matrixClusterOrder" checked> Cluster order</label>
                         <label style="display:inline-flex; align-items:center; gap:4px; font-size:11px; color:#374151; cursor:pointer; white-space:nowrap;" title="Blank every pair whose correlation did not clear the cutoff, so only the pairs in the network are colored"><input type="checkbox" id="matrixAboveCutoff"> Above cutoff only</label>
@@ -5868,7 +5872,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v90_90"></script>
+    <script src="app.js?v=v90_91"></script>
     <script src="tour.js?v=v89_49"></script>
 </body>
 </html>

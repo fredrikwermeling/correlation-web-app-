@@ -7344,6 +7344,7 @@ class CorrelationExplorer {
         document.getElementById('matrixShowValues')?.addEventListener('change', () => this.displayCorrelationMatrix());
         document.getElementById('matrixClusterOrder')?.addEventListener('change', () => this.displayCorrelationMatrix());
         document.getElementById('matrixAboveCutoff')?.addEventListener('change', () => this.displayCorrelationMatrix());
+        document.getElementById('matrixGeneSet')?.addEventListener('change', () => this.displayCorrelationMatrix());
         document.getElementById('matrixExportPng')?.addEventListener('click', () => this.exportCorrelationMatrixImage());
         document.getElementById('matrixDownloadCsv')?.addEventListener('click', () => this.downloadCorrelationMatrixCSV());
         document.getElementById('downloadClusters').addEventListener('click', () => this.downloadCSV('clusters'));
@@ -12902,25 +12903,22 @@ class CorrelationExplorer {
 
     // The set against itself. Computed here rather than read from the
     // results, which hold only the pairs above the cutoff, on the exact cell
-    // lines and basis of the run. Capped at sixty genes, the entered ones
-    // first, so an expanded network does not draw an unreadable grid.
+    // lines and basis of the run. By default only genes with at least one
+    // partner above the cutoff; either way at most MAX genes, those with the
+    // strongest correlation kept, so the grid stays readable.
     _correlationMatrixData() {
         const res = this.results;
         if (!res || !res.success) return null;
-        const MAX = 60;
+        const MAX = 40, POOL = 300;
+        const linkedOnly = (document.getElementById('matrixGeneSet')?.value || 'linked') === 'linked';
+        const cutoff = Number(res.cutoff) || 0;
         const usable = (g) => g !== '⚡ Growth Rate' && !String(g).startsWith('📊') && (this.geneIndex.has(g) || res.basis === 'expr');
         const input = (res.geneList || []).filter(usable);
         const inputSet = new Set(input);
         const clusterOf = new Map((res.clusters || []).map(c => [c.gene, c.cluster]));
         const extra = (res.clusters || []).map(c => c.gene).filter(g => !inputSet.has(g) && usable(g));
-        let genes = input.concat(extra);
-        const truncated = genes.length > MAX;
-        genes = genes.slice(0, MAX);
+        let genes = input.concat(extra).slice(0, POOL);
         if (genes.length < 2) return null;
-        if (document.getElementById('matrixClusterOrder')?.checked !== false) {
-            const rank = (g) => { const c = clusterOf.get(g); return (typeof c === 'number' && c > 0) ? c : 1e9; };
-            genes = genes.map((g, i) => ({ g, i })).sort((a, b) => rank(a.g) - rank(b.g) || a.i - b.i).map(x => x.g);
-        }
         const idx = (this._resultsCellLineIndices && this._resultsCellLineIndices.length)
             ? this._resultsCellLineIndices : Array.from({ length: this.nCellLines }, (_, i) => i);
         this._runBasis = res.basis || this._runBasis || 'ge';
@@ -12943,7 +12941,24 @@ class CorrelationExplorer {
                 nn[a][b] = st.n; nn[b][a] = st.n;
             }
         }
-        return { genes, r, n: nn, truncated, cohortN: idx.length, basis: this._runBasis, clusterOf };
+        // Which genes to draw: strongest partner (|r|, off the diagonal) decides
+        // both whether a gene counts as linked and which survive the cap.
+        const best = genes.map((_, a) => r[a].reduce((m, v, b) => (b !== a && v != null && Math.abs(v) > m ? Math.abs(v) : m), 0));
+        let keep = genes.map((_, a) => a);
+        const nAll = keep.length;
+        if (linkedOnly) keep = keep.filter(a => best[a] >= cutoff);
+        const nCand = keep.length;
+        const truncated = keep.length > MAX;
+        if (truncated) keep = keep.sort((a, b) => best[b] - best[a]).slice(0, MAX).sort((a, b) => a - b);
+        if (document.getElementById('matrixClusterOrder')?.checked !== false) {
+            const rank = (a) => { const c = clusterOf.get(genes[a]); return (typeof c === 'number' && c > 0) ? c : 1e9; };
+            keep.sort((a, b) => rank(a) - rank(b) || a - b);
+        }
+        if (keep.length < 2) return { genes: keep.map(a => genes[a]), r: [], n: [], empty: true, nAll, cohortN: idx.length, basis: this._runBasis };
+        return {
+            genes: keep.map(a => genes[a]), r: keep.map(a => keep.map(b => r[a][b])), n: keep.map(a => keep.map(b => nn[a][b])),
+            truncated, nCand, nAll, max: MAX, linkedOnly, cohortN: idx.length, basis: this._runBasis, clusterOf
+        };
     }
 
     // A coloured grid drawn on canvas: row and column labels, a colour scale
@@ -13072,17 +13087,27 @@ class CorrelationExplorer {
             if (note) note.textContent = '';
             return;
         }
+        const cutoff = Number(this.results?.cutoff) || 0;
+        if (data.empty) {
+            host.innerHTML = `<div style="text-align:center; color:var(--gray-500); padding:40px;">No two genes correlate above the cutoff of ${cutoff.toFixed(2)}. Choose All genes to see the whole set.</div>`;
+            host.style.width = '';
+            if (note) note.textContent = '';
+            this._matrixData = null;
+            return;
+        }
         this._matrixData = data;
         const n = data.genes.length;
         const phone = window.innerWidth <= 640;
         const aboveOnly = document.getElementById('matrixAboveCutoff')?.checked === true;
-        const cutoff = Number(this.results?.cutoff) || 0;
-        const showValues = document.getElementById('matrixShowValues')?.checked !== false && n <= 15;
+        // The grid itself drops the values once cells get too small to read.
+        const showValues = document.getElementById('matrixShowValues')?.checked !== false;
         const basisWord = data.basis === 'expr' ? 'mRNA expression' : 'gene effect';
         if (note) {
-            note.textContent = `${n} genes against each other, Pearson r of ${basisWord} over ${data.cohortN.toLocaleString('en-US')} cell lines`
-                + (aboveOnly ? `, pairs below the cutoff of ${cutoff.toFixed(2)} left blank` : '')
-                + (data.truncated ? `. The network has more genes than fit here: the first sixty are shown, your own genes first.` : '.');
+            note.textContent = `${n} genes against each other`
+                + (data.linkedOnly ? ` (of ${data.nAll}, those with at least one partner at |r| ${cutoff.toFixed(2)} or more)` : '')
+                + `, Pearson r of ${basisWord} over ${data.cohortN.toLocaleString('en-US')} cell lines`
+                + (aboveOnly ? `, pairs below the cutoff left blank` : '')
+                + (data.truncated ? `. ${data.nCand} genes qualify; the ${data.max} with the strongest correlation are shown.` : '.');
         }
         // A cell that did not clear the cutoff is left blank when asked; the
         // diagonal stays so the rows keep their place.
@@ -13101,7 +13126,7 @@ class CorrelationExplorer {
 
     downloadCorrelationMatrixCSV() {
         const data = this._matrixData || this._correlationMatrixData();
-        if (!data) { this.showCopyNotification?.('Run an analysis first.'); return; }
+        if (!data || data.empty) { this.showCopyNotification?.('Run an analysis first.'); return; }
         const q = (s) => '"' + String(s).replace(/"/g, '""') + '"';
         const lines = [[''].concat(data.genes).map(q).join(',')];
         data.r.forEach((row, i) => lines.push([data.genes[i]].concat(row.map(v => v == null ? '' : v.toFixed(4))).map(q).join(',')));
