@@ -4042,6 +4042,7 @@
                                         <option value="ge">GE</option>
                                         <option value="cn">CN</option>
                                     </select>
+                                    <button type="button" id="colorByGeneSuggestBtn" class="btn btn-outline btn-sm" style="font-size:10px; padding:2px 8px;" title="Rank every gene by how well its values explain where the plotted cell lines sit: along the trend, or above and below it">Suggest</button>
                                 </span>
                                 <!-- Color only the chosen groups; everything else grays out. -->
                                 <button type="button" id="colorByGroupBtn" class="btn btn-sm btn-outline" style="display:none; font-size:10px; padding:2px 6px;" onclick="app.showColorByGroupPicker()">Pick groups...</button>
@@ -4054,6 +4055,8 @@
                                     <option value="median">Legend: n + x/y median</option>
                                 </select>
                             </div>
+                            <!-- Genes that explain the points, from Suggest; click one to colour by it. -->
+                            <div id="colorByGeneSuggest" style="display:none; margin-top:6px; font-size:11px;"></div>
                             <!-- Chosen groups, each removable without reopening the picker. -->
                             <div id="colorByChips" style="display:none; margin-top:3px; flex-wrap:wrap; gap:3px;"></div>
                             <div id="colorByLegend" style="display:none; margin-top:2px; max-height:20vh; overflow-y:auto; border:1px solid #e5e7eb; border-radius:3px; padding:2px;"></div>
@@ -5899,7 +5902,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v91_1"></script>
+    <script src="app.js?v=v91_2"></script>
     <script src="tour.js?v=v89_49"></script>
 </body>
 </html>

@@ -7490,6 +7490,15 @@ class CorrelationExplorer {
         cbGene?.addEventListener('change', applyCbGene);
         cbGene?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); cbGene.blur(); } });
         document.getElementById('colorByGeneType')?.addEventListener('change', async () => { await cbLoad(); this.updateInspectPlot(); });
+        document.getElementById('colorByGeneSuggestBtn')?.addEventListener('click', async () => { await cbLoad(); this._colorByGeneSuggest(); });
+        document.getElementById('colorByGeneSuggest')?.addEventListener('click', (e) => {
+            if (e.target.closest('[data-cbs-close]')) { e.currentTarget.style.display = 'none'; return; }
+            const a = e.target.closest('[data-cbs-gene]');
+            if (!a) return;
+            e.preventDefault();
+            cbGene.value = a.dataset.cbsGene;
+            applyCbGene();
+        });
         document.getElementById('colorBySeg')?.addEventListener('click', (e) => {
             const b = e.target.closest('[data-color-by]');
             const sel = document.getElementById('colorByCategory');
@@ -20806,6 +20815,78 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const a = this.geneLocations?.[gene1]?.band || '';
         const gap = d.mb < 0.05 ? 'next to each other' : `${d.mb.toFixed(1)} Mb apart`;
         box.innerHTML = `<span class="gb-near">Nearby genes</span> ${this.gi(gene1)} (${this.esc(a)}) and ${this.gi(gene2)} (${this.esc(d.band)}) are ${gap} on chromosome ${this.esc(d.chr)}. Neighbours are often gained or lost together, so their mRNA can correlate through shared copy number rather than shared function.`;
+    }
+
+    // Genes whose values (in the chosen measure) best explain the plotted
+    // lines: r with each line's place along the trend (the first principal
+    // axis of the standardised x and y) and with its distance above or below
+    // the regression line. The two plotted genes are left out.
+    async _colorByGeneSuggest() {
+        const box = document.getElementById('colorByGeneSuggest');
+        const pts = (this._currentFilteredData || []).filter(d => Number.isFinite(d.x) && Number.isFinite(d.y));
+        if (!box) return;
+        box.style.display = 'block';
+        if (pts.length < 20) { box.innerHTML = '<span class="gb-m" style="color:#6b7280;">Too few cell lines on the plot to rank genes.</span>'; return; }
+        const ct = document.getElementById('colorByGeneType')?.value || 'expr';
+        let data, nL, names, colOf;
+        if (ct === 'expr') {
+            if (!this.expressionData) { box.innerHTML = '<span style="color:#6b7280;">Expression data is not loaded.</span>'; return; }
+            const m = new Map(this.expressionMetadata.cellLines.map((c, i) => [c, i]));
+            data = this.expressionData; nL = this.expressionMetadata.nCellLines; names = this.expressionMetadata.genes; colOf = (id) => m.get(id);
+        } else if (ct === 'cn') {
+            if (!this.cnData) { box.innerHTML = '<span style="color:#6b7280;">Copy-number data is not loaded.</span>'; return; }
+            data = this.cnData; nL = this.cnMetadata.nCellLines; names = this.cnMetadata.genes; colOf = (id) => this.cnCellLineIndex.get(id);
+        } else {
+            const m = this._clPosMap || (this._clPosMap = new Map(this.metadata.cellLines.map((c, i) => [c, i])));
+            data = this.geneEffects; nL = this.nCellLines; names = this.geneNames; colOf = (id) => m.get(id);
+        }
+        const use = pts.map(d => [d, colOf(d.cellLineId)]).filter(p => p[1] !== undefined);
+        const n = use.length;
+        const xs = use.map(p => p[0].x), ys = use.map(p => p[0].y);
+        const mean = (a) => a.reduce((s, v) => s + v, 0) / a.length;
+        const mx = mean(xs), my = mean(ys);
+        const sx = Math.sqrt(mean(xs.map(v => (v - mx) ** 2))) || 1, sy = Math.sqrt(mean(ys.map(v => (v - my) ** 2))) || 1;
+        const rxy = mean(xs.map((v, i) => (v - mx) * (ys[i] - my))) / (sx * sy);
+        const along = xs.map((v, i) => (v - mx) / sx + Math.sign(rxy || 1) * (ys[i] - my) / sy);
+        const slope = rxy * sy / sx;
+        const off = ys.map((v, i) => v - (my + slope * (xs[i] - mx)));
+        const skip = new Set([this.currentInspect?.gene1, this.currentInspect?.gene2].filter(Boolean).map(g => String(g).toUpperCase()));
+        box.innerHTML = '<span style="color:#6b7280;">Ranking genes...</span>';
+        await new Promise(r => setTimeout(r, 0));
+        const cols = Int32Array.from(use.map(p => p[1]));
+        const res = [];
+        for (let g = 0; g < names.length; g++) {
+            if (skip.has(String(names[g]).toUpperCase())) continue;
+            const off0 = g * nL;
+            let k = 0, s = 0, ss = 0, sa = 0, saa = 0, sga = 0, so = 0, soo = 0, sgo = 0;
+            for (let i = 0; i < n; i++) {
+                const v = data[off0 + cols[i]];
+                if (v !== v || v === -999) continue;
+                const a = along[i], o = off[i];
+                k++; s += v; ss += v * v; sa += a; saa += a * a; sga += v * a; so += o; soo += o * o; sgo += v * o;
+            }
+            if (k < Math.max(20, n * 0.7)) continue;
+            const vg = k * ss - s * s;
+            if (vg <= 1e-9) continue;
+            const ra = (k * sga - s * sa) / Math.sqrt(vg * (k * saa - sa * sa));
+            const ro = (k * sgo - s * so) / Math.sqrt(vg * (k * soo - so * so));
+            if (ra === ra || ro === ro) res.push({ g: names[g], ra, ro });
+        }
+        const word = { ge: 'gene effect', expr: 'mRNA', cn: 'copy number' }[ct];
+        const band = (r) => { const a = Math.abs(r); return a < 0.3 ? 'weak' : a < 0.5 ? 'moderate' : 'strong'; };
+        const list = (key, title, hint) => {
+            const top = res.filter(r => r[key] === r[key]).sort((a, b) => Math.abs(b[key]) - Math.abs(a[key])).slice(0, 8);
+            return `<div style="flex:1 1 180px; min-width:0;"><div style="font-weight:600; color:#374151;" title="${hint}">${title}</div>`
+                + top.map(r => {
+                    const b = band(r[key]), col = b === 'weak' ? '#9ca3af' : r[key] > 0 ? '#b91c1c' : '#1d4ed8';
+                    return `<div style="display:flex; justify-content:space-between; gap:8px;"><a href="#" data-cbs-gene="${this.esc(r.g)}" style="color:#4f46e5;">${this.gi(r.g)}</a><span style="color:${col};${b === 'strong' ? ' font-weight:600;' : ''}" title="${b}">${r[key].toFixed(2)}</span></div>`;
+                }).join('') + `</div>`;
+        };
+        box.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:3px;"><span style="color:#374151;">Genes whose <b>${word}</b> best explains the ${n.toLocaleString()} plotted lines</span><button type="button" data-cbs-close style="border:none; background:none; color:#9ca3af; cursor:pointer; font-size:14px; line-height:1;" title="Close">&times;</button></div>`
+            + `<div style="display:flex; gap:16px; flex-wrap:wrap;">`
+            + list('ra', 'Along the trend', 'r with where each line sits along the trend (both axes together)')
+            + list('ro', 'Above / below the trend', 'r with how far each line sits above (positive) or below the regression line')
+            + `</div><div style="color:#6b7280; font-size:10px; margin-top:3px;">Pearson r. Along the trend, positive (red) means higher toward the right end of the trend line, negative (blue) toward the left end; above / below, positive means higher in the lines above the line. |r| below 0.3 is weak (grey), 0.3 to 0.5 moderate, 0.5 and above strong. Click a gene to colour by it.</div>`;
     }
 
     // The Color by gene, resolved when typed; a restored or reopened plot only
