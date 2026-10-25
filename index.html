@@ -1813,6 +1813,22 @@
         .gb-scope .gb-set-acts { float:right; display:inline-flex; gap:4px; }
         .gb-scope .gb-chip.gb-chip-me { background:#4c782e; color:#fff; border-color:#4c782e; cursor:default; box-shadow:0 0 0 2px #cde6b8; }
         .gb-scope .gb-details { margin-top:8px; }
+        .gb-scope .gb-cpx { padding:8px 10px; margin:0 0 6px; border:1px solid #e5e7eb; border-radius:6px; background:#fff; }
+        .gb-scope .gb-cpx-head { margin-bottom:2px; }
+        .gb-scope .gb-cpx-head::after { content:''; display:table; clear:both; }
+        .gb-scope .gb-cpx-dep { margin:4px 0 5px; }
+        .gb-scope .gb-cpx-tag { display:inline-block; font-size:10px; font-weight:600; border-radius:9px; padding:0 7px; line-height:16px; }
+        .gb-scope .gb-cpx-hi { background:#dbeafe; color:#1e40af; }
+        .gb-scope .gb-cpx-mid { background:#eff6ff; color:#1d4ed8; }
+        .gb-scope .gb-cpx-lo, .gb-scope .gb-cpx-na { background:#f3f4f6; color:#6b7280; }
+        .gb-scope .gb-rchip { color:#1f2937; }
+        .gb-scope .gb-rv { font-weight:400; font-style:normal; font-size:10px; color:#374151; margin-left:2px; }
+        .gb-scope .gb-clamp { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; cursor:pointer; }
+        .gb-scope .gb-clamp.open { display:block; }
+        .gb-scope .gb-pw { border-bottom:1px solid #f3f4f6; padding:4px 0; }
+        .gb-scope .gb-pw > summary { cursor:pointer; font-size:11.5px; }
+        .gb-scope .gb-pw-name { color:#374151; font-weight:600; }
+        .gb-scope .gb-pw-body { padding:5px 0 2px 14px; }
         .gb-scope .gb-details > summary { cursor:pointer; font-size:11px; color:#4c782e; font-weight:600; }
         .gb-scope .gb-drug { padding:5px 0; border-bottom:1px solid #f3f4f6; }
         .gb-scope .gb-cl { color:#3730a3; text-decoration:none; }
@@ -5847,7 +5863,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v90_85"></script>
+    <script src="app.js?v=v90_87"></script>
     <script src="tour.js?v=v89_49"></script>
 </body>
 </html>
