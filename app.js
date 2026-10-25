@@ -11121,12 +11121,14 @@ class CorrelationExplorer {
         const groups = [
             { label: wtLabel, color: '#2563eb', cols: [{ col: 'n_wt', label: 'N' }, { col: 'mean_wt', label: `Mean ${unit}` }] },
             { label: mutAll, color: '#f97316', cols: [{ col: 'n_mut', label: 'N' }, { col: 'mean_mut', label: `Mean ${unit}` }] },
-            { label: `${isD ? mutLbl : 'Mut 1+2'} ${vsWord}`, color: '#6b7280', cols: [{ col: 'diff_mut', label: `Δ ${unit}` }, { col: 'p_mut', label: 'p' }] },
         ];
         // Het/hom columns only for hotspot / fusion calls (damaging is binary).
+        // The groups first, then the comparisons, so levels and differences
+        // each read side by side.
+        if (!isD) groups.push({ label: mut2, color: '#dc2626', cls: 'mut2-col', cols: [{ col: 'n_2', label: 'N' }, { col: 'mean_2', label: `Mean ${unit}` }] });
+        groups.push({ label: `${isD ? mutLbl : 'Mut 1+2'} ${vsWord}`, color: '#6b7280', cols: [{ col: 'diff_mut', label: `Δ ${unit}` }, { col: 'p_mut', label: 'p' }] });
         if (!isD) {
             groups.push(
-                { label: mut2, color: '#dc2626', cls: 'mut2-col', cols: [{ col: 'n_2', label: 'N' }, { col: 'mean_2', label: `Mean ${unit}` }] },
                 { label: `${isT ? '2+' : 'Mut 2'} ${vsWord}`, color: '#6b7280', cls: 'mut2-col', cols: [{ col: 'diff_2', label: `Δ ${unit}` }, { col: 'p_2', label: 'p' }] },
                 { label: `${isT ? '2+ vs 1' : 'Mut 2 vs Mut 1'}`, color: '#6b7280', cls: 'mut2-col', cols: [{ col: 'diff_2v1', label: `Δ ${unit}` }, { col: 'p_2v1', label: 'p' }] }
             );
@@ -11184,13 +11186,13 @@ class CorrelationExplorer {
                 <td>${r.mean_wt.toFixed(2)}</td>
                 <td style="border-left: 2px solid #f97316;">${r.n_mut}${star}</td>
                 <td>${r.mean_mut.toFixed(2)}</td>
+                ${isD ? '' : `<td class="mut2-col" style="border-left: 2px solid #dc2626;">${r.n_2}</td>
+                <td class="mut2-col">${isNaN(r.mean_2) ? '-' : r.mean_2.toFixed(2)}</td>`}
                 <td class="${r.diff_mut < 0 ? 'negative' : 'positive'}" style="border-left: 2px solid #d1d5db;">${r.diff_mut.toFixed(2)}</td>
                 <td>${this.formatPValue(r.p_mut)}</td>
             `;
             if (!isD) {
                 html += `
-                <td class="mut2-col" style="border-left: 2px solid #dc2626;">${r.n_2}</td>
-                <td class="mut2-col">${isNaN(r.mean_2) ? '-' : r.mean_2.toFixed(2)}</td>
                 <td class="mut2-col ${r.diff_2 < 0 ? 'negative' : 'positive'}" style="border-left: 2px solid #d1d5db;">${isNaN(r.diff_2) ? '-' : r.diff_2.toFixed(2)}</td>
                 <td class="mut2-col">${this.formatPValue(r.p_2)}</td>
                 <td class="mut2-col ${r.diff_2v1 < 0 ? 'negative' : 'positive'}" style="border-left: 2px solid #d1d5db;">${isNaN(r.diff_2v1) ? '-' : r.diff_2v1.toFixed(2)}</td>
