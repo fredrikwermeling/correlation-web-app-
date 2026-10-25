@@ -12980,7 +12980,7 @@ class CorrelationExplorer {
             return ca.map((v, k) => Math.round(v + (cb[k] - v) * f));
         };
         const rgb = (c) => `rgb(${c.join(',')})`;
-        const avail = Math.max(240, host.parentElement?.clientWidth || host.clientWidth || 360);
+        const avail = spec.avail ?? Math.max(240, host.parentElement?.clientWidth || host.clientWidth || 360);
         const probe = document.createElement('canvas').getContext('2d');
         const lf = phone ? 10 : 11;
         // Canvas draws no markup, so gene labels are italicised through the font.
@@ -12996,7 +12996,7 @@ class CorrelationExplorer {
         host.innerHTML = '';
         host.style.position = 'relative';
         host.style.width = W + 'px';
-        const dpr = Math.min(2, window.devicePixelRatio || 1);
+        const dpr = spec.dpr || Math.min(2, window.devicePixelRatio || 1);
         const c = document.createElement('canvas');
         c.width = Math.round(W * dpr); c.height = Math.round(H * dpr);
         c.style.width = W + 'px'; c.style.height = H + 'px'; c.style.display = 'block';
@@ -13102,6 +13102,14 @@ class CorrelationExplorer {
         // The grid itself drops the values once cells get too small to read.
         const showValues = document.getElementById('matrixShowValues')?.checked !== false;
         const basisWord = data.basis === 'expr' ? 'mRNA expression' : 'gene effect';
+        // What the grid is built on, tagged as in the network.
+        const tag = document.getElementById('matrixBasisBadge');
+        if (tag) {
+            const ex = data.basis === 'expr';
+            tag.textContent = ex ? 'Built on mRNA expression' : 'Built on gene effect (CRISPR)';
+            tag.style.cssText = 'display:inline-block; font-size:11px; font-weight:600; padding:1px 9px; border-radius:10px; border:1px solid; margin-right:6px;'
+                + (ex ? 'background:#f5f3ff; color:#6d28d9; border-color:#c4b5fd;' : 'background:#f0fdf4; color:#3f6b25; border-color:#a7d38a;');
+        }
         if (note) {
             note.textContent = `${n} genes against each other`
                 + (data.linkedOnly ? ` (of ${data.nAll}, those with at least one partner at |r| ${cutoff.toFixed(2)} or more)` : '')
@@ -13114,6 +13122,12 @@ class CorrelationExplorer {
         const z = data.r.map((row, i) => row.map((v, j) => (aboveOnly && i !== j && (v == null || Math.abs(v) < cutoff)) ? null : v));
         const avail = document.getElementById('matrixScroll')?.clientWidth || 600;
         const cell = phone ? 24 : Math.max(24, Math.min(44, Math.floor((avail - 130) / n)));
+        this._matrixSpec = {
+            rowLabels: data.genes, colLabels: data.genes, z, zmin: -1, zmax: 1, italicLabels: true,
+            colorscale: [[0, '#2166ac'], [0.5, '#f7f7f7'], [1, '#b2182b']], showValues, cell, colorbarTitle: 'r',
+            title: `Correlation matrix: ${data.basis === 'expr' ? 'mRNA expression' : 'CRISPR gene effect'}`,
+            sub: `${n} genes, Pearson r over ${data.cohortN.toLocaleString('en-US')} cell lines, DepMap ${DEPMAP_VERSION}`
+        };
         this._drawCorrelationGrid(host, {
             rowLabels: data.genes, colLabels: data.genes, z, zmin: -1, zmax: 1, italicLabels: true,
             colorscale: [[0, '#2166ac'], [0.5, '#f7f7f7'], [1, '#b2182b']],
@@ -13135,18 +13149,21 @@ class CorrelationExplorer {
         this.downloadFile(lines.join('\n'), csvName('correlation_matrix'), 'text/csv');
     }
 
-    exportCorrelationMatrixImage() {
-        const canvas = document.querySelector('#matrixPlot canvas');
-        if (!canvas) { this.showCopyNotification?.('Run an analysis first.'); return; }
-        canvas.toBlob((blob) => {
-            if (!blob) { this.showCopyNotification?.('The image could not be made.'); return; }
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = csvName('correlation_matrix').replace(/\.csv$/, '.png');
-            document.body.appendChild(a); a.click(); a.remove();
-            setTimeout(() => URL.revokeObjectURL(url), 2000);
-        }, 'image/png');
+    // The usual export dialog (format, print size, resolution); the grid is
+    // redrawn off screen at the chosen resolution, tight to its content and
+    // with a title, rather than copied from the screen canvas.
+    async exportCorrelationMatrixImage() {
+        const spec = this._matrixSpec;
+        if (!spec || !document.querySelector('#matrixPlot canvas')) { this.showCopyNotification?.('Run an analysis first.'); return; }
+        const probe = this._drawCorrelationGrid(document.createElement('div'), { ...spec, avail: 0, dpr: 1 });
+        const W = probe.width, H = probe.height;
+        const dlg = await this._showExportDialog({ format: 'png', plotW: W, plotH: H, rasterOnly: true, restorable: false });
+        if (!dlg) return;
+        const scale = (dlg.widthCm * dlg.dpi / 2.54) / W;
+        const canvas = this._drawCorrelationGrid(document.createElement('div'), { ...spec, avail: 0, dpr: scale });
+        await this._downloadCanvasAs(canvas, dlg.format, 'correlation_matrix', {
+            dpi: dlg.dpi, widthCm: dlg.widthCm, heightCm: dlg.widthCm * (H / W), skipSidecar: true
+        });
     }
 
     pearsonWithSlope(x, y) {
