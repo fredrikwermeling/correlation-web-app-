@@ -10021,11 +10021,13 @@ class CorrelationExplorer {
         // reset was silently erasing them before the network drew.
         if (!this._pendingNetworkSettings) this.resetNetworkSettings();
 
-        // Auto-load manual stats if the manual textarea has content (beyond default header)
+        // Auto-load manual stats if the manual textarea has content (beyond
+        // default header), but only from the With Stats tab: otherwise a list
+        // typed on Paste/Type was overwritten by the old stats table on Run.
         const manualTextarea = document.getElementById('manualStatsTextarea');
         const manualContent = manualTextarea?.value.trim();
-        // Check if there's actual data beyond the header line
-        if (manualContent && manualContent.split('\n').filter(l => l.trim()).length > 1) {
+        const statsTab = document.querySelector('.input-tab.active')?.dataset.input === 'upload';
+        if (statsTab && manualContent && manualContent.split('\n').filter(l => l.trim()).length > 1) {
             this.loadManualStats();
         }
 
