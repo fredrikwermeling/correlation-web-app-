@@ -681,6 +681,12 @@
             background: var(--gray-200);
         }
 
+        .color-by-seg { display:inline-flex; }
+        .color-by-seg .btn { font-size:11px; padding:2px 9px; border-radius:0; margin-left:-1px; }
+        .color-by-seg .btn:first-child { border-radius:4px 0 0 4px; margin-left:0; }
+        .color-by-seg .btn:last-child { border-radius:0 4px 4px 0; }
+        .color-by-seg .btn.btn-active { position:relative; z-index:1; font-weight:600; }
+
         .btn-secondary.btn-active,
         .btn-outline.btn-active {
             background: var(--green-100);
@@ -1742,8 +1748,11 @@
         .gb-scope .gb-trow-n { min-width:0; overflow-wrap:anywhere; }
         .gb-scope .gb-trow-v { font-weight:600; text-align:right; }
         .gb-scope .gb-trow-c { text-align:right; font-size:10px; color:#6b7280; white-space:nowrap; }
-        .gb-scope .gb-relgrid { display:grid; grid-template-columns:max-content minmax(0,1fr); gap:24px; align-items:start; }
-        .gb-scope .gb-relfig { min-width:0; padding-top:2px; }
+        /* Table left, figure right; the same fixed left column in every
+           section so the figures line up down the page, tops level. */
+        .gb-scope .gb-relgrid { display:grid; grid-template-columns:minmax(0,440px) minmax(0,1fr); gap:28px; align-items:start; }
+        .gb-scope .gb-relleft { min-width:0; overflow-x:auto; }
+        .gb-scope .gb-relfig { min-width:0; }
         @media (max-width: 900px) { .gb-scope .gb-relgrid { grid-template-columns:minmax(0,1fr); } }
         .gb-scope .gb-tag { display:inline-block; margin-left:5px; padding:0 5px; border-radius:7px; font-size:9.5px; line-height:1.45; font-style:normal; vertical-align:1px; border:1px solid; }
         .gb-scope .gb-tag-complex { background:#f3faee; color:#3f6b25; border-color:#6ba544; }
@@ -3964,6 +3973,42 @@
                             </div>
                         </div>
 
+                        <!-- Colouring has its own box near the top: it was a button and a
+                             select buried in the Highlight box. The select stays (hidden) as
+                             the single source of state; the buttons only drive it. -->
+                        <div class="control-box-compact" id="colorByBox" style="grid-column: span 2;">
+                            <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                                <span class="control-label" style="font-size:10px; margin:0;">Color by</span>
+                                <div id="colorBySeg" class="color-by-seg" role="group" aria-label="Color the points by">
+                                    <button type="button" class="btn btn-sm btn-outline" data-color-by="">None</button>
+                                    <button type="button" class="btn btn-sm btn-outline" data-color-by="tissue" title="Colour every point by tissue of origin">Tissue</button>
+                                    <button type="button" class="btn btn-sm btn-outline" data-color-by="subtype" title="Colour by subtype (the 8 largest at first; Groups picks others)">Subtype</button>
+                                    <button type="button" class="btn btn-sm btn-outline" data-color-by="disease" title="Colour by disease (the 8 largest at first; Groups picks others)">Disease</button>
+                                    <button type="button" class="btn btn-sm btn-outline" data-color-by="medium" title="Colour by culture medium">Medium</button>
+                                </div>
+                                <select id="colorByCategory" class="form-control" style="display:none;">
+                                    <option value="">None</option>
+                                    <option value="tissue">By tissue</option>
+                                    <option value="subtype" id="colorBySubtypeOption">By subtype</option>
+                                    <option value="disease">By disease</option>
+                                    <option value="medium">By culture medium</option>
+                                </select>
+                                <!-- Color only the chosen groups; everything else grays out. -->
+                                <button type="button" id="colorByGroupBtn" class="btn btn-sm btn-outline" style="display:none; font-size:10px; padding:2px 6px;" onclick="app.showColorByGroupPicker()">Pick groups...</button>
+                                <input type="hidden" id="colorByPicked" value="">
+                                <!-- What each group's legend entry states beside its count. -->
+                                <select id="colorByLegendStat" class="form-control" style="display:none; width:auto; font-size:10px; padding:1px 3px;" title="What each group states in the legend beside its size">
+                                    <option value="none" selected>Legend: n only</option>
+                                    <option value="r">Legend: n + r</option>
+                                    <option value="mean">Legend: n + x/y average</option>
+                                    <option value="median">Legend: n + x/y median</option>
+                                </select>
+                            </div>
+                            <!-- Chosen groups, each removable without reopening the picker. -->
+                            <div id="colorByChips" style="display:none; margin-top:3px; flex-wrap:wrap; gap:3px;"></div>
+                            <div id="colorByLegend" style="display:none; margin-top:2px; max-height:20vh; overflow-y:auto; border:1px solid #e5e7eb; border-radius:3px; padding:2px;"></div>
+                        </div>
+
                         <!-- Row 2: Plot Size | Axis Ranges -->
                         <div class="control-box-compact mobile-hide" style="padding: 3px 6px;">
                             <span class="control-label" style="font-size:9px;">Plot Size</span>
@@ -4066,7 +4111,7 @@
                         <div style="grid-column: span 2; display:flex; gap:6px; align-items:start;">
                             <div class="control-box-compact" style="flex:1;">
                                 <div style="display:flex; justify-content:space-between; align-items:center;">
-                                    <span class="control-label" style="font-size:10px;">Highlight / Color</span>
+                                    <span class="control-label" style="font-size:10px;">Highlight</span>
                                     <div style="display:flex; align-items:center; gap:3px;">
                                         <button onclick="app.adjustScatterFontSize(-1)" style="font-size:9px;padding:0 3px;border:1px solid #ddd;border-radius:3px;background:#f9f9f9;cursor:pointer;">−</button>
                                         <input type="number" id="scatterFontSize" value="5" min="1" max="20" style="width:30px; padding:0 1px; font-size:10px; text-align:center;">
@@ -4086,37 +4131,6 @@
                                 <!-- Names clicked onto the plot, each removable,
                                      the same row the gene-effect popout uses. -->
                                 <div id="scatterLabeledCellLines" style="display:flex; gap:4px; flex-wrap:wrap; align-items:center; width:100%; margin-top:4px;"></div>
-                                <!-- Tissue is the colouring people actually want, and it
-                                     was three clicks down a select. Subtype and disease
-                                     are narrower questions and stay in the select. -->
-                                <button type="button" id="colorByTissueBtn" class="btn btn-sm btn-outline" aria-pressed="false" style="font-size:10px; padding:2px 4px; margin-top:3px; width:100%;" title="Colour every point by tissue of origin, and show each tissue in the legend">Color by tissue</button>
-                                <select id="colorByCategory" class="form-control" style="font-size:10px; padding:1px 3px; margin-top:2px;">
-                                    <option value="">Color by...</option>
-                                    <option value="tissue">By tissue</option>
-                                    <!-- Available without a tissue filter now: the group picker below
-                                         makes a long subtype list workable, which is what previously
-                                         made coloring by subtype unusable. -->
-                                    <option value="subtype" id="colorBySubtypeOption">By subtype</option>
-                                    <option value="disease">By disease</option>
-                                    <option value="medium">By culture medium</option>
-                                </select>
-                                <!-- Color only the chosen tissues / subtypes; everything else grays out. -->
-                                <button type="button" id="colorByGroupBtn" class="btn btn-sm btn-outline" style="display:none; font-size:9px; padding:1px 4px; margin-top:2px; width:100%;" onclick="app.showColorByGroupPicker()">Pick groups...</button>
-                                <input type="hidden" id="colorByPicked" value="">
-                                <!-- What each group's legend entry states beside its
-                                     count. Correlation is only meaningful for some
-                                     questions; where the groups differ in level
-                                     rather than in trend, the average or the median
-                                     of each axis says more. -->
-                                <select id="colorByLegendStat" class="form-control" style="display:none; font-size:9px; padding:1px 3px; margin-top:2px;" title="What each group states in the legend beside its size">
-                                    <option value="none" selected>Legend: n only</option>
-                                    <option value="r">Legend: n + r</option>
-                                    <option value="mean">Legend: n + x/y average</option>
-                                    <option value="median">Legend: n + x/y median</option>
-                                </select>
-                                <!-- Chosen groups, each removable without reopening the picker. -->
-                                <div id="colorByChips" style="display:none; margin-top:3px; flex-wrap:wrap; gap:3px;"></div>
-                                <div id="colorByLegend" style="display:none; margin-top:2px; max-height:20vh; overflow-y:auto; border:1px solid #e5e7eb; border-radius:3px; padding:2px;"></div>
                             </div>
                             <div class="control-box-compact mobile-hide" id="customCellLineFilterBox" style="flex:1;">
                                 <span class="control-label" style="font-size:10px;">Custom cell lines</span>
@@ -5833,7 +5847,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v90_83"></script>
+    <script src="app.js?v=v90_85"></script>
     <script src="tour.js?v=v89_49"></script>
 </body>
 </html>
