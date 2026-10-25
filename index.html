@@ -3658,7 +3658,12 @@
                     </div>
 
                     <div id="networkWrap" style="position:relative; overflow:hidden; display:flex; flex-direction:column; height:440px; border:1px solid var(--gray-200); border-radius:6px; background:white;">
-                        <button id="netFullBtn" class="btn btn-outline btn-sm mobile-hide" style="position:absolute; top:6px; right:6px; z-index:5; font-size:11px; padding:2px 9px; background:#fff;" title="Open the network in a full-window view with all its settings beside it">&#10530; Full page</button>
+                        <!-- What the network was correlated on, in the normal and
+                             the full-page view alike (it travels with networkWrap). -->
+                        <div style="position:absolute; top:6px; right:6px; z-index:5; display:flex; gap:6px; align-items:center;">
+                            <span id="netBasisBadge" style="display:none; font-size:11px; font-weight:600; padding:2px 9px; border-radius:10px; border:1px solid;"></span>
+                            <button id="netFullBtn" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px; padding:2px 9px; background:#fff;" title="Open the network in a full-window view with all its settings beside it">&#10530; Full page</button>
+                        </div>
                         <div id="networkHeader" style="display:none; padding:8px 14px; border-bottom:1px solid var(--gray-200); background:#f9fafb; font-size:11px; color:#374151;"></div>
                         <!-- Why the highlighted genes are highlighted. Written
                              by an Enrichr result, editable in the settings
@@ -3677,7 +3682,7 @@
 
                     <div class="network-legend" id="networkLegend" style="display: none;">
                         <div class="legend-section">
-                            <strong>Correlation:</strong>
+                            <strong id="netLegendCorrTitle">Correlation:</strong>
                             <div class="legend-item"><span class="legend-line" style="background: #3182ce;"></span> Positive</div>
                             <div class="legend-item"><span class="legend-line" style="background: #e53e3e;"></span> Negative</div>
                         </div>
@@ -5190,7 +5195,7 @@
          controls are the same elements as before, not copies. -->
     <div id="netFullModal" style="display:none; position:fixed; inset:0; z-index:1150; background:#f9fafb; flex-direction:column;">
       <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 16px; border-bottom:1px solid #e5e7eb; background:linear-gradient(90deg,#f3faee,#fff);">
-        <h3 style="margin:0; font-size:16px; color:#4c782e;">Network</h3>
+        <h3 id="netFullTitle" style="margin:0; font-size:16px; color:#4c782e;">Network</h3>
         <button id="netFullCloseBtn" style="background:none; border:none; font-size:24px; cursor:pointer; line-height:1; color:#6b7280;" title="Close the full-page view (Esc)">&times;</button>
       </div>
       <div class="net-full-grid">
@@ -5863,7 +5868,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v90_87"></script>
+    <script src="app.js?v=v90_89"></script>
     <script src="tour.js?v=v89_49"></script>
 </body>
 </html>
