@@ -51110,8 +51110,10 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         // Rows that count lines (r.k) say "k of n" so n can't be read as the
         // number altered; the others give the tissue's line count.
         const counted = rows.some(r => r.k !== undefined);
+        // Fixed column widths, so tissue tables stacked in one column line up.
         return this._gbTable(['Tissue', head, counted ? 'Lines' : 'Lines'],
-            rows.map(r => [this.esc(r.name), `<b>${fmt(r)}</b>`, `<span class="gb-m">${r.k !== undefined ? `${r.k} of ${r.n}` : r.n}</span>`]));
+            rows.map(r => [this.esc(r.name), `<b>${fmt(r)}</b>`, `<span class="gb-m">${r.k !== undefined ? `${r.k} of ${r.n}` : r.n}</span>`]))
+            .replace('class="data-table gb-table"', 'class="data-table gb-table gb-table-tissue"');
     }
     _gbTopLines(items, head = 'Value') {
         return this._gbTable(['Cell line', head, 'Tissue'],
@@ -51929,7 +51931,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             + (view === 'genomic' ? sw('sq-cds', 'EXON coding') + sw('sq-utr', 'EXON untranslated') + sw('sq-intron', 'intron') : view === 'mrna' ? sw('sq-cds', 'coding') + sw('sq-utr', 'UTR') : '')
             + (m.hot.length ? sw('sq-cds sq-hot', 'hotspot codon') : '')
             + sw('sq-ins', 'inserted') + sw('sq-del', 'deleted')
-            + `<span class="sq-m">Hover for the exon or intron.</span>`;
+            + `<span class="sq-m">Hover for the exon or intron. <span class="sq-xkey"></span> marks where one exon meets the next.</span>`;
         document.getElementById('sqFind').value = '';
         document.getElementById('sqHits').textContent = '';
         this._sqEditUi();
@@ -52076,6 +52078,15 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             return s.m.segs.filter(g => g.a < rb && g.b > ra).map(g => g.name);
         };
         const caret = this._sqEditing ? s.caret : null;
+        // Display positions where one exon ends and the next begins with no
+        // intron between (mRNA and protein views): a bar is drawn there, as
+        // the shading alone cannot show a coding-to-coding junction.
+        const bnd = new Set();
+        const exNo = (g) => (String(g.name || '').match(/exon (\d+)/) || [])[1];
+        s.m.segs.forEach((g, i) => {
+            const p = s.m.segs[i - 1];
+            if (p && g.type !== 'intron' && g.type !== 'flank' && p.type !== 'intron' && p.type !== 'flank' && exNo(g) && exNo(g) !== exNo(p)) bnd.add(this._sqDispOfRef(g.a));
+        });
         let html = '';
         for (let li = first; li < last; li++) {
             const a = li * L, b = Math.min(seq.length, a + L);
@@ -52086,10 +52097,10 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 // gap and at the cursor.
                 const c = s.cls[k], hm = hitMask ? hitMask[k - first * L] : 0;
                 let e = k + 1;
-                while (e < b && s.cls[e] === c && (hitMask ? hitMask[e - first * L] : 0) === hm && e % 10 !== 0 && e !== caret) e++;
+                while (e < b && s.cls[e] === c && (hitMask ? hitMask[e - first * L] : 0) === hm && e % 10 !== 0 && e !== caret && !bnd.has(e)) e++;
                 let txt = seq.slice(k, e);
                 if (!s.prot) txt = (c & 3) >= 2 ? txt.toUpperCase() : txt.toLowerCase();
-                const cl = names[c & 3] + (c & 4 ? ' sq-hot' : '') + (c & 8 ? ' sq-ins' : '') + (c & 16 ? ' sq-del' : '') + (hm === 2 ? ' sq-cur' : hm ? ' sq-hit' : '') + (k % 10 === 0 && k !== a ? ' sq-g' : '');
+                const cl = names[c & 3] + (c & 4 ? ' sq-hot' : '') + (c & 8 ? ' sq-ins' : '') + (c & 16 ? ' sq-del' : '') + (hm === 2 ? ' sq-cur' : hm ? ' sq-hit' : '') + (k % 10 === 0 && k !== a ? ' sq-g' : '') + (bnd.has(k) ? ' sq-jn' : '');
                 line += (k === caret ? '<span class="sq-caret"></span>' : '') + `<span class="${cl}" data-a="${k}">${txt}</span>`;
                 k = e;
             }
@@ -52624,9 +52635,9 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const body = this._gbDesc('How much of this gene’s mRNA each cell line makes (bulk RNA-seq, log₂ TPM+1).')
             + this._gbVerdict('expr', s, vals, this._gbByTissue(s, (i) => ex[i]))
             + `<div class="gb-grid"><div><div id="gbExprHist" class="gb-hist"></div><div class="gb-m" style="display:flex; justify-content:flex-end; margin-top:2px;"><button class="btn btn-outline btn-sm mobile-hide" data-gb-copy="gbExprHist" data-gb-copy-label="Expression histogram" style="font-size:10px; padding:1px 8px;" title="Copy this figure as an image">Copy figure</button></div></div><div>${stats.join('')}${link}</div></div>`
-            + `<div class="gb-grid" style="margin-top:6px;"><div><div class="gb-sub">Highest tissues <span class="gb-m">(median)</span></div>${this._gbTissueRows(high, r => this._gbNum(r.med), 'Median')}</div>`
-            + `<div><div class="gb-sub">Lowest tissues <span class="gb-m">(median)</span></div>${this._gbTissueRows(low, r => this._gbNum(r.med), 'Median')}</div></div>`
-            + `<div class="gb-sub">Highest-expressing cell lines</div>${this._gbTopLines(topL, 'log₂ TPM+1')}`
+            + `<div class="gb-grid" style="margin-top:6px;"><div><div class="gb-sub">Highest tissues <span class="gb-m">(median)</span></div>${this._gbTissueRows(high, r => this._gbNum(r.med), 'Median')}`
+            + `<div class="gb-sub" style="margin-top:12px;">Lowest tissues <span class="gb-m">(median)</span></div>${this._gbTissueRows(low, r => this._gbNum(r.med), 'Median')}</div>`
+            + `<div><div class="gb-sub">Highest-expressing cell lines</div>${this._gbTopLines(topL, 'log₂ TPM+1')}</div></div>`
             + `<div class="gb-actions"><button class="btn btn-outline btn-sm" data-gb-act="expr" title="Open this gene in the Gene effect / expression view, as mRNA by tissue">Open in expression view</button>`
             + (s.hasGe ? `<button class="btn btn-outline btn-sm" data-gb-act="sc-expr-ge" title="A scatter of each cell line's expression of this gene against its gene effect">Expression vs gene effect scatter</button>` : '')
             + `</div>`;
