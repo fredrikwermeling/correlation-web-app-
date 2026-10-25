@@ -51109,7 +51109,25 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
     }
     _gbDesc(t) { return `<p class="gb-desc">${t}</p>`; }
     _gbClLink(id) { return `<a href="#" data-gb-cl="${this.esc(id)}" class="gb-cl">${this.esc(this.getCellLineName(id) || id)}</a>`; }
-    _gbLoading(t) { return `<div class="gb-loading">${t}</div>`; }
+    // A loading line with a running seconds count, so a slow live source
+    // reads as working rather than stuck. One shared ticker updates every
+    // counter on screen and stops when none is left.
+    _gbLoading(t) {
+        this._gbStartElapsedTicker();
+        return `<div class="gb-loading">${t} <span class="gb-elapsed" data-t0="${Date.now()}"></span></div>`;
+    }
+    _gbStartElapsedTicker() {
+        if (this._gbElapsedTimer) return;
+        this._gbElapsedTimer = setInterval(() => {
+            const els = document.querySelectorAll('.gb-elapsed');
+            if (!els.length) { clearInterval(this._gbElapsedTimer); this._gbElapsedTimer = null; return; }
+            const now = Date.now();
+            els.forEach(el => {
+                const sec = Math.floor((now - (+el.dataset.t0 || now)) / 1000);
+                el.textContent = sec >= 2 ? `(${sec} s)` : '';
+            });
+        }, 1000);
+    }
     // The app's own table look (data-table: green header row, hover rows).
     _gbTable(heads, rows) {
         return `<table class="data-table gb-table"><thead><tr>${heads.map(h => `<th>${h}</th>`).join('')}</tr></thead>`
@@ -51333,6 +51351,51 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
     // Select (the agreed reference) first. Each transcript is reduced to the
     // same shape: {tx, exons (transcription order, with coding stretch),
     // protein, cdsLength}; the gene-level object carries the reference's.
+    // The MANE Select transcript alone, from UCSC's MANE track (under a
+    // second, where Ensembl's full lookup can take half a minute). Drawn
+    // first; the full transcript list from Ensembl replaces it when it comes.
+    async _gbFetchManeFast(gene) {
+        await this.loadGeneLocations?.();
+        const loc = this.geneLocations?.[gene];
+        if (!loc || loc.start == null || loc.end == null) return null;
+        const ctl = new AbortController();
+        const timer = setTimeout(() => ctl.abort(), 10000);
+        let j;
+        try {
+            const res = await fetch(`https://api.genome.ucsc.edu/getData/track?genome=hg38;track=mane;chrom=chr${encodeURIComponent(loc.chr)};start=${loc.start - 1};end=${loc.end}`, { signal: ctl.signal });
+            if (!res.ok) return null;
+            j = await res.json();
+        } catch (e) { return null; } finally { clearTimeout(timer); }
+        const items = (j?.mane || []).filter(x => x.geneName2 === gene);
+        const m = items.find(x => x.maneStat === 'MANE Select') || items[0];
+        if (!m) return null;
+        const strand = m.strand === '-' ? -1 : 1;
+        const sizes = String(m.blockSizes).split(',').filter(Boolean).map(Number);
+        const starts = String(m.chromStarts).split(',').filter(Boolean).map(Number);
+        const tl = m.thickEnd > m.thickStart ? { start: m.thickStart + 1, end: m.thickEnd } : null;
+        const exons = sizes.map((len, i) => {
+            const start = m.chromStart + starts[i] + 1, end = start + len - 1;
+            let c0 = null, c1 = null;
+            if (tl) {
+                const a = Math.max(start, tl.start), b = Math.min(end, tl.end);
+                if (a <= b) { c0 = strand === -1 ? end - b : a - start; c1 = strand === -1 ? end - a + 1 : b - start + 1; }
+            }
+            return { id: '', start, end, len, c0, c1 };
+        }).sort((a, b) => strand === -1 ? b.start - a.start : a.start - b.start);
+        const cdsLength = exons.reduce((n, e) => n + (e.c0 !== null ? e.c1 - e.c0 : 0), 0);
+        const [txId, txVer] = String(m.name).split('.');
+        const t = {
+            tx: { id: txId, version: txVer || '', name: null, biotype: m.geneType, length: sizes.reduce((a, b) => a + b, 0), start: m.chromStart + 1, end: m.chromEnd,
+                refseq: m.ncbiId || null, mane: m.maneStat === 'MANE Select', plus: m.maneStat === 'MANE Plus Clinical', canonical: true },
+            protein: tl ? { id: String(m.ensemblProtAcc || '').split('.')[0], length: Math.max(0, Math.round(cdsLength / 3) - 1) } : null,
+            cdsLength, exons
+        };
+        return {
+            geneId: String(m.geneName || '').split('.')[0], chr: String(loc.chr), start: loc.start, end: loc.end, strand, biotype: m.geneType,
+            ...t, transcripts: [t], nTranscripts: null, plus: [], _partial: true, _t0: Date.now()
+        };
+    }
+
     async _gbFetchStructure(gene) {
         const cache = (this._gbStructCache ||= new Map());
         if (cache.has(gene)) return cache.get(gene);
@@ -51522,12 +51585,31 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
 
     async _gbFillStructure(s) {
         const gene = s.gene;
-        let st = null;
-        try {
+        const full = (async () => {
             await this.fetchGeneInfo(gene).catch(() => null);
-            st = await this._gbFetchStructure(gene);
-        } catch (e) { st = null; }
+            return this._gbFetchStructure(gene);
+        })().catch(() => null);
+        // The reference transcript from UCSC first, when Ensembl is slower.
+        const fast = await Promise.race([this._gbFetchManeFast(gene).catch(() => null), full.then(() => null)]);
+        if (fast && this._gbGene === gene && !this._gbStructCache?.has(gene)) {
+            this._gbRenderStructure(gene, fast);
+            full.then(st => {
+                if (this._gbGene !== gene || this._gbStructure !== fast) return;
+                if (st) this._gbRenderStructure(gene, st);
+                else {
+                    fast._failed = true;
+                    const body = document.getElementById('gbStructBody');
+                    if (body) { body.innerHTML = this._gbStructBody(gene, fast, this._gbTxSel); this._gbWireStruct(gene); }
+                }
+            });
+            return;
+        }
+        const st = await full;
         if (this._gbGene !== gene) return;
+        this._gbRenderStructure(gene, st);
+    }
+
+    _gbRenderStructure(gene, st) {
         const card = document.getElementById('gbStructCard');
         if (!card) return;
         this._gbStructure = st;
@@ -51546,8 +51628,14 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             info.ensembl = st.geneId;
         }
         card.outerHTML = this._gbSection('Gene structure', `<div id="gbStructBody">${this._gbStructBody(gene, st, this._gbTxSel)}</div>`,
-            'Ensembl REST API (structure) and UCSC Genome Browser API (sequence), GRCh38, fetched live; hotspot calls from DepMap inferred subtypes. MANE Select is the reference transcript agreed by NCBI and EMBL-EBI.', 'gbStructCard');
+            'Ensembl REST API (transcripts and exons) and UCSC Genome Browser API (MANE track and sequence), GRCh38, fetched live; hotspot calls from DepMap inferred subtypes. MANE Select is the reference transcript agreed by NCBI and EMBL-EBI.', 'gbStructCard');
         this._gbWireStruct(gene);
+        if (st._partial) this._gbStartElapsedTicker();
+        // The sequence already fetched for the quick view serves the full one
+        // when both cover the same region.
+        const prev = this._gbPrevStructure;
+        if (prev && prev !== st && prev._genomic && prev.chr === st.chr && prev.start === st.start && prev.end === st.end && !st._genomic) st._genomic = prev._genomic;
+        this._gbPrevStructure = st;
         // Fetch the sequence now so a download is instant.
         this._gbGenomic(st).then(() => this._gbSeqStatus('Sequence ready.'), () => this._gbSeqStatus(''));
     }
@@ -51596,7 +51684,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const opts = st.transcripts.map((x, i) => `<option value="${i}"${x === t ? ' selected' : ''}>${e(this._gbTxLabel(x))}</option>`).join('');
         const pos = `chr${st.chr}:${st.start}-${st.end}`;
         const note = `<div style="padding:7px 10px; background:#fffbeb; border-left:3px solid #f59e0b; font-size:11px; color:#78350f; margin:4px 0 10px;">`
-            + `<b>${st.nTranscripts === 1 ? 'The only annotated transcript.' : `One of ${st.nTranscripts.toLocaleString()} transcripts.`}</b> ${isRef && t.tx.mane ? `Shown is the MANE Select transcript${t.tx.refseq ? ` (${e(t.tx.refseq)})` : ''}. It is the agreed reference, not necessarily the form every cell type makes.` : `Shown is ${e(t.tx.name || t.tx.id)}, not the reference transcript.`}`
+            + `<b>${st._partial ? (st._failed ? 'The reference transcript.' : `The reference transcript, while the other transcripts load from Ensembl <span class="gb-elapsed" data-t0="${st._t0}"></span>`) : st.nTranscripts === 1 ? 'The only annotated transcript.' : `One of ${st.nTranscripts.toLocaleString()} transcripts.`}</b> ${isRef && t.tx.mane ? `Shown is the MANE Select transcript${t.tx.refseq ? ` (${e(t.tx.refseq)})` : ''}. It is the agreed reference, not necessarily the form every cell type makes.` : `Shown is ${e(t.tx.name || t.tx.id)}, not the reference transcript.`}`
             + `${others ? ` ${e(gene)} has ${others.toLocaleString()} other annotated transcript${others === 1 ? '' : 's'} (splice variants and non-coding forms) that can differ in exons, UTRs and protein: pick one in the menu to draw and download it, compare them all in ${a(`https://www.ensembl.org/Homo_sapiens/Gene/Splice?g=${encodeURIComponent(st.geneId)}`, 'Ensembl’s transcript view')} or the ${a(`https://genome.ucsc.edu/cgi-bin/hgTracks?db=hg38&position=${encodeURIComponent(pos)}`, 'UCSC Genome Browser')}.` : ''}`
             + ` To check where a primer or sequence matches, UCSC ${a('https://genome.ucsc.edu/cgi-bin/hgBlat?db=hg38', 'BLAT')} and ${a('https://genome.ucsc.edu/cgi-bin/hgPcr?db=hg38', 'In-Silico PCR')} are quicker than BLAST for human sequences.</div>`;
         const stats = [
