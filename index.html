@@ -1753,7 +1753,14 @@
         .gb-scope .gb-relgrid { display:grid; grid-template-columns:minmax(0,440px) minmax(0,1fr); gap:28px; align-items:start; }
         .gb-scope .gb-relleft { min-width:0; overflow-x:auto; }
         .gb-scope .gb-relfig { min-width:0; }
-        @media (max-width: 900px) { .gb-scope .gb-relgrid { grid-template-columns:minmax(0,1fr); } }
+        /* Two rows (table | figure, then caption | caption) so the captions start level.
+           Stacked, each caption follows its own table or figure. */
+        .gb-scope .gb-relgrid { row-gap:0; }
+        @media (max-width: 900px) {
+            .gb-scope .gb-relgrid { grid-template-columns:minmax(0,1fr); }
+            .gb-scope .gb-relgrid > :nth-child(1) { order:1; } .gb-scope .gb-relgrid > :nth-child(3) { order:2; }
+            .gb-scope .gb-relgrid > :nth-child(2) { order:3; margin-top:10px; } .gb-scope .gb-relgrid > :nth-child(4) { order:4; }
+        }
         .gb-scope .gb-tag { display:inline-block; margin-left:5px; padding:0 5px; border-radius:7px; font-size:9.5px; line-height:1.45; font-style:normal; vertical-align:1px; border:1px solid; }
         .gb-scope .gb-tag-complex { background:#f3faee; color:#3f6b25; border-color:#6ba544; }
         .gb-scope .gb-tag-pathway { background:#f3f4f6; color:#4b5563; border-color:#d1d5db; }
@@ -5872,7 +5879,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v90_94"></script>
+    <script src="app.js?v=v90_95"></script>
     <script src="tour.js?v=v89_49"></script>
 </body>
 </html>

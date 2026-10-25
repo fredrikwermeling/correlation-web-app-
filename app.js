@@ -52526,18 +52526,18 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                     `<a href="#" data-gb-gene="${this.esc(h.gene)}" class="gb-cl">${this.gi(h.gene)}</a>${this._gbKnownTag(gene, h.gene)}`,
                     `<span class="${neg ? 'corr-negative' : 'corr-positive'}">${h.r.toFixed(3)}</span>`,
                     `<span class="gb-m" title="${h.n.toLocaleString()} cell lines">${this._gbP(h.p)}</span>`,
-                    `<button class="btn btn-sm inspect-btn" style="padding:2px 6px; font-size:10px; background:#6ba544; color:white;" data-gb-scatter="${this.esc(h.gene)}" title="Open the correlation plot of ${this.esc(gene)} against ${this.esc(h.gene)}">Correlation</button>`]))
-                + `<div class="gb-m" style="margin-top:3px;">Pearson r of gene effect across the cell lines screened for both genes (${nA === nB ? nA.toLocaleString() : `${nA.toLocaleString()} to ${nB.toLocaleString()}`}; hover p for each n). ${neg ? '−1 = mirror-image pattern.' : '1 = identical pattern.'}</div>`
+                    `<button class="btn btn-sm inspect-btn" style="padding:2px 6px; font-size:10px; background:#6ba544; color:white;" data-gb-scatter="${this.esc(h.gene)}" title="Open the correlation plot of ${this.esc(gene)} against ${this.esc(h.gene)}">Correlation</button>`]));
+            const tableCap = `<div class="gb-m" style="margin-top:3px;">Pearson r of gene effect across the cell lines screened for both genes (${nA === nB ? nA.toLocaleString() : `${nA.toLocaleString()} to ${nB.toLocaleString()}`}; hover p for each n). ${neg ? '−1 = mirror-image pattern.' : '1 = identical pattern.'}</div>`
                 + `<div class="gb-actions">`
                 + `<button class="btn btn-outline btn-sm" data-gb-act="net-codep${neg ? '-neg' : ''}" title="Run Gene set analysis on ${this.esc(gene)} and these ${list.length} genes, drawn as a correlation network">Network of these genes</button>`
                 + (this._hasHeatmap() ? `<button class="btn btn-outline btn-sm" data-gb-act="hm-codep${neg ? '-neg' : ''}" title="Show ${this.esc(gene)} and these ${list.length} genes as a heatmap across the cell lines">Heatmap</button>` : '')
                 + `</div>`;
             const scheme = this._gbRelSchematic(gene, list, corum, neg);
-            const fig = `<div id="gbRelFig${neg ? 'Neg' : ''}" style="background:#fff;">${scheme}</div>`
-                + `<div class="gb-m" style="display:flex; flex-wrap:wrap; gap:4px 14px; align-items:center; margin-top:2px;">`
+            const fig = `<div id="gbRelFig${neg ? 'Neg' : ''}" style="background:#fff;">${scheme}</div>`;
+            const figCap = `<div class="gb-m" style="display:flex; flex-wrap:wrap; gap:4px 14px; align-items:center; margin-top:3px;">`
                 + `<span>Click a line for the correlation plot, a gene for its gene effect. A ringed gene is also a known partner.</span>`
                 + `<button class="btn btn-outline btn-sm mobile-hide" data-gb-act="copy-relfig${neg ? '-neg' : ''}" style="font-size:10px; padding:1px 8px; margin-left:auto;" title="Copy this figure as an image">Copy figure</button></div>`;
-            return `<div data-gb-codep="${neg ? 'neg' : 'pos'}"${neg ? ' hidden' : ''}>${knownLine}<div class="gb-relgrid"><div class="gb-relleft">${table}</div><div class="gb-relfig">${fig}</div></div></div>`;
+            return `<div data-gb-codep="${neg ? 'neg' : 'pos'}"${neg ? ' hidden' : ''}>${knownLine}<div class="gb-relgrid"><div class="gb-relleft">${table}</div><div class="gb-relfig">${fig}</div><div class="gb-relleft">${tableCap}</div><div class="gb-relfig">${figCap}</div></div></div>`;
         };
         const coTabs = top.length || anti.length ? `<div class="gb-xtabs">`
             + `<button class="gb-scatter-btn gb-xtab on" data-gb-codep-tab="pos">Positive r <span class="gb-m" style="color:inherit; font-weight:400;">(co-dependent)</span></button>`
@@ -52667,12 +52667,14 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 locCell(h),
                 `<button class="btn btn-sm inspect-btn" style="padding:2px 6px; font-size:10px; background:#6ba544; color:white;" data-gb-scatter="${this.esc(h.gene)}" data-gb-x="${m.tx}" data-gb-y="${m.ty}" title="Open the correlation plot">Correlation</button>`]))
             + `</div>`).join('');
+        const hm = this._gbCoexprHeatmap(gene, (res.mrnaVsMrna || []).map(h => h.gene), isNear);
         box.innerHTML = `<div class="gb-sub" style="margin-top:10px;">Expression correlations <span class="gb-m">(co-expression)</span></div>`
             + `<div class="gb-relgrid"><div class="gb-relleft">`
             + (lists.length > 1 ? `<div class="gb-xtabs">${tabs}</div>` : `<div class="gb-m" style="margin:2px 0;"><b style="color:#374151;">${lists[0].head(g)}</b>${(() => { const k = res[lists[0].key].filter(isNear).length; return k ? ` <span class="gb-near">${k} nearby</span>` : ''; })()}</div>`) + notes
-            + `${panels}</div>${this._gbCoexprHeatmap(gene, (res.mrnaVsMrna || []).map(h => h.gene), isNear)}</div>`
-            + `<div class="gb-m" style="margin-top:3px;">Pearson r across the cell lines with both values (hover p for n), strongest in either direction, genes measured in at least 100 lines. `
-            + `${g} is at ${this.esc(this.geneLocations?.[gene]?.band || 'an unknown band')}; <span class="gb-near">amber</span> marks genes within ${near} Mb on the same chromosome. Neighbours are often gained or lost together, so their mRNA can correlate through shared copy number rather than shared function.</div>` + fewGe;
+            + `${panels}</div><div class="gb-relfig">${hm.fig}</div>`
+            + `<div class="gb-relleft"><div class="gb-m" style="margin-top:3px;">Pearson r across the cell lines with both values (hover p for n), strongest in either direction, genes measured in at least 100 lines. `
+            + `${g} is at ${this.esc(this.geneLocations?.[gene]?.band || 'an unknown band')}; <span class="gb-near">amber</span> marks genes within ${near} Mb on the same chromosome. Neighbours are often gained or lost together, so their mRNA can correlate through shared copy number rather than shared function.</div></div>`
+            + `<div class="gb-relfig">${hm.cap}</div></div>` + fewGe;
         // The heatmap's grid (not its column labels) starts level with the table.
         const level = () => {
             const svg = box.querySelector('svg[data-grid-top]'), fig = svg?.closest('.gb-relfig');
@@ -52699,7 +52701,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
     // group as a blue band. A cell opens the pair's correlation plot.
     _gbCoexprHeatmap(gene, partners, isNear) {
         const genes = [gene, ...partners.filter(g => g !== gene)].filter(g => this.expressionGeneIndex?.has(g));
-        if (genes.length < 3 || !this.expressionData) return '';
+        if (genes.length < 3 || !this.expressionData) return { fig: '', cap: '' };
         const nE = this.expressionMetadata.nCellLines;
         const eIdx = new Map(this.expressionMetadata.cellLines.map((cl, i) => [cl, i]));
         const cols = this.metadata.cellLines.map(cl => eIdx.get(cl)).filter(i => i !== undefined);
@@ -52753,8 +52755,11 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             + `<rect x="${kx}" y="${ky + 6}" width="${kw}" height="${kh}" fill="url(#gbCxGrad)" stroke="#d1d5db"/>`
             + [[1, 0], [0, 0.5], [-1, 1]].map(([v, f]) => `<text x="${kx + kw + 5}" y="${ky + 6 + f * kh + 3.5}" font-size="10" fill="#374151">${v > 0 ? '+1' : v < 0 ? '\u22121' : '0'}</text>`).join('');
         svg += '</svg>';
-        return `<div class="gb-relfig"><div id="gbCoexprHm" class="gb-coexpr-hm" style="overflow-x:auto; background:#fff;">${svg}</div>`
-            + `<div class="gb-m" style="margin-top:2px;"><b style="color:#374151;">How these genes correlate with each other</b>: mRNA r for every pair, ordered by r with ${this.gi(gene)}. The first row and column are ${this.gi(gene)} itself; a red block is a group that rises and falls together${partners.some(g => isNear({ gene: g })) ? '; <span style="color:#b45309;">amber names</span> are nearby genes' : ''}. Click a square for that pair's plot.</div><div class="gb-m" style="display:flex; justify-content:flex-end; margin-top:2px;"><button class="btn btn-outline btn-sm mobile-hide" data-gb-copy="gbCoexprHm" data-gb-copy-label="Co-expression heatmap" style="font-size:10px; padding:1px 8px;" title="Copy this figure as an image">Copy figure</button></div></div>`;
+        // Two grid cells: the figure beside the table, its caption beside the table's.
+        return {
+            fig: `<div id="gbCoexprHm" class="gb-coexpr-hm" style="overflow-x:auto; background:#fff;">${svg}</div>`,
+            cap: `<div class="gb-m" style="display:flex; flex-wrap:wrap; gap:4px 14px; align-items:center; margin-top:3px;"><span><b style="color:#374151;">How these genes correlate with each other</b>: mRNA r for every pair, ordered by r with ${this.gi(gene)}. The first row and column are ${this.gi(gene)} itself; a red block is a group that rises and falls together${partners.some(g => isNear({ gene: g })) ? '; <span style="color:#b45309;">amber names</span> are nearby genes' : ''}. Click a square for that pair's plot.</span><button class="btn btn-outline btn-sm mobile-hide" data-gb-copy="gbCoexprHm" data-gb-copy-label="Co-expression heatmap" style="font-size:10px; padding:1px 8px; margin-left:auto;" title="Copy this figure as an image">Copy figure</button></div>`
+        };
     }
 
     async _loadComplexes() {
