@@ -70464,3 +70464,56 @@ window._geStressTest = async function _geStressTest() {
     }
     return results;
 };
+
+// Every number box gets − and + beside it, the look the app's own steppers
+// have. Boxes built later (popouts, generated panels) are picked up by an
+// observer. A box that already has its own pair, or sits under
+// [data-no-stepper], is left alone.
+(function () {
+    const isMinus = (b) => b && b.tagName === 'BUTTON' && /^[−\-–]$/.test(b.textContent.trim());
+    const isPlus = (b) => b && b.tagName === 'BUTTON' && b.textContent.trim() === '+';
+    const BTN = 'font-size:10px; padding:0 5px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer; line-height:1.5; flex:0 0 auto;';
+    const step = (el, dir) => {
+        if (el.disabled || el.readOnly) return;
+        const st = parseFloat(el.step);
+        const s = Number.isFinite(st) && st > 0 ? st : 1;
+        const v = parseFloat(String(el.value).replace(',', '.'));
+        let next = (Number.isFinite(v) ? v : (parseFloat(el.min) || 0)) + dir * s;
+        if (el.min !== '') next = Math.max(parseFloat(el.min), next);
+        if (el.max !== '') next = Math.min(parseFloat(el.max), next);
+        const dec = (String(s).split('.')[1] || '').length;
+        el.value = dec ? next.toFixed(dec) : String(Math.round(next));
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    const wire = (el) => {
+        if (el._stepper || el.type !== 'number' || el.closest('[data-no-stepper]') || el.style.display === 'none') return;
+        el._stepper = true;
+        if (isMinus(el.previousElementSibling) && isPlus(el.nextElementSibling)) return;
+        const mk = (t, d) => {
+            const b = document.createElement('button');
+            b.type = 'button'; b.textContent = t; b.className = 'num-stepper'; b.tabIndex = -1;
+            b.title = d < 0 ? 'Decrease' : 'Increase';
+            b.style.cssText = BTN;
+            b.addEventListener('click', (e) => { e.preventDefault(); step(el, d); });
+            return b;
+        };
+        el.before(mk('−', -1));
+        el.after(mk('+', 1));
+    };
+    const scan = (root) => {
+        if (root.matches?.('input[type=number]')) wire(root);
+        root.querySelectorAll?.('input[type=number]').forEach(wire);
+    };
+    const start = () => {
+        scan(document.body);
+        let queue = [], pending = false;
+        new MutationObserver((ms) => {
+            for (const m of ms) m.addedNodes.forEach(n => { if (n.nodeType === 1) queue.push(n); });
+            if (pending) return;
+            pending = true;
+            requestAnimationFrame(() => { pending = false; const q = queue; queue = []; q.forEach(scan); });
+        }).observe(document.body, { childList: true, subtree: true });
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
+})();
