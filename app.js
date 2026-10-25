@@ -57892,10 +57892,12 @@ ${clone.innerHTML}
     // Volcano for one measure: the difference against its significance.
     // Genes passing the sidebar cutoffs are drawn in colour, the rest grey,
     // so the plot and the table below it always agree.
-    // Push volcano labels off each other once the chart is drawn: the
-    // data-to-pixel mapping is only known after Plotly resolves its axis
-    // ranges, so this runs on the render's promise. Each moved label keeps a
-    // thin leader line back to its dot.
+    // Place volcano labels once the chart is drawn (the data-to-pixel mapping
+    // is only known after Plotly resolves its axes). Greedy, strongest hit
+    // first: each label tries spots around its dot at growing distance and
+    // takes the one that covers no other label, no coloured dot and crosses
+    // no other leader line, staying on its own side of zero. A label the user
+    // dragged keeps its spot and counts as an obstacle.
     _spreadVolcanoLabels(el) {
         const fl = el && el._fullLayout;
         if (!fl || !fl.xaxis || !Array.isArray(fl.annotations) || !fl.annotations.length) return;
@@ -57903,9 +57905,10 @@ ${clone.innerHTML}
         if (typeof xa.d2p !== 'function' || typeof ya.d2p !== 'function') return;
         const pw = fl.width - fl.margin.l - fl.margin.r;
         const ph = fl.height - fl.margin.t - fl.margin.b;
-        // Every gene label on the chart, automatic or clicked on, measured at
-        // the size it is actually drawn in (Settings can change it), so
-        // labels made bigger there are spread by their real height.
+        const zx = xa.d2p(0);
+        const side = (el.id.match(/^ge(Left|Right)Volcano$/) || [])[1];
+        const fixedPos = side ? this._geVolcanoState(side).pos : null;
+        const ctx = (this._geMeasureCtx ||= document.createElement('canvas').getContext('2d'));
         const anns = el.layout?.annotations || [];
         const items = [];
         anns.forEach((a, i) => {
@@ -57914,58 +57917,91 @@ ${clone.innerHTML}
             if (!isFinite(px) || !isFinite(py)) return;
             const fs = a.font?.size || 8;
             const text = String(a.text || '').replace(/<[^>]+>/g, '');
-            items.push({ i, left: a.x < 0, px, py, fs,
-                w: text.length * fs * 0.7 + 6, h: fs * 1.35,
-                ax: a.x < 0 ? -14 : 14, ay: -10 });
+            ctx.font = `italic ${fs}px "Open Sans", Arial, sans-serif`;
+            const fixed = fixedPos?.get(a._dotLabel);
+            items.push({ i, neg: a.x < 0, px, py,
+                w: ctx.measureText(text).width * 1.15 + 4, h: fs * 1.3,
+                ax: fixed ? fixed.ax : null, ay: fixed ? fixed.ay : null, fixed: !!fixed });
         });
         if (!items.length) return;
-        // A label that would run out past the plot's edge is put on the other
-        // side of its dot instead. It still sits on the same side of zero, so
-        // it cannot read as the wrong direction.
-        for (const it of items) {
-            if (it.left && it.px + it.ax - it.w < 2) { it.left = false; it.ax = 14; }
-            else if (!it.left && it.px + it.ax + it.w > pw - 2) { it.left = true; it.ax = -14; }
-        }
-        const overlaps = (a, b) => {
-            const ax1 = a.px + a.ax - (a.left ? a.w : 0), ax2 = ax1 + a.w;
-            const bx1 = b.px + b.ax - (b.left ? b.w : 0), bx2 = bx1 + b.w;
-            if (ax2 < bx1 - 2 || bx2 < ax1 - 2) return false;
-            return Math.abs((a.py + a.ay) - (b.py + b.ay)) < (a.h + b.h) / 2;
-        };
-        // A few passes of "if these two collide, move them apart" settles a
-        // handful of labels. Only y moves, so a label never crosses zero.
-        // Clamping is part of every pass: two labels pushed against the top
-        // edge would otherwise be clamped back onto each other after the
-        // spreading had finished. With the upper one stuck at the edge, the
-        // lower one keeps stepping down until they clear.
-        const clamp = (it) => {
-            const y = it.py + it.ay;
-            if (y < it.h / 2 + 2) it.ay += it.h / 2 + 2 - y;
-            if (y > ph - it.h / 2 - 2) it.ay -= y - (ph - it.h / 2 - 2);
-        };
-        items.forEach(clamp);
-        for (let pass = 0; pass < 60; pass++) {
-            let moved = false;
-            for (let a = 0; a < items.length; a++) {
-                for (let b = a + 1; b < items.length; b++) {
-                    if (!overlaps(items[a], items[b])) continue;
-                    const up = (items[a].py + items[a].ay) <= (items[b].py + items[b].ay) ? items[a] : items[b];
-                    const dn = up === items[a] ? items[b] : items[a];
-                    const step = Math.max(up.h, dn.h) / 2;
-                    up.ay -= step; dn.ay += step;
-                    clamp(up); clamp(dn);
-                    moved = true;
-                }
+        // Coloured dots (the ones a reader looks at) are obstacles; the grey
+        // cloud below the cutoffs is not, or nothing near zero could be named.
+        const dots = [];
+        (el.data || []).forEach((t, ti) => {
+            if (ti === 0 || !t.x) return;
+            for (let k = 0; k < t.x.length; k++) {
+                const x = xa.d2p(t.x[k]), y = ya.d2p(t.y[k]);
+                if (isFinite(x) && isFinite(y)) dots.push([x, y]);
             }
-            if (!moved) break;
+        });
+        const boxOf = (it, ax, ay) => {
+            const cx = it.px + ax, cy = it.py + ay;
+            return [cx - it.w / 2, cy - it.h / 2, cx + it.w / 2, cy + it.h / 2];
+        };
+        const hit = (a, b, pad) => !(a[2] + pad < b[0] || b[2] + pad < a[0] || a[3] + pad < b[1] || b[3] + pad < a[1]);
+        const segBox = (x1, y1, x2, y2, b) => {
+            // Liang-Barsky clip: does the segment enter the box?
+            let t0 = 0, t1 = 1; const dx = x2 - x1, dy = y2 - y1;
+            const p = [-dx, dx, -dy, dy], q = [x1 - b[0], b[2] - x1, y1 - b[1], b[3] - y1];
+            for (let k = 0; k < 4; k++) {
+                if (p[k] === 0) { if (q[k] < 0) return false; continue; }
+                const r = q[k] / p[k];
+                if (p[k] < 0) { if (r > t1) return false; if (r > t0) t0 = r; }
+                else { if (r < t0) return false; if (r < t1) t1 = r; }
+            }
+            return true;
+        };
+        const cross = (a, b) => {
+            const d = (p, q, r) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+            const d1 = d(b[0], b[1], a[0]), d2 = d(b[0], b[1], a[1]), d3 = d(a[0], a[1], b[0]), d4 = d(a[0], a[1], b[1]);
+            return ((d1 > 0) !== (d2 > 0)) && ((d3 > 0) !== (d4 > 0));
+        };
+        const placed = [];
+        const place = (it, ax, ay) => {
+            it.ax = ax; it.ay = ay;
+            const box = boxOf(it, ax, ay);
+            placed.push({ it, box, seg: [[it.px, it.py], [it.px + ax, it.py + ay]] });
+        };
+        items.filter(it => it.fixed).forEach(it => place(it, it.ax, it.ay));
+        const angles = [180, 150, 210, 125, 235, 100, 260, 90, 270, 60, 300, 30, 330, 0];
+        const radii = [16, 24, 34, 46, 60, 78, 100];
+        for (const it of items) {
+            if (it.fixed) continue;
+            let best = null;
+            for (const r of radii) {
+                for (const deg of angles) {
+                    const rad = (it.neg ? deg : 180 - deg) * Math.PI / 180;
+                    const dx = Math.cos(rad), dy = -Math.sin(rad);
+                    // Clear the dot by the half-box in the direction taken.
+                    const ax = dx * (r + it.w / 2 * Math.abs(dx)), ay = dy * (r * 0.7 + it.h / 2 * Math.abs(dy));
+                    const b = boxOf(it, ax, ay);
+                    let pen = r * 0.15 + Math.abs(deg - 180) * 0.01;
+                    if (b[0] < 1 || b[2] > pw - 1 || b[1] < 1 || b[3] > ph - 1) pen += 500;
+                    if (it.neg ? b[2] > zx - 2 : b[0] < zx + 2) pen += 300;
+                    const seg = [[it.px, it.py], [it.px + ax, it.py + ay]];
+                    for (const p of placed) {
+                        if (hit(b, p.box, 2)) pen += 1000;
+                        if (segBox(seg[0][0], seg[0][1], seg[1][0], seg[1][1], p.box)) pen += 200;
+                        if (cross(seg, p.seg)) pen += 150;
+                    }
+                    for (const [x, y] of dots) {
+                        if (x > b[0] - 3 && x < b[2] + 3 && y > b[1] - 3 && y < b[3] + 3) pen += 120;
+                    }
+                    if (!best || pen < best.pen) best = { pen, ax, ay };
+                }
+                if (best && best.pen < 40) break;
+            }
+            place(it, best.ax, best.ay);
         }
         const upd = {};
         for (const it of items) {
-            upd[`annotations[${it.i}].ax`] = it.ax;
-            upd[`annotations[${it.i}].ay`] = it.ay;
-            upd[`annotations[${it.i}].xanchor`] = it.left ? 'right' : 'left';
+            upd[`annotations[${it.i}].ax`] = Math.round(it.ax);
+            upd[`annotations[${it.i}].ay`] = Math.round(it.ay);
+            upd[`annotations[${it.i}].xanchor`] = 'center';
+            upd[`annotations[${it.i}].yanchor`] = 'middle';
         }
-        Plotly.relayout(el, upd).catch(() => {});
+        el._spreading = true;
+        Plotly.relayout(el, upd).catch(() => {}).finally(() => { el._spreading = false; });
     }
 
     // Per-side label curation on the inspect volcanos: names clicked on or
@@ -57974,7 +58010,7 @@ ${clone.innerHTML}
     // the inspect is opened afresh.
     _geVolcanoState(side) {
         const all = (this._geVolcanoLabels ||= {});
-        return all[side] ||= { added: new Set(), removed: new Set(), hidden: new Set(), autoN: 4 };
+        return all[side] ||= { added: new Set(), removed: new Set(), hidden: new Set(), autoN: 4, pos: new Map() };
     }
 
     _redrawGEVolcano(side) {
@@ -58191,18 +58227,30 @@ ${clone.innerHTML}
                             color: isFound ? '#b45309' : '#374151' },
                     showarrow: true, arrowhead: 0, arrowwidth: 0.7, arrowcolor: '#b8bec9',
                     standoff: 3,
-                    ax: r.delta < 0 ? -14 : 14, ay: -10,
-                    xanchor: r.delta < 0 ? 'right' : 'left', yanchor: 'middle',
-                    captureevents: true, hovertext: 'Click to remove this label',
+                    ax: st.pos.get(r.gene)?.ax ?? (r.delta < 0 ? -30 : 30), ay: st.pos.get(r.gene)?.ay ?? -10,
+                    xanchor: 'center', yanchor: 'middle',
+                    captureevents: true, hovertext: 'Drag to move this label, click to remove it',
                     _dotLabel: r.gene, _found: isFound || undefined
                 };
             }).concat(headerAnns),
             paper_bgcolor: '#fff', plot_bgcolor: '#fff'
         };
-        Plotly.react(el, traces, layout, { displayModeBar: false, responsive: true })
+        // annotationTail lets a name be dragged clear of the others while its
+        // leader line keeps pointing at the dot.
+        Plotly.react(el, traces, layout, { displayModeBar: false, responsive: true, edits: { annotationTail: true } })
             .then(() => { this._spreadVolcanoLabels(el); this._renderGEVolcanoChips(side); });
         if (!el.dataset.wired) {
             el.dataset.wired = '1';
+            // A dragged name keeps its spot through cutoff redraws.
+            el.on('plotly_relayout', (d) => {
+                if (el._spreading) return;
+                const anns = el.layout?.annotations || [];
+                anns.forEach((a, i) => {
+                    if (!a._dotLabel) return;
+                    const ax = d[`annotations[${i}].ax`], ay = d[`annotations[${i}].ay`];
+                    if (ax !== undefined && ay !== undefined) this._geVolcanoState(side).pos.set(a._dotLabel, { ax, ay });
+                });
+            });
             // Click names a gene, as on the correlation scatter; Shift+click
             // opens it; Alt+click takes it off the chart (the table keeps it).
             el.on('plotly_click', (ev) => {
@@ -58214,9 +58262,15 @@ ${clone.innerHTML}
                 if (e.altKey) { this._geVolcanoState(side).hidden.add(gene); this._redrawGEVolcano(side); return; }
                 this._toggleGEVolcanoLabel(side, gene);
             });
+            // Draggable labels make Plotly report one click twice; without the
+            // guard the second toggle put the removed name straight back.
             el.on('plotly_clickannotation', (ev) => {
                 const g = ev.annotation?._dotLabel;
-                if (g && g !== true) { ev.event?.preventDefault?.(); this._toggleGEVolcanoLabel(side, g); }
+                if (!g || g === true) return;
+                const now = Date.now();
+                if (el._lastAnnClick && el._lastAnnClick.g === g && now - el._lastAnnClick.t < 400) return;
+                el._lastAnnClick = { g, t: now };
+                ev.event?.preventDefault?.(); this._toggleGEVolcanoLabel(side, g);
             });
         }
         // The layout gives the plot a fixed pixel size, so a window resize
