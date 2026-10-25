@@ -52724,8 +52724,10 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             if (ai === bi) { svg += `<rect x="${x}" y="${y}" width="${cell}" height="${cell}" fill="#e5e7eb" stroke="#fff"/>`; return; }
             svg += `<g data-gb-pair="${this.esc(genes[ai])}|${this.esc(genes[bi])}" style="cursor:pointer;"><title>${this.esc(genes[ai])} and ${this.esc(genes[bi])}: r = ${Number.isNaN(r) ? 'n/a' : r.toFixed(2)}. Click to open their correlation plot.</title>`
                 + `<rect x="${x}" y="${y}" width="${cell}" height="${cell}" fill="${col(r)}" stroke="#fff"/>`
-                + (Math.abs(r) >= 0.5 ? `<text x="${x + cell / 2}" y="${y + cell / 2 + 3.5}" text-anchor="middle" font-size="8.5" fill="${Math.abs(r) > 0.7 ? '#fff' : '#111827'}">${r.toFixed(2).replace(/^(-?)0\./, '$1.')}</text>` : '') + `</g>`;
+                + (Number.isNaN(r) ? '' : `<text x="${x + cell / 2}" y="${y + cell / 2 + 3.5}" text-anchor="middle" font-size="8.5" fill="${Math.abs(r) > 0.7 ? '#fff' : '#111827'}">${r.toFixed(2).replace(/^(-?)0\./, '$1.')}</text>`) + `</g>`;
         }));
+        // A white gap sets the gene's own row and column apart from the rest.
+        svg += `<path d="M${lab} ${lab + cell}H${lab + k * cell}M${lab + cell} ${lab}V${lab + k * cell}" stroke="#fff" stroke-width="4" pointer-events="none"/>`;
         const kx = lab + k * cell + 20, ky = lab + 4, kw = 14, kh = Math.min(140, k * cell - 30);
         svg += `<defs><linearGradient id="gbCxGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${col(1)}"/><stop offset="0.5" stop-color="#ffffff"/><stop offset="1" stop-color="${col(-1)}"/></linearGradient></defs>`;
         svg += `<text x="${kx}" y="${ky - 2}" font-size="10" fill="#6b7280">mRNA r</text>`
@@ -52733,7 +52735,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             + [[1, 0], [0, 0.5], [-1, 1]].map(([v, f]) => `<text x="${kx + kw + 5}" y="${ky + 6 + f * kh + 3.5}" font-size="10" fill="#374151">${v > 0 ? '+1' : v < 0 ? '\u22121' : '0'}</text>`).join('');
         svg += '</svg>';
         return `<div class="gb-relfig"><div class="gb-coexpr-hm" style="overflow-x:auto;">${svg}</div>`
-            + `<div class="gb-m" style="margin-top:2px;"><b style="color:#374151;">How these genes correlate with each other</b>: mRNA r for every pair, ordered by r with ${this.gi(gene)}. A red block is a group that rises and falls together; values shown where |r| is 0.5 or more${partners.some(g => isNear({ gene: g })) ? '; <span style="color:#b45309;">amber names</span> are nearby genes' : ''}. Click a square for that pair's plot.</div></div>`;
+            + `<div class="gb-m" style="margin-top:2px;"><b style="color:#374151;">How these genes correlate with each other</b>: mRNA r for every pair, ordered by r with ${this.gi(gene)}. The first row and column are ${this.gi(gene)} itself; a red block is a group that rises and falls together${partners.some(g => isNear({ gene: g })) ? '; <span style="color:#b45309;">amber names</span> are nearby genes' : ''}. Click a square for that pair's plot.</div></div>`;
     }
 
     async _loadComplexes() {
