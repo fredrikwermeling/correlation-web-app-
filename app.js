@@ -54617,6 +54617,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const bright = res.filter(r => r.onG >= 0.9).sort((a, b) => b.med - a.med).slice(0, 12);
         const absent = res.filter(r => r.offG >= 0.8 && r.onR >= 0.3).sort((a, b) => b.onR - a.onR).slice(0, 12);
         const empty = (t) => `<div class="gb-empty">${t}</div>`;
+        const hdr = (t, tip) => `<span title="${this.esc(tip)}" style="cursor:help;">${t}</span>`;
         const aiRow = (r) => ({ gene: r.gene, cdMarker: sf.cd.has(r.gene), ...(sf.cd.has(r.gene) && this._cdName(r.gene) ? { cdName: this._cdName(r.gene) } : {}), medianLog2TpmGroup: +r.med.toFixed(2), medianLog2TpmOthers: +r.medR.toFixed(2), fractionBrightGroup: +r.onG.toFixed(3), fractionAbsentGroup: +r.offG.toFixed(3), fractionBrightOthers: +r.onR.toFixed(3), specificityAuc: +r.auc.toFixed(3) });
         c.ai.surfaceProteins = {
             basis: 'mRNA (RNA-seq log2 TPM+1) of genes coding for cell-surface proteins, not measured protein',
@@ -54625,18 +54626,18 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             brightInNearlyAllPositiveControls: bright.map(aiRow),
             absentInMostNegativeControls: absent.map(r => ({ ...aiRow(r), highInsteadIn: highInList(r).map(([t, v]) => ({ tissue: t, medianLog2Tpm: +v.toFixed(2) })) })),
         };
-        return this._ctwMrnaNote() + this._gbDesc(`Proteins on the cell surface and how much of their mRNA the ${ng} cell lines with mRNA data make (log₂ TPM+1). Bright means at least ${BRIGHT} (about 15 TPM, usually enough to stain); absent means below ${OFF}.`)
+        return this._ctwMrnaNote() + this._gbDesc(`Proteins on the cell surface and how much of their mRNA the ${ng} cell lines with mRNA data make (log₂ TPM+1). Bright means at least ${BRIGHT} (about 15 TPM, usually enough to stain); absent means below ${OFF}. One table picks these cells out from other cancer types, the other two are controls for the staining itself.`)
             + `<label class="gb-m" style="display:inline-flex; gap:5px; align-items:center; font-size:11px; margin-bottom:4px;"><input type="checkbox" data-ctw-cdonly ${cdOnly ? 'checked' : ''}> CD markers only</label>`
-            + `<div class="gb-grid"><div><div class="gb-sub">Specific to this group <span class="gb-m">(bright here, lower elsewhere)</span></div>`
-            + (specific.length ? this._gbTable(['Protein', 'Median here', 'Median elsewhere', 'Bright here', 'Bright elsewhere', 'Specificity'],
-                specific.map(r => [gl(r), `<b>${this._gbNum(r.med, 1)}</b>`, this._gbNum(r.medR, 1), pc(r.onG), pc(r.onR), `<span title="The chance that a random cell line of this group expresses more than a random other cell line (0.5 = no difference, 1 = always more)">${this._gbNum(r.auc)}</span>`])) : empty('None stands out.'))
-            + `</div><div><div class="gb-sub">Bright in nearly all of its cell lines <span class="gb-m">(positive staining controls)</span></div>`
-            + (bright.length ? this._gbTable(['Protein', 'Median here', 'Median elsewhere', 'Bright here', 'Bright elsewhere'],
+            + `<div class="gb-grid"><div><div class="gb-sub">Marks ${this.esc(this._ctwName(c.g))} apart from other cancer types<span class="gb-m" style="display:block; font-weight:400; margin:1px 0 3px;">Bright on these cells and lower on the rest, so a stain tells them apart. Sorted by how well it separates them.</span></div>`
+            + (specific.length ? this._gbTable(['Protein', hdr('Median here', 'Median mRNA across the cell lines of this group'), hdr('Median elsewhere', 'Median mRNA across every other cell line'), hdr('Bright here', 'Share of this group at or above the bright cutoff'), hdr('Bright elsewhere', 'Share of the other cell lines at or above the bright cutoff'), hdr('Specificity', 'Area under the ROC curve: the chance that a random cell line of this group makes more than a random other cell line (0.5 = no difference, 1 = always more)')],
+                specific.map(r => [gl(r), `<b>${this._gbNum(r.med, 1)}</b>`, this._gbNum(r.medR, 1), pc(r.onG), pc(r.onR), this._gbNum(r.auc)])) : empty('None stands out.'))
+            + `</div><div><div class="gb-sub">On nearly every ${this.esc(this._ctwName(c.g))} cell line: positive control<span class="gb-m" style="display:block; font-weight:400; margin:1px 0 3px;">Bright in at least 90% of them, so a stain on any of these cells should come out positive. Other cancer types may make it too, so it shows the staining worked rather than which cells these are.</span></div>`
+            + (bright.length ? this._gbTable(['Protein', hdr('Median here', 'Median mRNA across the cell lines of this group'), hdr('Median elsewhere', 'Median mRNA across every other cell line'), hdr('Bright here', 'Share of this group at or above the bright cutoff'), hdr('Bright elsewhere', 'Share of the other cell lines at or above the bright cutoff')],
                 bright.map(r => [gl(r), `<b>${this._gbNum(r.med, 1)}</b>`, this._gbNum(r.medR, 1), pc(r.onG), pc(r.onR)])) : empty('None is bright in 90% of these cell lines.'))
-            + `</div></div><div class="gb-sub" style="margin-top:14px;">Absent in most of its cell lines <span class="gb-m">(negative staining controls)</span></div>`
-            + (absent.length ? this._gbTable(['Protein', 'Median here', 'Median elsewhere', 'Absent here', 'Bright elsewhere', 'High instead in'],
+            + `</div></div><div class="gb-sub" style="margin-top:14px;">On almost no ${this.esc(this._ctwName(c.g))} cell line: negative control<span class="gb-m" style="display:block; font-weight:400; margin:1px 0 3px;">Below the cutoff in at least 80% of them, so a stain should come out negative. The cancer types where it is high, listed at the right, give the same antibody a positive control.</span></div>`
+            + (absent.length ? this._gbTable(['Protein', hdr('Median here', 'Median mRNA across the cell lines of this group'), hdr('Median elsewhere', 'Median mRNA across every other cell line'), hdr('Absent here', 'Share of this group below the absent cutoff'), hdr('Bright elsewhere', 'Share of the other cell lines at or above the bright cutoff'), hdr('High instead in', 'The two other cancer types with the highest median, as a positive control for the same antibody')],
                 absent.map(r => [gl(r), `<b>${this._gbNum(r.med, 1)}</b>`, this._gbNum(r.medR, 1), `<b>${pc(r.offG)}</b>`, pc(r.onR), highIn(r)])) : empty('None is absent in 80% of these cell lines and bright elsewhere.'))
-            + `<p class="gb-m" style="margin:6px 0 0;">An absent protein makes a negative control on these cells; the cancer types where it is high give the antibody a positive control.</p>`;
+;
     }
 
     // The surface panel that tells tissues apart: per tissue up to 8 surface
