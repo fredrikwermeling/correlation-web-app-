@@ -43527,6 +43527,19 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         return (hits && hits.length) ? hits : null;
     }
 
+    // Where the sample was taken: the primary tumor or a metastasis. A letter
+    // rather than a glyph, since there is no conventional symbol for it.
+    _originMark(cellLineId) {
+        const v = this.cellLineMetadata?.primaryOrMetastasis?.[cellLineId] || '';
+        const m = {
+            Primary: ['P', '#9ca3af', 'Taken from the primary tumor'],
+            Metastatic: ['M', '#7c3aed', 'Taken from a metastasis'],
+            Recurrent: ['R', '#b45309', 'Taken from a recurrent tumor'],
+        }[v];
+        if (!m) return { html: '', title: '' };
+        return { html: `<span style="font-size:9.5px; font-weight:700; color:${m[1]}; margin-right:3px; flex:none; cursor:help;" title="${m[2]} (DepMap Model table)">${m[0]}</span>`, title: m[2] };
+    }
+
     _virusLabel(cellLineId) {
         const hits = this._virusAgents(cellLineId);
         return hits ? hits.map(h => h.agent).join(', ') : '';
@@ -48215,7 +48228,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const virusStr = vLbl
                 ? `<span style="margin-right:3px; flex-shrink:0; cursor:help; font-size:10px; opacity:0.75;" title="${this.esc(this._virusTitle(cl))}">&#129440;</span>`
                 : '';
-            const titleParts = [name, lin, sub, sx.title, vLbl ? vLbl + '-transformed' : '', prob ? prob.category : ''].filter(Boolean).join(' · ');
+            const org = this._originMark(cl);
+            const titleParts = [name, lin, sub, sx.title, org.title, vLbl ? vLbl + '-transformed' : '', prob ? prob.category : ''].filter(Boolean).join(' · ');
             // Which gate this line is already in. Shown while the other gate
             // is being ticked, so membership is visible rather than
             // remembered.
@@ -48225,7 +48239,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 : '';
             return `<div class="${cls.join(' ')}" data-clid="${cl}">` +
                 `<input type="checkbox"${selected ? ' checked' : ''}>` +
-                sexStr + probStr + virusStr + gateStr +
+                sexStr + org.html + probStr + virusStr + gateStr +
                 `<span class="clb-entry-name" data-hover-cl="${cl}" data-hover-why="Click to show its details · Shift-click to open its Wiki">${name}</span>` +
                 `<span class="clb-entry-tissue" title="${titleParts}">${lin}${sub ? ' · ' + sub : ''}</span>${sortValStr}</div>`;
         }).join('');
