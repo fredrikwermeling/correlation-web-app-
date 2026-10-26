@@ -1595,7 +1595,7 @@ class CorrelationExplorer {
         const _dv = (document.querySelector('script[src*="app.js"]')?.src.split('?v=')[1]) || '';
         const dfetch = (path) => fetch(_dv ? `${path}?v=${_dv}` : path);
 
-        const [metadataRes, cellLineRes, mutationsRes, orthologsRes, translocationsRes, damagingMutRes, growthRateRes, retroRes, drugRes, clinicalFusionsRes, inferredSubtypesRes, globalSigRes, corumRes, reactomeRes, hlaCnRes, lehmannRes, clinicalCnRes, validatedFusionsRes, functionalLossRes, curatedFusionsRes, problematicRes, virusRes, cnArtefactRes, derivativeRes] = await Promise.all([
+        const [metadataRes, cellLineRes, mutationsRes, orthologsRes, translocationsRes, damagingMutRes, growthRateRes, retroRes, drugRes, clinicalFusionsRes, inferredSubtypesRes, globalSigRes, corumRes, reactomeRes, hlaCnRes, lehmannRes, clinicalCnRes, validatedFusionsRes, functionalLossRes, curatedFusionsRes, problematicRes, virusRes, cnArtefactRes, derivativeRes, txIdentityRes] = await Promise.all([
             dfetch('web_data/metadata.json'),
             dfetch('web_data/cellLineMetadata.json'),
             dfetch('web_data/mutations.json'),
@@ -1622,7 +1622,8 @@ class CorrelationExplorer {
             dfetch('web_data/problematic_lines.json').catch(() => null),
             dfetch('web_data/virus_status.json').catch(() => null),
             dfetch('web_data/cn_artefact.json').catch(() => null),
-            dfetch('web_data/derivative_lines.json').catch(() => null)
+            dfetch('web_data/derivative_lines.json').catch(() => null),
+            dfetch('web_data/transcriptome_identity.json').catch(() => null)
         ]);
 
         this.metadata = await metadataRes.json();
@@ -1716,6 +1717,10 @@ class CorrelationExplorer {
         if (derivativeRes && derivativeRes.ok) {
             try { this.derivativeLines = await derivativeRes.json(); }
             catch (e) { this.derivativeLines = null; }
+        }
+        if (txIdentityRes && txIdentityRes.ok) {
+            try { this.txIdentity = await txIdentityRes.json(); }
+            catch (e) { this.txIdentity = null; }
         }
         if (translocationsRes && translocationsRes.ok) {
             this.translocations = await translocationsRes.json();
@@ -36420,6 +36425,15 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     : null,
                 summaryCaveat: 'generatedSummary is written by the app from the structured fields in this file. Treat it as a starting point, not a source: check any claim in it against the underlying values, and say so if they disagree. Where a statement cannot be checked from this file, say that rather than assuming it holds.',
                 retroelements,
+                transcriptomeIdentity: (() => {
+                    const r = cl ? this._txIdentityOf(cl) : null;
+                    if (!r) return { checked: false, note: 'No mRNA data in the CRISPR cohort, so the whole-transcriptome identity check was not run.' };
+                    return { status: { match: 'looks like its own tissue', mixed: 'partly like another cancer type', other: 'looks like another cancer type', unchecked: 'not checked (tissue too small)' }[r.s],
+                        annotatedTissue: r.tis, resembles: r.like || null,
+                        mostSimilar: r.nn.map(([nid, rr]) => ({ cellLine: this.getCellLineName(nid) || nid, tissue: this.getCellLineLineage(nid) || 'Unknown', r: rr })),
+                        method: this.txIdentity._description, cohortOwnTissueRate: this.txIdentity.cohortOwnTissueRate,
+                        caveat: 'A prompt to check, not evidence of contamination: some cancer types look alike by transcription. STR profiling settles identity.' };
+                })(),
                 retroelements_readMe: 'Retroelement signal measures RNA-seq reads over 750 full-length intergenic LINE-1, HERV-K and SVA elements (unique reads only, counts per million), from public CCLE hg19 alignments. The top decile of the 669 measured lines counts as retroelement-high (retroelementHigh: true). Lines with a higher signal depend measurably more on ADAR1 dependency (r = -0.18, p = 2.6e-06, n=669), and this persists after controlling for the interferon score (partial r = -0.15). This measures element transcription, not retrotransposition: new genomic insertions cannot be seen in RNA.'
             };
         } else if (source === 'genebrowser') {
@@ -42624,6 +42638,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 category: 'Provenance',
                 description: '<b>Inclusion:</b> cell lines Cellosaurus flags as misclassified, meaning the line is itself but its recorded disease or tissue of origin is wrong. <b>Why it matters:</b> these lines are fine as models, but they sit in the wrong lineage group, so any analysis that compares tissues or subtypes will place them incorrectly. SK-HEP-1, filed under liver, most likely arose from endothelium; KE-97, filed as gastric, is a B-lymphoblastoid line.'
             },
+            tx_identity_other: {
+                label: 'Looks like another cancer type by transcription',
+                category: 'Provenance',
+                description: '<b>Inclusion:</b> cell lines whose five most similar cell lines by whole transcriptome (the 5,000 most variable genes; cell lines from the same patient left out) all come from other tissues. <b>Why it matters:</b> such a cell line may be misclassified, mixed up or contaminated, or have changed in culture, so an analysis grouped by tissue may place it wrongly. <b>Use:</b> exclude this collection to keep only cell lines that look like their own tissue, or include it to see which of your hits rest on them. <b>Caveat:</b> some cancer types simply look alike (squamous carcinomas of different organs, many sarcomas), so a flag is a reason to check, not proof. STR profiling settles identity. Across the cohort about 86% of cell lines look like their own tissue.'
+            },
             msi_high_functional: {
                 label: 'MSI-high (functional; MSIsensor2 ≥ 20)',
                 category: 'DNA repair / damage response',
@@ -43285,7 +43304,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             // Viral transformation
             'virus_transformed', 'virus_ebv', 'virus_hpv', 'virus_hbv',
             // Provenance
-            'problematic_identity', 'problematic_classification',
+            'problematic_identity', 'problematic_classification', 'tx_identity_other',
             // Matched treated / parental pairs
             'drug_selected_pairs', 'drug_selected_derivative',
             // Genome instability
@@ -44571,6 +44590,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         for (const [cl, p] of Object.entries(this.problematicLines?.byCellLine || {})) {
             (p.kind === 'identity' ? mem.problematic_identity : mem.problematic_classification).add(cl);
         }
+        mem.tx_identity_other = new Set();
+        for (const [cl, r] of Object.entries(this.txIdentity?.byCellLine || {})) if (r.s === 'other') mem.tx_identity_other.add(cl);
 
         this._collectionMembership = mem;
     }
@@ -44660,6 +44681,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             virus_hpv: 'Cellosaurus', virus_hbv: 'Cellosaurus',
             // Provenance
             problematic_identity: 'Cellosaurus', problematic_classification: 'Cellosaurus',
+            tx_identity_other: 'whole transcriptome',
             // Genome / ploidy / instability
             wgd_positive: 'genome signature', high_aneuploidy: 'genome signature',
             high_loh: 'genome signature',
@@ -47760,6 +47782,20 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 const d = (rank(la) - rank(lb)) * dir;
                 return d || this.getCellLineName(a).localeCompare(this.getCellLineName(b));
             };
+        } else if (mode === 'origin') {
+            // Primary or metastasis, as groups; the arrow reverses the order
+            // and lines with no record always go last.
+            const ORDER = ['Primary', 'Metastatic', 'Recurrent'];
+            countMap = new Map();
+            for (const cl of filtered) countMap.set(cl, this.cellLineMetadata?.primaryOrMetastasis?.[cl] || 'Unknown');
+            const rank = (lbl) => { const i = ORDER.indexOf(lbl); return i < 0 ? ORDER.length : i; };
+            secondaryCmp = (a, b) => {
+                const la = countMap.get(a), lb = countMap.get(b);
+                const ua = rank(la) === ORDER.length, ub = rank(lb) === ORDER.length;
+                if (ua !== ub) return ua ? 1 : -1;
+                const d = (rank(la) - rank(lb)) * dir;
+                return d || this.getCellLineName(a).localeCompare(this.getCellLineName(b));
+            };
         } else if (mode === 'ychr' || mode === 'xist') {
             // Y-linked expression or XIST, from the precomputed sex-chromosome
             // record. Unmeasured lines have no value and go to the end.
@@ -47852,6 +47888,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                       : mode === 'ifn' ? `Interferon score: the average of ${geGenesLabel || '34 ISGs'}, each expressed as how far the line sits from the panel average for that gene (a z-score). 0 is typical, +1 means the line runs a standard deviation high on these genes, &minus;1 a standard deviation low. Lines with no expression data, or measured on under 60% of the genes, are unscored and sit at the end.`
                       : mode === 'ychr' ? `Y-linked expression: the mean log-TPM of six Y-linked genes (RPS4Y1, DDX3Y, EIF1AY, KDM5D, UTY, USP9Y). Below 1 in an annotated male line is called <b>functional loss of Y</b>; an expression call, not a DNA one. Female lines sit near 0 by nature. Lines with no expression data are unscored and sit at the end.`
                       : mode === 'medium' ? 'Culture medium of the screen (model default where not recorded). Hover a value for the full formulation'
+                      : mode === 'origin' ? 'Whether the cell line came from the primary tumor or a metastasis (DepMap Model table)'
                       : mode === 'xist' ? `XIST expression (log-TPM), the RNA that keeps the inactive X silent. Below 1 in an annotated female line means XIST is silenced, with the inactive X either lost (one X copy) or eroded / duplicated (two copies), see the card. Male lines sit near 0 by nature. Lines with no expression data are unscored and sit at the end.`
                       : mode === 'retro' ? `Retroelement signal, ${retroMeasureLabels[retroMeasure]}: ${retroMeasure === 'a' ? 'how many of the 750 measured full-length elements are switched on (above 0.5 CPM) in each line'
                           : `summed RNA-seq reads (counts per million), unique reads only, over the ${retroMeasure === 't' ? '750 full-length LINE-1, HERV-K and SVA' : 'full-length ' + retroMeasureLabels[retroMeasure]} elements outside genes`}.${retroMeasure === 't' ? ' The panel median is about 40 CPM and the top tenth, about 80 CPM and up, counts as retroelement-high.' : ''} 669 of 1,208 lines have a public alignment to measure; unscored lines sit at the end.`
@@ -47897,6 +47934,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     : mode === 'ychr' ? 'Y-linked expression (mean log-TPM, six genes)'
                     : mode === 'xist' ? 'XIST expression (log-TPM)'
                     : mode === 'medium' ? 'Culture medium'
+                    : mode === 'origin' ? 'Primary or metastasis'
                     : mode === 'retro' ? (retroMeasure === 'a' ? 'Active elements (count)' : `Retroelement signal, ${retroMeasureLabels[retroMeasure]} (CPM)`)
                     : String(mode))
                 : '';
@@ -47975,6 +48013,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                         else if (raw < 5.0)  { tier = 'amp';        fg = '#1e3a8a'; bg = '#bfdbfe'; }
                         else                 { tier = 'strong amp'; fg = '#1e3a8a'; bg = '#93c5fd'; }
                         sortValStr = `<span style="font-size:10px; color:${fg}; background:${bg}; padding:1px 6px; border-radius:8px; margin-left:auto; flex-shrink:0; font-variant-numeric:tabular-nums;" title="CN ${v} (DepMap relative, 1.0 = diploid)">${tier} <span style="opacity:0.55; font-size:9px;">${v}</span></span>`;
+                    } else if (mode === 'origin') {
+                        sortValStr = `<span style="font-size:10px; color:${raw === 'Unknown' ? '#9ca3af' : '#374151'}; margin-left:auto; flex-shrink:0;">${this.esc(raw)}</span>`;
                     } else if (mode === 'medium') {
                         const full = this.cellLineMetadata?.culture?.[cl]?.medium || this.cellLineMetadata?.culture?.[cl]?.why || '';
                         sortValStr = `<span style="font-size:10px; color:${raw === 'Medium not recorded' ? '#9ca3af' : '#374151'}; margin-left:auto; flex-shrink:0;" title="${this.esc(full)}">${this.esc(raw)}</span>`;
@@ -53860,8 +53900,9 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             this._ctwCopyNumber(c),
             this._ctwDependencies(c),
             this._ctwExpression(c),
-            this._gbSection('Surface proteins for FACS, from mRNA', this._ctwSurfaceBody(c), 'DepMap 26Q1 OmicsExpressionTPMLogp1 (mRNA, not protein). Surface proteins: SURFY surfaceome and UniProt topology, Human Protein Atlas CD markers, and the app\'s FACS antigen list.', 'ctwSurfaceCard'),
+            this._gbSection('Surface proteins for FACS: mRNA levels, not protein', this._ctwSurfaceBody(c), 'DepMap 26Q1 OmicsExpressionTPMLogp1 (mRNA, not protein). Surface proteins: SURFY surfaceome and UniProt topology, Human Protein Atlas CD markers, and the app\'s FACS antigen list.', 'ctwSurfaceCard'),
             this._ctwPanelSection(c),
+            this._ctwIdentitySection(c),
             this._ctwLinesSection(c),
         ];
         body.innerHTML = parts.join('');
@@ -54270,42 +54311,71 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         if (own) trs.unshift(`<tr><td style="padding:0 8px 0 0; font-size:10.5px; white-space:nowrap; text-align:right; font-weight:700; color:#3f6b25;">▶ ${this.esc(this._ctwName(g))} <span class="gb-m">(${memRows.length})</span></td>${own.map((v, q) => cellTd(v, P.shown[q].gene, this._ctwName(g))).join('')}</tr>`);
         const matrix = `<div style="overflow-x:auto;"><table style="border-collapse:collapse; margin:4px 0;">${head}${trs.join('')}</table></div>`
             + `<div class="gb-m" style="display:flex; align-items:center; gap:6px; margin-top:4px;">0 <span style="display:inline-block; width:120px; height:9px; background:linear-gradient(90deg, ${color(0)}, ${color(7)}); border:1px solid #e5e7eb;"></span> 7+ log₂ TPM+1, median per cancer type</div>`;
-        // The identity check for this group's cell lines.
-        const inPanel = memRows.filter(r => P.tissues.includes(P.tisOf[r]));
-        const off = inPanel.filter(r => !P.hasOwn(r));
-        let check;
-        if (!inPanel.length) check = this._gbDesc('This cancer type has too few cell lines with mRNA data to be part of the panel.');
-        else {
-            const near = (r) => {
-                const tally = new Map();
-                for (let k = 0; k < P.K; k++) { const t = P.tisOf[P.nn[r * P.K + k]]; tally.set(t, (tally.get(t) || 0) + 1); }
-                return [...tally.entries()].sort((a, b) => b[1] - a[1]).map(([t, k]) => `${this.esc(t)} ${k}`).join(', ');
-            };
-            const names = (r) => Array.from({ length: P.K }, (_, k) => this._ctwClLink(this.metadata.cellLines[R.rows[P.nn[r * P.K + k]]])).join(', ');
-            check = `<div class="gb-verdict"><b>${inPanel.length - off.length} of ${inPanel.length}</b> cell lines in this group have a close match in their own tissue (one or more of their five most similar cell lines)${off.length ? `; ${off.length} ${off.length === 1 ? 'does' : 'do'} not.` : '.'} <span class="gb-m">Across the whole cohort, ${Math.round(100 * P.ok / P.tot)}% do.</span></div>`
-                + (off.length ? this._gbTable(['Cell line', 'Annotated as', 'Its five most similar cell lines', 'Their tissues'],
-                    off.slice(0, 30).map(r => [this._ctwClLink(this.metadata.cellLines[R.rows[r]]), this.esc(P.tisOf[r]), names(r), `<b>${near(r)}</b>`])).replace('gb-table"', 'gb-table gb-table-left"') : '');
-        }
         c.ai.surfacePanel = {
             basis: 'mRNA (RNA-seq log2 TPM+1), not measured protein',
             cancerTypes: Object.fromEntries(P.tissues.map((t, k) => [t, P.nT[k]])),
             proteinsShown: P.shown.map(p => ({ gene: p.gene, marks: p.tissue, specificityAuc: +p.auc.toFixed(3) })),
             medianLog2TpmByCancerType: Object.fromEntries(P.tissues.map((t, k) => [t, Object.fromEntries(P.shown.map((p, q) => [p.gene, +P.med[k][q].toFixed(2)]))])),
             ...(own ? { medianLog2TpmThisGroup: Object.fromEntries(P.shown.map((p, q) => [p.gene, +own[q].toFixed(2)])) } : {}),
-            identityCheck: {
-                method: `Each cell line's profile over ${P.genes.length} panel genes (up to 8 per cancer type) is z-scored per gene and compared with every other cell line by Pearson r; a cell line is flagged when none of its ${P.K} most similar cell lines shares its tissue. Across the cohort ${P.ok} of ${P.tot} cell lines have such a match.`,
-                checked: inPanel.length,
-                flagged: off.map(r => ({ cellLine: this.getCellLineName(this.metadata.cellLines[R.rows[r]]) || this.metadata.cellLines[R.rows[r]], annotatedTissue: P.tisOf[r],
-                    mostSimilar: Array.from({ length: P.K }, (_, k) => { const s = P.nn[r * P.K + k]; return { cellLine: this.getCellLineName(this.metadata.cellLines[R.rows[s]]) || this.metadata.cellLines[R.rows[s]], tissue: P.tisOf[s], r: +P.ns[r * P.K + k].toFixed(3) }; }) })),
-            },
         };
-        const body = this._ctwMrnaNote() + this._gbDesc(`Surface proteins that best tell the cancer types apart: for each cancer type with at least 8 cell lines, the three surface proteins that best set it apart from the others. Each row is the median mRNA of a cancer type; hover a square for the value, click it or a protein name to open that gene's expression in the Gene Browser. The identity check and the export use up to eight proteins per cancer type (${P.genes.length} in all).`)
+        const body = this._ctwMrnaNote() + this._gbDesc(`Surface proteins that best tell the cancer types apart: for each cancer type with at least 8 cell lines, the three surface proteins that best set it apart from the others. Each row is the median mRNA of a cancer type; hover a square for the value, click it or a protein name to open that gene's expression in the Gene Browser. The export and the surface opinion in the identity check below use up to eight proteins per cancer type (${P.genes.length} in all).`)
             + matrix
-            + `<div style="display:flex; justify-content:flex-end; margin-top:2px;"><button class="btn btn-outline btn-sm mobile-hide" data-ctw-act="panel-csv" style="font-size:10px; padding:1px 8px;" title="Download the panel as a table: cancer types by proteins, median log₂ TPM+1">Export panel (.csv)</button></div>`
-            + `<div class="gb-sub">Identity check</div>`
-            + this._gbDesc('Each cell line’s surface profile is compared with every other cell line’s. A cell line whose five most similar cell lines all come from other tissues is worth checking: it can mean a mix-up or a contaminated culture, but also a cell line that changed in culture, or one that resembles a related cancer type (squamous carcinomas of different organs look alike). STR profiling settles identity.')
-            + check;
-        return this._gbSection('Surface protein panel and identity check, from mRNA', body, 'DepMap 26Q1 OmicsExpressionTPMLogp1 (mRNA). Specificity is the area under the ROC curve of one cancer type against all other cell lines; similarity is the Pearson r of z-scored panel values.', 'ctwPanelCard');
+            + `<div style="display:flex; justify-content:flex-end; margin-top:2px;"><button class="btn btn-outline btn-sm mobile-hide" data-ctw-act="panel-csv" style="font-size:10px; padding:1px 8px;" title="Download the panel as a table: cancer types by proteins, median log₂ TPM+1">Export panel (.csv)</button></div>`;
+        return this._gbSection('Surface protein panel: mRNA levels, not protein', body, 'DepMap 26Q1 OmicsExpressionTPMLogp1 (mRNA). Specificity is the area under the ROC curve of one cancer type against all other cell lines; similarity is the Pearson r of z-scored panel values.', 'ctwPanelCard');
+    }
+
+    // One cell line's whole-transcriptome identity record, with its nearest
+    // cell lines' tissues counted.
+    _txIdentityOf(id) {
+        const rec = this.txIdentity?.byCellLine?.[id];
+        if (!rec) return null;
+        const tis = this.getCellLineLineage(id) || 'Unknown';
+        const tally = new Map();
+        for (const [nid] of rec.nn) { const t = this.getCellLineLineage(nid) || 'Unknown'; tally.set(t, (tally.get(t) || 0) + 1); }
+        return { ...rec, tis, own: tally.get(tis) || 0, tally: [...tally.entries()].sort((a, b) => b[1] - a[1]) };
+    }
+
+    // The group's cell lines checked against their own tissue: by whole
+    // transcriptome first, the surface panel as a second opinion.
+    _ctwIdentitySection(c) {
+        if (!this.txIdentity?.byCellLine) return '';
+        const P = this.expressionLoaded ? this._ctwPanel() : null, R = P ? this._ctwSurfaceRanks() : null;
+        const recs = c.idx.map(i => [c.ids[i], this._txIdentityOf(c.ids[i])]).filter(([, r]) => r && r.s !== 'unchecked');
+        const title = 'Identity check: does each cell line look like its cancer type?';
+        const src = 'DepMap 26Q1 OmicsExpressionTPMLogp1 (mRNA); patient IDs from the DepMap Model table; Cellosaurus problematic cell line records. Similarity is the Pearson r over the 5,000 most variable genes, z-scored per gene.';
+        if (!recs.length) return this._gbSection(title, this._gbDesc('None of these cell lines has mRNA data in a tissue large enough to check.'), src, 'ctwIdentityCard');
+        const rank = { other: 0, mixed: 1 };
+        const flagged = recs.filter(([, r]) => r.s !== 'match').sort((a, b) => rank[a[1].s] - rank[b[1].s]);
+        const nOther = flagged.filter(([, r]) => r.s === 'other').length, nMixed = flagged.length - nOther;
+        const surf = (id) => {
+            if (!P) return null;
+            const r = R.rowOf.get(c.pos.get(id));
+            return r === undefined || !P.tissues.includes(P.tisOf[r]) ? null : P.hasOwn(r);
+        };
+        const tallyTxt = (r) => r.tally.map(([t, k]) => `${this.esc(t)} ${k}`).join(', ');
+        const rows = flagged.slice(0, 40).map(([id, r]) => {
+            const s = surf(id);
+            const prob = this.problematicLines?.byCellLine?.[id];
+            return [this._ctwClLink(id), this.esc(r.tis),
+                r.s === 'other' ? `<b style="color:#b45309;">Looks like ${this.esc(r.like)}</b>` : `Partly like ${this.esc(r.like)}`,
+                r.nn.map(([nid]) => this._ctwClLink(nid)).join(', ') + `<div class="gb-m">${tallyTxt(r)}</div>`,
+                s === null ? '<span class="gb-m">n/a</span>' : s ? 'Matches its tissue' : '<b>Also looks like another</b>',
+                prob ? `<span title="${this.esc(prob.summary || prob.note || '')}">${this.esc(prob.category)}</span>` : '<span class="gb-m">none</span>'];
+        });
+        const rate = Math.round(100 * (this.txIdentity.cohortOwnTissueRate || 0));
+        c.ai.identityCheck = {
+            basis: 'whole-transcriptome mRNA (5,000 most variable genes), with the surface-protein mRNA panel as a second opinion; neither is an identity test, STR profiling is',
+            method: this.txIdentity._description,
+            cohortOwnTissueRate: this.txIdentity.cohortOwnTissueRate,
+            checked: recs.length, looksLikeAnother: nOther, partlyLikeAnother: nMixed,
+            flagged: flagged.map(([id, r]) => ({ cellLine: this.getCellLineName(id) || id, annotatedTissue: r.tis, status: r.s === 'other' ? 'looks like another cancer type' : 'partly like another cancer type', resembles: r.like,
+                mostSimilar: r.nn.map(([nid, rr]) => ({ cellLine: this.getCellLineName(nid) || nid, tissue: this.getCellLineLineage(nid) || 'Unknown', r: rr })),
+                surfacePanelMatchesTissue: surf(id), cellosaurusFlag: this.problematicLines?.byCellLine?.[id]?.category || null })),
+        };
+        const body = this._gbDesc('Each cell line’s whole transcriptome (the 5,000 most variable genes) is compared with every other cell line’s. Cell lines from the same patient are left out, so a cell line and its derivatives cannot vouch for each other. A cell line whose five most similar cell lines all come from other tissues is worth checking: it may be misclassified, mixed up or contaminated, or have changed in culture. Some cancer types also simply look alike, such as squamous carcinomas of different organs and many sarcomas. The surface protein panel gives a second opinion from far fewer genes. Neither replaces STR profiling, which settles identity.')
+            + `<div class="gb-verdict"><b>${recs.length - nOther} of ${recs.length}</b> cell lines look like their own tissue (one or more of their five most similar cell lines share it)${nOther ? `; <b>${nOther}</b> look${nOther === 1 ? 's' : ''} like another cancer type` : ''}${nMixed ? `, and ${nMixed} partly do` : ''}. <span class="gb-m">Across the whole cohort, ${rate}% look like their own tissue.</span></div>`
+            + (rows.length ? this._gbTable(['Cell line', 'Annotated as', 'By whole transcriptome', 'Its five most similar cell lines', 'Surface panel', 'Cellosaurus'], rows).replace('gb-table"', 'gb-table gb-table-left"') : '');
+        return this._gbSection(title, body, src, 'ctwIdentityCard');
     }
 
     _ctwLinesSection(c) {
@@ -54406,12 +54476,29 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
 
     // The surface-panel identity check for one cell line in its Wiki, filled
     // after the Wiki renders: the panel takes about a second the first time.
+    // The whole-transcriptome identity verdict for a cell line's Wiki.
+    _txIdentityWikiHtml(cellLineId, brief = false) {
+        const r = this._txIdentityOf(cellLineId);
+        if (!r) return '<span style="color:#6b7280;">Not checked: this cell line has no mRNA data in the CRISPR cohort.</span>';
+        const tis = this.esc(r.tis);
+        const tissues = r.tally.map(([t, k]) => `${this.esc(t)} ${k}`).join(', ');
+        const names = r.nn.map(([nid]) => this.esc(this.getCellLineName(nid) || nid)).join(', ');
+        const link = `<a href="#" ${this._ctwGoAttrs({ tissue: r.tis })} data-ctw-to="ctwIdentityCard" style="font-size:10px; color:#3730a3;" title="Open the identity check of this cancer type">Identity check of ${tis}</a>`;
+        let v;
+        if (r.s === 'unchecked') v = `<span style="color:#6b7280;">Not checked: too few cell lines of ${tis} with mRNA data.</span>`;
+        else if (r.s === 'match') v = `<b style="color:#4c782e;">Looks like ${tis}:</b> ${r.own} of its five most similar cell lines ${r.own === 1 ? 'is' : 'are'} ${tis}`;
+        else if (r.s === 'mixed') v = `<b style="color:#a16207;">Partly like ${this.esc(r.like)}:</b> only ${r.own} of its five most similar cell lines is ${tis}`;
+        else v = `<b style="color:#b45309;">Looks like ${this.esc(r.like)}, not ${tis}:</b> none of its five most similar cell lines is ${tis}`;
+        if (brief || r.s === 'unchecked') return `${v}${r.s === 'unchecked' ? '' : '.'} ${link}`;
+        return `${v} <span style="color:#6b7280;">(${tissues}: ${names})</span>. ${link}<div style="font-size:10px; color:#9ca3af; margin-top:2px;">From mRNA of the 5,000 most variable genes; cell lines from the same patient are left out. Across the cohort, ${Math.round(100 * (this.txIdentity.cohortOwnTissueRate || 0))}% of cell lines look like their own tissue.</div>`;
+    }
+
     async _fillWikiSurfaceIdentity(cellLineId) {
         const el = document.getElementById('wikiSurfaceIdentity');
         if (!el) return;
         if (!this.expressionLoaded) { el.innerHTML = ''; return; }
         const kv = (label, value) => `<div class="wiki-kv" style="display:flex; gap:12px; padding:3px 0; align-items:baseline;"><span class="wiki-kv-label" style="flex:0 0 190px; color:#6b7280; font-size:11px;">${label}</span><span style="flex:1; min-width:0;">${value}</span></div>`;
-        const label = 'Identity check by surface mRNA';
+        const label = 'Identity check, surface mRNA';
         el.innerHTML = kv(label, '<span style="color:#9ca3af;">Comparing with every other cell line...</span>');
         await this._ensureGeneClasses();
         await new Promise(r => setTimeout(r, 30));
@@ -54424,7 +54511,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const tally = new Map(); for (const s of nb) tally.set(P.tisOf[s], (tally.get(P.tisOf[s]) || 0) + 1);
         const tissues = [...tally.entries()].sort((a, b) => b[1] - a[1]).map(([t, k]) => `${this.esc(t)} ${k}`).join(', ');
         const names = nb.map(s => this.esc(this.getCellLineName(this.metadata.cellLines[R.rows[s]]) || this.metadata.cellLines[R.rows[s]])).join(', ');
-        const link = `<a href="#" ${this._ctwGoAttrs({ tissue: tis })} data-ctw-to="ctwPanelCard" style="font-size:10px; color:#3730a3;" title="Open the surface protein panel and identity check of this cancer type">Surface protein panel</a>`;
+        const link = `<a href="#" ${this._ctwGoAttrs({ tissue: tis })} data-ctw-to="ctwIdentityCard" style="font-size:10px; color:#3730a3;" title="Open the identity check of this cancer type">Identity check of ${this.esc(tis)}</a>`;
         const own = tally.get(tis) || 0;
         let verdict;
         if (!P.tissues.includes(tis)) verdict = `<span style="color:#6b7280;">${this.esc(tis)} has too few cell lines with mRNA data to be checked. Its five most similar cell lines are ${tissues}.</span>`;
@@ -54515,6 +54602,8 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             ${row('Tissue of origin', lin && `${this.esc(lin)} ${ctwLink({ tissue: lin })}`)}
             ${row('Broad disease', pd && `${this.esc(pd)} ${ctwLink({ tissue: lin, subtype: pd })}`)}
             ${row('Specific subtype', sub && `${this.esc(sub)} ${get('oncotreeSubtype') ? ctwLink({ tissue: lin, subtype: pd, disease: sub }) : ''}`)}
+            ${this._txIdentityOf(cellLineId) ? row('By whole transcriptome', this._txIdentityWikiHtml(cellLineId, true)) : ''}
+            ${this._txIdentityOf(cellLineId)?.s === 'other' ? `<div style="margin:6px 0 4px; padding:8px 10px; background:#fffbeb; border-left:3px solid #d97706; font-size:11px; color:#78350f;"><b>By transcription this cell line looks like ${this.esc(this._txIdentityOf(cellLineId).like)} rather than ${this.esc(lin)}.</b> None of its five most similar cell lines by whole transcriptome is ${this.esc(lin)}. It may be misclassified, mixed up or contaminated, or have changed in culture; some cancer types also simply look alike. Results grouped by tissue may place it wrongly. STR profiling settles identity (see STR authentication below).</div>` : ''}
             ${row('Oncotree code', codeHtml)}
             ${row('DepMap type', dmtype)}
             ${row('Molecular features', psf)}`;
@@ -56261,7 +56350,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
 
             // ── Lab use ───────────────────────────────────────────────────
             section('STR authentication',
-                authHtml + '<div id="wikiSurfaceIdentity" style="margin-top:6px;"></div>',
+                authHtml + `<div style="margin-top:6px;">${row('Identity check, whole transcriptome', this._txIdentityWikiHtml(cellLineId))}</div><div id="wikiSurfaceIdentity"></div>`,
                 'Panel definitions: ANSI/ATCC ASN-0002-2011, Promega PowerPlex, Eurofins Genomics. Reference profiles: Cellosaurus.'),
             section('External resources',
                 extHtml,
