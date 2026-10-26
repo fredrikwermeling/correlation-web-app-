@@ -51053,6 +51053,50 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         if (modal) { modal.style.display = 'none'; modal.style.zIndex = '1365'; }
     }
 
+    // Examples behind the "More examples" button: genes worth a look across
+    // the page's cards, and the viruses the RNA screen found.
+    _gbExamplesHtml() {
+        const row = (title, note, items) => `<div class="gb-sub" style="margin-top:10px;">${title} <span class="gb-m">${note}</span></div>`
+            + `<div style="display:flex; flex-wrap:wrap; gap:4px;">${items}</div>`;
+        const gene = (g, tip) => `<button class="gb-chip" data-gb-gene="${g}" title="${this.esc(tip)}">${this.gi(g)}</button>`;
+        const genes = (list) => list.map(([g, tip]) => gene(g, tip)).join('');
+        let html = row('Cancer drivers', '(mutations, dependency and copy number in one place)', genes([
+            ['KRAS', 'Mutated in a third of pancreatic, bowel and lung cell lines; the mutant lines depend on it'],
+            ['BRAF', 'V600E in melanoma and thyroid'],
+            ['TP53', 'The most mutated gene in the panel'],
+            ['MYC', 'Amplified across many cancer types'],
+            ['EGFR', 'Amplified and mutated in lung and brain'],
+            ['PIK3CA', 'Hotspot mutations in breast and bowel'],
+        ]));
+        html += row('Dependencies', '(what cell lines cannot do without)', genes([
+            ['PLK1', 'Needed by nearly every cell line: a common essential'],
+            ['SOX10', 'Needed by melanoma and little else'],
+            ['WRN', 'Needed by the cell lines with unstable microsatellites'],
+            ['MDM2', 'Needed where TP53 is still working'],
+            ['CDK6', 'Partner of CCND1; the co-dependency figure shows the pair'],
+        ]));
+        html += row('Surface and lineage markers', '(expression by cancer type)', genes([
+            ['EPCAM', 'CD326, on most carcinomas'],
+            ['PTPRC', 'CD45, on blood cell lines'],
+            ['MITF', 'The melanocyte switch'],
+            ['ERBB2', 'HER2, amplified in breast and stomach'],
+            ['CD274', 'PD-L1'],
+        ]));
+        html += row('Genes with an unusual structure', '(the sequence viewer and transcript list)', genes([
+            ['TTN', 'The longest human gene: 364 exons'],
+            ['ATP1B1', 'Two dozen transcripts, several with another start codon'],
+            ['CDKN2A', 'Two proteins read from the same exons in different frames'],
+        ]));
+        const V = this.virusRna;
+        if (V) {
+            const found = Object.keys(V.viruses).map(k => [k, Object.values(V.byCellLine).filter(r => r.v[k]?.detected).length])
+                .filter(([, n]) => n).sort((a, b) => b[1] - a[1]);
+            if (found.length) html += row('Viruses found in the cell lines', `(from the RNA-seq screen of ${Object.keys(V.byCellLine).length.toLocaleString()} cell lines)`,
+                found.map(([k, n]) => `<button class="gb-chip" data-gb-gene="${k}" title="${this.esc(V.viruses[k].label)}: reads in ${n} cell line${n === 1 ? '' : 's'}">${this.esc(k)} <span class="gb-m">${n}</span></button>`).join(''));
+        }
+        return html;
+    }
+
     // A typed virus name to its key in virus_rna.json, or null.
     _gbVirusKey(raw) {
         const V = this.virusRna; if (!V) return null;
@@ -51126,8 +51170,9 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         document.getElementById('gbSubtitle').textContent = '';
         document.querySelectorAll('#gbModal .gb-needs-gene').forEach(b => { b.disabled = true; });
         const chips = ['KRAS', 'MYC', 'CDK6'].map(g => `<button class="gb-chip" data-gb-gene="${g}">${this.gi(g)}</button>`).join('');
-        const vchips = this.virusRna ? ['EBV', 'HPV16', 'XMRV'].map(k => `<button class="gb-chip" data-gb-gene="${k}" title="${this.esc(this._virusRnaLabel(k))}">${k}</button>`).join('') : '';
-        document.getElementById('gbCards').innerHTML = `<div class="gb-empty">Type a gene symbol above, or try ${chips}${vchips ? `; or a virus found in the cell lines' RNA, ${vchips}` : ''}</div>`;
+        document.getElementById('gbCards').innerHTML = `<div class="gb-empty">Type a gene symbol above, or try ${chips}`
+            + ` <button class="btn btn-outline btn-sm" data-gb-examples="1" style="font-size:10px; padding:1px 8px;">More examples</button></div>`
+            + `<div id="gbExamples" hidden>${this._gbExamplesHtml()}</div>`;
     }
 
     // While any popout covers the window the page behind must not scroll.
@@ -51236,6 +51281,12 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             if (cp) { this.copyPlotToClipboard(cp.dataset.gbCopy, cp.dataset.gbCopyLabel || 'Figure'); return; }
             const clamp = e.target.closest('.gb-clamp');
             if (clamp) { clamp.classList.toggle('open'); return; }
+            const ex = e.target.closest('[data-gb-examples]');
+            if (ex) {
+                const box = document.getElementById('gbExamples');
+                if (box) { box.hidden = !box.hidden; ex.textContent = box.hidden ? 'More examples' : 'Hide examples'; }
+                return;
+            }
             const act = e.target.closest('[data-gb-act]');
             if (act && this._gbGene) this._gbAction(act.dataset.gbAct);
         });
