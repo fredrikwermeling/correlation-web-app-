@@ -1737,6 +1737,7 @@
         .gb-scope .gb-summary { font-size:13px; line-height:1.6; }
         .gb-scope .gb-verdict { font-size:12px; line-height:1.55; color:#1f2937; background:#f3faee; border-left:3px solid #6ba544; border-radius:0 4px 4px 0; padding:6px 10px; margin:0 0 10px; }
         .gb-scope .gb-m { font-size:10px; color:#6b7280; }
+        .gb-scope .gb-mrna { font-size:11.5px; line-height:1.5; color:#78350f; background:#fffbeb; border-left:3px solid #d97706; border-radius:0 4px 4px 0; padding:6px 10px; margin:0 0 10px; }
         .gb-scope .gb-sub { font-weight:600; color:#374151; font-size:12px; margin:12px 0 4px; }
         /* The main parts of a card (Related genes: co-dependencies, co-expression,
            complexes, pathways): a divider and a heading the data below hangs from. */
@@ -1868,7 +1869,7 @@
             .gb-scope .gb-trow-c { flex-basis:34%; max-width:34%; }
         }
         #clbWikiBody { font-size: 12px; line-height: 1.55; }
-        #clbWikiBody .wiki-sub-h { font-weight: 600; color: #374151; font-size: 13px; margin-bottom: 3px; }
+        #clbWikiBody .wiki-sub-h { font-weight: 700; color: #3f6b25; font-size: 14px; margin-bottom: 6px; padding-left: 8px; border-left: 3px solid #6ba544; line-height: 1.35; }
         #clbWikiBody .wiki-sub-p { margin: 0 0 10px; font-size: 11px; color: #6b7280; line-height: 1.55; }
         #clbWikiBody .wiki-muted { font-size: 11px; color: #6b7280; }
         .wiki-chip {
@@ -5334,6 +5335,7 @@
           <div class="pop-head-btns" style="display:flex; align-items:center; gap:8px;">
             <button id="ctwPdfBtn" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px; padding:4px 10px;" title="Save this Wiki as a multi-page PDF">Export PDF</button>
             <button onclick="app.screenshotPopout('ctwBody','correlate_cancer_type_wiki')" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px; padding:4px 10px;" title="Save the Wiki as an image">Export image...</button>
+            <button id="ctwAnalyzeWithAI" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px; padding:4px 10px;" title="Package this cancer type as one file for a language model, so you can ask questions about it">Export for AI</button>
             <button id="ctwFilterBtn" class="btn btn-outline btn-sm" style="font-size:11px; padding:4px 10px;" title="Set the Cell Line Browser's tissue, subtype and disease filters to this group">Show in Cell Line Browser</button>
             <button id="ctwCloseBtn" style="background:none; border:none; font-size:24px; cursor:pointer; line-height:1; color:#6b7280;" title="Close the Wiki">&times;</button>
           </div>
@@ -5931,7 +5933,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v91_57"></script>
+    <script src="app.js?v=v91_58"></script>
     <script src="tour.js?v=v91_54"></script>
 </body>
 </html>

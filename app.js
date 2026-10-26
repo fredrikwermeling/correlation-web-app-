@@ -1306,6 +1306,7 @@ class CorrelationExplorer {
             if (source === 'correlations' || source === 'clusters') return this.results?.success ? this._buildNetworkMeta() : null;
             if (source === 'wiki' && this._wikiCellLineId != null) return this._buildExportMetadata('wiki', { wikiCellLine: this._wikiCellLineId });
             if (source === 'genebrowser' && this._gbGene) return this._buildExportMetadata('genebrowser', { gbGene: this._gbGene });
+            if (source === 'cancertype' && this._ctwGroup) return this._buildExportMetadata('cancertype', { ctwGroup: this._ctwGroup });
             if (source === 'heatmap') return this._hmViewState();
         } catch (e) { console.warn('No reopen settings for the AI picture:', e); }
         return null;
@@ -8185,6 +8186,7 @@ class CorrelationExplorer {
             exprCorrelates: 'Expression correlates, target gene',
             wiki: 'Cell line wiki, one cell line',
             genebrowser: 'Gene Browser, one gene',
+            cancertype: 'Cancer type Wiki, one group of cell lines',
             clb: 'Cell Line Browser, the cell lines listed',
             heatmap: 'Gene set heatmap, genes x cell lines'
         };
@@ -8200,6 +8202,7 @@ class CorrelationExplorer {
             exprCorrelates: 'the expression-versus-gene-effect correlations for the target gene',
             wiki: 'every section of the wiki for this cell line, including the alterations, pathway read-out, dependencies and drug response',
             genebrowser: 'the numbers behind every card for this gene: dependency and expression by tissue, the most dependent and highest-expressing lines, mutation and fusion counts, copy number, drugs targeting it and related genes',
+            cancertype: 'the numbers behind every section of the Cancer type Wiki: composition, common and enriched mutations, copy number, selective dependencies, characteristic expression, surface proteins for FACS and the surface panel with its identity check, each compared with all other cell lines',
             clb: 'the cell lines the browser is currently showing, with their alterations, signatures and gene-effect data',
             heatmap: 'the gene set heatmap matrix (genes x cell lines, values as shown), the grouping and every group\'s n and score, and the alteration filters that shaped the cohort'
         };
@@ -8260,6 +8263,9 @@ class CorrelationExplorer {
             if (source === 'genebrowser' && n > 0) {
                 tierText = `<b>What's in the file:</b> gene effect and expression for this gene and the genes the page lists as related, across every cell line; mutations / fusions / inferred / signatures full.`;
             }
+            if (source === 'cancertype' && n > 0) {
+                tierText = `<b>What's in the file:</b> gene effect and expression for the genes the Wiki names, in the cell lines of this group; mutations / fusions / inferred / signatures full.`;
+            }
             const extras = aiSourceExtras[source];
             document.getElementById('aiDataTierInfo').innerHTML = tierText
                 + (extras && n > 0 ? `<div style="margin-top:6px;"><b>From this view specifically:</b> ${extras}.</div>` : '')
@@ -8307,6 +8313,7 @@ class CorrelationExplorer {
         document.getElementById('networkAnalyzeWithAI')?.addEventListener('click', () => aiShowDialog('clusters'));
         document.getElementById('clbWikiAnalyzeWithAI')?.addEventListener('click', () => aiShowDialog('wiki'));
         document.getElementById('gbAnalyzeWithAI')?.addEventListener('click', () => { if (this._gbGene) aiShowDialog('genebrowser'); });
+        document.getElementById('ctwAnalyzeWithAI')?.addEventListener('click', () => { if (this._ctwAi) aiShowDialog('cancertype'); });
         // Stash the helper so exportForAI (correlations / clusters /
         // exprCorrelates menu entries) can reach the same dialog.
         this._aiShowDialog = aiShowDialog;
@@ -29235,6 +29242,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             this.openGeneBrowser(meta.gbGene);
             return;
         }
+        if (meta.graphType === 'cancertype' && meta.ctwGroup?.tissue) {
+            this.openCancerTypeWiki(meta.ctwGroup);
+            return;
+        }
 
         // UMAP/PCA, show info (requires computation that can't be serialized)
         if (meta.graphType === 'umap' || meta.graphType === 'pca') {
@@ -33928,6 +33939,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (fileStem === 'correlate_genebrowser' && this._gbGene) {
             return { graphType: 'genebrowser', gbGene: this._gbGene };
         }
+        if (fileStem === 'correlate_cancer_type_wiki' && this._ctwGroup) {
+            return { graphType: 'cancertype', ctwGroup: this._ctwGroup };
+        }
         if (fileStem === 'correlate_wiki' && this._wikiCellLineId != null) {
             return { graphType: 'wiki', wikiCellLine: this._wikiCellLineId };
         }
@@ -34577,6 +34591,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (source === 'genebrowser') {
             return this._gbGene ? (this.metadata?.cellLines || []).slice() : [];
         }
+        if (source === 'cancertype') {
+            return this._ctwAi && this._ctwGroup ? this._ctwMembers(this._ctwGroup).map(i => this.metadata.cellLines[i]) : [];
+        }
         if (source === 'selection') {
             // Gate mode ships BOTH sides: the export exists to
             // carry the contrast, and with only side A in the matrices a
@@ -35181,6 +35198,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // and gene as "the current view".
     _aiLiveSource() {
         const shown = (id) => { const el = document.getElementById(id); return !!el && (el.classList.contains('active') || (el.style.display && el.style.display !== 'none')); };
+        const zOf = (id) => parseInt(document.getElementById(id)?.style.zIndex) || 0;
+        if (shown('ctwModal') && this._ctwAi && (!shown('clbWikiModal') || zOf('ctwModal') > zOf('clbWikiModal'))) return 'cancertype';
         if (shown('clbWikiModal')) return 'wiki';
         if (shown('selectionInspectModal')) return 'selection';
         if (shown('inspectModal') && this.currentInspect) return 'scatter';
@@ -35563,6 +35582,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 ...Object.values(rel.expressionCorrelations || {}).flat().map(h => h.gene),
                 ...(rel.complexPartnersCorum || []), ...(rel.pathwayPartnersReactome || [])])];
             tierLabel = `Gene Browser export: the matrices hold ${this._gbGene} and the ${_gbGeneList.length - 1} genes its page lists as related (most similar gene-effect profile, CORUM complex partners, up to 50 Reactome pathway partners), across every cell line; mutations / fusions / LoF / signatures full`;
+        }
+        // The Cancer type Wiki: the genes its sections name, in the group's cell lines.
+        if (!custom && source === 'cancertype' && this._ctwAi) {
+            _gbGeneList = this._ctwAiGenes();
+            tierLabel = `Cancer type Wiki export: the matrices hold the ${_gbGeneList.length} genes the Wiki names (mutated, copy-number altered, selective dependencies, characteristic expression, surface proteins), in the cell lines of this group; mutations / fusions / LoF / signatures full`;
         }
         const _scanTop = custom?.scanTop || 30;
         const includeExpr = this.expressionLoaded;
@@ -36404,6 +36428,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             context.plotDescribesWhat = `Not a chart: the Gene Browser page for ${gene}, a set of cards (dependency, expression, mutations and fusions, copy number, drugs targeting it, related genes) computed across every cell line in the panel. extras.geneBrowser holds the numbers behind each card.`;
             description = `Everything the app holds on the single gene ${gene}, across every cell line.`;
             extras = { geneBrowser: this._gbAiExtras() };
+        } else if (source === 'cancertype') {
+            const g = this._ctwGroup || {};
+            const name = this._ctwName(g);
+            context = { type: 'cancer_type_wiki', group: { tissue: g.tissue || null, subtype: g.subtype || null, disease: g.disease || null }, measure: 'mixed', plotType: 'group_profile', stratification: 'none' };
+            context.plotDescribesWhat = `Not a chart: the Cancer type Wiki page for ${name}, a set of sections comparing the ${cellLines.length} cell lines of this group with every other cell line in the CRISPR cohort. extras.cancerTypeWiki holds the numbers behind each section; the matrices hold only this group's cell lines, so "other cell lines" values come from the extras.`;
+            description = `What sets the cancer type ${name} apart from all other cell lines.`;
+            extras = { cancerTypeWiki: { ...this._ctwAi,
+                readMe: 'Every comparison is this group against all other cell lines of the CRISPR cohort. Mutation and copy-number enrichment use a one-sided Fisher test; dependencies and expression a Welch t-test. Levels: tissue = Oncotree lineage, subtype = primary disease, disease = Oncotree subtype. surfaceProteins and surfacePanel are built from mRNA of genes coding for surface proteins, not from measured protein: say so whenever you discuss them, and treat staining suggestions as needing antibody validation. The identity check flags cell lines whose closest surface-mRNA neighbors all come from other tissues; it is a prompt to check, not evidence of contamination, and STR profiling settles identity.' } };
         } else if (source === 'exprCorrelates') {
             const ctx = this._exprCorrelateContext || {};
             context = {
@@ -38592,6 +38624,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             } else if (source === 'genebrowser') {
                 const el = document.getElementById('gbCards');
                 if (el && el.offsetParent !== null) _pngUrl = await timed(this._domToPngUrl(el));
+            } else if (source === 'cancertype') {
+                const el = document.getElementById('ctwBody');
+                if (el && el.offsetParent !== null) _pngUrl = await timed(this._domToPngUrl(el));
             } else if (source === 'heatmap') {
                 // Also not a Plotly chart: the same composed canvas Export
                 // image / Copy use (labels + dendrogram, grid + group strip,
@@ -40686,7 +40721,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const target = el();
         if (!target) return;
         const reg = this._cellLineCnRegions(cellLineId);
-        const head = `<div style="font-weight:600; color:#374151; font-size:12px; margin-bottom:6px;">Major copy-number regions <span style="font-size:10px; color:#6b7280; font-weight:400;">, whole-cytoband level from the full DepMap gene CN matrix (24Q4 OmicsCNGene, a different release from the curated focal events above, so the two blocks can disagree); curated cancer genes highlighted</span></div>`;
+        const head = `<div class="wiki-sub-h">Major copy-number regions <span style="font-size:10px; color:#6b7280; font-weight:400;">, whole-cytoband level from the full DepMap gene CN matrix (24Q4 OmicsCNGene, a different release from the curated focal events above, so the two blocks can disagree); curated cancer genes highlighted</span></div>`;
         if (!reg || reg.unavailable) {
             const why = reg?.unavailable === 'noprofile'
                 ? 'This cell line has no copy-number data in DepMap, so no call can be made either way.'
@@ -53778,11 +53813,24 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
     _ctwGeneLink(gene) { return `<a href="#" class="gb-cl" data-ctw-gene="${this.esc(gene)}" title="Open in the Gene Browser">${this.gi(gene)}</a>`; }
     _ctwClLink(id) { return `<a href="#" class="gb-cl" data-ctw-cl="${this.esc(id)}" title="Open the Wiki for this cell line">${this.esc(this.getCellLineName(id) || id)}</a>`; }
     _ctwPct(k, n) { return n ? this._gbFmtPct(k, n) : 'n/a'; }
+    // Every gene the Wiki's sections name, for the Export for AI matrices.
+    _ctwAiGenes() {
+        const a = this._ctwAi || {}, out = new Set();
+        const add = (rows) => (rows || []).forEach(r => r?.gene && out.add(r.gene));
+        add(a.mutations?.mostOftenMutated); add(a.mutations?.mostEnriched);
+        add(a.copyNumber?.amplified); add(a.copyNumber?.deleted);
+        add(a.selectiveDependencies);
+        add(a.expression?.higherInGroup); add(a.expression?.lowerInGroup);
+        add(a.surfaceProteins?.specificToGroup); add(a.surfaceProteins?.brightInNearlyAllPositiveControls); add(a.surfaceProteins?.absentInMostNegativeControls);
+        add(a.surfacePanel?.proteinsShown);
+        return [...out];
+    }
 
-    async openCancerTypeWiki(g) {
+    async openCancerTypeWiki(g, opts = {}) {
         g = g || this._ctwGroupFromFilters();
         if (!g) return;
         this._ctwGroup = g;
+        this._ctwAi = null;
         const modal = document.getElementById('ctwModal');
         const body = document.getElementById('ctwBody');
         if (!modal || !body) return;
@@ -53804,7 +53852,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         if (!idx.length) { body.innerHTML = this._gbDesc('No cell line in the cohort matches this group.'); return; }
         const inG = new Uint8Array(N);
         for (const i of idx) inG[i] = 1;
-        const c = { g, ids, N, idx, n: idx.length, inG, pos: new Map(ids.map((id, i) => [id, i])) };
+        const c = { g, ids, N, idx, n: idx.length, inG, pos: new Map(ids.map((id, i) => [id, i])), ai: {} };
         this._ctwCtx = c;
         const parts = [
             this._ctwOverview(c),
@@ -53812,21 +53860,33 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             this._ctwCopyNumber(c),
             this._ctwDependencies(c),
             this._ctwExpression(c),
-            this._gbSection('Surface proteins for FACS', this._ctwSurfaceBody(c), 'DepMap 26Q1 OmicsExpressionTPMLogp1 (mRNA, not protein). Surface proteins: SURFY surfaceome and UniProt topology, Human Protein Atlas CD markers, and the app\'s FACS antigen list.', 'ctwSurfaceCard'),
+            this._gbSection('Surface proteins for FACS, from mRNA', this._ctwSurfaceBody(c), 'DepMap 26Q1 OmicsExpressionTPMLogp1 (mRNA, not protein). Surface proteins: SURFY surfaceome and UniProt topology, Human Protein Atlas CD markers, and the app\'s FACS antigen list.', 'ctwSurfaceCard'),
             this._ctwPanelSection(c),
             this._ctwLinesSection(c),
         ];
         body.innerHTML = parts.join('');
+        this._ctwAi = c.ai;
+        const target = opts.scrollTo && document.getElementById(opts.scrollTo);
+        if (target) {
+            const head = modal.querySelector('[style*="position:sticky"]');
+            modal.scrollTop += target.getBoundingClientRect().top - modal.getBoundingClientRect().top - (head ? head.offsetHeight : 0) - 30;
+        }
+    }
+
+    // The same note on every view built from surface-protein mRNA.
+    _ctwMrnaNote() {
+        return '<div class="gb-mrna"><b>Based on mRNA, not protein.</b> These are RNA-seq levels of the genes that code for surface proteins. mRNA predicts the protein on the cell surface only roughly, so confirm with the antibody on your own cells.</div>';
     }
 
     _ctwOverview(c) {
         const md = this.cellLineMetadata || {};
         const memb = c.idx.map(i => c.ids[i]);
-        const tally = (field) => {
+        const counts = (field) => {
             const m = new Map();
             for (const id of memb) { const v = md[field]?.[id] || 'Unknown'; m.set(v, (m.get(v) || 0) + 1); }
-            return [...m.entries()].sort((a, b) => b[1] - a[1]).map(([k, n]) => `${this.esc(k)} ${n}`).join(', ');
+            return [...m.entries()].sort((a, b) => b[1] - a[1]);
         };
+        const tally = (field) => counts(field).map(([k, n]) => `${this.esc(k)} ${n}`).join(', ');
         const ages = memb.map(id => parseFloat(md.age?.[id])).filter(v => v === v && v > 0).sort((a, b) => a - b);
         const nExpr = c.idx.filter(i => (this.expressionCellLineMap?.[i] ?? -1) !== -1).length;
         const nMsi = memb.filter(id => this.inferredSubtypes?.byCellLine?.[id]?.msi).length;
@@ -53838,10 +53898,11 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const path = crumbs.map((k, j) => j === crumbs.length - 1 ? `<b>${this.esc(k.label)}</b>` : `<a href="#" class="gb-cl" ${this._ctwGoAttrs(k.go)}>${this.esc(k.label)}</a>`).join(' <span class="gb-m">›</span> ');
         // The next level down: subtypes inside a tissue, diseases inside a subtype.
         const childField = g.disease ? null : g.subtype ? 'oncotreeSubtype' : g.tissue ? 'primaryDisease' : null;
-        let comp = '';
+        let comp = '', children = null;
         if (childField) {
             const m = new Map();
             for (const id of memb) { const v = md[childField]?.[id]; if (v) m.set(v, (m.get(v) || 0) + 1); }
+            children = Object.fromEntries([...m.entries()].sort((a, b) => b[1] - a[1]));
             const rows = [...m.entries()].sort((a, b) => b[1] - a[1]).map(([name, k]) => {
                 const go = childField === 'primaryDisease' ? { tissue: g.tissue, subtype: name } : { ...g, disease: name };
                 return [`<a href="#" class="gb-cl" ${this._ctwGoAttrs(go)} title="Open the Cancer type Wiki for this group">${this.esc(name)}</a>`, k.toLocaleString(), `<span class="gb-m">${this._ctwPct(k, c.n)}</span>`];
@@ -53857,6 +53918,15 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             this._gbRow('Growth', tally('growthPattern')),
             this._gbRow('Microsatellite instability', `${nMsi} of ${c.n} <span class="gb-m">(${this._ctwPct(nMsi, c.n)})</span>`),
         ].join('');
+        c.ai.overview = {
+            classification: { tissue: g.tissue || null, subtype: g.subtype || null, disease: g.disease || null },
+            cellLines: c.n, cohortSize: c.N, cellLinesWithMrna: nExpr,
+            sex: Object.fromEntries(counts('sex')), primaryOrMetastasis: Object.fromEntries(counts('primaryOrMetastasis')),
+            growth: Object.fromEntries(counts('growthPattern')),
+            patientAge: ages.length ? { median: this.median(ages), min: ages[0], max: ages[ages.length - 1], n: ages.length } : null,
+            microsatelliteInstable: nMsi,
+            [childField === 'primaryDisease' ? 'subtypes' : 'diseases']: children || undefined,
+        };
         const body = this._gbDesc('What this cancer type looks like in the cohort, and how it differs from every other cell line. Each table compares the cell lines of this group with all the others.')
             + `<div class="gb-grid"><div>${stats}</div><div>${comp}</div></div>`;
         return this._gbSection('Overview', body, 'DepMap 26Q1 Model table (Oncotree classification, patient and sample annotation).');
@@ -53896,6 +53966,13 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const lofGenes = Object.keys(this.functionalLoss?.geneData || {});
         const lof = lofGenes.map(gene => ({ gene, ...tally(this.functionalLoss.geneData[gene].mutations || {}) })).filter(r => r.k > 0).sort((a, b) => b.k - a.k)
             .map(r => `${this.gi(r.gene)} <b>${this._ctwPct(r.k, n)}</b> <span class="gb-m">(${r.k})</span>`).join(', ');
+        const aiRow = (r) => ({ gene: r.gene, mutatedInGroup: r.k, groupSize: n, mutatedInOthers: r.K - r.k, others: N - n, pEnriched: r.p });
+        c.ai.mutations = {
+            mostOftenMutated: common.map(aiRow), mostEnriched: enriched.map(aiRow),
+            specificVariants: Object.fromEntries([...varC.entries()].sort((a, b) => b[1] - a[1])),
+            driverFusions: Object.fromEntries([...fusC.entries()].sort((a, b) => b[1] - a[1])),
+            functionalLoss: Object.fromEntries(lofGenes.map(gene => [gene, tally(this.functionalLoss.geneData[gene].mutations || {}).k]).filter(([, k]) => k > 0).sort((a, b) => b[1] - a[1])),
+        };
         const body = this._gbDesc('Mutations in cancer genes (OncoKB), counting hotspot and likely loss-of-function calls. "Enriched" tests whether the mutation is more common here than in the other cell lines (one-sided Fisher test).')
             + this._gbRow('Specific variants', varC.size ? chips(varC) : '<span class="gb-m">none of the tracked variants</span>')
             + this._gbRow('Driver fusions', fusC.size ? chips(fusC) : '<span class="gb-m">none of the curated driver fusions</span>')
@@ -53928,6 +54005,8 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         if (!amp.length && !del.length) return '';
         const heads = ['Gene', 'This group', 'Other cell lines', 'Enriched, p'];
         const cell = (r) => [this._ctwGeneLink(r.gene), `<b>${this._ctwPct(r.k, n)}</b> <span class="gb-m">(${r.k} of ${n})</span>`, this._ctwPct(r.K - r.k, N - n), r.p < 0.01 ? this._gbP(r.p) : '<span class="gb-m">n.s.</span>'];
+        const aiRow = (r) => ({ gene: r.gene, inGroup: r.k, groupSizeWithCopyNumber: n, inOthers: r.K - r.k, othersWithCopyNumber: N - n, pEnriched: r.p });
+        c.ai.copyNumber = { amplified: amp.map(aiRow), deleted: del.map(aiRow) };
         const body = this._gbDesc(`Amplifications and deep deletions of the curated cancer gene panel, in the ${n} cell lines of this group with copy-number data.`)
             + `<div class="gb-grid"><div><div class="gb-sub">Most often amplified</div>${amp.length ? this._gbTable(heads, amp.map(cell)) : '<div class="gb-empty">None in two or more cell lines.</div>'}</div>`
             + `<div><div class="gb-sub">Most often deleted</div>${del.length ? this._gbTable(heads, del.map(cell)) : '<div class="gb-empty">None in two or more cell lines.</div>'}</div></div>`;
@@ -53984,6 +54063,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const rows = this._ctwScan(c, 'ge', -0.5).filter(r => r.d < -0.15 && r.m1 < -0.3 && !ce.has(genes[r.g]))
             .map(r => ({ ...r, p: this.tDistributionPValue(Math.abs(r.t), r.df) })).filter(r => r.p < 0.001)
             .sort((a, b) => a.d - b.d).slice(0, 15);
+        c.ai.selectiveDependencies = rows.map(r => ({ gene: genes[r.g], meanGeneEffectGroup: +r.m1.toFixed(3), meanGeneEffectOthers: +r.m2.toFixed(3), cellLinesBelowMinus05: r.nb, cellLinesScreened: r.k, p: r.p }));
         const body = this._gbDesc('Genes this group needs more than the other cell lines do (CRISPR gene effect; more negative is a stronger dependency). Genes nearly every cell line needs (common essentials) are left out, so what remains is selective.')
             + (rows.length ? this._gbTable(['Gene', 'This group (mean)', 'Other cell lines (mean)', 'Below −0.5 here', 'p'],
                 rows.map(r => [this._ctwGeneLink(genes[r.g]), `<b>${this._gbNum(r.m1)}</b>`, this._gbNum(r.m2), `${this._ctwPct(r.nb, r.k)} <span class="gb-m">(${r.nb} of ${r.k})</span>`, this._gbP(r.p)]))
@@ -53997,6 +54077,8 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const scan = this._ctwScan(c, 'expr', 1).map(r => ({ ...r, p: this.tDistributionPValue(Math.abs(r.t), r.df) })).filter(r => r.p < 0.001 && r.k >= 3);
         const high = scan.filter(r => r.m1 >= 3 && r.d > 1).sort((a, b) => b.d - a.d).slice(0, 15);
         const low = scan.filter(r => r.m2 >= 3 && r.d < -1).sort((a, b) => a.d - b.d).slice(0, 15);
+        const aiRow = (r) => ({ gene: genes[r.g], meanLog2TpmGroup: +r.m1.toFixed(2), meanLog2TpmOthers: +r.m2.toFixed(2), p: r.p });
+        c.ai.expression = { higherInGroup: high.map(aiRow), lowerInGroup: low.map(aiRow) };
         const table = (rows) => this._gbTable(['Gene', 'This group', 'Other cell lines', 'p'],
             rows.map(r => [this._ctwGeneLink(genes[r.g]), `<b>${this._gbNum(r.m1, 1)}</b>`, this._gbNum(r.m2, 1), this._gbP(r.p)]));
         const body = this._gbDesc('Genes whose mRNA is much higher or lower here than in the other cell lines (mean log₂ TPM+1; a difference of 1 is twofold). The high list is usually led by the lineage’s own marker genes.')
@@ -54066,17 +54148,25 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const pc = (f) => `${Math.round(f * 100)}%`;
         // Where an absent marker is high instead: those cell lines serve as
         // the antibody's positive control.
-        const highIn = (r) => {
+        const highInList = (r) => {
             const m = new Map(); const off = r.j * R.M;
             for (let q = 0; q < R.M; q++) { if (inR[q]) continue; (m.get(tisOf[q]) || m.set(tisOf[q], []).get(tisOf[q])).push(R.vals[off + q]); }
-            return [...m.entries()].filter(([t, a]) => a.length >= 5 && t !== c.g.tissue).map(([t, a]) => [t, this.median(a)]).sort((a, b) => b[1] - a[1]).slice(0, 2)
-                .map(([t, v]) => `${this.esc(t)} <span class="gb-m">(${this._gbNum(v, 1)})</span>`).join(', ');
+            return [...m.entries()].filter(([t, a]) => a.length >= 5 && t !== c.g.tissue).map(([t, a]) => [t, this.median(a)]).sort((a, b) => b[1] - a[1]).slice(0, 2);
         };
+        const highIn = (r) => highInList(r).map(([t, v]) => `${this.esc(t)} <span class="gb-m">(${this._gbNum(v, 1)})</span>`).join(', ');
         const specific = res.filter(r => r.med >= BRIGHT && r.auc >= 0.7 && r.onR <= 0.5).sort((a, b) => b.auc - a.auc).slice(0, 12);
         const bright = res.filter(r => r.onG >= 0.9).sort((a, b) => b.med - a.med).slice(0, 12);
         const absent = res.filter(r => r.offG >= 0.8 && r.onR >= 0.3).sort((a, b) => b.onR - a.onR).slice(0, 12);
         const empty = (t) => `<div class="gb-empty">${t}</div>`;
-        return this._gbDesc(`Proteins on the cell surface and how much of their mRNA the ${ng} cell lines with mRNA data make (log₂ TPM+1). Bright means at least ${BRIGHT} (about 15 TPM, usually enough to stain); absent means below ${OFF}. mRNA is a guide only, so confirm with the antibody.`)
+        const aiRow = (r) => ({ gene: r.gene, cdMarker: sf.cd.has(r.gene), medianLog2TpmGroup: +r.med.toFixed(2), fractionBrightGroup: +r.onG.toFixed(3), fractionAbsentGroup: +r.offG.toFixed(3), fractionBrightOthers: +r.onR.toFixed(3), specificityAuc: +r.auc.toFixed(3) });
+        c.ai.surfaceProteins = {
+            basis: 'mRNA (RNA-seq log2 TPM+1) of genes coding for cell-surface proteins, not measured protein',
+            cellLinesWithMrna: ng, brightCutoff: BRIGHT, absentCutoff: OFF, cdMarkersOnly: cdOnly,
+            specificToGroup: specific.map(aiRow),
+            brightInNearlyAllPositiveControls: bright.map(aiRow),
+            absentInMostNegativeControls: absent.map(r => ({ ...aiRow(r), highInsteadIn: highInList(r).map(([t, v]) => ({ tissue: t, medianLog2Tpm: +v.toFixed(2) })) })),
+        };
+        return this._ctwMrnaNote() + this._gbDesc(`Proteins on the cell surface and how much of their mRNA the ${ng} cell lines with mRNA data make (log₂ TPM+1). Bright means at least ${BRIGHT} (about 15 TPM, usually enough to stain); absent means below ${OFF}.`)
             + `<label class="gb-m" style="display:inline-flex; gap:5px; align-items:center; font-size:11px; margin-bottom:4px;"><input type="checkbox" data-ctw-cdonly ${cdOnly ? 'checked' : ''}> CD markers only</label>`
             + `<div class="gb-grid"><div><div class="gb-sub">Specific to this group <span class="gb-m">(bright here, lower elsewhere)</span></div>`
             + (specific.length ? this._gbTable(['Protein', 'Median here', 'Bright here', 'Bright elsewhere', 'Specificity'],
@@ -54196,13 +54286,26 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 + (off.length ? this._gbTable(['Cell line', 'Annotated as', 'Its five most similar cell lines', 'Their tissues'],
                     off.slice(0, 30).map(r => [this._ctwClLink(this.metadata.cellLines[R.rows[r]]), this.esc(P.tisOf[r]), names(r), `<b>${near(r)}</b>`])).replace('gb-table"', 'gb-table gb-table-left"') : '');
         }
-        const body = this._gbDesc(`Surface proteins that best tell the cancer types apart: for each cancer type with at least 8 cell lines, the three surface proteins that best set it apart from the others. Each row is the median mRNA of a cancer type; hover a square for the value. The identity check and the export use up to eight proteins per cancer type (${P.genes.length} in all).`)
+        c.ai.surfacePanel = {
+            basis: 'mRNA (RNA-seq log2 TPM+1), not measured protein',
+            cancerTypes: Object.fromEntries(P.tissues.map((t, k) => [t, P.nT[k]])),
+            proteinsShown: P.shown.map(p => ({ gene: p.gene, marks: p.tissue, specificityAuc: +p.auc.toFixed(3) })),
+            medianLog2TpmByCancerType: Object.fromEntries(P.tissues.map((t, k) => [t, Object.fromEntries(P.shown.map((p, q) => [p.gene, +P.med[k][q].toFixed(2)]))])),
+            ...(own ? { medianLog2TpmThisGroup: Object.fromEntries(P.shown.map((p, q) => [p.gene, +own[q].toFixed(2)])) } : {}),
+            identityCheck: {
+                method: `Each cell line's profile over ${P.genes.length} panel genes (up to 8 per cancer type) is z-scored per gene and compared with every other cell line by Pearson r; a cell line is flagged when none of its ${P.K} most similar cell lines shares its tissue. Across the cohort ${P.ok} of ${P.tot} cell lines have such a match.`,
+                checked: inPanel.length,
+                flagged: off.map(r => ({ cellLine: this.getCellLineName(this.metadata.cellLines[R.rows[r]]) || this.metadata.cellLines[R.rows[r]], annotatedTissue: P.tisOf[r],
+                    mostSimilar: Array.from({ length: P.K }, (_, k) => { const s = P.nn[r * P.K + k]; return { cellLine: this.getCellLineName(this.metadata.cellLines[R.rows[s]]) || this.metadata.cellLines[R.rows[s]], tissue: P.tisOf[s], r: +P.ns[r * P.K + k].toFixed(3) }; }) })),
+            },
+        };
+        const body = this._ctwMrnaNote() + this._gbDesc(`Surface proteins that best tell the cancer types apart: for each cancer type with at least 8 cell lines, the three surface proteins that best set it apart from the others. Each row is the median mRNA of a cancer type; hover a square for the value. The identity check and the export use up to eight proteins per cancer type (${P.genes.length} in all).`)
             + matrix
             + `<div style="display:flex; justify-content:flex-end; margin-top:2px;"><button class="btn btn-outline btn-sm mobile-hide" data-ctw-act="panel-csv" style="font-size:10px; padding:1px 8px;" title="Download the panel as a table: cancer types by proteins, median log₂ TPM+1">Export panel (.csv)</button></div>`
             + `<div class="gb-sub">Identity check</div>`
             + this._gbDesc('Each cell line’s surface profile is compared with every other cell line’s. A cell line whose five most similar cell lines all come from other tissues is worth checking: it can mean a mix-up or a contaminated culture, but also a cell line that changed in culture, or one that resembles a related cancer type (squamous carcinomas of different organs look alike). STR profiling settles identity.')
             + check;
-        return this._gbSection('Surface protein panel and identity check', body, 'DepMap 26Q1 OmicsExpressionTPMLogp1 (mRNA). Specificity is the area under the ROC curve of one cancer type against all other cell lines; similarity is the Pearson r of z-scored panel values.');
+        return this._gbSection('Surface protein panel and identity check, from mRNA', body, 'DepMap 26Q1 OmicsExpressionTPMLogp1 (mRNA). Specificity is the area under the ROC curve of one cancer type against all other cell lines; similarity is the Pearson r of z-scored panel values.', 'ctwPanelCard');
     }
 
     _ctwLinesSection(c) {
@@ -54271,7 +54374,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             const a = e.target.closest('[data-ctw-t]');
             if (!a) return;
             e.preventDefault();
-            this.openCancerTypeWiki({ tissue: a.dataset.ctwT, subtype: a.dataset.ctwS, disease: a.dataset.ctwD });
+            this.openCancerTypeWiki({ tissue: a.dataset.ctwT, subtype: a.dataset.ctwS, disease: a.dataset.ctwD }, { scrollTo: a.dataset.ctwTo });
         });
         document.getElementById('ctwBody')?.addEventListener('change', (e) => {
             if (!e.target.matches('[data-ctw-cdonly]') || !this._ctwCtx) return;
@@ -54279,6 +54382,35 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             const card = document.getElementById('ctwSurfaceCard');
             if (card) card.querySelector('.gb-card-body').innerHTML = this._ctwSurfaceBody(this._ctwCtx);
         });
+    }
+
+    // The surface-panel identity check for one cell line in its Wiki, filled
+    // after the Wiki renders: the panel takes about a second the first time.
+    async _fillWikiSurfaceIdentity(cellLineId) {
+        const el = document.getElementById('wikiSurfaceIdentity');
+        if (!el) return;
+        if (!this.expressionLoaded) { el.innerHTML = ''; return; }
+        const kv = (label, value) => `<div class="wiki-kv" style="display:flex; gap:12px; padding:3px 0; align-items:baseline;"><span class="wiki-kv-label" style="flex:0 0 190px; color:#6b7280; font-size:11px;">${label}</span><span style="flex:1; min-width:0;">${value}</span></div>`;
+        const label = 'Identity check by surface mRNA';
+        el.innerHTML = kv(label, '<span style="color:#9ca3af;">Comparing with every other cell line...</span>');
+        await this._ensureGeneClasses();
+        await new Promise(r => setTimeout(r, 30));
+        if (this._wikiCellLineId !== cellLineId) return;
+        const P = this._ctwPanel(), R = this._ctwSurfaceRanks();
+        const r = R.rowOf.get(this.metadata.cellLines.indexOf(cellLineId));
+        if (r === undefined) { el.innerHTML = kv(label, '<span style="color:#6b7280;">Not checked: this cell line has no mRNA data in the CRISPR cohort.</span>'); return; }
+        const tis = P.tisOf[r];
+        const nb = Array.from({ length: P.K }, (_, k) => P.nn[r * P.K + k]);
+        const tally = new Map(); for (const s of nb) tally.set(P.tisOf[s], (tally.get(P.tisOf[s]) || 0) + 1);
+        const tissues = [...tally.entries()].sort((a, b) => b[1] - a[1]).map(([t, k]) => `${this.esc(t)} ${k}`).join(', ');
+        const names = nb.map(s => this.esc(this.getCellLineName(this.metadata.cellLines[R.rows[s]]) || this.metadata.cellLines[R.rows[s]])).join(', ');
+        const link = `<a href="#" ${this._ctwGoAttrs({ tissue: tis })} data-ctw-to="ctwPanelCard" style="font-size:10px; color:#3730a3;" title="Open the surface protein panel and identity check of this cancer type">Surface protein panel</a>`;
+        const own = tally.get(tis) || 0;
+        let verdict;
+        if (!P.tissues.includes(tis)) verdict = `<span style="color:#6b7280;">${this.esc(tis)} has too few cell lines with mRNA data to be checked. Its five most similar cell lines are ${tissues}.</span>`;
+        else if (own) verdict = `<b style="color:#4c782e;">Matches its tissue:</b> ${own} of its five most similar cell lines ${own === 1 ? 'is' : 'are'} ${this.esc(tis)} <span style="color:#6b7280;">(${tissues}: ${names})</span>.`;
+        else verdict = `<b style="color:#b45309;">Worth checking:</b> none of its five most similar cell lines are ${this.esc(tis)}; they are ${tissues} <span style="color:#6b7280;">(${names})</span>. It can mean a mix-up or a contaminated culture, but also a cell line that changed in culture or resembles a related cancer type. STR profiling settles identity.`;
+        el.innerHTML = kv(label, `${verdict} ${link}<div style="font-size:10px; color:#9ca3af; margin-top:2px;">From mRNA of ${P.genes.length} surface proteins that tell cancer types apart, not measured protein. Across the cohort, ${Math.round(100 * P.ok / P.tot)}% of cell lines match their tissue this way.</div>`);
     }
 
     async openCellLineWiki(cellLineId) {
@@ -55177,7 +55309,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         // directly above. Surfacing them twice was confusing.
         const otherHtml = otherRows.length > 0
             ? `<div style="padding:8px 12px; background:#f9fafb; border-left:3px solid #6b7280; margin-bottom:8px;">
-                <div style="font-weight:600; color:#374151; margin-bottom:6px;">Other alterations in this cell line</div>
+                <div class="wiki-sub-h">Other alterations in this cell line</div>
                 <div>${otherRows.join('')}</div>
                </div>`
             : '';
@@ -55291,7 +55423,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 ${hasStructural ? `
                 <div style="margin-top:16px; padding-top:12px; border-top:1px dashed #e5e7eb;">
                     <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
-                        <div style="font-weight:600; color:#374151; font-size:12px;">Where this cell line sits in the cohort</div>
+                        <div class="wiki-sub-h" style="margin-bottom:0;">Compared with all cell lines</div>
                         <button onclick="app._downloadGenomeMetricsCSV('${cellLineId}')" style="font-size:10px; padding:3px 8px; background:#fff; color:#4c782e; border:1px solid #d1d5db; border-radius:4px; cursor:pointer;" title="Download cohort values for Ploidy, WGD, Aneuploidy, CIN as CSV (with this cell line flagged)">⤓ CSV</button>
                     </div>
                     <p style="margin:0 0 8px; font-size:10px; color:#6b7280;">Distribution of each metric across all cell lines with the value available. The dashed red line marks <b>this</b> cell line's position; for WGD (binary) the red bar is this cell line's category. Hover the Plotly toolbar (top-right of each plot) for PNG / SVG download per panel.</p>
@@ -55330,7 +55462,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 ${row('Active elements', `${re.a} / 750`)}
                 ${isHigh ? `<div style="margin-top:8px; padding:8px 10px; background:#fef3c7; border-left:3px solid #d97706; font-size:11px; color:#92400e;"><b>Retroelement-high:</b> top tenth of the measured panel.</div>` : ''}
                 <div style="margin-top:16px; padding-top:12px; border-top:1px dashed #e5e7eb;">
-                    <div style="font-weight:600; color:#374151; font-size:12px; margin-bottom:6px;">Where this cell line sits among the 669 measured cell lines</div>
+                    <div class="wiki-sub-h">Compared with the 669 measured cell lines</div>
                     <p style="margin:0 0 8px; font-size:10px; color:#6b7280;">Distribution of each measure across the measured cell lines; the dashed red line marks this cell line. The CPM axes are on a log2 scale because the signal is strongly skewed.</p>
                     <div class="wiki-hist-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
                         <div id="clbWikiHistRetroTotal" style="height:170px;"></div>
@@ -55829,12 +55961,14 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                     .map(([g, v]) => ({ gene: g, val: v, z: zByGene.get(g) }))
                     .sort((a, b) => (b.z ?? -99) - (a.z ?? -99) || b.val - a.val)
                     .slice(0, 12);
-                const facsHtml = facsHits.length > 0
-                    ? `<div style="margin-top:6px; padding:6px 10px; background:#f0fdf4; border-left:3px solid #4c782e; font-size:11px;"><b style="color:#4c782e;">Potential FACS markers</b> <span style="color:#9ca3af; font-size:10px;">(highly-expressed cell-surface antigens, CD molecules, receptor tyrosine kinases, immune checkpoints, ADC targets; TPM &gt; 4; sorted by how uniquely high vs cohort)</span>: ${facsHits.map(e => {
+                const linFacs = get('lineage');
+                const facsLink = (to, text, tip) => `<a href="#" ${this._ctwGoAttrs({ tissue: linFacs })} data-ctw-to="${to}" style="color:#3730a3;" title="${tip}">${text}</a>`;
+                const facsHtml = `<div style="margin-top:6px; padding:6px 10px; background:#f0fdf4; border-left:3px solid #4c782e; font-size:11px;"><b style="color:#4c782e;">Potential FACS markers</b> <span style="color:#9ca3af; font-size:10px;">(from mRNA, not protein: cell-surface antigens, CD molecules, receptor tyrosine kinases, immune checkpoints, ADC targets whose mRNA is above 4 log₂ TPM+1; sorted by how uniquely high vs cohort; confirm with the antibody)</span>: ${facsHits.length ? facsHits.map(e => {
                         const zStr = e.z != null ? ` <span style="color:#9ca3af; font-size:10px;">[z ${fmtZ(e.z)}]</span>` : '';
                         return `<span class="gene-hover clb-gene-link" data-gene="${e.gene}" style="cursor:help;">${this.gi(e.gene)}</span> (${e.val.toFixed(1)})${zStr}`;
-                    }).join(', ')}</div>`
-                    : '';
+                    }).join(', ') : '<span style="color:#6b7280;">none above 4</span>'}`
+                    + (linFacs ? `<div style="margin-top:4px; font-size:10.5px;">${facsLink('ctwSurfaceCard', `Staining controls for ${this.esc(linFacs)}`, 'Surface proteins bright or absent in nearly all cell lines of this cancer type')} <span style="color:#9ca3af;">·</span> ${facsLink('ctwPanelCard', 'Surface protein matrix of all cancer types', 'The surface proteins that tell cancer types apart, with an identity check')}</div>` : '')
+                    + `</div>`;
 
                 exprSigHtml = `
                     <p style="margin:0 0 8px; font-size:11px; color:#6b7280;">What matters is <b>which genes are unusually on or off in this cell line</b>, not which have the highest expression; that list is always led by mitochondrial and ribosomal genes that are high in every line. "Unusual" is judged <b>against every cell line in the expression table</b> (${(this.expressionMetadata?.cellLines?.length || 0).toLocaleString()} lines across every lineage, not only same-tissue lines). Values are log₂(TPM+1), mRNA on a log scale where above 1 is clearly expressed, plus the gene's z-score against that whole set (above +2, much higher than in the typical cell line; below &minus;2, strongly silenced). Hits carry a <span style="color:#4c782e; font-weight:600;">✓ lineage-typical</span> flag when the whole cancer family also over-expresses them, common for the cancer type rather than specific to this line. A second list ranks genes unusually high <b>against same-lineage lines only</b>.</p>
@@ -56100,14 +56234,14 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 'DepMap 26Q1 CRISPRGeneEffect (Chronos). Each gene\'s mean and SD are computed across all screened lines; z-score = (this line\'s gene effect − mean) / SD. Genes every cell needs are removed using the DepMap common-essentials list. Druggable dependencies are matched against a curated panel of 55 genes with an approved or clinical-stage drug acting on the gene itself; 6 more that can only be reached through another target are listed apart as indirectly targetable.'),
             section('Expression profile <span style="font-size:11px; color:#6b7280;">, what is uniquely highly expressed in this cell line</span>',
                 exprSigHtml,
-                'DepMap 26Q1 OmicsExpressionTPMLogp1HumanProteinCodingGenes (log₂-TPM+1). Each gene\'s mean and SD are computed across all lines; z-score = (this line\'s expression − mean) / SD. Gene programs: about 9 curated panels (MYC targets, E2F / S-phase, G2/M, interferon response, EMT, TGF-β, hypoxia, NRF2, stem), each scored as the mean z of its genes and listed when that exceeds 0.75 in either direction. Lineage markers: about 15 per Oncotree lineage. Druggable targets: 55 genes with an approved or clinical-stage drug acting on the gene itself; a further 6 (MYCN, CCND1, CCNE1, BCR, STAT5A, STAT5B) are listed apart as indirectly targetable, with the route. Potential FACS markers: about 100 well-known cell-surface antigens (CD molecules, receptor tyrosine kinases, immune checkpoints, antibody-drug and bispecific targets, adhesion molecules), listed above 4 log-TPM.'),
+                'DepMap 26Q1 OmicsExpressionTPMLogp1HumanProteinCodingGenes (log₂-TPM+1). Each gene\'s mean and SD are computed across all lines; z-score = (this line\'s expression − mean) / SD. Gene programs: about 9 curated panels (MYC targets, E2F / S-phase, G2/M, interferon response, EMT, TGF-β, hypoxia, NRF2, stem), each scored as the mean z of its genes and listed when that exceeds 0.75 in either direction. Lineage markers: about 15 per Oncotree lineage. Druggable targets: 55 genes with an approved or clinical-stage drug acting on the gene itself; a further 6 (MYCN, CCND1, CCNE1, BCR, STAT5A, STAT5B) are listed apart as indirectly targetable, with the route. Potential FACS markers: about 100 well-known cell-surface antigens (CD molecules, receptor tyrosine kinases, immune checkpoints, antibody-drug and bispecific targets, adhesion molecules), listed when their mRNA is above 4 log-TPM (mRNA, not measured protein).'),
             section('Drug response <span style="font-size:11px; color:#6b7280;">, PRISM Repurposing</span>',
                 drugHtml,
                 (this.drugResponse?.dataSource || 'DepMap PRISM Repurposing Secondary.') + ' This screen comes from a different DepMap release than the rest of this page. Curated panel of ' + (this.drugResponse?.panelSize || '~100') + ' compounds; z-scores are computed per compound across all PRISM lines. Viability in a dish is not clinical response: confirm any hit that matters in your own assays.'),
 
             // ── Lab use ───────────────────────────────────────────────────
             section('STR authentication',
-                authHtml,
+                authHtml + '<div id="wikiSurfaceIdentity" style="margin-top:6px;"></div>',
                 'Panel definitions: ANSI/ATCC ASN-0002-2011, Promega PowerPlex, Eurofins Genomics. Reference profiles: Cellosaurus.'),
             section('External resources',
                 extHtml,
@@ -56122,6 +56256,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         // Fill the major copy-number regions block (loads the CN matrix + gene
         // locations on demand, then injects amplified / deleted cytobands).
         this._fillWikiCnRegions(cellLineId);
+        this._fillWikiSurfaceIdentity(cellLineId);
         // Wire MyGene.info hover tooltips on every `.gene-hover` element in the
         // freshly-rendered Wiki body. The CSS already gives these elements a
         // `cursor: help`, so without this call the user sees the help cursor
