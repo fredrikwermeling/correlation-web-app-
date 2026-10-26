@@ -52109,19 +52109,6 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             + `&knownGene=full&knownGene.show.set=all&knownGene.label.geneName=1&knownGene.label.name=1&hgt.labelWidth=34&mane=pack`;
     }
 
-    // What UCSC's transcript colors mean, from its own GENCODE track key.
-    _gbUcscColorKey() {
-        const sw = (c, t, tip) => `<span title="${this.esc(tip)}" style="cursor:help; white-space:nowrap;"><span style="display:inline-block; width:8px; height:8px; border-radius:2px; background:${c}; vertical-align:0;"></span> ${t}</span>`;
-        return `<div class="gb-m" style="margin-top:3px; display:flex; flex-wrap:wrap; gap:3px 12px;">`
-            + `<span>Colors in the UCSC picture:</span>`
-            + sw('#0C6DAD', 'MANE', 'MANE Select or MANE Plus Clinical: the reference transcript')
-            + sw('#0c0c78', 'coding', 'Protein-coding transcript')
-            + sw('#006400', 'non-coding', 'Transcript that codes for no protein')
-            + sw('#ff33ff', 'pseudogene', 'Pseudogene transcript')
-            + sw('#fe0000', 'problem', 'Problem transcript: a retained intron, a to-be-experimentally-confirmed model, or a disrupted protein domain')
-            + `<span>Thick blocks are coding, thin ones untranslated.</span></div>`;
-    }
-
     _gbTxLabel(t, st) {
         const ref = st?.transcripts?.[0];
         const alt = st && ref && t !== ref && t.protein && ref.protein && this._gbAtg(st, t) !== this._gbAtg(st, ref);
@@ -52221,7 +52208,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         return [
             ensGene ? a(`https://www.ensembl.org/Homo_sapiens/Gene/Summary?g=${encodeURIComponent(ensGene)}`, 'Ensembl gene') : '',
             t ? a(`https://www.ensembl.org/Homo_sapiens/Transcript/Exons?t=${encodeURIComponent(t.tx.id)}`, 'Ensembl exons') : '',
-            pos ? a(this._gbUcscUrl(pos), 'UCSC Genome Browser') : '',
+            pos ? `<a href="${this._gbUcscUrl(pos)}" target="_blank" rel="noopener" style="color:#3730a3;" title="Every transcript on its own row, labeled gene/transcript id, with the MANE track. UCSC colors them by kind: blue MANE, dark blue coding, green non-coding, magenta pseudogene, red problem transcript (retained intron, model still to be confirmed, or disrupted protein domain). Thick blocks are coding, thin ones untranslated.">UCSC Genome Browser &#8599;</a>` : '',
             t?.tx.refseq ? a(`https://www.ncbi.nlm.nih.gov/nuccore/${encodeURIComponent(t.tx.refseq)}`, `NCBI RefSeq ${this.esc(t.tx.refseq)}`) : '',
             this.geneInfoCache?.[gene]?.uniprot ? a(`https://www.uniprot.org/uniprotkb/${encodeURIComponent(this.geneInfoCache[gene].uniprot)}/entry#sequences`, 'UniProt') : '',
         ].filter(Boolean).join(' <span style="color:#9ca3af;">&middot;</span> ');
@@ -52270,8 +52257,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             + btn('fasta-cdna', 'FASTA mRNA', 'The spliced transcript with its UTRs')
             + (t.protein ? btn('fasta-cds', 'FASTA coding', 'Start codon to stop codon') + btn('fasta-protein', 'FASTA protein', 'The amino-acid sequence') : '')
             + `<span id="gbSeqStatus" class="gb-m" style="align-self:center; margin-left:4px;">${st._genomic ? 'Sequence ready.' : 'Fetching the sequence...'}</span></div>`
-            + `<div style="font-size:11px; margin-top:8px;"><span class="gb-m">View or download elsewhere:</span> ${this._gbStructLinks(gene, st, t)}</div>`
-            + this._gbUcscColorKey();
+            + `<div style="font-size:11px; margin-top:8px;"><span class="gb-m">View or download elsewhere:</span> ${this._gbStructLinks(gene, st, t)}</div>`;
     }
 
     // One Ensembl request with a time limit and a retry; the service has
