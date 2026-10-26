@@ -51004,6 +51004,32 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         return [...groups.entries()].filter(([, a]) => a.length >= minN).map(([name, a]) => ({ name, n: a.length, vals: a }));
     }
 
+    // The subtypes and diseases inside each tissue, as [{name, level, parent,
+    // n, vals}]. A group holding exactly the lines of the level above it is
+    // left out, it would repeat that row.
+    _gbFineGroups(s, valueOf, minN = 5) {
+        const md = this.cellLineMetadata || {};
+        const maps = { tissue: new Map(), subtype: new Map(), disease: new Map() };
+        const add = (m, key, info, v) => { let g = m.get(key); if (!g) m.set(key, g = { ...info, vals: [] }); g.vals.push(v); };
+        for (let i = 0; i < s.N; i++) {
+            const id = s.ids[i], t = s.lin[id];
+            if (!t) continue;
+            const v = valueOf(i);
+            if (v === null || v === undefined || v !== v) continue;
+            add(maps.tissue, t, {}, v);
+            const sub = md.primaryDisease?.[id], dis = md.oncotreeSubtype?.[id];
+            if (sub) add(maps.subtype, `${t}|${sub}`, { name: sub, level: 'subtype', parent: t }, v);
+            if (sub && dis) add(maps.disease, `${t}|${sub}|${dis}`, { name: dis, level: 'disease', parent: sub }, v);
+        }
+        const out = [];
+        for (const [key, g] of maps.subtype) if (g.vals.length >= minN && g.vals.length < maps.tissue.get(key.split('|')[0]).vals.length) out.push(g);
+        for (const [key, g] of maps.disease) {
+            const up = maps.subtype.get(key.split('|').slice(0, 2).join('|'));
+            if (g.vals.length >= minN && g.vals.length < up.vals.length) out.push(g);
+        }
+        return out.map(g => ({ ...g, n: g.vals.length }));
+    }
+
     // "12p12.1" is chromosome and band in one string; show "chr12 p12.1".
     _gbLocText(loc) {
         const c = String(loc.chr).replace(/^chr/i, '');
@@ -51138,8 +51164,10 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         // number altered; the others give the tissue's line count.
         const counted = rows.some(r => r.k !== undefined);
         // Fixed column widths, so tissue tables stacked in one column line up.
-        return this._gbTable(['Tissue', head, counted ? 'Lines' : 'Lines'],
-            rows.map(r => [this.esc(r.name), `<b>${fmt(r)}</b>`, `<span class="gb-m">${r.k !== undefined ? `${r.k} of ${r.n}` : r.n}</span>`]))
+        const fine = rows.some(r => r.level);
+        const nameCell = (r) => r.level ? `${this.esc(r.name)} <span class="gb-m" style="font-size:10px;">${r.level}, ${this.esc(r.parent)}</span>` : this.esc(r.name);
+        return this._gbTable([fine ? 'Subtype or disease' : 'Tissue', head, counted ? 'Lines' : 'Lines'],
+            rows.map(r => [nameCell(r), `<b>${fmt(r)}</b>`, `<span class="gb-m">${r.k !== undefined ? `${r.k} of ${r.n}` : r.n}</span>`]))
             .replace('class="data-table gb-table"', 'class="data-table gb-table gb-table-tissue"');
     }
     _gbTopLines(items, head = 'Value') {
@@ -51147,22 +51175,9 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             items.map(([id, v]) => [this._gbClLink(id), `<b>${this._gbNum(v)}</b>`, `<span class="gb-m">${this.esc(this.cellLineMetadata?.lineage?.[id] || '')}</span>`]));
     }
 
-    // Same bars, bin sizes and cutoff line as the Threshold scan histogram.
-    _gbHist(elId, vals, { measure, cut = NaN, dir = 'below', xTitle }) {
-        const el = document.getElementById(elId);
-        if (!el || !vals.length || typeof Plotly === 'undefined') return;
-        const p = this._ctHistParts(vals, '', 11, false, 'lines', { measure, cut, dir });
-        Plotly.newPlot(el, p.traces, {
-            height: 200, margin: { l: 44, r: 10, t: 8, b: 40 }, bargap: 0, shapes: p.shapes,
-            xaxis: { title: { text: xTitle, font: { size: 11 } }, gridcolor: '#eeeeee', zeroline: false, tickfont: { size: 10 } },
-            yaxis: { title: { text: '% of lines', font: { size: 11 } }, range: [0, p.ymax * 1.2], gridcolor: '#eeeeee', tickfont: { size: 10 } },
-            paper_bgcolor: '#ffffff', plot_bgcolor: '#fafafa', font: { family: 'Open Sans, sans-serif' }
-        }, { displayModeBar: false, responsive: true });
-    }
-
     // One box per cancer type with every cell line as a dot, drawn like the
     // Gene effect view's by-tissue plot; the cutoff is a dashed line.
-    _gbTissueBox(elId, s, valueOf, { cut = NaN, xTitle, hoverLabel }) {
+    _gbTissueBox(elId, s, valueOf, { cut = NaN, cuts, xTitle, hoverLabel }) {
         const el = document.getElementById(elId);
         if (!el || typeof Plotly === 'undefined') return;
         const groups = new Map();
@@ -51188,7 +51203,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             line: { color: '#374151', width: 1 }, fillcolor: 'rgba(200,200,200,0.3)',
             hovertemplate: `<b>%{text}</b><br>${r.name.replace(/[<>&]/g, '')}<br>${hoverLabel}: %{x:.2f}<extra></extra>`
         }));
-        const shapes = cut === cut ? [{ type: 'line', xref: 'x', yref: 'paper', x0: cut, x1: cut, y0: 0, y1: 1, line: { color: '#dc2626', width: 1.5, dash: 'dash' } }] : [];
+        const shapes = (cuts || [cut]).filter(c => c === c).map(c => ({ type: 'line', xref: 'x', yref: 'paper', x0: c, x1: c, y0: 0, y1: 1, line: { color: '#dc2626', width: 1.5, dash: 'dash' } }));
         Plotly.newPlot(el, traces, {
             height: Math.max(260, rows.length * 17 + 60), margin: { l: 10, r: 12, t: 6, b: 42, autoexpand: true },
             shapes, showlegend: false,
@@ -51203,6 +51218,10 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const cards = document.getElementById('gbCards');
         if (!cards) return;
         cards.innerHTML = this._gbLoading('Loading...');
+        // The gene list is ready before the gene-effect matrix, so a gene can
+        // be chosen while the matrix is still decoding.
+        for (const t0 = Date.now(); !this.geneEffects && Date.now() - t0 < 120000;) await new Promise(r => setTimeout(r, 300));
+        if (this._gbGene !== gene) return;
         await this._ensureCommonEssentials();
         await this._ensureAliasTables?.();
         await this._gbEnsureRare();
@@ -52715,6 +52734,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const below = (c) => v.filter(x => x < c).length;
         const ce = this._commonEssentials?.has(s.gene);
         const topT = s.tissues.slice(0, 5);
+        const topF = this._gbFineGroups(s, (i) => s.ge[i]).map(g => ({ ...g, mean: this.mean(g.vals) })).sort((a, b) => a.mean - b.mean).slice(0, 5);
         const topL = s.ids.map((id, i) => [id, s.ge[i]]).filter(x => x[1] === x[1]).sort((a, b) => a[1] - b[1]).slice(0, 10);
         const stats = [
             this._gbRow('Cell lines screened', n.toLocaleString()),
@@ -52727,8 +52747,11 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             + this._gbVerdict('ge', s, v, this._gbByTissue(s, (i) => s.ge[i]))
             + `<div class="gb-sub">By cancer type <span class="gb-m">(each dot is a cell line; dashed line at ${this._gbNum(this._gbDepCut, 1)}, the dependency cutoff)</span></div><div id="gbGeTissue"></div><div class="gb-m" style="display:flex; justify-content:flex-end; margin-top:2px;"><button class="btn btn-outline btn-sm mobile-hide" data-gb-copy="gbGeTissue" data-gb-copy-label="Gene effect by cancer type" style="font-size:10px; padding:1px 8px;" title="Copy this figure as an image">Copy figure</button></div>`
             + `<div class="gb-grid" style="margin-top:6px;">`
-            + `<div>${stats}${topT.length ? `<div class="gb-sub" style="margin-top:12px;">Most dependent tissues <span class="gb-m">(mean gene effect, 5 or more lines)</span></div>${this._gbTissueRows(topT, r => this._gbNum(r.mean), 'Mean')}` : ''}</div>`
+            + `<div>${stats}</div>`
             + `<div><div class="gb-sub">Most dependent cell lines</div>${this._gbTopLines(topL, 'Gene effect')}</div></div>`
+            + `<div class="gb-grid" style="margin-top:12px;">`
+            + `<div>${topT.length ? `<div class="gb-sub">Most dependent tissues <span class="gb-m">(mean gene effect, 5 or more lines)</span></div>${this._gbTissueRows(topT, r => this._gbNum(r.mean), 'Mean')}` : ''}</div>`
+            + `<div>${topF.length ? `<div class="gb-sub">Most dependent subtypes and diseases <span class="gb-m">(5 or more lines)</span></div>${this._gbTissueRows(topF, r => this._gbNum(r.mean), 'Mean')}` : ''}</div></div>`
             + `<div class="gb-actions"><button class="btn btn-outline btn-sm" data-gb-act="ge" title="Open this gene in the Gene effect view, by tissue">Open in Gene effect view</button></div>`;
         return this._gbSection('Dependency (CRISPR gene effect)', body, 'DepMap 26Q1 CRISPRGeneEffect (Chronos).');
     }
@@ -52765,6 +52788,8 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const sm = document.getElementById('gbSummary'); if (sm) sm.innerHTML = this._gbSummaryHtml(s);
         const tis = this._gbByTissue(s, (i) => ex[i]).map(t => ({ name: t.name, n: t.n, med: this._gbMedian(t.vals) })).sort((a, b) => b.med - a.med);
         const high = tis.slice(0, 5), low = tis.slice(-5).reverse().filter(t => !high.includes(t));
+        const fine = this._gbFineGroups(s, (i) => ex[i]).map(g => ({ ...g, med: this._gbMedian(g.vals) })).sort((a, b) => b.med - a.med);
+        const fineHigh = fine.slice(0, 5), fineLow = fine.slice(-5).reverse().filter(g => !fineHigh.includes(g));
         const topL = s.ids.map((id, i) => [id, ex[i]]).filter(x => x[1] === x[1]).sort((a, b) => b[1] - a[1]).slice(0, 10);
         const stats = [
             this._gbRow('Cell lines with data', vals.length.toLocaleString()),
@@ -52784,9 +52809,12 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const body = this._gbDesc('How much of this gene’s mRNA each cell line makes (bulk RNA-seq, log₂ TPM+1).')
             + this._gbVerdict('expr', s, vals, this._gbByTissue(s, (i) => ex[i]))
             + `<div class="gb-sub">By cancer type <span class="gb-m">(each dot is a cell line; dashed line at ${this._gbNum(cut, 0)}, the cutoff for expressed)</span></div><div id="gbExprTissue"></div><div class="gb-m" style="display:flex; justify-content:flex-end; margin-top:2px;"><button class="btn btn-outline btn-sm mobile-hide" data-gb-copy="gbExprTissue" data-gb-copy-label="Expression by cancer type" style="font-size:10px; padding:1px 8px;" title="Copy this figure as an image">Copy figure</button></div>`
-            + `<div class="gb-grid" style="margin-top:6px;"><div>${stats.join('')}${link}<div class="gb-sub" style="margin-top:12px;">Highest tissues <span class="gb-m">(median)</span></div>${this._gbTissueRows(high, r => this._gbNum(r.med), 'Median')}`
-            + `<div class="gb-sub" style="margin-top:12px;">Lowest tissues <span class="gb-m">(median)</span></div>${this._gbTissueRows(low, r => this._gbNum(r.med), 'Median')}</div>`
+            + `<div class="gb-grid" style="margin-top:6px;"><div>${stats.join('')}${link}</div>`
             + `<div><div class="gb-sub">Highest-expressing cell lines</div>${this._gbTopLines(topL, 'log₂ TPM+1')}</div></div>`
+            + `<div class="gb-grid" style="margin-top:12px;"><div><div class="gb-sub">Highest tissues <span class="gb-m">(median)</span></div>${this._gbTissueRows(high, r => this._gbNum(r.med), 'Median')}`
+            + `<div class="gb-sub" style="margin-top:12px;">Lowest tissues <span class="gb-m">(median)</span></div>${this._gbTissueRows(low, r => this._gbNum(r.med), 'Median')}</div>`
+            + `<div>${fineHigh.length ? `<div class="gb-sub">Highest subtypes and diseases <span class="gb-m">(median)</span></div>${this._gbTissueRows(fineHigh, r => this._gbNum(r.med), 'Median')}`
+            + `<div class="gb-sub" style="margin-top:12px;">Lowest subtypes and diseases <span class="gb-m">(median)</span></div>${this._gbTissueRows(fineLow, r => this._gbNum(r.med), 'Median')}` : ''}</div></div>`
             + `<div class="gb-actions"><button class="btn btn-outline btn-sm" data-gb-act="expr" title="Open this gene in the Gene effect / expression view, as mRNA by tissue">Open in expression view</button>`
             + (s.hasGe ? `<button class="btn btn-outline btn-sm" data-gb-act="sc-expr-ge" title="A scatter of each cell line's expression of this gene against its gene effect">Expression vs gene effect scatter</button>` : '')
             + `</div>`;
@@ -52850,6 +52878,10 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             .sort((a, b) => (b.k / b.n) - (a.k / a.n) || b.k - a.k).slice(0, 5);
         const delT = tis.map(t => ({ name: t.name, n: t.n, k: t.vals.filter(v => this._cnTier(v).label === 'deep del').length })).filter(t => t.k > 0)
             .sort((a, b) => (b.k / b.n) - (a.k / a.n) || b.k - a.k).slice(0, 5);
+        const fine = this._gbFineGroups(s, (i) => cn[i]);
+        const fineBy = (test) => fine.map(g => ({ ...g, k: g.vals.filter(test).length })).filter(g => g.k > 0)
+            .sort((a, b) => (b.k / b.n) - (a.k / a.n) || b.k - a.k).slice(0, 5);
+        const ampF = fineBy(v => this._cnTier(v).amp), delF = fineBy(v => this._cnTier(v).label === 'deep del');
         let link = '';
         if (s.exprVec) {
             const r = this.pearsonWithSlope(cn, s.exprVec);
@@ -52865,12 +52897,15 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             link,
         ].join('');
         const body = this._gbDesc('Gene-level copy number relative to each line’s own baseline: above 1 is a gain, below 1 a loss.')
-            + `<div class="gb-grid"><div><div id="gbCnHist" class="gb-hist"></div><div class="gb-m" style="display:flex; justify-content:flex-end; margin-top:2px;"><button class="btn btn-outline btn-sm mobile-hide" data-gb-copy="gbCnHist" data-gb-copy-label="Copy number histogram" style="font-size:10px; padding:1px 8px;" title="Copy this figure as an image">Copy figure</button></div></div><div>${stats}</div></div>`
-            + ((ampT.length || delT.length) ? `<div class="gb-grid"><div>${ampT.length ? `<div class="gb-sub">Tissues most often amplified</div>${this._gbTissueRows(ampT, r => this._gbFmtPct(r.k, r.n), 'Amplified')}` : ''}</div>`
-                + `<div>${delT.length ? `<div class="gb-sub">Tissues most often deleted</div>${this._gbTissueRows(delT, r => this._gbFmtPct(r.k, r.n), 'Deleted')}` : ''}</div></div>` : '')
+            + `<div class="gb-sub">By cancer type <span class="gb-m">(each dot is a cell line; dashed lines at ${DEL}, deleted, and ${AMP.toFixed(0)}, amplified)</span></div><div id="gbCnTissue"></div><div class="gb-m" style="display:flex; justify-content:flex-end; margin-top:2px;"><button class="btn btn-outline btn-sm mobile-hide" data-gb-copy="gbCnTissue" data-gb-copy-label="Copy number by cancer type" style="font-size:10px; padding:1px 8px;" title="Copy this figure as an image">Copy figure</button></div>`
+            + `<div style="margin-top:6px;">${stats}</div>`
+            + (ampT.length ? `<div class="gb-grid" style="margin-top:12px;"><div><div class="gb-sub">Tissues most often amplified</div>${this._gbTissueRows(ampT, r => this._gbFmtPct(r.k, r.n), 'Amplified')}</div>`
+                + `<div>${ampF.length ? `<div class="gb-sub">Subtypes and diseases most often amplified</div>${this._gbTissueRows(ampF, r => this._gbFmtPct(r.k, r.n), 'Amplified')}` : ''}</div></div>` : '')
+            + (delT.length ? `<div class="gb-grid" style="margin-top:12px;"><div><div class="gb-sub">Tissues most often deleted</div>${this._gbTissueRows(delT, r => this._gbFmtPct(r.k, r.n), 'Deleted')}</div>`
+                + `<div>${delF.length ? `<div class="gb-sub">Subtypes and diseases most often deleted</div>${this._gbTissueRows(delF, r => this._gbFmtPct(r.k, r.n), 'Deleted')}` : ''}</div></div>` : '')
             + (s.exprVec ? `<div class="gb-actions"><button class="btn btn-outline btn-sm" data-gb-act="sc-cn-expr" title="A scatter of each cell line's copy number of this gene against its expression">Copy number vs expression scatter</button></div>` : '');
         card.outerHTML = this._gbSection('Copy number', body, 'DepMap 24Q4 gene-level relative copy number (OmicsCNGene).', 'gbCnCard');
-        this._gbHist('gbCnHist', vals.map(v => Math.min(v, 6)), { measure: 'cn', xTitle: 'Relative copy number (capped at 6)' });
+        this._gbTissueBox('gbCnTissue', s, (i) => cn[i] === cn[i] ? Math.min(cn[i], 6) : NaN, { cuts: [DEL, AMP], xTitle: 'Relative copy number (capped at 6)', hoverLabel: 'Relative CN' });
     }
 
     _gbDrugCard(s) {
