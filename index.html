@@ -2051,6 +2051,15 @@
         .clb-entry input[type="checkbox"] { flex-shrink: 0; cursor: pointer; }
         .clb-entry-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; min-width: 0; max-width: calc(100% - 50px); }
         .clb-entry-tissue { font-size: 10px; color: var(--gray-500); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; min-width: 0; }
+        /* The marks before a cell line's name sit in fixed slots, so every
+           name in the list starts at the same x whichever marks a line
+           carries. */
+        .clb-marks { flex: none; display: inline-flex; align-items: center; gap: 2px; }
+        .clb-marks > span { flex: none; display: inline-flex; align-items: center; justify-content: center; }
+        .clb-mk-sex { width: 12px; }
+        .clb-mk-org { width: 9px; }
+        .clb-mk-badge { width: 13px; }
+        .clb-mk-gate { width: 15px; }
         .clb-detail {
             width: 280px;
             flex-shrink: 0;
@@ -5959,7 +5968,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v91_79"></script>
-    <script src="tour.js?v=v91_82"></script>
+    <script src="app.js?v=v91_83"></script>
+    <script src="tour.js?v=v91_83"></script>
 </body>
 </html>

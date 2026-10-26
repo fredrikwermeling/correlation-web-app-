@@ -43537,7 +43537,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             Recurrent: ['R', '#b45309', 'Taken from a recurrent tumor'],
         }[v];
         if (!m) return { html: '', title: '' };
-        return { html: `<span style="font-size:9.5px; font-weight:700; color:${m[1]}; margin-right:3px; flex:none; cursor:help;" title="${m[2]} (DepMap Model table)">${m[0]}</span>`, title: m[2] };
+        return { html: `<span class="clb-mk-org" style="font-size:9.5px; font-weight:700; color:${m[1]}; cursor:help;" title="${m[2]} (DepMap Model table)">${m[0]}</span>`, title: m[2] };
     }
 
     _virusLabel(cellLineId) {
@@ -43573,18 +43573,30 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const r = this._virusRnaOf(cellLineId), V = this.virusRna;
         const p = (t) => `<p style="margin:0 0 8px; font-size:11px; color:#6b7280;">${t}</p>`;
         if (!V) return p('Viral RNA data not loaded.');
-        if (!r) return `<div style="padding:8px 10px; background:#f3f4f6; border-left:3px solid #9ca3af; font-size:11px; color:#4b5563;">`
+        // A curated transformation record is a fact about the cell line's
+        // history and stands on its own, so it is shown even when there are
+        // no reads to measure.
+        const curated = this._virusAgents(cellLineId) || [];
+        const curatedBox = curated.length
+            ? `<div style="padding:8px 10px; background:#fffbeb; border-left:3px solid #d97706; font-size:11px; color:#4b5563; margin-bottom:8px;">`
+                + `<b>Recorded as ${curated.map(h => this.esc(h.name)).join(' and ')}-transformed.</b> `
+                + `Cellosaurus holds this record for the cell line, from the published literature. `
+                + `It describes how the cell line arose${r ? ', and is independent of whether viral RNA is found in the reads below' : ''}.`
+                + (curated.some(h => h.note) ? ` <span style="color:#6b7280;">${curated.filter(h => h.note).map(h => this.esc(h.note)).join('; ')}.</span>` : '')
+                + `</div>`
+            : '';
+        if (!r) return curatedBox + `<div style="padding:8px 10px; background:#f3f4f6; border-left:3px solid #9ca3af; font-size:11px; color:#4b5563;">`
             + `<b>Not tested.</b> This cell line has no public RNA-seq file in the CCLE collection, so its reads could not be checked for viruses. `
-            + `This is missing data, not a negative result: nothing here says the cells are free of any virus. `
+            + `This is missing data, not a negative result: nothing here says the cells are free of any virus${curated.length ? ', and it does not put the record above in doubt' : ''}. `
             + `${Object.keys(V.byCellLine).length.toLocaleString()} of the ${this.metadata.cellLines.length.toLocaleString()} cell lines in the panel have a file and were tested.</div>`
             + this._virusRnaSources();
         const kv = (label, value) => `<div class="wiki-kv" style="display:flex; gap:12px; padding:3px 0; align-items:baseline;"><span class="wiki-kv-label" style="flex:0 0 190px; color:#6b7280; font-size:11px;">${label}</span><span style="flex:1; min-width:0;">${value}</span></div>`;
-        const rec = this._virusAgents(cellLineId) || [];
+        const rec = curated;
         const recKeys = new Set(rec.flatMap(h => this._virusRnaKeys(h.agent)));
         const det = Object.entries(r.v).filter(([, x]) => x.detected).sort((a, b) => b[1].rpm - a[1].rpm);
         const trace = Object.entries(r.v).filter(([, x]) => !x.detected).sort((a, b) => b[1].reads - a[1].reads);
         const pct = (b) => `${Math.round(b * 100)}%`;
-        let html = p(`Reads in this cell line's RNA-seq that did not match the human genome, checked against 18 viruses and one mycoplasma. ${this.esc(V.modeNote)} A virus counts as detected with at least ${V.thresholds.reads} reads, ${V.thresholds.rpm} per million unmapped reads and reads across at least ${pct(V.thresholds.breadth)} of its genome: an infection covers the genome, a vector fragment does not. Strong is at least 1,000 per million unmapped reads, moderate at least 300.`);
+        let html = curatedBox + p(`Reads in this cell line's RNA-seq that did not match the human genome, checked against 18 viruses and one mycoplasma. ${this.esc(V.modeNote)} A virus counts as detected with at least ${V.thresholds.reads} reads, ${V.thresholds.rpm} per million unmapped reads and reads across at least ${pct(V.thresholds.breadth)} of its genome: an infection covers the genome, a vector fragment does not. Strong is at least 1,000 per million unmapped reads, moderate at least 300.`);
         html += kv('Unmapped reads checked', r.scanned.toLocaleString());
         if (det.length) {
             for (const [k, x] of det) {
@@ -43642,25 +43654,46 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const fmt = (t) => t >= 100 ? Math.round(t).toLocaleString() : t >= 10 ? t.toFixed(0) : t.toFixed(1);
         const W = 560, H = 34, mx = Math.max(1, ...x.cov);
         const bars = x.cov.map((c, j) => c ? `<rect x="${(j * W / 100).toFixed(1)}" y="${(H - 4 - (H - 6) * c / mx).toFixed(1)}" width="${(W / 100 - 0.6).toFixed(1)}" height="${((H - 6) * c / mx).toFixed(1)}" fill="#b45309" opacity="0.8"><title>${Math.round(j * L / 100 + 1).toLocaleString()} to ${Math.round((j + 1) * L / 100).toLocaleString()}: ${c} reads</title></rect>` : '').join('');
+        // Only label a gene when its name has room: otherwise the labels
+        // print on top of each other.
+        let lastX = -1e9;
         const ticks = x.genes.slice(0, 6).map(([fi]) => {
             const f = F[fi]; if (!f) return '';
             const lo = Math.min(...f.seg.map(q => q[0])), mid = (lo + Math.max(...f.seg.map(q => q[1]))) / 2;
-            return `<text x="${(mid / L * W).toFixed(1)}" y="${H + 10}" font-size="9" text-anchor="middle" fill="#6b7280">${this.esc(f.name.length > 14 ? f.name.slice(0, 13) + '…' : f.name)}</text>`;
+            const px = mid / L * W;
+            if (px - lastX < 80) return '';
+            lastX = px;
+            const lbl = f.name.length > 14 ? f.name.slice(0, 13) + '…' : f.name;
+            return `<text x="${Math.min(W - 30, Math.max(30, px)).toFixed(1)}" y="${H + 10}" font-size="9" text-anchor="middle" fill="#6b7280">${this.esc(lbl)}</text>`;
         }).join('');
         const svg = `<svg viewBox="0 0 ${W} ${H + 14}" width="100%" style="max-width:${W}px; display:block; margin:4px 0 2px;"><rect x="0" y="${H - 4}" width="${W}" height="2" fill="#d1d5db"/>${bars}${ticks}</svg>`
             + `<div style="font-size:10px; color:#6b7280; display:flex; justify-content:space-between; max-width:${W}px;"><span>1</span><span>Reads along the ${L.toLocaleString()}-base genome (${this.esc(acc || '')})</span><span>${L.toLocaleString()}</span></div>`;
         const rows = x.genes.map(([fi, reads, tpm]) => {
             const f = F[fi]; if (!f) return '';
             const lo = Math.min(...f.seg.map(q => q[0])), hi = Math.max(...f.seg.map(q => q[1]));
-            const where = f.seg.map(q => `${q[0].toLocaleString()}–${q[1].toLocaleString()}`).join(', ');
-            const link = acc ? `<a href="https://www.ncbi.nlm.nih.gov/nuccore/${acc}?from=${lo}&to=${hi}" target="_blank" rel="noopener" style="color:#3730a3;" title="Open this stretch of the ${this.esc(acc)} sequence at NCBI">${where} &#8599;</a>` : where;
+            // The link carries the whole span: a spliced gene's parts are
+            // listed in its tooltip rather than printed into the row, which
+            // used to run off the side of the card.
+            const parts = f.seg.map(q => `${q[0].toLocaleString()}–${q[1].toLocaleString()}`).join(', ');
+            const span = `${lo.toLocaleString()}–${hi.toLocaleString()}`;
+            const tip = `Open this stretch of the ${this.esc(acc || '')} sequence at NCBI`
+                + (f.seg.length > 1 ? ` · ${f.seg.length} parts: ${this.esc(parts)}` : '');
+            const link = acc ? `<a href="https://www.ncbi.nlm.nih.gov/nuccore/${acc}?from=${lo}&to=${hi}" target="_blank" rel="noopener" style="color:#3730a3;" title="${tip}">${span} &#8599;</a>` : span;
+            const extra = [f.seg.length > 1 ? `${f.seg.length} parts` : '', f.strand === -1 ? 'minus strand' : ''].filter(Boolean).join(', ');
+            const prod = f.product && f.product !== f.name ? `<div style="color:#6b7280; font-weight:400;">${this.esc(f.product)}</div>` : '';
             const rank = scale ? `top ${Math.max(1, Math.round(100 - scale.pct(tpm)))}%` : '';
-            return `<tr><td style="padding:2px 8px 2px 0; font-weight:600;">${this.esc(f.name)}</td><td style="padding:2px 8px 2px 0; color:#6b7280;">${this.esc(f.product && f.product !== f.name ? f.product : '')}</td><td style="padding:2px 8px 2px 0; white-space:nowrap;">${link}${f.strand === -1 ? ' <span style="color:#9ca3af;">(minus strand)</span>' : ''}</td><td style="padding:2px 8px; text-align:right;">${reads.toLocaleString()}</td><td style="padding:2px 8px; text-align:right;"><b>${fmt(tpm)}</b></td><td style="padding:2px 0 2px 8px; color:#6b7280; white-space:nowrap;">${rank}</td></tr>`;
+            return `<tr style="vertical-align:top;"><td style="padding:3px 8px 3px 0; font-weight:600;">${this.esc(f.name)}${prod}</td>`
+                + `<td style="padding:3px 8px 3px 0;">${link}${extra ? `<div style="color:#9ca3af;">${extra}</div>` : ''}</td>`
+                + `<td style="padding:3px 8px; text-align:right;">${reads.toLocaleString()}</td>`
+                + `<td style="padding:3px 8px; text-align:right;"><b>${fmt(tpm)}</b></td>`
+                + `<td style="padding:3px 0 3px 8px; color:#6b7280;">${rank}</td></tr>`;
         }).join('');
         const scaleTxt = scale ? ` For scale, this cell line's GAPDH is ${scale.gapdh != null ? fmt(scale.gapdh) : 'n/a'} TPM and ACTB ${scale.actb != null ? fmt(scale.actb) : 'n/a'} TPM (DepMap).` : '';
         return `<div style="margin:2px 0 10px 202px; font-size:11px;">${svg}`
             + `<div style="margin:6px 0 3px; color:#374151;">Viral reads are about <b>${x.rpmAll != null ? fmt(x.rpmAll) : '?'} per million</b> of all this cell line's RNA-seq reads.${scaleTxt}</div>`
-            + `<table style="border-collapse:collapse; font-size:11px;"><thead><tr style="color:#6b7280; text-align:left;"><th style="font-weight:600; padding:2px 8px 2px 0;">Gene</th><th style="font-weight:600; padding:2px 8px 2px 0;">Product</th><th style="font-weight:600; padding:2px 8px 2px 0;">Position on the genome</th><th style="font-weight:600; padding:2px 8px; text-align:right;">Reads</th><th style="font-weight:600; padding:2px 8px; text-align:right;">≈ TPM</th><th style="font-weight:600; padding:2px 0 2px 8px;">Among this cell line's human genes</th></tr></thead><tbody>${rows}</tbody></table>`
+            + `<table style="border-collapse:collapse; font-size:11px; table-layout:fixed; width:100%; max-width:${W}px;">`
+            + `<colgroup><col style="width:31%"><col style="width:25%"><col style="width:11%"><col style="width:11%"><col style="width:22%"></colgroup>`
+            + `<thead><tr style="color:#6b7280; text-align:left; vertical-align:bottom;"><th style="font-weight:600; padding:2px 8px 2px 0;">Gene</th><th style="font-weight:600; padding:2px 8px 2px 0;">Position on the genome</th><th style="font-weight:600; padding:2px 8px; text-align:right;">Reads</th><th style="font-weight:600; padding:2px 8px; text-align:right;">≈ TPM</th><th style="font-weight:600; padding:2px 0 2px 8px;">Among this cell line's human genes</th></tr></thead><tbody>${rows}</tbody></table>`
             + `<div style="font-size:10px; color:#9ca3af; margin-top:3px;">Reads are placed on the gene they overlap (overlapping viral genes share reads). ≈ TPM is estimated from the share of all reads and a 2 kb average transcript length: approximate, within about twofold, so compare orders of magnitude.</div></div>`;
     }
 
@@ -48123,6 +48156,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 : '';
 
         const gateA = this._clbGates?.A, gateB = this._clbGates?.B;
+        const gating = !!(gateA?.size || gateB?.size);
         const gateCol = this._clbGateColors();
         const html = filtered.map(cl => {
             const name = this.getCellLineName(cl);
@@ -48215,8 +48249,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const sx = this._getSexSymbol(cl);
             const sxSvg = this._sexGlyphSvg(sx.sym, sx.italic);
             const sexStr = sxSvg
-                ? `<span style="display:inline-flex; align-items:center; color:${sx.color}; margin-right:4px; flex:none;" title="${sx.title}">${sxSvg}</span>`
-                : `<span style="color:${sx.color}; font-weight:700; margin-right:4px; flex:none;" title="${sx.title}">${sx.sym}</span>`;
+                ? `<span class="clb-mk-sex" style="color:${sx.color};" title="${sx.title}">${sxSvg}</span>`
+                : `<span class="clb-mk-sex" style="color:${sx.color}; font-weight:700;" title="${sx.title}">${sx.sym}</span>`;
             // Flagged lines are marked in the list, not hidden, so the warning
             // is visible before the line is picked rather than after.
             const probFlag = this._problemFlag(cl);
@@ -48224,13 +48258,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             // not put a marker beside every name.
             const prob = probFlag && !probFlag.settled ? probFlag : null;
             const probStr = prob
-                ? `<span style="color:#d97706; margin-right:3px; flex-shrink:0; cursor:help;" title="${this.esc(this._problemPlain(prob))}">&#9888;</span>`
+                ? `<span style="color:#d97706; cursor:help;" title="${this.esc(this._problemPlain(prob))}">&#9888;</span>`
                 : '';
             // Curated viral transformation. Marked, never used to hide a line:
             // the mark says a record exists, its absence says nothing.
             const vLbl = this._virusLabel(cl);
             const virusStr = vLbl
-                ? `<span style="margin-right:3px; flex-shrink:0; cursor:help; font-size:10px; opacity:0.75;" title="${this.esc(this._virusTitle(cl))}">&#129440;</span>`
+                ? `<span style="cursor:help; font-size:10px; opacity:0.75;" title="${this.esc(this._virusTitle(cl))}">&#129440;</span>`
                 : '';
             const org = this._originMark(cl);
             const titleParts = [name, lin, sub, sx.title, org.title, vLbl ? vLbl + '-transformed' : '', prob ? prob.category : ''].filter(Boolean).join(' · ');
@@ -48239,11 +48273,18 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             // remembered.
             const gKey = gateA?.has(cl) ? 'A' : gateB?.has(cl) ? 'B' : '';
             const gateStr = gKey
-                ? `<span style="font-size:9px; font-weight:700; color:#fff; background:${gateCol[gKey]}; border-radius:6px; padding:0 4px; margin-right:3px; flex-shrink:0;" title="In gate ${gKey}">${gKey}</span>`
+                ? `<span style="font-size:9px; font-weight:700; color:#fff; background:${gateCol[gKey]}; border-radius:6px; padding:0 4px;" title="In gate ${gKey}">${gKey}</span>`
                 : '';
+            // Sex, origin and the occasional warning each sit in a slot of
+            // their own, so every name in the list starts at the same x
+            // whichever marks a cell line happens to carry. No cell line has
+            // both a warning and a virus mark, so they share one slot; the
+            // gate slot is only there while a gate exists.
             return `<div class="${cls.join(' ')}" data-clid="${cl}">` +
                 `<input type="checkbox"${selected ? ' checked' : ''}>` +
-                sexStr + org.html + probStr + virusStr + gateStr +
+                `<span class="clb-marks">${sexStr}${org.html || '<span class="clb-mk-org"></span>'}` +
+                `<span class="clb-mk-badge">${probStr || virusStr}</span>` +
+                `${gating ? `<span class="clb-mk-gate">${gateStr}</span>` : ''}</span>` +
                 `<span class="clb-entry-name" data-hover-cl="${cl}" data-hover-why="Click to show its details · Shift-click to open its Wiki">${name}</span>` +
                 `<span class="clb-entry-tissue" title="${titleParts}">${lin}${sub ? ' · ' + sub : ''}</span>${sortValStr}</div>`;
         }).join('');
