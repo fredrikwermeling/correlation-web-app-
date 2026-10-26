@@ -53216,7 +53216,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             + `<div><div class="gb-sub">Most dependent cell lines</div>${this._gbTopLines(topL, 'Gene effect', (x) => x >= this._gbDepCut)}</div></div>`
             + lists)
             + `<div class="gb-actions"><button class="btn btn-outline btn-sm" data-gb-act="ge" title="Open this gene in the Gene effect view, by tissue">Open in Gene effect view</button></div>`;
-        return this._gbSection('Dependency (CRISPR gene effect)', body, 'DepMap 26Q1 CRISPRGeneEffect (Chronos).');
+        return this._gbSection('Dependency (CRISPR gene effect)', body, 'DepMap 26Q1 CRISPRGeneEffect (Chronos).', 'gbDepCard');
     }
 
     async _gbWaitExpression() {
@@ -53291,7 +53291,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const N = s.N;
         const src = 'DepMap 26Q1 hotspot and damaging mutation calls, fusion calls and the integrated functional-loss call; specific variants from the inferred-subtype layer.';
         if (s.nHot + s.nAny + s.nLof + s.nFus === 0) {
-            return this._gbSection('Mutations and fusions', this._gbDesc(`No hotspot or damaging mutation, functional-loss call or fusion in any of the ${N.toLocaleString()} cell lines.`), src);
+            return this._gbSection('Mutations and fusions', this._gbDesc(`No hotspot or damaging mutation, functional-loss call or fusion in any of the ${N.toLocaleString()} cell lines.`), src, 'gbMutCard');
         }
         const rareNote = (on) => on ? ' <span class="gb-m" title="Too few lines to split on in Mutation analysis or the filters, which need at least 3">(too few for Mutation analysis)</span>' : '';
         const cnt = (k) => `${this._gbFmtPct(k, N)} <span class="gb-m">(${k.toLocaleString()} of ${N.toLocaleString()} lines)</span>`;
@@ -53319,7 +53319,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const body = this._gbDesc('How often this gene is mutated or fused across the cell lines, and whether mutated lines depend on it differently.')
             + `<div class="gb-grid"><div>${rows}${cmp}</div><div>${vars}${tis}</div></div>`
             + (mk ? `<div class="gb-actions"><button class="btn btn-outline btn-sm" data-gb-act="mut" title="Open Mutation analysis split on ${this.esc(s.gene)} (${mkWord} vs the rest) and run it: which genes do these lines depend on more or less?">Mutation analysis for this gene</button></div>` : '');
-        return this._gbSection('Mutations and fusions', body, src);
+        return this._gbSection('Mutations and fusions', body, src, 'gbMutCard');
     }
 
     async _gbFillCn(s) {
@@ -54246,7 +54246,9 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
     _ctwGoAttrs(g) {
         return `data-ctw-t="${this.esc(g.tissue || '')}" data-ctw-s="${this.esc(g.subtype || '')}" data-ctw-d="${this.esc(g.disease || '')}"`;
     }
-    _ctwGeneLink(gene) { return `<a href="#" class="gb-cl" data-ctw-gene="${this.esc(gene)}">${this.gi(gene)}</a>`; }
+    // `to` is the Gene Browser card to scroll to, so a gene clicked in the
+    // expression table lands on its expression rather than the top of the page.
+    _ctwGeneLink(gene, to) { return `<a href="#" class="gb-cl" data-ctw-gene="${this.esc(gene)}"${to ? ` data-ctw-gene-to="${to}"` : ''}>${this.gi(gene)}</a>`; }
     _ctwClLink(id) { return `<a href="#" class="gb-cl" data-ctw-cl="${this.esc(id)}">${this.esc(this.getCellLineName(id) || id)}</a>`; }
     _ctwPct(k, n) { return n ? this._gbFmtPct(k, n) : 'n/a'; }
     // Every gene the Wiki's sections name, for the Export for AI matrices.
@@ -54387,7 +54389,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             if (k < 1) continue;
             rows.push({ gene, k, K, p: this._hypergeomUpperP(k, K, n, N) });
         }
-        const cell = (r) => [this._ctwGeneLink(r.gene), `<b>${this._ctwPct(r.k, n)}</b> <span class="gb-m">(${r.k} of ${n})</span>`, this._ctwPct(r.K - r.k, N - n), r.p < 0.01 ? this._gbP(r.p) : '<span class="gb-m">n.s.</span>'];
+        const cell = (r) => [this._ctwGeneLink(r.gene, 'gbMutCard'), `<b>${this._ctwPct(r.k, n)}</b> <span class="gb-m">(${r.k} of ${n})</span>`, this._ctwPct(r.K - r.k, N - n), r.p < 0.01 ? this._gbP(r.p) : '<span class="gb-m">n.s.</span>'];
         const heads = ['Gene', 'This group', 'Other cell lines', 'Enriched, p'];
         const common = [...rows].sort((a, b) => b.k - a.k).filter(r => r.k >= 2).slice(0, 12);
         const enriched = rows.filter(r => r.k >= 3 && r.p < 0.01).sort((a, b) => a.p - b.p).slice(0, 12);
@@ -54441,7 +54443,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const amp = count('amplifications'), del = count('deletions');
         if (!amp.length && !del.length) return '';
         const heads = ['Gene', 'This group', 'Other cell lines', 'Enriched, p'];
-        const cell = (r) => [this._ctwGeneLink(r.gene), `<b>${this._ctwPct(r.k, n)}</b> <span class="gb-m">(${r.k} of ${n})</span>`, this._ctwPct(r.K - r.k, N - n), r.p < 0.01 ? this._gbP(r.p) : '<span class="gb-m">n.s.</span>'];
+        const cell = (r) => [this._ctwGeneLink(r.gene, 'gbCnCard'), `<b>${this._ctwPct(r.k, n)}</b> <span class="gb-m">(${r.k} of ${n})</span>`, this._ctwPct(r.K - r.k, N - n), r.p < 0.01 ? this._gbP(r.p) : '<span class="gb-m">n.s.</span>'];
         const aiRow = (r) => ({ gene: r.gene, inGroup: r.k, groupSizeWithCopyNumber: n, inOthers: r.K - r.k, othersWithCopyNumber: N - n, pEnriched: r.p });
         c.ai.copyNumber = { amplified: amp.map(aiRow), deleted: del.map(aiRow) };
         const body = this._gbDesc(`Amplifications and deep deletions of the curated cancer gene panel, in the ${n} cell lines of this group with copy-number data.`)
@@ -54503,7 +54505,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         c.ai.selectiveDependencies = rows.map(r => ({ gene: genes[r.g], meanGeneEffectGroup: +r.m1.toFixed(3), meanGeneEffectOthers: +r.m2.toFixed(3), cellLinesBelowMinus05: r.nb, cellLinesScreened: r.k, p: r.p }));
         const body = this._gbDesc('Genes this group needs more than the other cell lines do (CRISPR gene effect; more negative is a stronger dependency). Genes nearly every cell line needs (common essentials) are left out, so what remains is selective.')
             + (rows.length ? this._gbTable(['Gene', 'This group (mean)', 'Other cell lines (mean)', 'Below −0.5 here', 'p'],
-                rows.map(r => [this._ctwGeneLink(genes[r.g]), `<b>${this._gbNum(r.m1)}</b>`, this._gbNum(r.m2), `${this._ctwPct(r.nb, r.k)} <span class="gb-m">(${r.nb} of ${r.k})</span>`, this._gbP(r.p)]))
+                rows.map(r => [this._ctwGeneLink(genes[r.g], 'gbDepCard'), `<b>${this._gbNum(r.m1)}</b>`, this._gbNum(r.m2), `${this._ctwPct(r.nb, r.k)} <span class="gb-m">(${r.nb} of ${r.k})</span>`, this._gbP(r.p)]))
                 : '<div class="gb-empty">No gene is clearly more needed here than in the other cell lines.</div>');
         return this._gbSection('Selective dependencies', body, 'DepMap 26Q1 CRISPRGeneEffect (Chronos); Welch t-test against the other cell lines; common essentials from DepMap 26Q1.');
     }
@@ -54517,7 +54519,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const aiRow = (r) => ({ gene: genes[r.g], meanLog2TpmGroup: +r.m1.toFixed(2), meanLog2TpmOthers: +r.m2.toFixed(2), p: r.p });
         c.ai.expression = { higherInGroup: high.map(aiRow), lowerInGroup: low.map(aiRow) };
         const table = (rows) => this._gbTable(['Gene', 'This group', 'Other cell lines', 'p'],
-            rows.map(r => [this._ctwGeneLink(genes[r.g]), `<b>${this._gbNum(r.m1, 1)}</b>`, this._gbNum(r.m2, 1), this._gbP(r.p)]));
+            rows.map(r => [this._ctwGeneLink(genes[r.g], 'gbExprCard'), `<b>${this._gbNum(r.m1, 1)}</b>`, this._gbNum(r.m2, 1), this._gbP(r.p)]));
         const body = this._gbDesc('Genes whose mRNA is much higher or lower here than in the other cell lines (mean log₂ TPM+1; a difference of 1 is twofold). The high list is usually led by the lineage’s own marker genes.')
             + `<div class="gb-grid"><div><div class="gb-sub">Higher in this group</div>${high.length ? table(high) : '<div class="gb-empty">None.</div>'}</div>`
             + `<div><div class="gb-sub">Lower in this group</div>${low.length ? table(low) : '<div class="gb-empty">None.</div>'}</div></div>`;
@@ -54603,7 +54605,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             const cd = this._cdName(gname);
             return `<span class="gb-tag gb-tag-pathway" title="${cd ? `${this.esc(cd)}: ` : ''}a CD marker, so antibodies for flow cytometry are usually available">${cd && cd !== gname ? this.esc(cd) : 'CD'}</span>`;
         };
-        const gl = (r) => this._ctwGeneLink(r.gene) + tag(r.gene);
+        const gl = (r) => this._ctwGeneLink(r.gene, 'gbExprCard') + tag(r.gene);
         const pc = (f) => `${Math.round(f * 100)}%`;
         // Where an absent marker is high instead: those cell lines serve as
         // the antibody's positive control.
@@ -54816,18 +54818,18 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         this.downloadFile(lines.join('\n'), 'correlate_surface_panel.csv', 'text/csv');
     }
 
-    // Opens the Gene Browser on a gene's expression card once that card is
-    // drawn; the card is replaced as a new node when the gene renders.
-    async _ctwOpenGeneExpression(gene) {
-        const old = document.getElementById('gbExprCard');
+    // Opens the Gene Browser on a gene and scrolls to one of its cards.
+    async _ctwOpenGeneAt(gene, cardId = 'gbExprCard') {
+        const old = document.getElementById(cardId);
         this.openGeneBrowser(gene);
         const gb = document.getElementById('gbModal');
         if (!gb) return;
         gb.style.zIndex = '1380';
         for (const t0 = Date.now(); Date.now() - t0 < 30000; await new Promise(r => setTimeout(r, 200))) {
             if (gb.style.display === 'none') return;
-            const card = document.getElementById('gbExprCard');
-            if (!card || card === old || !card.querySelector('#gbExprTissue.js-plotly-plot')) continue;
+            const card = document.getElementById(cardId);
+            // Each card fills in on its own, so wait for this one to be done.
+            if (!card || card === old || card.querySelector('.gb-loading')) continue;
             const head = gb.querySelector('[style*="position:sticky"]');
             gb.scrollTop += card.getBoundingClientRect().top - gb.getBoundingClientRect().top - (head ? head.offsetHeight : 0) - 30;
             return;
@@ -54865,12 +54867,13 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             if (!a) return;
             e.preventDefault();
             if (a.dataset.ctwGene) {
+                if (a.dataset.ctwGeneTo) { this._ctwOpenGeneAt(a.dataset.ctwGene, a.dataset.ctwGeneTo); return; }
                 this.openGeneBrowser(a.dataset.ctwGene);
                 const gb = document.getElementById('gbModal'); if (gb) gb.style.zIndex = '1380';
             } else if (a.dataset.ctwCl) {
                 this.openCellLineWiki(a.dataset.ctwCl).then(() => { const w = document.getElementById('clbWikiModal'); if (w) w.style.zIndex = String((parseInt(modal.style.zIndex) || 1372) + 1); });
             } else if (a.dataset.ctwExpr) {
-                this._ctwOpenGeneExpression(a.dataset.ctwExpr);
+                this._ctwOpenGeneAt(a.dataset.ctwExpr, 'gbExprCard');
             } else if (a.dataset.ctwAct === 'panel-csv') {
                 this._ctwPanelCsv();
             } else if (a.dataset.ctwT !== undefined) {
