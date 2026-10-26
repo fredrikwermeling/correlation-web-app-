@@ -54261,8 +54261,8 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             const mix = (a, b) => Math.round(a + (b - a) * f);
             return `rgb(${mix(255, 63)},${mix(255, 107)},${mix(255, 37)})`;
         };
-        const cellTd = (v, gene, where) => `<td title="${this.esc(gene)} in ${this.esc(where)}: median ${this._gbNum(v, 1)} log₂ TPM+1" style="background:${color(v)}; width:13px; height:13px; padding:0; border:1px solid #fff;"></td>`;
-        const head = `<tr><th></th>${P.shown.map(p => `<th title="${this.esc(p.gene)}: marks ${this.esc(p.tissue)} (specificity ${this._gbNum(p.auc)})" style="padding:0 0 3px; vertical-align:bottom; font-weight:400;"><div style="writing-mode:vertical-rl; transform:rotate(180deg); font-size:9.5px; font-style:italic; white-space:nowrap; line-height:13px;">${this.esc(p.gene)}</div></th>`).join('')}</tr>`;
+        const cellTd = (v, gene, where) => `<td data-ctw-expr="${this.esc(gene)}" title="${this.esc(gene)} in ${this.esc(where)}: median ${this._gbNum(v, 1)} log₂ TPM+1. Click to open its expression in the Gene Browser" style="background:${color(v)}; width:13px; height:13px; padding:0; border:1px solid #fff; cursor:pointer;"></td>`;
+        const head = `<tr><th></th>${P.shown.map(p => `<th data-ctw-expr="${this.esc(p.gene)}" title="${this.esc(p.gene)}: marks ${this.esc(p.tissue)} (specificity ${this._gbNum(p.auc)}). Click to open its expression in the Gene Browser" style="padding:0 0 3px; vertical-align:bottom; font-weight:400; cursor:pointer;"><div style="writing-mode:vertical-rl; transform:rotate(180deg); font-size:9.5px; font-style:italic; white-space:nowrap; line-height:13px;">${this.esc(p.gene)}</div></th>`).join('')}</tr>`;
         const trs = P.tissues.map((t, k) => {
             const me = t === g.tissue;
             return `<tr><td style="padding:0 8px 0 0; font-size:10.5px; white-space:nowrap; text-align:right;${me ? ' font-weight:700; color:#3f6b25;' : ''}">${me ? '▶ ' : ''}${this.esc(t)} <span class="gb-m">(${P.nT[k]})</span></td>${P.med[k].map((v, q) => cellTd(v, P.shown[q].gene, t)).join('')}</tr>`;
@@ -54299,7 +54299,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                     mostSimilar: Array.from({ length: P.K }, (_, k) => { const s = P.nn[r * P.K + k]; return { cellLine: this.getCellLineName(this.metadata.cellLines[R.rows[s]]) || this.metadata.cellLines[R.rows[s]], tissue: P.tisOf[s], r: +P.ns[r * P.K + k].toFixed(3) }; }) })),
             },
         };
-        const body = this._ctwMrnaNote() + this._gbDesc(`Surface proteins that best tell the cancer types apart: for each cancer type with at least 8 cell lines, the three surface proteins that best set it apart from the others. Each row is the median mRNA of a cancer type; hover a square for the value. The identity check and the export use up to eight proteins per cancer type (${P.genes.length} in all).`)
+        const body = this._ctwMrnaNote() + this._gbDesc(`Surface proteins that best tell the cancer types apart: for each cancer type with at least 8 cell lines, the three surface proteins that best set it apart from the others. Each row is the median mRNA of a cancer type; hover a square for the value, click it or a protein name to open that gene's expression in the Gene Browser. The identity check and the export use up to eight proteins per cancer type (${P.genes.length} in all).`)
             + matrix
             + `<div style="display:flex; justify-content:flex-end; margin-top:2px;"><button class="btn btn-outline btn-sm mobile-hide" data-ctw-act="panel-csv" style="font-size:10px; padding:1px 8px;" title="Download the panel as a table: cancer types by proteins, median log₂ TPM+1">Export panel (.csv)</button></div>`
             + `<div class="gb-sub">Identity check</div>`
@@ -54325,6 +54325,24 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             ['Specificity (AUC)', '', ...P.genes.map(p => p.auc.toFixed(3))].join(','),
             ...P.tissues.map((t, k) => [`"${t}"`, P.nT[k], ...P.genes.map(p => medOf(p, t).toFixed(2))].join(','))];
         this.downloadFile(lines.join('\n'), 'correlate_surface_panel.csv', 'text/csv');
+    }
+
+    // Opens the Gene Browser on a gene's expression card once that card is
+    // drawn; the card is replaced as a new node when the gene renders.
+    async _ctwOpenGeneExpression(gene) {
+        const old = document.getElementById('gbExprCard');
+        this.openGeneBrowser(gene);
+        const gb = document.getElementById('gbModal');
+        if (!gb) return;
+        gb.style.zIndex = '1380';
+        for (const t0 = Date.now(); Date.now() - t0 < 30000; await new Promise(r => setTimeout(r, 200))) {
+            if (gb.style.display === 'none') return;
+            const card = document.getElementById('gbExprCard');
+            if (!card || card === old || !card.querySelector('#gbExprTissue.js-plotly-plot')) continue;
+            const head = gb.querySelector('[style*="position:sticky"]');
+            gb.scrollTop += card.getBoundingClientRect().top - gb.getBoundingClientRect().top - (head ? head.offsetHeight : 0) - 30;
+            return;
+        }
     }
 
     // Sets the Cell Line Browser's cohort filters to the group.
@@ -54355,7 +54373,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             close();
         });
         document.getElementById('ctwBody')?.addEventListener('click', (e) => {
-            const a = e.target.closest('[data-ctw-gene], [data-ctw-cl], [data-ctw-t], [data-ctw-act]');
+            const a = e.target.closest('[data-ctw-gene], [data-ctw-cl], [data-ctw-t], [data-ctw-act], [data-ctw-expr]');
             if (!a) return;
             e.preventDefault();
             if (a.dataset.ctwGene) {
@@ -54363,6 +54381,8 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 const gb = document.getElementById('gbModal'); if (gb) gb.style.zIndex = '1380';
             } else if (a.dataset.ctwCl) {
                 this.openCellLineWiki(a.dataset.ctwCl).then(() => { const w = document.getElementById('clbWikiModal'); if (w) w.style.zIndex = String((parseInt(modal.style.zIndex) || 1372) + 1); });
+            } else if (a.dataset.ctwExpr) {
+                this._ctwOpenGeneExpression(a.dataset.ctwExpr);
             } else if (a.dataset.ctwAct === 'panel-csv') {
                 this._ctwPanelCsv();
             } else if (a.dataset.ctwT !== undefined) {
