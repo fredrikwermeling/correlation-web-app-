@@ -51576,6 +51576,18 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         if (!d) throw err || new Error('no gene on a main chromosome');
         const all = d.Transcript || [];
         if (!all.length) throw new Error('no transcript');
+        // Support per transcript: GENCODE basic tag and transcript support
+        // level (TSL 1 = every intron confirmed by a full-length mRNA, 5 = none).
+        // The lookup does not carry them; the overlap endpoint does.
+        const sup = new Map();
+        try {
+            const ov = JSON.parse(await this._gbEnsemblText(`overlap/id/${encodeURIComponent(d.id)}?feature=transcript;content-type=application/json`, 2));
+            for (const x of ov) {
+                if (x.Parent !== d.id) continue;
+                const n = parseInt(x.transcript_support_level);
+                sup.set(x.id, { tsl: n >= 1 && n <= 5 ? n : null, basic: (x.tag || []).includes('gencode_basic') });
+            }
+        } catch (e) { /* ranked without support levels */ }
         const manes = (t) => (t.MANE || []).map(m => m.type);
         const mk = (t) => {
             const strand = t.strand, tl = t.Translation || null;
@@ -51590,14 +51602,18 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             const mane = (t.MANE || []).find(m => m.type === 'MANE_Select') || (t.MANE || []).find(m => m.type === 'MANE_Plus_Clinical');
             return {
                 tx: { id: t.id, version: t.version, name: t.display_name, biotype: t.biotype, length: t.length, start: t.start, end: t.end,
-                    refseq: mane?.refseq_match || null, mane: manes(t).includes('MANE_Select'), plus: manes(t).includes('MANE_Plus_Clinical'), canonical: !!t.is_canonical },
+                    refseq: mane?.refseq_match || null, mane: manes(t).includes('MANE_Select'), plus: manes(t).includes('MANE_Plus_Clinical'), canonical: !!t.is_canonical,
+                    tsl: sup.get(t.id)?.tsl ?? null, basic: sup.get(t.id)?.basic ?? null },
                 protein: tl ? { id: tl.id, length: tl.length } : null,
                 cdsLength: exons.reduce((n, e) => n + (e.c0 !== null ? e.c1 - e.c0 : 0), 0),
                 exons
             };
         };
+        // Reference first, then by evidence: protein-coding before the rest,
+        // GENCODE basic before not, lower TSL before higher; longer protein last.
         const rank = (t) => manes(t).includes('MANE_Select') ? 0 : t.is_canonical ? 1 : manes(t).includes('MANE_Plus_Clinical') ? 2 : t.biotype === 'protein_coding' ? 3 : 4;
-        const transcripts = [...all].sort((a, b) => rank(a) - rank(b) || (b.Translation?.length || 0) - (a.Translation?.length || 0) || b.length - a.length).map(mk);
+        const basicR = (t) => sup.get(t.id)?.basic ? 0 : 1, tslR = (t) => sup.get(t.id)?.tsl ?? 6;
+        const transcripts = [...all].sort((a, b) => rank(a) - rank(b) || basicR(a) - basicR(b) || tslR(a) - tslR(b) || (b.Translation?.length || 0) - (a.Translation?.length || 0) || b.length - a.length).map(mk);
         const ref = transcripts[0];
         const out = {
             geneId: d.id, chr: d.seq_region_name, start: d.start, end: d.end, strand: d.strand, biotype: d.biotype,
@@ -51745,7 +51761,9 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
     _gbStartSites(st, t) {
         if (st._partial || !st.transcripts || st.transcripts.length < 2) return '';
         const e = (x) => this.esc(x), sd = st.strand === -1 ? -1 : 1;
-        const atg = (x) => { const f = x.exons.find(q => q.c0 !== null); return f ? (sd === 1 ? f.start + f.c0 : f.end - f.c0) : null; };
+        const atg = (x) => this._gbAtg(st, x);
+        // Well supported: GENCODE basic with TSL 1 or 2 (or MANE).
+        const good = (x) => x.tx.mane || x.tx.plus || (x.tx.basic && x.tx.tsl && x.tx.tsl <= 2);
         const tss = (x) => sd === 1 ? x.exons[0].start : x.exons[0].end;
         const dist = (d) => { const a = Math.abs(d); return `${a < 1000 ? `${a} nt` : `${(a / 1000).toFixed(1)} kb`} ${d > 0 ? 'downstream' : 'upstream'}`; };
         const name = (x) => e(x.tx.name || x.tx.id);
@@ -51757,9 +51775,13 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             for (const x of pc) { const k = atg(x); (by.get(k) || by.set(k, []).get(k)).push(x); }
             if (by.size === 1) parts.push(`All ${pc.length} protein-coding transcripts use the same start codon.`);
             else {
-                const alt = [...by.entries()].filter(([k]) => k !== mine).sort((a, b) => b[1].length - a[1].length);
-                const list = alt.slice(0, 4).map(([k, xs]) => `<div style="padding-left:10px;">· ${xs.length} transcript${xs.length === 1 ? '' : 's'} ${mine !== null ? dist(sd * (k - mine)) : 'elsewhere'} <span class="gb-m">(${xs.slice(0, 2).map(x => `${name(x)}, ${x.protein.length} aa`).join('; ')}${xs.length > 2 ? '; ...' : ''})</span></div>`);
-                parts.push(`<div><b>${by.size} different start codons</b> among ${pc.length} protein-coding transcripts${mine !== null ? `; ${by.get(mine)?.length || 1} use this one's, the others start:` : ':'}</div>${list.join('')}${alt.length > 4 ? `<div style="padding-left:10px;" class="gb-m">and ${alt.length - 4} more</div>` : ''}`);
+                // Well-supported alternatives first: those are the ones worth a look.
+                const alt = [...by.entries()].filter(([k]) => k !== mine).map(([k, xs]) => ({ k, xs, ok: xs.some(good) }))
+                    .sort((a, b) => b.ok - a.ok || b.xs.length - a.xs.length);
+                const nOk = alt.filter(a => a.ok).length;
+                const best = (xs) => { const ts = xs.map(x => x.tx.tsl).filter(Boolean); return ts.length ? `best TSL ${Math.min(...ts)}` : 'no TSL'; };
+                const list = alt.slice(0, 5).map(({ k, xs, ok }) => `<div style="padding-left:10px;${ok ? '' : ' color:#9ca3af;'}">· ${ok ? '<b style="color:#3f6b25;">well supported</b>: ' : 'weakly supported: '}${xs.length} transcript${xs.length === 1 ? '' : 's'} ${mine !== null ? dist(sd * (k - mine)) : 'elsewhere'} <span class="gb-m">(${xs.slice(0, 2).map(x => `${name(x)}, ${x.protein.length} aa`).join('; ')}${xs.length > 2 ? '; ...' : ''}; ${best(xs)})</span></div>`);
+                parts.push(`<div><b>${by.size} different start codons</b> among ${pc.length} protein-coding transcripts${nOk ? `, <b style="color:#3f6b25;">${nOk} alternative${nOk === 1 ? '' : 's'} well supported</b>` : ', none of the alternatives well supported'}${mine !== null ? `; ${by.get(mine)?.length || 1} use this one's, the others start:` : ':'}</div>${list.join('')}${alt.length > 5 ? `<div style="padding-left:10px;" class="gb-m">and ${alt.length - 5} more</div>` : ''}`);
             }
         }
         // 5' ends more than 500 bp apart count as separate start regions.
@@ -51768,12 +51790,22 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         for (let i = 1; i < ends.length; i++) if (ends[i] - ends[i - 1] > 500) regions++;
         if (regions > 1) parts.push(`<div style="margin-top:3px;">Transcription starts in <b>${regions} regions</b> more than 500 bp apart (alternative promoters or first exons).</div>`);
         else if (ends.length) parts.push('<div style="margin-top:3px;">Every transcript starts in the same region.</div>');
-        return this._gbRow('Start sites', parts.map(x => x.startsWith('<div') ? x : `<div>${x}</div>`).join('') + '<div class="gb-m">As annotated in Ensembl. The RNA-seq data here is per gene, so which start a cell line uses is not measured.</div>');
+        return this._gbRow('Start sites', parts.map(x => x.startsWith('<div') ? x : `<div>${x}</div>`).join('') + '<div class="gb-m">As annotated in Ensembl. Well supported means GENCODE basic with TSL 1 or 2; many weakly supported models are automatic and may not be real. The RNA-seq data here is per gene, so which start a cell line uses is not measured.</div>');
     }
 
-    _gbTxLabel(t) {
-        const tags = [t.tx.mane ? 'MANE Select' : '', t.tx.plus ? 'MANE Plus Clinical' : '', !t.tx.mane && t.tx.canonical ? 'Ensembl canonical' : ''].filter(Boolean).join(', ');
+    _gbTxLabel(t, st) {
+        const ref = st?.transcripts?.[0];
+        const alt = st && ref && t !== ref && t.protein && ref.protein && this._gbAtg(st, t) !== this._gbAtg(st, ref);
+        const tags = [t.tx.mane ? 'MANE Select' : '', t.tx.plus ? 'MANE Plus Clinical' : '', !t.tx.mane && t.tx.canonical ? 'Ensembl canonical' : '',
+            t.tx.tsl ? `TSL ${t.tx.tsl}` : '', alt ? 'alt. start' : ''].filter(Boolean).join(' · ');
         return `${t.tx.name || t.tx.id} · ${t.exons.length} exons · ${t.protein ? `${t.protein.length} aa` : String(t.tx.biotype || '').replace(/_/g, ' ')}${tags ? ` · ${tags}` : ''}`;
+    }
+
+    // Genomic position of the first base of the start codon; exons run 5'
+    // to 3', so the first coding exon holds it on either strand.
+    _gbAtg(st, x) {
+        const f = x.exons.find(q => q.c0 !== null);
+        return f ? (st.strand === -1 ? f.end - f.c0 : f.start + f.c0) : null;
     }
 
     async _gbFillStructure(s) {
@@ -51874,7 +51906,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const span = st.end - st.start + 1;
         const others = st.nTranscripts - 1;
         const a = (href, txt) => `<a href="${href}" target="_blank" rel="noopener" style="color:#3730a3;">${txt} &#8599;</a>`;
-        const opts = st.transcripts.map((x, i) => `<option value="${i}"${x === t ? ' selected' : ''}>${e(this._gbTxLabel(x))}</option>`).join('');
+        const opts = st.transcripts.map((x, i) => `<option value="${i}"${x === t ? ' selected' : ''}>${e(this._gbTxLabel(x, st))}</option>`).join('');
         const pos = `chr${st.chr}:${st.start}-${st.end}`;
         const note = `<div style="padding:7px 10px; background:#fffbeb; border-left:3px solid #f59e0b; font-size:11px; color:#78350f; margin:4px 0 10px;">`
             + `<b>${st._partial ? (st._failed ? 'The reference transcript.' : `The reference transcript, while the other transcripts load from Ensembl <span class="gb-elapsed" data-t0="${st._t0}"></span>`) : st.nTranscripts === 1 ? 'The only annotated transcript.' : `One of ${st.nTranscripts.toLocaleString()} transcripts.`}</b> ${isRef && t.tx.mane ? `Shown is the MANE Select transcript${t.tx.refseq ? ` (${e(t.tx.refseq)})` : ''}. It is the agreed reference, not necessarily the form every cell type makes.` : `Shown is ${e(t.tx.name || t.tx.id)}, not the reference transcript.`}`
@@ -51891,7 +51923,9 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         ].join('');
         const btn = (k, txt, title) => `<button class="btn btn-outline btn-sm" data-gb-act="${k}" title="${title}">${txt}</button>`;
         return this._gbDesc('The exons of one transcript, read from 5′ to 3′. Tall boxes are protein-coding, low boxes untranslated (UTR); exons are to scale, introns shortened.' + (hot.length ? ' Red marks are hotspot codons, sized by how many cell lines carry a change there.' : '') + ' A gene can be read into several transcripts. Shown first is its MANE Select transcript (Matched Annotation from NCBI and EMBL-EBI): the one reference version of each gene that NCBI and Ensembl agree on, and the one clinical variant reports use.')
-            + `<div class="gb-kv" style="align-items:center;"><span class="gb-kv-l">Transcript shown</span><span class="gb-kv-v"><select id="gbTxSelect" class="form-control" style="font-size:11px; padding:2px 6px; max-width:460px;">${opts}</select></span></div>`
+            + `<div class="gb-kv" style="align-items:center;"><span class="gb-kv-l">Transcript shown</span><span class="gb-kv-v"><select id="gbTxSelect" class="form-control" style="font-size:11px; padding:2px 6px; max-width:460px;">${opts}</select>`
+            + (st.transcripts.length > 1 ? `<div class="gb-m" style="margin-top:2px;">Listed by evidence: the reference first, then protein-coding transcripts in the GENCODE basic set, then by transcript support level (TSL 1: every exon junction confirmed by a full-length mRNA; TSL 5: none). Many high-TSL or untagged transcripts are automatic models from short reads, so treat their differences with care.</div>` : '')
+            + `</span></div>`
             + note
             + `<div id="gbStructFig" style="background:#fff; padding:2px 0;">${this._gbStructureSvg(gene, st, t, hot)}</div>`
             + (hot.length ? `<div class="gb-m" style="margin:-4px 0 2px;"><span style="color:#dc2626;">●</span> Hotspot codons: where DepMap calls recurrent mutations, sized by how many cell lines carry one; hover a mark for the specific changes.</div>` : '')
@@ -52095,7 +52129,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const segs = [], hot = [];
         const exonRanges = [];
         let seq;
-        if (view === 'genomic') {
+        if (view === 'genomic' || view === 'genomic-gene') {
             seq = genomic;
             const ex = t.exons.map((e, i) => ({ e, i, o: this._gbOff(st, e) })).sort((a, b) => a.o - b.o);
             let pos = 0;
@@ -52111,6 +52145,16 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 pos = o + e.len;
             });
             if (pos < seq.length) segs.push({ a: pos, b: seq.length, type: 'flank', name: 'downstream of this transcript' });
+            // The gene region spans every transcript, and one can reach far
+            // past this one; by default show this transcript plus 1 kb each side.
+            if (view === 'genomic' && ex.length) {
+                const a0 = Math.max(0, ex[0].o - 1000), b0 = Math.min(seq.length, pos + 1000);
+                seq = seq.slice(a0, b0);
+                const clip = (r) => ({ ...r, a: Math.max(0, r.a - a0), b: Math.min(b0, r.b) - a0 });
+                const kept = segs.filter(r => r.b > a0 && r.a < b0).map(clip);
+                segs.length = 0; segs.push(...kept);
+                exonRanges.forEach(r => { r.a -= a0; r.b -= a0; });
+            }
         } else if (view === 'mrna' || view === 'cds') {
             const cdsOnly = view === 'cds';
             let m = 0;
@@ -52156,7 +52200,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 <div class="sq-head"><div><h3 id="sqTitle"></h3><div id="sqSub" class="sq-m"></div></div>
                     <button id="sqClose" class="sq-x" title="Close (Esc)">&times;</button></div>
                 <div class="sq-bar">
-                    <select id="sqView"><option value="genomic">Genomic (exons + introns)</option><option value="mrna">mRNA</option><option value="cds">Coding sequence</option><option value="protein">Protein</option></select>
+                    <select id="sqView"><option value="genomic">Genomic (exons + introns)</option><option value="genomic-gene">Genomic, whole gene region</option><option value="mrna">mRNA</option><option value="cds">Coding sequence</option><option value="protein">Protein</option></select>
                     <input id="sqFind" type="text" placeholder="Search sequence" autocomplete="off" spellcheck="false">
                     <label class="sq-m" id="sqBothLbl" title="Also find the reverse complement"><input type="checkbox" id="sqBoth" checked> both strands</label>
                     <button id="sqPrev" class="btn btn-outline btn-sm" title="Previous match">&#9650;</button><button id="sqNext" class="btn btn-outline btn-sm" title="Next match">&#9660;</button>
@@ -52230,8 +52274,9 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         document.getElementById('sqBothLbl').style.display = dna ? '' : 'none';
         document.getElementById('sqFind').placeholder = dna ? 'Search DNA (ACGT, N = any)' : 'Search protein';
         const sw = (c, t2) => `<span class="sq-chip ${c}">${t2}</span>`;
-        document.getElementById('sqLegend').innerHTML = `${m.seq.length.toLocaleString()} ${dna ? 'bases' : 'amino acids'} · `
-            + (view === 'genomic' ? sw('sq-cds', 'EXON coding') + sw('sq-utr', 'EXON untranslated') + sw('sq-intron', 'intron') : view === 'mrna' ? sw('sq-cds', 'coding') + sw('sq-utr', 'UTR') : '')
+        const gl = genomic.length;
+        document.getElementById('sqLegend').innerHTML = `${m.seq.length.toLocaleString()} ${dna ? 'bases' : 'amino acids'}${view === 'genomic' && gl > m.seq.length + 2000 ? ` <span class="sq-m">(this transcript and 1 kb each side; the gene region with all transcripts is ${(gl / 1000).toFixed(1)} kb)</span>` : ''} · `
+            + (view === 'genomic' || view === 'genomic-gene' ? sw('sq-cds', 'EXON coding') + sw('sq-utr', 'EXON untranslated') + sw('sq-intron', 'intron') : view === 'mrna' ? sw('sq-cds', 'coding') + sw('sq-utr', 'UTR') : '')
             + (hasStart ? sw('sq-cds sq-start', 'start codon') : '') + (hasStop ? sw('sq-cds sq-stop', 'stop codon') : '')
             + (m.hot.length ? sw('sq-cds sq-hot', 'hotspot codon') : '')
             + sw('sq-ins', 'inserted') + sw('sq-del', 'deleted')
@@ -52639,7 +52684,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         document.getElementById('sqFasta').addEventListener('click', () => {
             const s = this._sq, gene = this._gbGene;
             const edited = s.ops.length > 0;
-            const head = `${gene} ${s.t.tx.id}${s.t.tx.version ? '.' + s.t.tx.version : ''} ${{ genomic: 'genomic, gene strand', mrna: 'mRNA', cds: 'CDS', protein: 'protein' }[s.view]} GRCh38${edited ? ` (edited: +${s.nIns} / -${s.nDel})` : ''}`;
+            const head = `${gene} ${s.t.tx.id}${s.t.tx.version ? '.' + s.t.tx.version : ''} ${{ genomic: 'genomic, transcript and 1 kb flanks, gene strand', 'genomic-gene': 'genomic, whole gene region, gene strand', mrna: 'mRNA', cds: 'CDS', protein: 'protein' }[s.view]} GRCh38${edited ? ` (edited: +${s.nIns} / -${s.nDel})` : ''}`;
             this.downloadFile(this._gbFasta(head, this._sqText()), `${gene}_${s.view}${edited ? '_edited' : ''}.fa`, 'text/plain');
         });
         // A mouse selection copies the sequence as it now reads: struck-out
