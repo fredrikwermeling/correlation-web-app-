@@ -51707,7 +51707,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             for (const x of ov) {
                 if (x.Parent !== d.id) continue;
                 const n = parseInt(x.transcript_support_level);
-                sup.set(x.id, { tsl: n >= 1 && n <= 5 ? n : null, basic: (x.tag || []).includes('gencode_basic') });
+                sup.set(x.id, { tsl: n >= 1 && n <= 5 ? n : null, basic: (x.tag || []).includes('gencode_basic'), longRead: /tagene/.test(x.source || '') });
             }
         } catch (e) { /* ranked without support levels */ }
         const manes = (t) => (t.MANE || []).map(m => m.type);
@@ -51725,7 +51725,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             return {
                 tx: { id: t.id, version: t.version, name: t.display_name, biotype: t.biotype, length: t.length, start: t.start, end: t.end,
                     refseq: mane?.refseq_match || null, mane: manes(t).includes('MANE_Select'), plus: manes(t).includes('MANE_Plus_Clinical'), canonical: !!t.is_canonical,
-                    tsl: sup.get(t.id)?.tsl ?? null, basic: sup.get(t.id)?.basic ?? null },
+                    tsl: sup.get(t.id)?.tsl ?? null, basic: sup.get(t.id)?.basic ?? null, longRead: !!sup.get(t.id)?.longRead },
                 protein: tl ? { id: tl.id, length: tl.length } : null,
                 cdsLength: exons.reduce((n, e) => n + (e.c0 !== null ? e.c1 - e.c0 : 0), 0),
                 exons
@@ -51919,7 +51919,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const ref = st?.transcripts?.[0];
         const alt = st && ref && t !== ref && t.protein && ref.protein && this._gbAtg(st, t) !== this._gbAtg(st, ref);
         const tags = [t.tx.mane ? 'MANE Select' : '', t.tx.plus ? 'MANE Plus Clinical' : '', !t.tx.mane && t.tx.canonical ? 'Ensembl canonical' : '',
-            t.tx.tsl ? `TSL ${t.tx.tsl}` : '', alt ? 'alt. start' : ''].filter(Boolean).join(' · ');
+            t.tx.tsl ? `TSL ${t.tx.tsl}` : t.tx.longRead ? 'long-read' : '', alt ? 'alt. start' : ''].filter(Boolean).join(' · ');
         return `${t.tx.name || t.tx.id} · ${t.exons.length} exons · ${t.protein ? `${t.protein.length} aa` : String(t.tx.biotype || '').replace(/_/g, ' ')}${tags ? ` · ${tags}` : ''}`;
     }
 
@@ -52046,7 +52046,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const btn = (k, txt, title) => `<button class="btn btn-outline btn-sm" data-gb-act="${k}" title="${title}">${txt}</button>`;
         return this._gbDesc('The exons of one transcript, read from 5′ to 3′. Tall boxes are protein-coding, low boxes untranslated (UTR); exons are to scale, introns shortened.' + (hot.length ? ' Red marks are hotspot codons, sized by how many cell lines carry a change there.' : '') + ' A gene can be read into several transcripts. Shown first is its MANE Select transcript (Matched Annotation from NCBI and EMBL-EBI): the one reference version of each gene that NCBI and Ensembl agree on, and the one clinical variant reports use.')
             + `<div class="gb-kv" style="align-items:center;"><span class="gb-kv-l">Transcript shown</span><span class="gb-kv-v"><select id="gbTxSelect" class="form-control" style="font-size:11px; padding:2px 6px; max-width:460px;">${opts}</select>`
-            + (st.transcripts.length > 1 ? `<div class="gb-m" style="margin-top:2px;">Listed by evidence: the reference first, then protein-coding transcripts in the GENCODE basic set, then by transcript support level (TSL 1: every exon junction confirmed by a full-length mRNA; TSL 5: none). Many high-TSL or untagged transcripts are automatic models from short reads, so treat their differences with care.</div>` : '')
+            + (st.transcripts.length > 1 ? `<div class="gb-m" style="margin-top:2px;">Listed by evidence: the reference first, then protein-coding transcripts in the GENCODE basic set, by transcript support level (TSL 1: every exon junction confirmed by a full-length mRNA; TSL 5: none). Transcripts added after the scores were computed have no TSL: not scored, which is not a low score. "long-read" marks transcripts built from long-read sequencing, which reads whole molecules.</div>` : '')
             + `</span></div>`
             + note
             + `<div id="gbStructFig" style="background:#fff; padding:2px 0;">${this._gbStructureSvg(gene, st, t, hot)}</div>`
