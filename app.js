@@ -46716,6 +46716,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             }
         };
         document.getElementById('clbWikiCloseBtn')?.addEventListener('click', closeCellLineWiki);
+        this._ctwWire();
+        document.getElementById('clbCancerWikiBtn')?.addEventListener('click', () => this.openCancerTypeWiki());
         document.getElementById('clbWikiDownloadBtn')?.addEventListener('click', () => this.downloadCellLineWiki());
         document.getElementById('clbWikiExportGenesBtn')?.addEventListener('click', () => this.exportWikiCellLineGenesCSV());
         document.getElementById('clbWikiModal')?.addEventListener('click', (e) => {
@@ -47494,6 +47496,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const passesCollections = (cl) => this._clbPassesCollections(cl);
 
         this.populateClbOncotreeFilter();
+        this._ctwSyncBtn();
         let filtered = this._clbBaseFilteredLines();
         if (collectionStates.size > 0) filtered = filtered.filter(passesCollections);
         // "Show Selected" toggle: narrow the list to the current selection
@@ -53740,6 +53743,544 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             + `<div class="gb-sub" style="margin-top:10px;">Data sources and references</div><ul style="margin:2px 0 0; padding-left:18px; font-size:11px; line-height:1.5; color:#374151;">${refs}</ul>`);
     }
 
+    // ===== Cancer type Wiki =====
+    // One tissue, subtype or disease (the Cell Line Browser's three cohort
+    // filters) summarized against every other cell line in the cohort.
+
+    // The group the cohort filters describe, or null when none is chosen.
+    _ctwGroupFromFilters() {
+        const v = (id) => document.getElementById(id)?.value || '';
+        const g = { tissue: v('clbTissueFilter'), subtype: v('clbSubtypeFilter'), disease: v('clbOncotreeFilter') };
+        return (g.tissue || g.subtype || g.disease) ? g : null;
+    }
+    _ctwName(g) { return g.disease || g.subtype || g.tissue; }
+    _ctwSyncBtn() {
+        const b = document.getElementById('clbCancerWikiBtn');
+        if (b) b.disabled = !this._ctwGroupFromFilters();
+    }
+
+    // Indices into metadata.cellLines of the cell lines in the group.
+    _ctwMembers(g) {
+        const onc = this.cellLineMetadata?.oncotreeSubtype || {};
+        const out = [];
+        this.metadata.cellLines.forEach((cl, i) => {
+            if (g.tissue && this.getCellLineLineage(cl) !== g.tissue) return;
+            if (g.subtype && this.getCellLineSublineage(cl) !== g.subtype) return;
+            if (g.disease && (onc[cl] || '') !== g.disease) return;
+            out.push(i);
+        });
+        return out;
+    }
+
+    _ctwGoAttrs(g) {
+        return `data-ctw-t="${this.esc(g.tissue || '')}" data-ctw-s="${this.esc(g.subtype || '')}" data-ctw-d="${this.esc(g.disease || '')}"`;
+    }
+    _ctwGeneLink(gene) { return `<a href="#" class="gb-cl" data-ctw-gene="${this.esc(gene)}" title="Open in the Gene Browser">${this.gi(gene)}</a>`; }
+    _ctwClLink(id) { return `<a href="#" class="gb-cl" data-ctw-cl="${this.esc(id)}" title="Open the Wiki for this cell line">${this.esc(this.getCellLineName(id) || id)}</a>`; }
+    _ctwPct(k, n) { return n ? this._gbFmtPct(k, n) : 'n/a'; }
+
+    async openCancerTypeWiki(g) {
+        g = g || this._ctwGroupFromFilters();
+        if (!g) return;
+        this._ctwGroup = g;
+        const modal = document.getElementById('ctwModal');
+        const body = document.getElementById('ctwBody');
+        if (!modal || !body) return;
+        document.getElementById('ctwTitle').textContent = `${this._ctwName(g)}, Cancer type Wiki`;
+        document.getElementById('ctwSubtitle').textContent = [g.tissue, g.subtype, g.disease].filter(Boolean).join(' · ');
+        // Above a cell line Wiki it was opened from.
+        const w = document.getElementById('clbWikiModal');
+        modal.style.zIndex = String(w && w.style.display === 'flex' ? Math.max(1372, (parseInt(w.style.zIndex) || 1370) + 1) : 1372);
+        modal.style.display = 'flex';
+        modal.scrollTop = 0;
+        body.innerHTML = this._gbLoading('Comparing this group with every other cell line...');
+        const token = (this._ctwToken = (this._ctwToken || 0) + 1);
+        for (const t0 = Date.now(); !this.geneEffects && Date.now() - t0 < 120000;) await new Promise(r => setTimeout(r, 300));
+        await Promise.all([this._ensureCommonEssentials(), this._ensureGeneClasses(), this._gbWaitExpression()]);
+        if (token !== this._ctwToken) return;
+        await new Promise(r => setTimeout(r, 30));
+        const ids = this.metadata.cellLines, N = ids.length;
+        const idx = this._ctwMembers(g);
+        if (!idx.length) { body.innerHTML = this._gbDesc('No cell line in the cohort matches this group.'); return; }
+        const inG = new Uint8Array(N);
+        for (const i of idx) inG[i] = 1;
+        const c = { g, ids, N, idx, n: idx.length, inG, pos: new Map(ids.map((id, i) => [id, i])) };
+        this._ctwCtx = c;
+        const parts = [
+            this._ctwOverview(c),
+            this._ctwMutations(c),
+            this._ctwCopyNumber(c),
+            this._ctwDependencies(c),
+            this._ctwExpression(c),
+            this._gbSection('Surface proteins for FACS', this._ctwSurfaceBody(c), 'DepMap 26Q1 OmicsExpressionTPMLogp1 (mRNA, not protein). Surface proteins: SURFY surfaceome and UniProt topology, Human Protein Atlas CD markers, and the app\'s FACS antigen list.', 'ctwSurfaceCard'),
+            this._ctwPanelSection(c),
+            this._ctwLinesSection(c),
+        ];
+        body.innerHTML = parts.join('');
+    }
+
+    _ctwOverview(c) {
+        const md = this.cellLineMetadata || {};
+        const memb = c.idx.map(i => c.ids[i]);
+        const tally = (field) => {
+            const m = new Map();
+            for (const id of memb) { const v = md[field]?.[id] || 'Unknown'; m.set(v, (m.get(v) || 0) + 1); }
+            return [...m.entries()].sort((a, b) => b[1] - a[1]).map(([k, n]) => `${this.esc(k)} ${n}`).join(', ');
+        };
+        const ages = memb.map(id => parseFloat(md.age?.[id])).filter(v => v === v && v > 0).sort((a, b) => a - b);
+        const nExpr = c.idx.filter(i => (this.expressionCellLineMap?.[i] ?? -1) !== -1).length;
+        const nMsi = memb.filter(id => this.inferredSubtypes?.byCellLine?.[id]?.msi).length;
+        const g = c.g;
+        const crumbs = [];
+        if (g.tissue) crumbs.push({ label: g.tissue, go: { tissue: g.tissue } });
+        if (g.subtype) crumbs.push({ label: g.subtype, go: { tissue: g.tissue, subtype: g.subtype } });
+        if (g.disease) crumbs.push({ label: g.disease, go: { ...g } });
+        const path = crumbs.map((k, j) => j === crumbs.length - 1 ? `<b>${this.esc(k.label)}</b>` : `<a href="#" class="gb-cl" ${this._ctwGoAttrs(k.go)}>${this.esc(k.label)}</a>`).join(' <span class="gb-m">›</span> ');
+        // The next level down: subtypes inside a tissue, diseases inside a subtype.
+        const childField = g.disease ? null : g.subtype ? 'oncotreeSubtype' : g.tissue ? 'primaryDisease' : null;
+        let comp = '';
+        if (childField) {
+            const m = new Map();
+            for (const id of memb) { const v = md[childField]?.[id]; if (v) m.set(v, (m.get(v) || 0) + 1); }
+            const rows = [...m.entries()].sort((a, b) => b[1] - a[1]).map(([name, k]) => {
+                const go = childField === 'primaryDisease' ? { tissue: g.tissue, subtype: name } : { ...g, disease: name };
+                return [`<a href="#" class="gb-cl" ${this._ctwGoAttrs(go)} title="Open the Cancer type Wiki for this group">${this.esc(name)}</a>`, k.toLocaleString(), `<span class="gb-m">${this._ctwPct(k, c.n)}</span>`];
+            });
+            if (rows.length) comp = `<div class="gb-sub">${childField === 'primaryDisease' ? 'Subtypes' : 'Diseases'} in this group</div>` + this._gbTable([childField === 'primaryDisease' ? 'Subtype' : 'Disease', 'Cell lines', 'Share'], rows);
+        }
+        const stats = [
+            this._gbRow('Classification', path),
+            this._gbRow('Cell lines', `${c.n.toLocaleString()} of ${c.N.toLocaleString()} in the cohort <span class="gb-m">(${nExpr.toLocaleString()} with mRNA data)</span>`),
+            this._gbRow('Sex', tally('sex')),
+            this._gbRow('Primary or metastasis', tally('primaryOrMetastasis')),
+            this._gbRow('Patient age', ages.length ? `median ${Math.round(this.median(ages))} <span class="gb-m">(range ${ages[0]} to ${ages[ages.length - 1]}, ${ages.length} cell lines with an age)</span>` : ''),
+            this._gbRow('Growth', tally('growthPattern')),
+            this._gbRow('Microsatellite instability', `${nMsi} of ${c.n} <span class="gb-m">(${this._ctwPct(nMsi, c.n)})</span>`),
+        ].join('');
+        const body = this._gbDesc('What this cancer type looks like in the cohort, and how it differs from every other cell line. Each table compares the cell lines of this group with all the others.')
+            + `<div class="gb-grid"><div>${stats}</div><div>${comp}</div></div>`;
+        return this._gbSection('Overview', body, 'DepMap 26Q1 Model table (Oncotree classification, patient and sample annotation).');
+    }
+
+    _ctwMutations(c) {
+        const { n, N, pos, inG } = c;
+        const tally = (calls) => {
+            let k = 0, K = 0;
+            for (const id in calls) { if (!(calls[id] >= 1)) continue; const i = pos.get(id); if (i === undefined) continue; K++; if (inG[i]) k++; }
+            return { k, K };
+        };
+        const cancer = new Set(this._geneClasses?.cancer?.genes || []);
+        for (const gname of (this.mutations?.genes || [])) cancer.add(gname);
+        const rows = [];
+        for (const gene of cancer) {
+            if (this._isPolymorphicLocus(gene)) continue;
+            const calls = this._mutCalls(`${gene} (any mutation)`);
+            if (!calls) continue;
+            const { k, K } = tally(calls);
+            if (k < 1) continue;
+            rows.push({ gene, k, K, p: this._hypergeomUpperP(k, K, n, N) });
+        }
+        const cell = (r) => [this._ctwGeneLink(r.gene), `<b>${this._ctwPct(r.k, n)}</b> <span class="gb-m">(${r.k} of ${n})</span>`, this._ctwPct(r.K - r.k, N - n), r.p < 0.01 ? this._gbP(r.p) : '<span class="gb-m">n.s.</span>'];
+        const heads = ['Gene', 'This group', 'Other cell lines', 'Enriched, p'];
+        const common = [...rows].sort((a, b) => b.k - a.k).filter(r => r.k >= 2).slice(0, 12);
+        const enriched = rows.filter(r => r.k >= 3 && r.p < 0.01).sort((a, b) => a.p - b.p).slice(0, 12);
+        // Codon-level calls and the curated driver fusions.
+        const varC = new Map(), fusC = new Map();
+        for (const i of c.idx) {
+            const id = c.ids[i];
+            for (const h of (this.inferredSubtypes?.byCellLine?.[id]?.hotspots || [])) varC.set(h, (varC.get(h) || 0) + 1);
+            for (const f of new Set((this.clinicalFusions?.byCellLine?.[id] || []).map(x => x.fusion))) fusC.set(f, (fusC.get(f) || 0) + 1);
+        }
+        const chips = (m) => [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10)
+            .map(([name, k]) => `${this.esc(name.replace(/ Hotspot$/, ' hotspot'))} <b>${this._ctwPct(k, n)}</b> <span class="gb-m">(${k})</span>`).join(', ');
+        const lofGenes = Object.keys(this.functionalLoss?.geneData || {});
+        const lof = lofGenes.map(gene => ({ gene, ...tally(this.functionalLoss.geneData[gene].mutations || {}) })).filter(r => r.k > 0).sort((a, b) => b.k - a.k)
+            .map(r => `${this.gi(r.gene)} <b>${this._ctwPct(r.k, n)}</b> <span class="gb-m">(${r.k})</span>`).join(', ');
+        const body = this._gbDesc('Mutations in cancer genes (OncoKB), counting hotspot and likely loss-of-function calls. "Enriched" tests whether the mutation is more common here than in the other cell lines (one-sided Fisher test).')
+            + this._gbRow('Specific variants', varC.size ? chips(varC) : '<span class="gb-m">none of the tracked variants</span>')
+            + this._gbRow('Driver fusions', fusC.size ? chips(fusC) : '<span class="gb-m">none of the curated driver fusions</span>')
+            + this._gbRow('Functional loss', lof || '<span class="gb-m">none</span>')
+            + `<div class="gb-grid" style="margin-top:6px;"><div><div class="gb-sub">Most often mutated</div>${common.length ? this._gbTable(heads, common.map(cell)) : '<div class="gb-empty">No cancer gene is mutated in two or more of these cell lines.</div>'}</div>`
+            + `<div><div class="gb-sub">Most enriched compared with other cell lines</div>${enriched.length ? this._gbTable(heads, enriched.map(cell)) : '<div class="gb-empty">No cancer gene is clearly more often mutated here (3 or more cell lines, p below 0.01).</div>'}</div></div>`;
+        return this._gbSection('Common mutations and fusions', body, 'DepMap 26Q1 hotspot and damaging mutation calls, integrated functional-loss call, inferred variant and driver-fusion layers.');
+    }
+
+    _ctwCopyNumber(c) {
+        const cn = this.clinicalCn;
+        if (!cn?.byCellLine) return '';
+        const prof = new Set(cn.profiledCellLines || Object.keys(cn.byCellLine));
+        let n = 0, N = 0;
+        c.ids.forEach((id, i) => { if (prof.has(id)) { N++; if (c.inG[i]) n++; } });
+        if (n < 3) return '';
+        const count = (key) => {
+            const m = new Map();
+            c.ids.forEach((id, i) => {
+                if (!prof.has(id)) return;
+                for (const gene of new Set((cn.byCellLine[id]?.[key] || []).map(e => e.gene))) {
+                    const r = m.get(gene) || m.set(gene, { gene, k: 0, K: 0 }).get(gene);
+                    r.K++; if (c.inG[i]) r.k++;
+                }
+            });
+            return [...m.values()].filter(r => r.k >= 2).map(r => ({ ...r, p: this._hypergeomUpperP(r.k, r.K, n, N) }))
+                .sort((a, b) => b.k - a.k || a.p - b.p).slice(0, 10);
+        };
+        const amp = count('amplifications'), del = count('deletions');
+        if (!amp.length && !del.length) return '';
+        const heads = ['Gene', 'This group', 'Other cell lines', 'Enriched, p'];
+        const cell = (r) => [this._ctwGeneLink(r.gene), `<b>${this._ctwPct(r.k, n)}</b> <span class="gb-m">(${r.k} of ${n})</span>`, this._ctwPct(r.K - r.k, N - n), r.p < 0.01 ? this._gbP(r.p) : '<span class="gb-m">n.s.</span>'];
+        const body = this._gbDesc(`Amplifications and deep deletions of the curated cancer gene panel, in the ${n} cell lines of this group with copy-number data.`)
+            + `<div class="gb-grid"><div><div class="gb-sub">Most often amplified</div>${amp.length ? this._gbTable(heads, amp.map(cell)) : '<div class="gb-empty">None in two or more cell lines.</div>'}</div>`
+            + `<div><div class="gb-sub">Most often deleted</div>${del.length ? this._gbTable(heads, del.map(cell)) : '<div class="gb-empty">None in two or more cell lines.</div>'}</div></div>`;
+        return this._gbSection('Copy number', body, 'DepMap gene-level copy number, curated amplification and deletion panel.');
+    }
+
+    // Per-gene sum, sum of squares and count over the whole cohort, so a
+    // group's "other cell lines" is the total minus the group.
+    _ctwTotals(kind) {
+        const key = kind === 'expr' ? '_ctwExprTot' : '_ctwGeTot';
+        if (this[key]) return this[key];
+        const N = this.nCellLines;
+        const nG = kind === 'expr' ? this.expressionMetadata.genes.length : this.nGenes;
+        const s = new Float64Array(nG), ss = new Float64Array(nG), cnt = new Uint32Array(nG);
+        const val = this._ctwReader(kind);
+        for (let g = 0; g < nG; g++) {
+            let a = 0, b = 0, k = 0;
+            for (let i = 0; i < N; i++) { const v = val(g, i); if (v === v) { a += v; b += v * v; k++; } }
+            s[g] = a; ss[g] = b; cnt[g] = k;
+        }
+        return (this[key] = { s, ss, cnt, nG });
+    }
+    _ctwReader(kind) {
+        if (kind === 'expr') {
+            const nE = this.expressionMetadata.nCellLines, map = this.expressionCellLineMap, X = this.expressionData;
+            return (g, i) => { const e = map[i]; return (e === undefined || e === -1) ? NaN : X[g * nE + e]; };
+        }
+        const N = this.nCellLines, X = this.geneEffects;
+        return (g, i) => { const v = X[g * N + i]; return v === -999 ? NaN : v; };
+    }
+    // Welch comparison of the group with the other cell lines, for every gene.
+    _ctwScan(c, kind, below) {
+        const tot = this._ctwTotals(kind), val = this._ctwReader(kind);
+        const out = [];
+        for (let g = 0; g < tot.nG; g++) {
+            let a = 0, b = 0, k = 0, nb = 0;
+            for (const i of c.idx) { const v = val(g, i); if (v === v) { a += v; b += v * v; k++; if (v < below) nb++; } }
+            const kr = tot.cnt[g] - k;
+            if (k < 3 || kr < 3) continue;
+            const m1 = a / k, m2 = (tot.s[g] - a) / kr;
+            const v1 = Math.max(0, (b - k * m1 * m1) / (k - 1)), v2 = Math.max(0, (tot.ss[g] - b - kr * m2 * m2) / (kr - 1));
+            const se2 = v1 / k + v2 / kr;
+            if (!(se2 > 0)) continue;
+            const t = (m1 - m2) / Math.sqrt(se2);
+            const df = se2 * se2 / ((v1 / k) ** 2 / (k - 1) + (v2 / kr) ** 2 / (kr - 1));
+            out.push({ g, m1, m2, d: m1 - m2, t, df, k, nb });
+        }
+        return out;
+    }
+
+    _ctwDependencies(c) {
+        if (c.n < 3) return '';
+        const genes = this.metadata.genes, ce = this._commonEssentials || new Set();
+        const rows = this._ctwScan(c, 'ge', -0.5).filter(r => r.d < -0.15 && r.m1 < -0.3 && !ce.has(genes[r.g]))
+            .map(r => ({ ...r, p: this.tDistributionPValue(Math.abs(r.t), r.df) })).filter(r => r.p < 0.001)
+            .sort((a, b) => a.d - b.d).slice(0, 15);
+        const body = this._gbDesc('Genes this group needs more than the other cell lines do (CRISPR gene effect; more negative is a stronger dependency). Genes nearly every cell line needs (common essentials) are left out, so what remains is selective.')
+            + (rows.length ? this._gbTable(['Gene', 'This group (mean)', 'Other cell lines (mean)', 'Below −0.5 here', 'p'],
+                rows.map(r => [this._ctwGeneLink(genes[r.g]), `<b>${this._gbNum(r.m1)}</b>`, this._gbNum(r.m2), `${this._ctwPct(r.nb, r.k)} <span class="gb-m">(${r.nb} of ${r.k})</span>`, this._gbP(r.p)]))
+                : '<div class="gb-empty">No gene is clearly more needed here than in the other cell lines.</div>');
+        return this._gbSection('Selective dependencies', body, 'DepMap 26Q1 CRISPRGeneEffect (Chronos); Welch t-test against the other cell lines; common essentials from DepMap 26Q1.');
+    }
+
+    _ctwExpression(c) {
+        if (!this.expressionLoaded) return '';
+        const genes = this.expressionMetadata.genes;
+        const scan = this._ctwScan(c, 'expr', 1).map(r => ({ ...r, p: this.tDistributionPValue(Math.abs(r.t), r.df) })).filter(r => r.p < 0.001 && r.k >= 3);
+        const high = scan.filter(r => r.m1 >= 3 && r.d > 1).sort((a, b) => b.d - a.d).slice(0, 15);
+        const low = scan.filter(r => r.m2 >= 3 && r.d < -1).sort((a, b) => a.d - b.d).slice(0, 15);
+        const table = (rows) => this._gbTable(['Gene', 'This group', 'Other cell lines', 'p'],
+            rows.map(r => [this._ctwGeneLink(genes[r.g]), `<b>${this._gbNum(r.m1, 1)}</b>`, this._gbNum(r.m2, 1), this._gbP(r.p)]));
+        const body = this._gbDesc('Genes whose mRNA is much higher or lower here than in the other cell lines (mean log₂ TPM+1; a difference of 1 is twofold). The high list is usually led by the lineage’s own marker genes.')
+            + `<div class="gb-grid"><div><div class="gb-sub">Higher in this group</div>${high.length ? table(high) : '<div class="gb-empty">None.</div>'}</div>`
+            + `<div><div class="gb-sub">Lower in this group</div>${low.length ? table(low) : '<div class="gb-empty">None.</div>'}</div></div>`;
+        return this._gbSection('Characteristic expression', body, 'DepMap 26Q1 OmicsExpressionTPMLogp1; Welch t-test against the other cell lines.');
+    }
+
+    // Surface protein candidates in the expression table, with a CD flag.
+    _ctwSurfaceGenes() {
+        if (this._ctwSurf) return this._ctwSurf;
+        const cls = this._geneClasses || {};
+        const cd = new Set(cls.cd?.genes || []);
+        const all = new Set([...(cls.surface?.genes || []), ...cd, ...this._WIKI_FACS_MARKERS()]);
+        const gi = [], names = [];
+        for (const gname of all) { const k = this.expressionGeneIndex?.get(gname); if (k !== undefined) { gi.push(k); names.push(gname); } }
+        return (this._ctwSurf = { gi, names, cd });
+    }
+    // Ranks of every surface gene across the cohort cell lines with mRNA data.
+    _ctwSurfaceRanks() {
+        if (this._ctwRanks) return this._ctwRanks;
+        const sf = this._ctwSurfaceGenes();
+        const rows = [];
+        for (let i = 0; i < this.nCellLines; i++) if ((this.expressionCellLineMap?.[i] ?? -1) !== -1) rows.push(i);
+        const M = rows.length, val = this._ctwReader('expr');
+        const ranks = new Float32Array(sf.gi.length * M), vals = new Float32Array(sf.gi.length * M);
+        const ord = new Uint32Array(M);
+        for (let j = 0; j < sf.gi.length; j++) {
+            const off = j * M;
+            for (let r = 0; r < M; r++) { const v = val(sf.gi[j], rows[r]); vals[off + r] = v === v ? v : 0; ord[r] = r; }
+            const sorted = Array.from(ord).sort((a, b) => vals[off + a] - vals[off + b]);
+            for (let r = 0; r < M;) {
+                let e = r; while (e + 1 < M && vals[off + sorted[e + 1]] === vals[off + sorted[r]]) e++;
+                const avg = (r + e) / 2 + 1;
+                for (let q = r; q <= e; q++) ranks[off + sorted[q]] = avg;
+                r = e + 1;
+            }
+        }
+        return (this._ctwRanks = { rows, M, ranks, vals, rowOf: new Map(rows.map((i, r) => [i, r])) });
+    }
+
+    _ctwSurfaceBody(c) {
+        const sf = this._ctwSurfaceGenes(), R = this._ctwSurfaceRanks();
+        const cdOnly = !!this._ctwCdOnly;
+        const gr = c.idx.map(i => R.rowOf.get(i)).filter(r => r !== undefined);
+        const ng = gr.length, nr = R.M - ng;
+        if (ng < 3) return this._gbDesc('Too few cell lines with mRNA data in this group.');
+        const inR = new Uint8Array(R.M); for (const r of gr) inR[r] = 1;
+        const BRIGHT = 4, OFF = 1;
+        const tisOf = R.rows.map(i => this.getCellLineLineage(this.metadata.cellLines[i]) || 'Unknown');
+        const res = [];
+        for (let j = 0; j < sf.gi.length; j++) {
+            if (cdOnly && !sf.cd.has(sf.names[j])) continue;
+            const off = j * R.M;
+            let rs = 0, onG = 0, offG = 0, onR = 0;
+            const gv = [];
+            for (let r = 0; r < R.M; r++) {
+                const v = R.vals[off + r];
+                if (inR[r]) { rs += R.ranks[off + r]; gv.push(v); if (v >= BRIGHT) onG++; if (v < OFF) offG++; }
+                else if (v >= BRIGHT) onR++;
+            }
+            const auc = (rs - ng * (ng + 1) / 2) / (ng * nr);
+            res.push({ j, gene: sf.names[j], auc, med: this.median(gv), onG: onG / ng, offG: offG / ng, onR: onR / nr });
+        }
+        const tag = (gname) => sf.cd.has(gname) ? '<span class="gb-tag gb-tag-pathway" title="A CD marker: antibodies for flow cytometry are usually available">CD</span>' : '';
+        const gl = (r) => this._ctwGeneLink(r.gene) + tag(r.gene);
+        const pc = (f) => `${Math.round(f * 100)}%`;
+        // Where an absent marker is high instead: those cell lines serve as
+        // the antibody's positive control.
+        const highIn = (r) => {
+            const m = new Map(); const off = r.j * R.M;
+            for (let q = 0; q < R.M; q++) { if (inR[q]) continue; (m.get(tisOf[q]) || m.set(tisOf[q], []).get(tisOf[q])).push(R.vals[off + q]); }
+            return [...m.entries()].filter(([t, a]) => a.length >= 5 && t !== c.g.tissue).map(([t, a]) => [t, this.median(a)]).sort((a, b) => b[1] - a[1]).slice(0, 2)
+                .map(([t, v]) => `${this.esc(t)} <span class="gb-m">(${this._gbNum(v, 1)})</span>`).join(', ');
+        };
+        const specific = res.filter(r => r.med >= BRIGHT && r.auc >= 0.7 && r.onR <= 0.5).sort((a, b) => b.auc - a.auc).slice(0, 12);
+        const bright = res.filter(r => r.onG >= 0.9).sort((a, b) => b.med - a.med).slice(0, 12);
+        const absent = res.filter(r => r.offG >= 0.8 && r.onR >= 0.3).sort((a, b) => b.onR - a.onR).slice(0, 12);
+        const empty = (t) => `<div class="gb-empty">${t}</div>`;
+        return this._gbDesc(`Proteins on the cell surface and how much of their mRNA the ${ng} cell lines with mRNA data make (log₂ TPM+1). Bright means at least ${BRIGHT} (about 15 TPM, usually enough to stain); absent means below ${OFF}. mRNA is a guide only, so confirm with the antibody.`)
+            + `<label class="gb-m" style="display:inline-flex; gap:5px; align-items:center; font-size:11px; margin-bottom:4px;"><input type="checkbox" data-ctw-cdonly ${cdOnly ? 'checked' : ''}> CD markers only</label>`
+            + `<div class="gb-grid"><div><div class="gb-sub">Specific to this group <span class="gb-m">(bright here, lower elsewhere)</span></div>`
+            + (specific.length ? this._gbTable(['Protein', 'Median here', 'Bright here', 'Bright elsewhere', 'Specificity'],
+                specific.map(r => [gl(r), `<b>${this._gbNum(r.med, 1)}</b>`, pc(r.onG), pc(r.onR), `<span title="The chance that a random cell line of this group expresses more than a random other cell line (0.5 = no difference, 1 = always more)">${this._gbNum(r.auc)}</span>`])) : empty('None stands out.'))
+            + `<div class="gb-sub" style="margin-top:12px;">Bright in nearly all of its cell lines <span class="gb-m">(positive staining controls)</span></div>`
+            + (bright.length ? this._gbTable(['Protein', 'Median here', 'Bright here', 'Bright elsewhere'],
+                bright.map(r => [gl(r), `<b>${this._gbNum(r.med, 1)}</b>`, pc(r.onG), pc(r.onR)])) : empty('None is bright in 90% of these cell lines.'))
+            + `</div><div><div class="gb-sub">Absent in most of its cell lines <span class="gb-m">(negative staining controls)</span></div>`
+            + (absent.length ? this._gbTable(['Protein', 'Absent here', 'Bright elsewhere', 'High instead in'],
+                absent.map(r => [gl(r), `<b>${pc(r.offG)}</b>`, pc(r.onR), highIn(r)])) : empty('None is absent in 80% of these cell lines and bright elsewhere.'))
+            + `<p class="gb-m" style="margin:6px 0 0;">An absent protein makes a negative control on these cells; the cancer types where it is high give the antibody a positive control.</p></div></div>`;
+    }
+
+    // The surface panel that tells tissues apart: per tissue up to 8 surface
+    // proteins that best separate it from the rest (the top 3 are drawn), and
+    // each cell line's five most similar cell lines by that panel. Built once.
+    _ctwPanel() {
+        if (this._ctwPanelCache) return this._ctwPanelCache;
+        const sf = this._ctwSurfaceGenes(), R = this._ctwSurfaceRanks();
+        const tisOf = R.rows.map(i => this.getCellLineLineage(this.metadata.cellLines[i]) || 'Unknown');
+        const tCount = new Map(); for (const t of tisOf) tCount.set(t, (tCount.get(t) || 0) + 1);
+        const tissues = [...tCount.entries()].filter(([t, k]) => k >= 8 && t !== 'Unknown' && t !== 'Other').map(([t]) => t).sort();
+        const tIdx = new Map(tissues.map((t, k) => [t, k]));
+        const T = tissues.length, M = R.M, J = sf.gi.length;
+        const nT = tissues.map(t => tCount.get(t));
+        // AUC of each tissue against the rest, per gene, from one pass over the ranks.
+        const pick = tissues.map(() => []);
+        const rsum = new Float64Array(T);
+        for (let j = 0; j < J; j++) {
+            rsum.fill(0);
+            const off = j * M;
+            for (let r = 0; r < M; r++) { const k = tIdx.get(tisOf[r]); if (k !== undefined) rsum[k] += R.ranks[off + r]; }
+            for (let k = 0; k < T; k++) {
+                const auc = (rsum[k] - nT[k] * (nT[k] + 1) / 2) / (nT[k] * (M - nT[k]));
+                if (auc >= 0.75) pick[k].push([j, auc]);
+            }
+        }
+        const medianIn = (j, k) => { const a = []; const off = j * M; for (let r = 0; r < M; r++) if (tisOf[r] === tissues[k]) a.push(R.vals[off + r]); return this.median(a); };
+        const used = new Set(), genes = [];
+        for (let k = 0; k < T; k++) {
+            let got = 0;
+            for (const [j, auc] of pick[k].sort((a, b) => b[1] - a[1])) {
+                if (got >= 8) break;
+                if (used.has(j) || medianIn(j, k) < 3) continue;
+                used.add(j); genes.push({ j, gene: sf.names[j], tissue: tissues[k], auc, rank: got }); got++;
+            }
+        }
+        const G = genes.length;
+        // z per gene across the cohort, then each cell line's vector centered
+        // and scaled, so a dot product is the Pearson r between two lines.
+        const z = new Float32Array(M * G);
+        genes.forEach((p, q) => {
+            const off = p.j * M; let a = 0, b = 0;
+            for (let r = 0; r < M; r++) { const v = R.vals[off + r]; a += v; b += v * v; }
+            const mu = a / M, sd = Math.sqrt(Math.max(1e-9, b / M - mu * mu));
+            for (let r = 0; r < M; r++) z[r * G + q] = (R.vals[off + r] - mu) / sd;
+        });
+        for (let r = 0; r < M; r++) {
+            let m = 0; for (let q = 0; q < G; q++) m += z[r * G + q]; m /= G;
+            let s2 = 0; for (let q = 0; q < G; q++) { const d = z[r * G + q] - m; z[r * G + q] = d; s2 += d * d; }
+            const sc = 1 / (Math.sqrt(s2) || 1); for (let q = 0; q < G; q++) z[r * G + q] *= sc;
+        }
+        const K = 5, nn = new Int32Array(M * K), ns = new Float32Array(M * K);
+        const sim = new Float32Array(M);
+        for (let r = 0; r < M; r++) {
+            const a = r * G;
+            for (let s = 0; s < M; s++) { if (s === r) { sim[s] = -9; continue; } let d = 0; const b = s * G; for (let q = 0; q < G; q++) d += z[a + q] * z[b + q]; sim[s] = d; }
+            for (let k = 0; k < K; k++) {
+                let bi = -1, bv = -10;
+                for (let s = 0; s < M; s++) if (sim[s] > bv) { bv = sim[s]; bi = s; }
+                nn[r * K + k] = bi; ns[r * K + k] = bv; sim[bi] = -9;
+            }
+        }
+        const hasOwn = (r) => { for (let k = 0; k < K; k++) if (tisOf[nn[r * K + k]] === tisOf[r]) return true; return false; };
+        let ok = 0, tot = 0;
+        for (let r = 0; r < M; r++) if (tIdx.has(tisOf[r])) { tot++; if (hasOwn(r)) ok++; }
+        const shown = genes.filter(p => p.rank < 3);
+        const med = tissues.map((t, k) => shown.map(p => medianIn(p.j, k)));
+        return (this._ctwPanelCache = { tissues, nT, genes, shown, med, tisOf, K, nn, ns, hasOwn, ok, tot });
+    }
+
+    _ctwPanelSection(c) {
+        if (!this.expressionLoaded) return '';
+        const P = this._ctwPanel(), R = this._ctwSurfaceRanks();
+        const g = c.g;
+        // A finer group gets its own row of medians above the tissue rows.
+        const memRows = c.idx.map(i => R.rowOf.get(i)).filter(r => r !== undefined);
+        const own = (g.subtype || g.disease) && memRows.length >= 3
+            ? P.shown.map(p => { const off = p.j * R.M; return this.median(memRows.map(r => R.vals[off + r])); }) : null;
+        const color = (v) => {
+            const f = Math.max(0, Math.min(1, v / 7));
+            const mix = (a, b) => Math.round(a + (b - a) * f);
+            return `rgb(${mix(255, 63)},${mix(255, 107)},${mix(255, 37)})`;
+        };
+        const cellTd = (v, gene, where) => `<td title="${this.esc(gene)} in ${this.esc(where)}: median ${this._gbNum(v, 1)} log₂ TPM+1" style="background:${color(v)}; width:13px; height:13px; padding:0; border:1px solid #fff;"></td>`;
+        const head = `<tr><th></th>${P.shown.map(p => `<th title="${this.esc(p.gene)}: marks ${this.esc(p.tissue)} (specificity ${this._gbNum(p.auc)})" style="padding:0 0 3px; vertical-align:bottom; font-weight:400;"><div style="writing-mode:vertical-rl; transform:rotate(180deg); font-size:9.5px; font-style:italic; white-space:nowrap; line-height:13px;">${this.esc(p.gene)}</div></th>`).join('')}</tr>`;
+        const trs = P.tissues.map((t, k) => {
+            const me = t === g.tissue;
+            return `<tr><td style="padding:0 8px 0 0; font-size:10.5px; white-space:nowrap; text-align:right;${me ? ' font-weight:700; color:#3f6b25;' : ''}">${me ? '▶ ' : ''}${this.esc(t)} <span class="gb-m">(${P.nT[k]})</span></td>${P.med[k].map((v, q) => cellTd(v, P.shown[q].gene, t)).join('')}</tr>`;
+        });
+        if (own) trs.unshift(`<tr><td style="padding:0 8px 0 0; font-size:10.5px; white-space:nowrap; text-align:right; font-weight:700; color:#3f6b25;">▶ ${this.esc(this._ctwName(g))} <span class="gb-m">(${memRows.length})</span></td>${own.map((v, q) => cellTd(v, P.shown[q].gene, this._ctwName(g))).join('')}</tr>`);
+        const matrix = `<div style="overflow-x:auto;"><table style="border-collapse:collapse; margin:4px 0;">${head}${trs.join('')}</table></div>`
+            + `<div class="gb-m" style="display:flex; align-items:center; gap:6px; margin-top:4px;">0 <span style="display:inline-block; width:120px; height:9px; background:linear-gradient(90deg, ${color(0)}, ${color(7)}); border:1px solid #e5e7eb;"></span> 7+ log₂ TPM+1, median per cancer type</div>`;
+        // The identity check for this group's cell lines.
+        const inPanel = memRows.filter(r => P.tissues.includes(P.tisOf[r]));
+        const off = inPanel.filter(r => !P.hasOwn(r));
+        let check;
+        if (!inPanel.length) check = this._gbDesc('This cancer type has too few cell lines with mRNA data to be part of the panel.');
+        else {
+            const near = (r) => {
+                const tally = new Map();
+                for (let k = 0; k < P.K; k++) { const t = P.tisOf[P.nn[r * P.K + k]]; tally.set(t, (tally.get(t) || 0) + 1); }
+                return [...tally.entries()].sort((a, b) => b[1] - a[1]).map(([t, k]) => `${this.esc(t)} ${k}`).join(', ');
+            };
+            const names = (r) => Array.from({ length: P.K }, (_, k) => this._ctwClLink(this.metadata.cellLines[R.rows[P.nn[r * P.K + k]]])).join(', ');
+            check = `<div class="gb-verdict"><b>${inPanel.length - off.length} of ${inPanel.length}</b> cell lines in this group have a close match in their own tissue (one or more of their five most similar cell lines)${off.length ? `; ${off.length} ${off.length === 1 ? 'does' : 'do'} not.` : '.'} <span class="gb-m">Across the whole cohort, ${Math.round(100 * P.ok / P.tot)}% do.</span></div>`
+                + (off.length ? this._gbTable(['Cell line', 'Annotated as', 'Its five most similar cell lines', 'Their tissues'],
+                    off.slice(0, 30).map(r => [this._ctwClLink(this.metadata.cellLines[R.rows[r]]), this.esc(P.tisOf[r]), names(r), `<b>${near(r)}</b>`])).replace('gb-table"', 'gb-table gb-table-left"') : '');
+        }
+        const body = this._gbDesc(`Surface proteins that best tell the cancer types apart: for each cancer type with at least 8 cell lines, the three surface proteins that best set it apart from the others. Each row is the median mRNA of a cancer type; hover a square for the value. The identity check and the export use up to eight proteins per cancer type (${P.genes.length} in all).`)
+            + matrix
+            + `<div style="display:flex; justify-content:flex-end; margin-top:2px;"><button class="btn btn-outline btn-sm mobile-hide" data-ctw-act="panel-csv" style="font-size:10px; padding:1px 8px;" title="Download the panel as a table: cancer types by proteins, median log₂ TPM+1">Export panel (.csv)</button></div>`
+            + `<div class="gb-sub">Identity check</div>`
+            + this._gbDesc('Each cell line’s surface profile is compared with every other cell line’s. A cell line whose five most similar cell lines all come from other tissues is worth checking: it can mean a mix-up or a contaminated culture, but also a cell line that changed in culture, or one that resembles a related cancer type (squamous carcinomas of different organs look alike). STR profiling settles identity.')
+            + check;
+        return this._gbSection('Surface protein panel and identity check', body, 'DepMap 26Q1 OmicsExpressionTPMLogp1 (mRNA). Specificity is the area under the ROC curve of one cancer type against all other cell lines; similarity is the Pearson r of z-scored panel values.');
+    }
+
+    _ctwLinesSection(c) {
+        const ids = c.idx.map(i => c.ids[i]).sort((a, b) => (this.getCellLineName(a) || a).localeCompare(this.getCellLineName(b) || b));
+        const body = this._gbDesc('Click a cell line to open its Wiki.')
+            + `<div style="display:flex; flex-wrap:wrap; gap:4px 10px;">${ids.map(id => this._ctwClLink(id)).join('')}</div>`;
+        return this._gbSection(`Cell lines (${ids.length})`, body, '');
+    }
+
+    _ctwPanelCsv() {
+        const P = this._ctwPanel();
+        const R = this._ctwSurfaceRanks();
+        const medOf = (p, t) => { const a = []; const off = p.j * R.M; for (let r = 0; r < R.M; r++) if (P.tisOf[r] === t) a.push(R.vals[off + r]); return this.median(a); };
+        const lines = [['Cancer type', 'Cell lines', ...P.genes.map(p => p.gene)].join(','),
+            ['Marks', '', ...P.genes.map(p => `"${p.tissue}"`)].join(','),
+            ['Rank for that cancer type', '', ...P.genes.map(p => p.rank + 1)].join(','),
+            ['Specificity (AUC)', '', ...P.genes.map(p => p.auc.toFixed(3))].join(','),
+            ...P.tissues.map((t, k) => [`"${t}"`, P.nT[k], ...P.genes.map(p => medOf(p, t).toFixed(2))].join(','))];
+        this.downloadFile(lines.join('\n'), 'correlate_surface_panel.csv', 'text/csv');
+    }
+
+    // Sets the Cell Line Browser's cohort filters to the group.
+    _ctwApplyToFilters(g) {
+        const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v || ''; };
+        set('clbTissueFilter', g.tissue);
+        this.updateClbSubtypeFilter?.();
+        set('clbSubtypeFilter', g.subtype);
+        this._prefillOncotreeSelect?.('clbOncotreeFilter', g.tissue || '', g.subtype || '', g.disease || '');
+        set('clbOncotreeFilter', g.disease);
+        this.renderCellLineList();
+    }
+
+    _ctwWire() {
+        const modal = document.getElementById('ctwModal');
+        if (!modal || modal._wired) return;
+        modal._wired = true;
+        const close = () => { modal.style.display = 'none'; const gb = document.getElementById('gbModal'); if (gb) gb.style.zIndex = ''; };
+        document.getElementById('ctwCloseBtn')?.addEventListener('click', close);
+        modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+        document.getElementById('ctwPdfBtn')?.addEventListener('click', () => this.downloadCellLineWiki({
+            title: document.getElementById('ctwTitle')?.textContent, subtitle: document.getElementById('ctwSubtitle')?.textContent, bodyId: 'ctwBody', btnId: 'ctwPdfBtn' }));
+        document.getElementById('ctwFilterBtn')?.addEventListener('click', () => {
+            if (!this._ctwGroup) return;
+            const clb = document.getElementById('cellLineBrowserModal');
+            if (!clb || clb.style.display === 'none' || !clb.style.display) this.openCellLineBrowser();
+            this._ctwApplyToFilters(this._ctwGroup);
+            close();
+        });
+        document.getElementById('ctwBody')?.addEventListener('click', (e) => {
+            const a = e.target.closest('[data-ctw-gene], [data-ctw-cl], [data-ctw-t], [data-ctw-act]');
+            if (!a) return;
+            e.preventDefault();
+            if (a.dataset.ctwGene) {
+                this.openGeneBrowser(a.dataset.ctwGene);
+                const gb = document.getElementById('gbModal'); if (gb) gb.style.zIndex = '1380';
+            } else if (a.dataset.ctwCl) {
+                this.openCellLineWiki(a.dataset.ctwCl).then(() => { const w = document.getElementById('clbWikiModal'); if (w) w.style.zIndex = String((parseInt(modal.style.zIndex) || 1372) + 1); });
+            } else if (a.dataset.ctwAct === 'panel-csv') {
+                this._ctwPanelCsv();
+            } else if (a.dataset.ctwT !== undefined) {
+                this.openCancerTypeWiki({ tissue: a.dataset.ctwT, subtype: a.dataset.ctwS, disease: a.dataset.ctwD });
+            }
+        });
+        // The classification rows of a cell line Wiki open its cancer types.
+        document.getElementById('clbWikiBody')?.addEventListener('click', (e) => {
+            const a = e.target.closest('[data-ctw-t]');
+            if (!a) return;
+            e.preventDefault();
+            this.openCancerTypeWiki({ tissue: a.dataset.ctwT, subtype: a.dataset.ctwS, disease: a.dataset.ctwD });
+        });
+        document.getElementById('ctwBody')?.addEventListener('change', (e) => {
+            if (!e.target.matches('[data-ctw-cdonly]') || !this._ctwCtx) return;
+            this._ctwCdOnly = e.target.checked;
+            const card = document.getElementById('ctwSurfaceCard');
+            if (card) card.querySelector('.gb-card-body').innerHTML = this._ctwSurfaceBody(this._ctwCtx);
+        });
+    }
+
     async openCellLineWiki(cellLineId) {
         // Remember which cell line the wiki is showing so the header export
         // buttons (gene-info CSV etc.) know what to export.
@@ -53816,11 +54357,12 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const codeHtml = code
             ? `<a href="https://oncotree.mskcc.org/?version=oncotree_latest_stable&search=${encodeURIComponent(code)}" target="_blank" rel="noopener" title="Open the Oncotree classification page for this code" style="text-decoration:none;"><code style="background:#f3f4f6; padding:1px 6px; border-radius:3px; border:1px solid #e5e7eb;">${code}</code> <span style="font-size:10px; color:#3730a3;">↗</span></a>`
             : '';
+        const ctwLink = (g) => `<a href="#" ${this._ctwGoAttrs(g)} style="font-size:10px; color:#3730a3;" title="Open the Cancer type Wiki for this group">Cancer type Wiki</a>`;
         const classificationHtml = `
             <p style="margin:0 0 8px; font-size:11px; color:#6b7280;">How this tumor is classified in the <a href="https://oncotree.mskcc.org/" target="_blank" rel="noopener" style="color:#3730a3;">Oncotree</a> cancer-classification system, from broad tissue down to specific disease variant. Click the code to open Oncotree's page for this exact classification.</p>
-            ${row('Tissue of origin', lin)}
-            ${row('Broad disease', pd)}
-            ${row('Specific subtype', sub)}
+            ${row('Tissue of origin', lin && `${this.esc(lin)} ${ctwLink({ tissue: lin })}`)}
+            ${row('Broad disease', pd && `${this.esc(pd)} ${ctwLink({ tissue: lin, subtype: pd })}`)}
+            ${row('Specific subtype', sub && `${this.esc(sub)} ${get('oncotreeSubtype') ? ctwLink({ tissue: lin, subtype: pd, disease: sub }) : ''}`)}
             ${row('Oncotree code', codeHtml)}
             ${row('DepMap type', dmtype)}
             ${row('Molecular features', psf)}`;

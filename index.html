@@ -1822,6 +1822,7 @@
         .gb-scope .gb-table td { padding:3px 10px; }
         .gb-scope .gb-table td:first-child, .gb-scope .gb-table th:first-child { text-align:left; }
         .gb-scope .gb-table-tissue { width:100%; table-layout:fixed; }
+        .gb-scope .gb-table-left td, .gb-scope .gb-table-left th { text-align:left; }
         .gb-scope .gb-table-tissue th:nth-child(2), .gb-scope .gb-table-tissue td:nth-child(2) { width:88px; }
         .gb-scope .gb-table-tissue th:nth-child(3), .gb-scope .gb-table-tissue td:nth-child(3) { width:76px; }
         .gb-scope .gb-rtab { display:grid; grid-template-columns:max-content minmax(50px,110px) max-content max-content max-content; column-gap:10px; row-gap:3px; align-items:center; }
@@ -5322,6 +5323,25 @@
       </div>
     </div>
 
+    <!-- Cancer type Wiki: one tissue, subtype or disease against every other cell line. -->
+    <div id="ctwModal" style="display:none; position:fixed; inset:0; z-index:1372; background:rgba(0,0,0,0.5); align-items:flex-start; justify-content:center; padding:0 20px 20px; overflow-y:auto;">
+      <div style="background:#fff; width:100%; max-width:min(96vw, 1100px); margin-top:20px; border-radius:8px; display:flex; flex-direction:column; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);">
+        <div style="position:sticky; top:0; z-index:3; display:flex; justify-content:space-between; align-items:center; padding:12px 18px; border-bottom:1px solid #e5e7eb; background:linear-gradient(90deg, #f0fdf4 0%, #fff 100%); border-radius:8px 8px 0 0; box-shadow:0 2px 6px rgba(0,0,0,0.06);">
+          <div style="min-width:0;">
+            <h3 id="ctwTitle" style="margin:0; font-size:17px; color:#4c782e;">Cancer type Wiki</h3>
+            <div id="ctwSubtitle" style="font-size:11px; color:#6b7280; margin-top:2px;"></div>
+          </div>
+          <div class="pop-head-btns" style="display:flex; align-items:center; gap:8px;">
+            <button id="ctwPdfBtn" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px; padding:4px 10px;" title="Save this Wiki as a multi-page PDF">Export PDF</button>
+            <button onclick="app.screenshotPopout('ctwBody','correlate_cancer_type_wiki')" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px; padding:4px 10px;" title="Save the Wiki as an image">Export image...</button>
+            <button id="ctwFilterBtn" class="btn btn-outline btn-sm" style="font-size:11px; padding:4px 10px;" title="Set the Cell Line Browser's tissue, subtype and disease filters to this group">Show in Cell Line Browser</button>
+            <button id="ctwCloseBtn" style="background:none; border:none; font-size:24px; cursor:pointer; line-height:1; color:#6b7280;" title="Close the Wiki">&times;</button>
+          </div>
+        </div>
+        <div id="ctwBody" class="gb-scope" style="padding:16px 20px; font-size:12px; line-height:1.55; color:#374151; background:#f9fafb; border-radius:0 0 8px 8px;"></div>
+      </div>
+    </div>
+
     <!-- Cell Line Browser Help Modal -->
     <div id="clbInfoModal" style="display:none; position:fixed; inset:0; z-index:1360; background:rgba(0,0,0,0.5); align-items:flex-start; justify-content:center; padding:40px;">
       <div style="background:#fff; max-width:720px; width:100%; max-height:80vh; overflow-y:auto; border-radius:8px; padding:20px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);">
@@ -5445,6 +5465,7 @@
               <select id="clbTissueFilter" style="width:200px;"><option value="">All tissues</option></select>
               <select id="clbSubtypeFilter" disabled title="Choose a tissue first to narrow by subtype" style="width:200px;"><option value="">All subtypes</option></select>
               <select id="clbOncotreeFilter" style="width:210px;" title="Exact disease entity from Oncotree. Finer than the tissue and subtype fields, and reaches entities they cannot, for example chronic lymphocytic leukemia, which the disease field files under mature B-cell neoplasms."><option value="">All diseases</option></select>
+              <button id="clbCancerWikiBtn" class="btn btn-outline btn-sm" disabled title="A summary of the chosen tissue, subtype or disease: common mutations, dependencies, surface proteins for FACS and an identity check. Choose a tissue, subtype or disease first.">Cancer type Wiki</button>
               <select id="clbSexFilter" style="width:160px;" title="Filter by sex. Annotation (from DepMap) and expression-based calls (Y-markers + XIST) are independent axes, they often disagree.">
                 <option value="">All sexes</option>
                 <optgroup label="By annotation">
@@ -5910,7 +5931,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v91_56"></script>
+    <script src="app.js?v=v91_57"></script>
     <script src="tour.js?v=v91_54"></script>
 </body>
 </html>
