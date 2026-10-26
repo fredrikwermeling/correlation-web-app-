@@ -1595,7 +1595,7 @@ class CorrelationExplorer {
         const _dv = (document.querySelector('script[src*="app.js"]')?.src.split('?v=')[1]) || '';
         const dfetch = (path) => fetch(_dv ? `${path}?v=${_dv}` : path);
 
-        const [metadataRes, cellLineRes, mutationsRes, orthologsRes, translocationsRes, damagingMutRes, growthRateRes, retroRes, drugRes, clinicalFusionsRes, inferredSubtypesRes, globalSigRes, corumRes, reactomeRes, hlaCnRes, lehmannRes, clinicalCnRes, validatedFusionsRes, functionalLossRes, curatedFusionsRes, problematicRes, virusRes, cnArtefactRes, derivativeRes, txIdentityRes] = await Promise.all([
+        const [metadataRes, cellLineRes, mutationsRes, orthologsRes, translocationsRes, damagingMutRes, growthRateRes, retroRes, drugRes, clinicalFusionsRes, inferredSubtypesRes, globalSigRes, corumRes, reactomeRes, hlaCnRes, lehmannRes, clinicalCnRes, validatedFusionsRes, functionalLossRes, curatedFusionsRes, problematicRes, virusRes, cnArtefactRes, derivativeRes, txIdentityRes, virusRnaRes] = await Promise.all([
             dfetch('web_data/metadata.json'),
             dfetch('web_data/cellLineMetadata.json'),
             dfetch('web_data/mutations.json'),
@@ -1623,7 +1623,8 @@ class CorrelationExplorer {
             dfetch('web_data/virus_status.json').catch(() => null),
             dfetch('web_data/cn_artefact.json').catch(() => null),
             dfetch('web_data/derivative_lines.json').catch(() => null),
-            dfetch('web_data/transcriptome_identity.json').catch(() => null)
+            dfetch('web_data/transcriptome_identity.json').catch(() => null),
+            dfetch('web_data/virus_rna.json').catch(() => null)
         ]);
 
         this.metadata = await metadataRes.json();
@@ -1717,6 +1718,10 @@ class CorrelationExplorer {
         if (derivativeRes && derivativeRes.ok) {
             try { this.derivativeLines = await derivativeRes.json(); }
             catch (e) { this.derivativeLines = null; }
+        }
+        if (virusRnaRes && virusRnaRes.ok) {
+            try { this.virusRna = await virusRnaRes.json(); }
+            catch (e) { this.virusRna = null; }
         }
         if (txIdentityRes && txIdentityRes.ok) {
             try { this.txIdentity = await txIdentityRes.json(); }
@@ -36425,6 +36430,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     : null,
                 summaryCaveat: 'generatedSummary is written by the app from the structured fields in this file. Treat it as a starting point, not a source: check any claim in it against the underlying values, and say so if they disagree. Where a statement cannot be checked from this file, say that rather than assuming it holds.',
                 retroelements,
+                viralRna: (() => {
+                    const r = cl ? this._virusRnaOf(cl) : null;
+                    if (!r) return { measured: false, note: 'No public RNA-seq file, so viral RNA was not measured. Unmeasured, not negative.' };
+                    return { measured: true, unmappedReadsChecked: r.scanned, viruses: r.v, mode: this.virusRna.mode, modeNote: this.virusRna.modeNote, thresholds: this.virusRna.thresholds,
+                        cellosaurusRecord: (this._virusAgents(cl) || []).map(h => h.agent),
+                        readMe: 'Reads that did not map to the human genome, matched by 25-mers to viral genomes. rpm = reads per million unmapped reads checked; breadth = share of 50 genome bins covered. Detected needs reads, rpm and breadth over the thresholds; a narrow hit can be a plasmid vector (SV40, MLV) rather than an infection. Absence is weak evidence for latent viruses.' };
+                })(),
                 transcriptomeIdentity: (() => {
                     const r = cl ? this._txIdentityOf(cl) : null;
                     if (!r) return { checked: false, note: 'No mRNA data in the CRISPR cohort, so the whole-transcriptome identity check was not run.' };
@@ -42613,6 +42625,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 category: 'Viral transformation',
                 description: '<b>Inclusion:</b> Cellosaurus records the line as transformed by human papillomavirus (type 16, type 18, or unspecified). <b>Why it matters:</b> the viral E6 and E7 proteins degrade p53 and inactivate RB, so these lines behave as p53/RB-deficient whatever their TP53 and RB1 sequences say. Expect them to separate from HPV-negative lines in any p53-pathway or CDK4/6 analysis. <b>Caveat:</b> absence from this list means no curated record, not an HPV-negative result.'
             },
+            virus_rna: {
+                label: 'Viral RNA detected (RNA-seq)',
+                category: 'Viral transformation',
+                description: '<b>Inclusion:</b> cell lines whose RNA-seq contains reads of a virus (or mycoplasma) across a good part of its genome, at a moderate or strong level: at least 300 reads per million unmapped reads and 20% of the genome. Low-level hits are left out (unless Cellosaurus records the virus) because they can be carry-over from another sample on the same sequencing run. <b>Why it matters:</b> it measures what the cells express rather than what a record says, so it also finds infections and contaminants no one recorded, such as mouse retroviruses picked up during xenograft passage. <b>Caveat:</b> a latent virus can make little RNA, and the current data checks a sample of about 330,000 unmapped reads per cell line, so absence is weak evidence. 719 of 1,208 cell lines have a public RNA-seq file to check.'
+            },
             virus_hbv: {
                 label: 'Confirmed HBV-transformed',
                 category: 'Viral transformation',
@@ -43302,7 +43319,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             // Oncogene addiction (mutation x CRISPR dependency)
             'kras_addicted', 'braf_addicted', 'egfr_dependent', 'cdk46_dependent', 'bcr_abl_addicted', 'pi3k_active_dependent',
             // Viral transformation
-            'virus_transformed', 'virus_ebv', 'virus_hpv', 'virus_hbv',
+            'virus_transformed', 'virus_ebv', 'virus_hpv', 'virus_hbv', 'virus_rna',
             // Provenance
             'problematic_identity', 'problematic_classification', 'tx_identity_other',
             // Matched treated / parental pairs
@@ -43549,6 +43566,87 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const names = hits.map(h => `${h.name} (${h.agent})${h.note ? ` [${h.note}]` : ''}`).join('; ');
         return `Confirmed virus-transformed: ${names}. Curated by Cellosaurus. `
             + 'Lines without this mark have no such record, which is not the same as being free of the virus.';
+    }
+
+    // Viral RNA measured in a cell line's RNA-seq (virus_rna.json): null when
+    // the cell line was not scanned (no public hg19 alignment).
+    _virusRnaOf(id) { return this.virusRna?.byCellLine?.[id] || null; }
+    _virusRnaDetected(id) {
+        const r = this._virusRnaOf(id);
+        return r ? Object.entries(r.v).filter(([, x]) => x.detected).map(([k]) => k) : [];
+    }
+    // The scan's reference key for a Cellosaurus agent (HPV matches any HPV).
+    _virusRnaKeys(agent) {
+        const map = { 'HTLV-1': 'HTLV1', 'HIV-1': 'HIV1', AdV5: 'HAdV5', MoMuLV: 'MLV' };
+        if (agent === 'HPV') return ['HPV16', 'HPV18', 'HPV45'];
+        return [map[agent] || agent];
+    }
+    _virusRnaLabel(key) { return this.virusRna?.viruses?.[key]?.label || key; }
+
+    // The cell line Wiki section: what the scan found, against the record.
+    _virusRnaWikiHtml(cellLineId) {
+        const r = this._virusRnaOf(cellLineId), V = this.virusRna;
+        const p = (t) => `<p style="margin:0 0 8px; font-size:11px; color:#6b7280;">${t}</p>`;
+        if (!V) return p('Viral RNA data not loaded.');
+        if (!r) return p(`Not measured: this cell line has no public RNA-seq file in the CCLE collection. ${Object.keys(V.byCellLine).length.toLocaleString()} of ${this.metadata.cellLines.length.toLocaleString()} cell lines are covered.`);
+        const kv = (label, value) => `<div class="wiki-kv" style="display:flex; gap:12px; padding:3px 0; align-items:baseline;"><span class="wiki-kv-label" style="flex:0 0 190px; color:#6b7280; font-size:11px;">${label}</span><span style="flex:1; min-width:0;">${value}</span></div>`;
+        const rec = this._virusAgents(cellLineId) || [];
+        const recKeys = new Set(rec.flatMap(h => this._virusRnaKeys(h.agent)));
+        const det = Object.entries(r.v).filter(([, x]) => x.detected).sort((a, b) => b[1].rpm - a[1].rpm);
+        const trace = Object.entries(r.v).filter(([, x]) => !x.detected).sort((a, b) => b[1].reads - a[1].reads);
+        const pct = (b) => `${Math.round(b * 100)}%`;
+        let html = p(`Reads in this cell line's RNA-seq that did not match the human genome, checked against 18 viruses and one mycoplasma. ${this.esc(V.modeNote)} A virus counts as detected with at least ${V.thresholds.reads} reads, ${V.thresholds.rpm} per million unmapped reads and reads across at least ${pct(V.thresholds.breadth)} of its genome: an infection covers the genome, a vector fragment does not.`);
+        html += kv('Unmapped reads checked', r.scanned.toLocaleString());
+        if (det.length) {
+            for (const [k, x] of det) {
+                const agree = recKeys.has(k) ? '<span style="color:#4c782e;">Cellosaurus records it too.</span>' : '<span style="color:#b45309;">No Cellosaurus record.</span>';
+                const note = V.viruses[k]?.note ? `<div style="font-size:10px; color:#6b7280;">${this.esc(V.viruses[k].note)}</div>` : '';
+                const lvl = x.level === 'low' && !recKeys.has(k) ? '<div style="font-size:10px; color:#6b7280;">Low level: this can also be carry-over from another sample sequenced in the same run, so treat it as a lead, not a finding.</div>' : '';
+                html += kv(`<b style="color:${x.level === 'low' ? '#6b7280' : '#b45309'};">${this.esc(this._virusRnaLabel(k))}</b>`, `<b>${x.level ? x.level.charAt(0).toUpperCase() + x.level.slice(1) + ': ' : ''}${x.reads.toLocaleString()} reads</b> (${x.rpm.toLocaleString()} per million unmapped), across ${pct(x.breadth)} of the genome. ${agree}${lvl}${note}`);
+            }
+        } else html += kv('Viral RNA', '<span style="color:#4c782e;">None found in the reads checked.</span>');
+        if (trace.length) html += kv('Traces', `<span style="color:#6b7280;">${trace.slice(0, 6).map(([k, x]) => `${this.esc(this._virusRnaLabel(k))} ${x.reads} reads, ${pct(x.breadth)} of genome`).join('; ')}. Below the detection rule; usually shared or conserved fragments.</span>`);
+        const missed = rec.filter(h => !this._virusRnaKeys(h.agent).some(k => r.v[k]?.detected));
+        if (missed.length) html += kv('Recorded, not found', `<span style="color:#6b7280;">Cellosaurus records ${missed.map(h => this.esc(h.name)).join(', ')}, but no RNA of it was found in the reads checked. A latent virus can make little RNA${V.mode === 'sample' ? ', and only a sample of the reads was checked' : ''}.</span>`);
+        return html;
+    }
+
+    // The Viral RNA panel of the Cell Line Browser: every virus found, the
+    // cell lines carrying it and the Cellosaurus record beside it.
+    openVirusRnaPanel() {
+        const V = this.virusRna;
+        const modal = document.getElementById('virModal'), body = document.getElementById('virBody');
+        if (!modal || !body) return;
+        modal.style.display = 'flex';
+        modal.scrollTop = 0;
+        if (!V) { body.innerHTML = this._gbDesc('Viral RNA data not loaded.'); return; }
+        const listed = this._clbVisibleCellLines || [];
+        const onlyListed = !!this._virOnlyListed && listed.length;
+        const scope = new Set(onlyListed ? listed : Object.keys(V.byCellLine));
+        const ids = [...scope].filter(id => V.byCellLine[id]);
+        const rows = new Map();
+        for (const id of ids) for (const [k, x] of Object.entries(V.byCellLine[id].v)) if (x.detected) (rows.get(k) || rows.set(k, []).get(k)).push([id, x]);
+        const recBy = new Map();
+        for (const id of ids) for (const h of this._virusAgents(id) || []) for (const k of this._virusRnaKeys(h.agent)) (recBy.get(k) || recBy.set(k, new Set()).get(k)).add(id);
+        // Clear cases: moderate or strong, or low but recorded by Cellosaurus.
+        const clear = new Set(), anyHit = new Set();
+        for (const [k, list] of rows) for (const [id, x] of list) { anyHit.add(id); if (x.level !== 'low' || recBy.get(k)?.has(id)) clear.add(id); }
+        const link = (id, x, recorded) => `<a href="#" class="gb-cl" data-vir-cl="${this.esc(id)}" data-hover-cl="${this.esc(id)}" data-hover-why="${x.level ? x.level.charAt(0).toUpperCase() + x.level.slice(1) + ': ' : ''}${x.reads.toLocaleString()} reads, ${x.rpm} per million unmapped, ${Math.round(x.breadth * 100)}% of the genome. Click to open its Wiki"${x.level === 'low' && !recorded ? ' style="color:#9ca3af;"' : ''}>${this.esc(this.getCellLineName(id) || id)}</a>`;
+        const table = [...rows.entries()].sort((a, b) => b[1].length - a[1].length).map(([k, list]) => {
+            const rec = recBy.get(k) || new Set();
+            const agree = list.filter(([id]) => rec.has(id)).length;
+            list.sort((a, b) => b[1].rpm - a[1].rpm);
+            return [`<b>${this.esc(this._virusRnaLabel(k))}</b>${V.viruses[k]?.note ? `<div class="gb-m">${this.esc(V.viruses[k].note)}</div>` : ''}`,
+                `<b>${list.filter(([, x]) => x.level !== 'low').length}</b>${list.some(([, x]) => x.level === 'low') ? ` <span class="gb-m">+ ${list.filter(([, x]) => x.level === 'low').length} low</span>` : ''}`, `${agree} of ${rec.size}`,
+                list.slice(0, 40).map(([id, x]) => link(id, x, rec.has(id))).join(', ') + (list.length > 40 ? ` <span class="gb-m">and ${list.length - 40} more</span>` : '')];
+        });
+        const missed = [];
+        for (const [k, set] of recBy) for (const id of set) if (!V.byCellLine[id]?.v?.[k]?.detected) missed.push(`${this.esc(this.getCellLineName(id) || id)} <span class="gb-m">(${this.esc(this._virusRnaLabel(k))})</span>`);
+        body.innerHTML = this._gbDesc(`Reads in each cell line's RNA-seq that did not match the human genome, checked against 18 viruses and one mycoplasma. ${this.esc(V.modeNote)} Detected means at least ${V.thresholds.reads} reads, ${V.thresholds.rpm} per million unmapped reads and reads across at least ${Math.round(V.thresholds.breadth * 100)}% of the genome. Strong is at least 1,000 per million and moderate at least 300; a real infection is usually strong (the XMRV-producing 22Rv1: about 350,000 per million). Low levels, in gray, can be carry-over from another sample sequenced in the same run, unless Cellosaurus also records the virus. Hover a cell line for its numbers; click it for its Wiki.`)
+            + `<label class="gb-m" style="display:inline-flex; gap:5px; align-items:center; font-size:11px; margin-bottom:6px;"><input type="checkbox" data-vir-listed ${onlyListed ? 'checked' : ''} ${listed.length ? '' : 'disabled'}> Only the ${listed.length.toLocaleString()} cell lines listed in the browser</label>`
+            + `<div class="gb-verdict"><b>${clear.size} of ${ids.length.toLocaleString()}</b> measured cell lines carry viral RNA at a moderate or strong level (or a low level Cellosaurus confirms)${anyHit.size > clear.size ? `; ${anyHit.size - clear.size} more show only low-level reads, which can be carry-over` : ''}. <span class="gb-m">${((onlyListed ? listed.length : this.metadata.cellLines.length) - ids.length).toLocaleString()} ${onlyListed ? 'listed ' : ''}cell lines have no public RNA-seq file and were not measured.</span></div>`
+            + (table.length ? this._gbTable(['Virus', 'Cell lines', 'Cellosaurus records found', 'Cell lines'], table).replace('gb-table"', 'gb-table gb-table-left"') : '<div class="gb-empty">No virus detected in these cell lines.</div>')
+            + (missed.length ? `<div class="gb-sub">Recorded by Cellosaurus, not found in the RNA</div><div class="gb-m" style="font-size:11px;">${missed.join(', ')}. A latent virus can make little RNA${V.mode === 'sample' ? ', and only a sample of the reads was checked' : ''}.</div>` : '');
     }
 
     // Where a cell line came from, and what it is a version of. Everything
@@ -44564,6 +44662,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         mem.virus_ebv = new Set();
         mem.virus_hpv = new Set();
         mem.virus_hbv = new Set();
+        // Strong or moderate only: low levels can be sequencing carry-over.
+        mem.virus_rna = new Set(Object.entries(this.virusRna?.byCellLine || {}).filter(([cl, r]) => {
+            const rec = new Set((this._virusAgents(cl) || []).flatMap(h => this._virusRnaKeys(h.agent)));
+            return Object.entries(r.v).some(([k, x]) => x.detected && (x.level !== 'low' || rec.has(k)));
+        }).map(([cl]) => cl));
         for (const [cl, hits] of Object.entries(this.virusStatus?.byCellLine || {})) {
             if (!hits || !hits.length) continue;
             mem.virus_transformed.add(cl);
@@ -44678,7 +44781,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             pole_pold1_ultramutated: 'mutation', atm_deficient: 'mutation',
             // Viral transformation
             virus_transformed: 'Cellosaurus', virus_ebv: 'Cellosaurus',
-            virus_hpv: 'Cellosaurus', virus_hbv: 'Cellosaurus',
+            virus_hpv: 'Cellosaurus', virus_hbv: 'Cellosaurus', virus_rna: 'RNA-seq',
             // Provenance
             problematic_identity: 'Cellosaurus', problematic_classification: 'Cellosaurus',
             tx_identity_other: 'whole transcriptome',
@@ -46790,6 +46893,25 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         document.getElementById('clbWikiCloseBtn')?.addEventListener('click', closeCellLineWiki);
         this._ctwWire();
         document.getElementById('clbCancerWikiBtn')?.addEventListener('click', () => this.openCancerTypeWiki());
+        document.getElementById('clbVirusBtn')?.addEventListener('click', () => this.openVirusRnaPanel());
+        {
+            const vm = document.getElementById('virModal');
+            const close = () => { if (vm) vm.style.display = 'none'; };
+            document.getElementById('virCloseBtn')?.addEventListener('click', close);
+            vm?.addEventListener('click', (e) => {
+                if (e.target === vm) { close(); return; }
+                const a = e.target.closest('[data-vir-cl]');
+                if (!a) return;
+                e.preventDefault();
+                this.hideCellLineTooltip?.();
+                this.openCellLineWiki(a.dataset.virCl).then(() => { const w = document.getElementById('clbWikiModal'); if (w) w.style.zIndex = '1375'; });
+            });
+            vm?.addEventListener('change', (e) => {
+                if (!e.target.matches('[data-vir-listed]')) return;
+                this._virOnlyListed = e.target.checked;
+                this.openVirusRnaPanel();
+            });
+        }
         document.getElementById('clbWikiDownloadBtn')?.addEventListener('click', () => this.downloadCellLineWiki());
         document.getElementById('clbWikiExportGenesBtn')?.addEventListener('click', () => this.exportWikiCellLineGenesCSV());
         document.getElementById('clbWikiModal')?.addEventListener('click', (e) => {
@@ -56491,6 +56613,9 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             section('Genome signatures',
                 genomeSigHtml,
                 'DepMap 26Q1 OmicsGlobalSignatures, PureCN ploidy / WGD / CIN / LoH, MSIsensor2, Ben-David 2021 aneuploidy.'),
+            section('Viral RNA <span style="font-size:11px; color:#6b7280;">, virus and mycoplasma reads in the RNA-seq data</span>',
+                this._virusRnaWikiHtml(cellLineId),
+                'Computed for Correlate from the public CCLE RNA-seq alignments: reads unmapped to the human genome, matched by 25-mers to 18 RefSeq virus genomes and Mycoplasma hyorhinis. Virus-transformation records: Cellosaurus.'),
             section('Retroelement signal <span style="font-size:11px; color:#6b7280;">, LINE-1 / HERV-K / SVA transcription and ADAR1 dependency</span>',
                 retroWikiHtml,
                 'Computed for Correlate from public CCLE hg19 RNA-seq alignments: 750 full-length intergenic LINE-1 / HERV-K / SVA loci, uniquely mapped reads (MAPQ &ge; 20), counts per million.'),

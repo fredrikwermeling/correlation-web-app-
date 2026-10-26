@@ -5347,6 +5347,22 @@
       </div>
     </div>
 
+    <div id="virModal" style="display:none; position:fixed; inset:0; z-index:1372; background:rgba(0,0,0,0.5); align-items:flex-start; justify-content:center; padding:0 20px 20px; overflow-y:auto;">
+      <div style="background:#fff; width:100%; max-width:min(96vw, 1000px); margin-top:20px; border-radius:8px; display:flex; flex-direction:column; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);">
+        <div style="position:sticky; top:0; z-index:3; display:flex; justify-content:space-between; align-items:center; padding:12px 18px; border-bottom:1px solid #e5e7eb; background:linear-gradient(90deg, #f0fdf4 0%, #fff 100%); border-radius:8px 8px 0 0;">
+          <div style="min-width:0;">
+            <h3 style="margin:0; font-size:17px; color:#4c782e;">Viral RNA across the cell lines</h3>
+            <div style="font-size:11px; color:#6b7280; margin-top:2px;">Virus and mycoplasma reads in the CCLE RNA-seq data</div>
+          </div>
+          <div class="pop-head-btns" style="display:flex; align-items:center; gap:8px;">
+            <button onclick="app.screenshotPopout('virBody','correlate_viral_rna')" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px; padding:4px 10px;" title="Save the panel as an image">Export image...</button>
+            <button id="virCloseBtn" style="background:none; border:none; font-size:24px; cursor:pointer; line-height:1; color:#6b7280;" title="Close">&times;</button>
+          </div>
+        </div>
+        <div id="virBody" class="gb-scope" style="padding:16px 20px; font-size:12px; line-height:1.55; color:#374151; background:#fff; border-radius:0 0 8px 8px;"></div>
+      </div>
+    </div>
+
     <!-- Cell Line Browser Help Modal -->
     <div id="clbInfoModal" style="display:none; position:fixed; inset:0; z-index:1360; background:rgba(0,0,0,0.5); align-items:flex-start; justify-content:center; padding:40px;">
       <div style="background:#fff; max-width:720px; width:100%; max-height:80vh; overflow-y:auto; border-radius:8px; padding:20px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);">
@@ -5453,6 +5469,7 @@
           <div style="margin-left:auto; display:flex; align-items:center; gap:6px;">
             <button id="clbInfoBtn" class="btn btn-outline btn-sm clb-icon-btn" title="How the Cell Line Browser works: the filters, sorts, quick filters, symbols, warnings and where each piece of data comes from">?</button>
             <button id="clbExportImageBtn" class="btn btn-outline btn-sm mobile-hide" title="Capture the Cell Line Browser as an image (PNG / TIFF / PDF / PowerPoint)">Export image...</button>
+            <button id="clbVirusBtn" class="btn btn-outline btn-sm" title="Which cell lines carry viral RNA in their RNA-seq data, beside the Cellosaurus virus records">Viral RNA</button>
             <button id="clbExportAIBtn" class="btn btn-outline btn-sm mobile-hide" title="Send the cell lines currently listed, with their alterations and gene-effect data, to an AI assistant for analysis">Export for AI</button>
             <button class="btn btn-outline btn-sm mobile-hide" onclick="app.openMethods('clb')" title="Write out how this list was arrived at, as a methods paragraph and as a plain walk-through">Methods</button>
             <button id="clbResetFilters" class="btn btn-outline btn-sm" title="Clear every filter, sort and selection">Reset</button>
@@ -5937,7 +5954,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v91_64"></script>
+    <script src="app.js?v=v91_65"></script>
     <script src="tour.js?v=v91_54"></script>
 </body>
 </html>
