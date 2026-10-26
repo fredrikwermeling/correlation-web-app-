@@ -774,7 +774,7 @@ class CorrelationExplorer {
         if (res.mode === 'design') {
             const rows = c.added.map(a => `<label style="display:flex; gap:6px; align-items:baseline; font-size:12px;">` +
                 `<input type="checkbox" ${st.addOff.has(a.gene) ? '' : 'checked'} onchange="app._glSet('add', ['${esc(a.gene)}', this.checked])">` +
-                `${this.gi(a.gene)}<span style="color:#6b7280;">r ${a.r.toFixed(2)} with ${this.gi(a.seed)}</span>${ge(a.gene)}</label>`).join('');
+                `<span data-hover-gene="${this.esc(a.gene)}">${this.gi(a.gene)}</span><span style="color:#6b7280;">r ${a.r.toFixed(2)} with <span data-hover-gene="${this.esc(a.seed)}">${this.gi(a.seed)}</span></span>${ge(a.gene)}</label>`).join('');
             expand = `<p style="margin:0 0 6px;">${c.added.length} ${c.added.length === 1 ? 'gene correlates' : 'genes correlate'} with your set at |r| &ge; ${res.cutoff}. Untick any you do not want added.` +
                 ` <a href="#" onclick="event.preventDefault(); app._glExpand(false)">Back to my own genes only</a></p>` +
                 (rows ? `<div style="max-height:220px; overflow:auto; display:grid; grid-template-columns:repeat(auto-fill, minmax(230px, 1fr)); gap:2px 12px;">${rows}</div>` : '');
@@ -803,7 +803,7 @@ class CorrelationExplorer {
                     `<div style="max-height:220px; overflow:auto; font-size:12px;">` +
                     c.dropped.map(d => `<label style="display:flex; gap:6px; align-items:baseline;">` +
                         `<input type="checkbox" ${st.keep.has(d.gene) ? 'checked' : ''} onchange="app._glSet('keep', ['${esc(d.gene)}', this.checked])">` +
-                        `${this.gi(d.gene)}${ge(d.gene)}<span style="color:#6b7280;">r ${d.r.toFixed(2)} with ${this.gi(d.by)}${ge(d.by)} (kept)</span></label>`).join('') +
+                        `<span data-hover-gene="${this.esc(d.gene)}">${this.gi(d.gene)}</span>${ge(d.gene)}<span style="color:#6b7280;">r ${d.r.toFixed(2)} with <span data-hover-gene="${this.esc(d.by)}">${this.gi(d.by)}</span>${ge(d.by)} (kept)</span></label>`).join('') +
                     `</div>`;
             }
         }
@@ -2956,7 +2956,7 @@ class CorrelationExplorer {
             const checked = preset.has(g.gene) ? ' checked' : '';
             html += `<label style="display:flex; align-items:center; gap:6px; font-size:11px; padding:2px 0; cursor:pointer;">`;
             html += `<input type="checkbox" class="upset-gene-check" data-gene="${g.gene}"${checked} style="margin:0;">`;
-            html += `<span style="flex:1; color:#374151;">${this.gi(g.gene)}</span>`;
+            html += `<span style="flex:1; color:#374151;"><span data-hover-gene="${this.esc(g.gene)}">${this.gi(g.gene)}</span></span>`;
             html += `<span style="color:#9ca3af;">${g.n}</span>`;
             html += `</label>`;
         });
@@ -3023,7 +3023,7 @@ class CorrelationExplorer {
             if (!list.querySelector(`.upset-gene-check[data-gene="${name}"]`)) {
                 const row = document.createElement('label');
                 row.style.cssText = 'display:flex; align-items:center; gap:6px; font-size:11px; padding:2px 0; cursor:pointer;';
-                row.innerHTML = `<input type="checkbox" class="upset-gene-check" data-gene="${name}" checked style="margin:0;"><span style="flex:1; color:#374151;">${name}</span><span style="color:#9ca3af;">${entry.n}</span>`;
+                row.innerHTML = `<input type="checkbox" class="upset-gene-check" data-gene="${name}" checked style="margin:0;"><span style="flex:1; color:#374151;"><span data-hover-gene="${this.esc(name)}">${this.gi(name)}</span></span><span style="color:#9ca3af;">${entry.n}</span>`;
                 list.appendChild(row);
                 row.scrollIntoView({ block: 'nearest' });
             } else {
@@ -17494,7 +17494,7 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
         const names = String(this._netHighlightText || '').split(/[\s,;]+/).filter(Boolean);
         if (!names.length) { box.style.display = 'none'; txt.innerHTML = ''; return; }
         txt.innerHTML = names.map(n =>
-            `<span data-hl-gene="${this._escapeAttr(n)}" title="Click to remove this highlight" style="cursor:pointer; text-decoration:underline; margin-right:4px;">${this.gi(n)}</span>`
+            `<span data-hl-gene="${this._escapeAttr(n)}" data-hover-gene="${this._escapeAttr(n)}" data-hover-why="Click to remove this highlight" style="cursor:pointer; text-decoration:underline; margin-right:4px;">${this.gi(n)}</span>`
         ).join('');
         box.style.display = '';
     }
@@ -18325,7 +18325,7 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
 
         const sel = Array.from(this.selectedNodes);
         if (sel.length > 0) {
-            textEl.innerHTML = sel.map(g => this.gi(g)).join(', ')
+            textEl.innerHTML = sel.map(g => `<span data-hover-gene="${this.esc(g)}">${this.gi(g)}</span>`).join(', ')
                 + `<span style="display:block; color:#1e40af; margin-top:2px;">The gene box now holds only these ${sel.length}, so Run repeats the analysis on them. Clear puts the full list back.</span>`;
             listEl.style.display = 'block';
         } else {
@@ -18384,7 +18384,7 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
         if (this.hiddenNodes && this.hiddenNodes.length > 0) {
             // Create clickable list of removed nodes
             const nodeLinks = this.hiddenNodes.map((node, idx) =>
-                `<span class="restore-node" data-idx="${idx}" style="cursor: pointer; text-decoration: underline; color: #2563eb;">${node.id}</span>`
+                `<span class="restore-node" data-idx="${idx}" data-hover-gene="${this.esc(node.id)}" data-hover-why="Click to put it back in the network" style="cursor: pointer; text-decoration: underline; color: #2563eb;">${this.gi(node.id)}</span>`
             ).join(', ');
             textEl.innerHTML = nodeLinks;
             listEl.style.display = 'block';
@@ -20910,7 +20910,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const top = res.sort((a, b) => Math.abs(b.ra) - Math.abs(a.ra)).slice(0, 10);
         const row = (r) => {
             const b = band(r.ra), col = b === 'weak' ? '#9ca3af' : r.ra > 0 ? '#b91c1c' : '#1d4ed8';
-            return `<div style="display:flex; justify-content:space-between; gap:8px;"><a href="#" data-cbs-gene="${this.esc(r.g)}" style="color:#4f46e5;">${this.gi(r.g)}</a><span style="color:${col};${b === 'strong' ? ' font-weight:600;' : ''}" title="${b}">${r.ra.toFixed(2)}</span></div>`;
+            return `<div style="display:flex; justify-content:space-between; gap:8px;"><a href="#" data-cbs-gene="${this.esc(r.g)}" data-hover-gene="${this.esc(r.g)}" style="color:#4f46e5;">${this.gi(r.g)}</a><span style="color:${col};${b === 'strong' ? ' font-weight:600;' : ''}" title="${b}">${r.ra.toFixed(2)}</span></div>`;
         };
         const half = Math.ceil(top.length / 2);
         box.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:3px;"><span style="color:#374151;">Genes whose <b>${word}</b> best follows the trend in the ${n.toLocaleString()} plotted cell lines</span><button type="button" data-cbs-close style="border:none; background:none; color:#9ca3af; cursor:pointer; font-size:14px; line-height:1;" title="Close">&times;</button></div>`
@@ -22669,7 +22669,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
             html += `
                 <tr class="clickable-mut-row" data-mut-gene="${row.mutGene}" style="${pHighlight} cursor: pointer;">
-                    <td><b>${this.gi(row.mutGene)}</b></td>
+                    <td><b data-hover-gene="${this.esc(row.mutGene)}">${this.gi(row.mutGene)}</b></td>
                     <td style="text-align: center; border-left: 2px solid #2563eb;">${row.nWT}</td>
                     <td style="text-align: center;">${row.rWT.toFixed(3)}</td>
                     <td style="text-align: center; border-left: 2px solid #dc2626;">${row.nMut}</td>
@@ -22997,7 +22997,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
             html += `
                 <tr class="clickable-trans-row" data-trans-gene="${row.tGene}" style="${pHighlight} cursor: pointer;">
-                    <td><b>${this.gi(row.tGene)}</b></td>
+                    <td><b data-hover-gene="${this.esc(row.tGene)}">${this.gi(row.tGene)}</b></td>
                     <td style="text-align: center; border-left: 2px solid #2563eb;">${row.nWT}</td>
                     <td style="text-align: center;">${row.rWT.toFixed(3)}</td>
                     <td style="text-align: center; border-left: 2px solid #dc2626;">${row.nFused}</td>
@@ -23258,7 +23258,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         const rowHtml = (r, kind) => `
             <tr class="ic-row" data-gene="${r.gene}" data-kind="${kind}" style="cursor:pointer;">
-                <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; font-weight:600; color:#4c782e;">${this.gi(r.gene)}</td>
+                <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; font-weight:600; color:#4c782e;" data-hover-gene="${this.esc(r.gene)}">${this.gi(r.gene)}</td>
                 <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; text-align:center; font-weight:600; color:${r.r < 0 ? '#dc2626' : '#2563eb'};">${r.r.toFixed(3)}</td>
                 <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; text-align:center; color:${r.n < 10 ? '#dc2626' : '#6b7280'};">${r.n}</td>
             </tr>`;
@@ -25109,7 +25109,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const missed = this._ctLinesMissed || [];
         const chip = (id) => {
             const out = !inCohort.has(id);
-            return `<span title="${out ? 'Not among the cell lines left by the other filters or the measure' : ''}" style="display:inline-flex; align-items:center; gap:2px; padding:1px 3px 1px 7px; border-radius:9px; background:#eff6ff; border:1px solid #bfdbfe; color:#1e40af; font-weight:600;${out ? ' opacity:0.55; text-decoration:line-through;' : ''}">${this.esc(this.getCellLineName(id) || id)}`
+            return `<span title="${out ? 'Not among the cell lines left by the other filters or the measure' : ''}" style="display:inline-flex; align-items:center; gap:2px; padding:1px 3px 1px 7px; border-radius:9px; background:#eff6ff; border:1px solid #bfdbfe; color:#1e40af; font-weight:600;${out ? ' opacity:0.55; text-decoration:line-through;' : ''}"><span data-hover-cl="${this.esc(id)}">${this.esc(this.getCellLineName(id) || id)}</span>`
                 + `<button type="button" data-ct-unpick="${this.esc(id)}" title="Remove" style="background:none; border:none; padding:0 2px; cursor:pointer; color:#6b7280; font-size:11px; line-height:1;">&times;</button></span>`;
         };
         box.innerHTML = (on ? [...P].map(chip).join('') : '')
@@ -27772,7 +27772,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     ? '<span style="background:#b58a3c;color:white;padding:1px 5px;border-radius:3px;font-size:9px;">hotspot</span>'
                     : '<span style="background:#a8553a;color:white;padding:1px 5px;border-radius:3px;font-size:9px;">damaging</span>';
                 html += `<tr>
-                    <td style="padding:4px;border-bottom:1px solid #eee;color:#0066cc;cursor:pointer;text-decoration:underline;" onclick="event.stopPropagation();app.showGEGateGenePlot('${m.gene}','mutation')">${this.gi(m.gene)}</td>
+                    <td style="padding:4px;border-bottom:1px solid #eee;color:#0066cc;cursor:pointer;text-decoration:underline;" data-hover-gene="${m.gene}" onclick="event.stopPropagation();app.showGEGateGenePlot('${m.gene}','mutation')">${this.gi(m.gene)}</td>
                     <td style="padding:4px;text-align:center;border-bottom:1px solid #eee;">${typeBadge}</td>
                     <td style="padding:4px;text-align:center;border-bottom:1px solid #eee;color:#2563eb;">${m.mutA}</td>
                     <td style="padding:4px;text-align:center;border-bottom:1px solid #eee;color:#2563eb;">${m.pctA.toFixed(1)}</td>
@@ -27823,7 +27823,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 const color = d.diff > 0.2 ? '#5d9239' : d.diff < -0.2 ? '#dc2626' : '';
                 const pStr = this.formatPValue(d.pValue);
                 html += `<tr style="cursor:pointer;" onclick="app.showGEGateGenePlot('${d.gene}','ge')">
-                    <td style="padding:4px;border-bottom:1px solid #eee;color:#0066cc;text-decoration:underline;">${this.gi(d.gene)}</td>
+                    <td style="padding:4px;border-bottom:1px solid #eee;color:#0066cc;text-decoration:underline;" data-hover-gene="${d.gene}">${this.gi(d.gene)}</td>
                     <td style="padding:4px;text-align:center;border-bottom:1px solid #eee;color:#2563eb;">${d.meanA.toFixed(3)}</td>
                     <td style="padding:4px;text-align:center;border-bottom:1px solid #eee;color:#dc2626;">${d.meanB.toFixed(3)}</td>
                     <td style="padding:4px;text-align:center;border-bottom:1px solid #eee;font-weight:500;${color ? `color:${color}` : ''}">${d.diff > 0 ? '+' : ''}${d.diff.toFixed(3)}</td>
@@ -27882,7 +27882,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 const color = d.diff > 0.5 ? '#5d9239' : d.diff < -0.5 ? '#dc2626' : '';
                 const pStr = this.formatPValue(d.pValue);
                 html += `<tr style="cursor:pointer;" onclick="app.showGEGateGenePlot('${d.gene}','expression')">
-                    <td style="padding:4px;border-bottom:1px solid #eee;color:#0066cc;text-decoration:underline;">${this.gi(d.gene)}</td>
+                    <td style="padding:4px;border-bottom:1px solid #eee;color:#0066cc;text-decoration:underline;" data-hover-gene="${d.gene}">${this.gi(d.gene)}</td>
                     <td style="padding:4px;text-align:center;border-bottom:1px solid #eee;color:#2563eb;">${d.meanA.toFixed(3)}</td>
                     <td style="padding:4px;text-align:center;border-bottom:1px solid #eee;color:#dc2626;">${d.meanB.toFixed(3)}</td>
                     <td style="padding:4px;text-align:center;border-bottom:1px solid #eee;font-weight:500;${color ? `color:${color}` : ''}">${d.diff > 0 ? '+' : ''}${d.diff.toFixed(3)}</td>
@@ -42300,7 +42300,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             // Each gene as its own item, so the column flow breaks between
             // genes instead of wherever the text happens to reach the edge.
             const geneHtml = _genes.length
-                ? _genes.map(g => `<span class="eg"${focus && focus.includes(String(g).toUpperCase()) ? ' style="font-weight:700; color:#4c782e;"' : ''}>${this.gi(g)}</span>`).join('')
+                ? _genes.map(g => `<span class="eg" data-hover-gene="${this.esc(String(g))}"${focus && focus.includes(String(g).toUpperCase()) ? ' style="font-weight:700; color:#4c782e;"' : ''}>${this.gi(g)}</span>`).join('')
                 : this.gi(String(row.genes));
             const geneCount = _genes.length;
             // The cell is wider than it was, so more rows fit whole; and cut at
@@ -43640,7 +43640,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const d = this._derivativePairs(cellLineId);
         if (!d) return '';
         const nm = (id) => this.esc(this.getCellLineName(id) || id);
-        const link = (id) => `<a href="#" onclick="event.preventDefault();app.openCellLineWiki('${id}')" style="color:#2563eb;">${nm(id)}</a>`;
+        const link = (id) => `<a href="#" data-hover-cl="${id}" data-hover-why="Click to open its Wiki" onclick="event.preventDefault();app.openCellLineWiki('${id}')" style="color:#2563eb;">${nm(id)}</a>`;
         // A line grown in a drug and a line with a gene knocked down are not
         // the same experiment, and calling both "treated" got A549_CRAF_KD
         // described as a drug exposure when it is a RAF1 knockdown.
@@ -48072,11 +48072,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const gateStr = gKey
                 ? `<span style="font-size:9px; font-weight:700; color:#fff; background:${gateCol[gKey]}; border-radius:6px; padding:0 4px; margin-right:3px; flex-shrink:0;" title="In gate ${gKey}">${gKey}</span>`
                 : '';
-            return `<div class="${cls.join(' ')}" data-clid="${cl}" title="${titleParts}">` +
+            return `<div class="${cls.join(' ')}" data-clid="${cl}">` +
                 `<input type="checkbox"${selected ? ' checked' : ''}>` +
                 sexStr + probStr + virusStr + gateStr +
-                `<span class="clb-entry-name">${name}</span>` +
-                `<span class="clb-entry-tissue">${lin}${sub ? ' · ' + sub : ''}</span>${sortValStr}</div>`;
+                `<span class="clb-entry-name" data-hover-cl="${cl}" data-hover-why="Click to show its details · Shift-click to open its Wiki">${name}</span>` +
+                `<span class="clb-entry-tissue" title="${titleParts}">${lin}${sub ? ' · ' + sub : ''}</span>${sortValStr}</div>`;
         }).join('');
         // Live count of the filtered list (updates as filters / quick filters change).
         const totalN = this.metadata.cellLines.length;
@@ -51263,9 +51263,12 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             rows.map(r => [nameCell(r), `<b>${fmt(r)}</b>`, `<span class="gb-m">${r.k !== undefined ? `${r.k} of ${r.n}` : r.n}</span>`]))
             .replace('class="data-table gb-table"', 'class="data-table gb-table gb-table-tissue"');
     }
-    _gbTopLines(items, head = 'Value') {
+    // weak(v): a value past which the row is not a real hit, shown in gray.
+    _gbTopLines(items, head = 'Value', weak = null) {
+        // Full column width, like the tissue tables beside and below it.
         return this._gbTable(['Cell line', head, 'Tissue'],
-            items.map(([id, v]) => [this._gbClLink(id), `<b>${this._gbNum(v)}</b>`, `<span class="gb-m">${this.esc(this.cellLineMetadata?.lineage?.[id] || '')}</span>`]));
+            items.map(([id, v]) => [this._gbClLink(id), weak && weak(v) ? `<span class="gb-rweak" title="Not a dependency (above ${this._gbNum(this._gbDepCut, 1)})">${this._gbNum(v)}</span>` : `<b>${this._gbNum(v)}</b>`, `<span class="gb-m">${this.esc(this.cellLineMetadata?.lineage?.[id] || '')}</span>`]))
+            .replace('class="data-table gb-table"', 'class="data-table gb-table gb-table-tissue gb-table-lines"');
     }
 
     // One box per cancer type with every cell line as a dot, drawn like the
@@ -52843,15 +52846,22 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             this._gbRow('Below −1', `${this._gbFmtPct(below(-1), n)} <span class="gb-m">(${this._gbLines(below(-1))})</span>`),
             this._gbRow('Common essential', ce ? 'Yes' : 'No'),
         ].join('');
+        // No cell line below the cutoff: the "most dependent" lists would only
+        // rank noise, so they are folded away behind one plain sentence.
+        const noDep = n > 0 && !below(this._gbDepCut);
+        const lists = `<div class="gb-grid" style="margin-top:12px;">`
+            + `<div>${topT.length ? `<div class="gb-sub">Most dependent tissues <span class="gb-m">(mean gene effect, 5 or more lines)</span></div>${this._gbTissueRows(topT, r => this._gbNum(r.mean), 'Mean')}` : ''}</div>`
+            + `<div>${topF.length ? `<div class="gb-sub">Most dependent subtypes and diseases <span class="gb-m">(5 or more lines)</span></div>${this._gbTissueRows(topF, r => this._gbNum(r.mean), 'Mean')}` : ''}</div></div>`;
+        const noDepHtml = noDep ? `<div class="gb-grid" style="margin-top:6px;"><div><div class="gb-sub">Summary</div>${stats}</div>`
+            + `<div><div class="gb-sub">Most dependent cell lines</div><div class="gb-empty">None: no cell line is below ${this._gbNum(this._gbDepCut, 1)}, so no cell line depends on ${this.gi(s.gene)}. The lowest value is ${this._gbNum(topL[0]?.[1])}${topT.length ? `, and no cancer type stands out (lowest tissue mean ${this._gbNum(topT[0].mean)})` : ''}; differences this small are mostly noise of the screen.</div></div></div>`
+            + `<details class="gb-details"><summary>Show the lowest values anyway</summary><div class="gb-grid" style="margin-top:6px;"><div></div><div>${this._gbTopLines(topL, 'Gene effect', () => true)}</div></div>${lists}</details>` : '';
         const body = this._gbDesc('How much cell lines depend on this gene in the CRISPR screen. More negative means the lines grow worse without it; 0 means no effect.')
             + this._gbVerdict('ge', s, v, this._gbByTissue(s, (i) => s.ge[i]))
             + `<div class="gb-sub">By cancer type <span class="gb-m">(each dot is a cell line; dashed line at ${this._gbNum(this._gbDepCut, 1)}, the dependency cutoff)</span></div><div id="gbGeTissue"></div><div class="gb-m" style="display:flex; justify-content:flex-end; margin-top:2px;"><button class="btn btn-outline btn-sm mobile-hide" data-gb-copy="gbGeTissue" data-gb-copy-label="Gene effect by cancer type" style="font-size:10px; padding:1px 8px;" title="Copy this figure as an image">Copy figure</button></div>`
-            + `<div class="gb-grid" style="margin-top:6px;">`
-            + `<div>${stats}</div>`
-            + `<div><div class="gb-sub">Most dependent cell lines</div>${this._gbTopLines(topL, 'Gene effect')}</div></div>`
-            + `<div class="gb-grid" style="margin-top:12px;">`
-            + `<div>${topT.length ? `<div class="gb-sub">Most dependent tissues <span class="gb-m">(mean gene effect, 5 or more lines)</span></div>${this._gbTissueRows(topT, r => this._gbNum(r.mean), 'Mean')}` : ''}</div>`
-            + `<div>${topF.length ? `<div class="gb-sub">Most dependent subtypes and diseases <span class="gb-m">(5 or more lines)</span></div>${this._gbTissueRows(topF, r => this._gbNum(r.mean), 'Mean')}` : ''}</div></div>`
+            + (noDep ? noDepHtml : `<div class="gb-grid" style="margin-top:6px;">`
+            + `<div><div class="gb-sub">Summary</div>${stats}</div>`
+            + `<div><div class="gb-sub">Most dependent cell lines</div>${this._gbTopLines(topL, 'Gene effect', (x) => x >= this._gbDepCut)}</div></div>`
+            + lists)
             + `<div class="gb-actions"><button class="btn btn-outline btn-sm" data-gb-act="ge" title="Open this gene in the Gene effect view, by tissue">Open in Gene effect view</button></div>`;
         return this._gbSection('Dependency (CRISPR gene effect)', body, 'DepMap 26Q1 CRISPRGeneEffect (Chronos).');
     }
@@ -52903,13 +52913,13 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 const words = r.pValue < 0.01 && Math.abs(r.correlation) >= 0.2
                     ? (r.correlation < 0 ? 'lines that express more depend on it more' : 'lines that express more depend on it less')
                     : 'no clear link between expression and dependency';
-                link = this._gbRow('Expression vs gene effect', `r = ${this._gbNum(r.correlation)}, p = ${this._gbP(r.pValue)}, n = ${r.n.toLocaleString()} <span class="gb-m">: ${words}</span>`);
+                link = this._gbRow('Expression vs gene effect', `r = ${this._gbNum(r.correlation)}, p = ${this._gbP(r.pValue)}, n = ${r.n.toLocaleString()}<div class="gb-m">${words.charAt(0).toUpperCase() + words.slice(1)}</div>`);
             }
         }
         const body = this._gbDesc('How much of this gene’s mRNA each cell line makes (bulk RNA-seq, log₂ TPM+1).')
             + this._gbVerdict('expr', s, vals, this._gbByTissue(s, (i) => ex[i]))
             + `<div class="gb-sub">By cancer type <span class="gb-m">(each dot is a cell line; dashed line at ${this._gbNum(cut, 0)}, the cutoff for expressed)</span></div><div id="gbExprTissue"></div><div class="gb-m" style="display:flex; justify-content:flex-end; margin-top:2px;"><button class="btn btn-outline btn-sm mobile-hide" data-gb-copy="gbExprTissue" data-gb-copy-label="Expression by cancer type" style="font-size:10px; padding:1px 8px;" title="Copy this figure as an image">Copy figure</button></div>`
-            + `<div class="gb-grid" style="margin-top:6px;"><div>${stats.join('')}${link}</div>`
+            + `<div class="gb-grid" style="margin-top:6px;"><div><div class="gb-sub">Summary</div>${stats.join('')}${link}</div>`
             + `<div><div class="gb-sub">Highest-expressing cell lines</div>${this._gbTopLines(topL, 'log₂ TPM+1')}</div></div>`
             + `<div class="gb-grid" style="margin-top:12px;"><div><div class="gb-sub">Highest tissues <span class="gb-m">(median)</span></div>${this._gbTissueRows(high, r => this._gbNum(r.med), 'Median')}`
             + `<div class="gb-sub" style="margin-top:12px;">Lowest tissues <span class="gb-m">(median)</span></div>${this._gbTissueRows(low, r => this._gbNum(r.med), 'Median')}</div>`
@@ -52998,7 +53008,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         ].join('');
         const body = this._gbDesc('Gene-level copy number relative to each line’s own baseline: above 1 is a gain, below 1 a loss.')
             + `<div class="gb-sub">By cancer type <span class="gb-m">(each dot is a cell line; dashed lines at ${DEL}, deleted, and ${AMP.toFixed(0)}, amplified)</span></div><div id="gbCnTissue"></div><div class="gb-m" style="display:flex; justify-content:flex-end; margin-top:2px;"><button class="btn btn-outline btn-sm mobile-hide" data-gb-copy="gbCnTissue" data-gb-copy-label="Copy number by cancer type" style="font-size:10px; padding:1px 8px;" title="Copy this figure as an image">Copy figure</button></div>`
-            + `<div style="margin-top:6px;">${stats}</div>`
+            + `<div style="margin-top:6px;"><div class="gb-sub">Summary</div>${stats}</div>`
             + (ampT.length ? `<div class="gb-grid" style="margin-top:12px;"><div><div class="gb-sub">Tissues most often amplified</div>${this._gbTissueRows(ampT, r => this._gbFmtPct(r.k, r.n), 'Amplified')}</div>`
                 + `<div>${ampF.length ? `<div class="gb-sub">Subtypes and diseases most often amplified</div>${this._gbTissueRows(ampF, r => this._gbFmtPct(r.k, r.n), 'Amplified')}` : ''}</div></div>` : '')
             + (delT.length ? `<div class="gb-grid" style="margin-top:12px;"><div><div class="gb-sub">Tissues most often deleted</div>${this._gbTissueRows(delT, r => this._gbFmtPct(r.k, r.n), 'Deleted')}</div>`
@@ -54558,7 +54568,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         if (!r) return '<span style="color:#6b7280;">Not checked: this cell line has no mRNA data in the CRISPR cohort.</span>';
         const tis = this.esc(r.tis);
         const tissues = r.tally.map(([t, k]) => `${this.esc(t)} ${k}`).join(', ');
-        const names = r.nn.map(([nid]) => this.esc(this.getCellLineName(nid) || nid)).join(', ');
+        const names = r.nn.map(([nid]) => `<span data-hover-cl="${this.esc(nid)}" style="border-bottom:1px dotted #9ca3af;">${this.esc(this.getCellLineName(nid) || nid)}</span>`).join(', ');
         const link = `<a href="#" ${this._ctwGoAttrs({ tissue: r.tis })} data-ctw-to="ctwIdentityCard" style="font-size:10px; color:#3730a3;" title="Open the identity check of this cancer type">Identity check of ${tis}</a>`;
         let v;
         if (r.s === 'unchecked') v = `<span style="color:#6b7280;">Not checked: too few cell lines of ${tis} with mRNA data.</span>`;
@@ -54586,7 +54596,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const nb = Array.from({ length: P.K }, (_, k) => P.nn[r * P.K + k]);
         const tally = new Map(); for (const s of nb) tally.set(P.tisOf[s], (tally.get(P.tisOf[s]) || 0) + 1);
         const tissues = [...tally.entries()].sort((a, b) => b[1] - a[1]).map(([t, k]) => `${this.esc(t)} ${k}`).join(', ');
-        const names = nb.map(s => this.esc(this.getCellLineName(this.metadata.cellLines[R.rows[s]]) || this.metadata.cellLines[R.rows[s]])).join(', ');
+        const names = nb.map(s => { const id = this.metadata.cellLines[R.rows[s]]; return `<span data-hover-cl="${this.esc(id)}" style="border-bottom:1px dotted #9ca3af;">${this.esc(this.getCellLineName(id) || id)}</span>`; }).join(', ');
         const link = `<a href="#" ${this._ctwGoAttrs({ tissue: tis })} data-ctw-to="ctwIdentityCard" style="font-size:10px; color:#3730a3;" title="Open the identity check of this cancer type">Identity check of ${this.esc(tis)}</a>`;
         const own = tally.get(tis) || 0;
         let verdict;
@@ -58602,7 +58612,7 @@ ${clone.innerHTML}
         shown.forEach(m => {
             const badge = `<span style="background:${BADGE[m.type] || '#6b7280'}; color:#fff; padding:1px 5px; border-radius:3px; font-size:9px; margin-left:5px;">${this.esc(m.word)}</span>`;
             html += `<tr>
-                <td style="padding:3px 6px; border-bottom:1px solid #f3f4f6;"><span style="font-weight:600; color:#4c782e;">${this.gi(m.gene)}</span>${badge}</td>
+                <td style="padding:3px 6px; border-bottom:1px solid #f3f4f6;"><span style="font-weight:600; color:#4c782e;" data-hover-gene="${this.esc(m.gene)}">${this.gi(m.gene)}</span>${badge}</td>
                 <td style="padding:3px 6px; border-bottom:1px solid #f3f4f6; text-align:center; color:#2563eb;">${m.pctA.toFixed(1)}%${thinN(m.nA, w.sel)}<span style="color:${m.nA < 3 ? '#b45309' : '#9ca3af'};"> (${m.mutA}/${m.nA})</span></td>
                 <td style="padding:3px 6px; border-bottom:1px solid #f3f4f6; text-align:center; color:#dc2626;">${m.pctB.toFixed(1)}%${thinN(m.nB, w.cmp)}<span style="color:${m.nB < 3 ? '#b45309' : '#9ca3af'};"> (${m.mutB}/${m.nB})</span></td>
                 <td style="padding:3px 6px; border-bottom:1px solid #f3f4f6; text-align:center; font-weight:600;">${m.diff > 0 ? '+' : ''}${m.diff.toFixed(1)}</td>
@@ -59083,7 +59093,7 @@ ${clone.innerHTML}
         const el = document.getElementById(`ge${side}Volcano`);
         const labeled = (el?.layout?.annotations || []).filter(a => a._dotLabel && a._dotLabel !== true).map(a => a._dotLabel);
         const hidden = [...st.hidden];
-        const chip = (g, kind) => `<span class="clb-chip" data-${kind}="${this.esc(g)}" title="${kind === 'lbl' ? 'Click to remove this label' : 'Click to show this gene again'}" `
+        const chip = (g, kind) => `<span class="clb-chip" data-${kind}="${this.esc(g)}" data-hover-gene="${this.esc(g)}" data-hover-why="${kind === 'lbl' ? 'Click to remove this label' : 'Click to show this gene again'}" `
             + `style="background:${kind === 'lbl' ? '#eef2ff' : '#f3f4f6'}; color:${kind === 'lbl' ? '#3730a3' : '#6b7280'}; border:1px solid ${kind === 'lbl' ? '#c7d2fe' : '#e5e7eb'}; padding:1px 7px; border-radius:10px; font-size:10px; font-weight:600; cursor:pointer;${kind === 'hid' ? ' text-decoration:line-through;' : ''}">`
             + `${this.gi(g)} &times;</span>`;
         host.innerHTML = `
@@ -59873,7 +59883,7 @@ ${clone.innerHTML}
         const thin = (r) => this._geInspectThin(r, side);
         const trows = rows.map(r => `
             <tr class="si-row" data-gene="${this.esc(r.gene)}" style="cursor:pointer;">
-                <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; font-weight:600; color:#4c782e;">${this.gi(r.gene)}</td>
+                <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; font-weight:600; color:#4c782e;" data-hover-gene="${this.esc(r.gene)}">${this.gi(r.gene)}</td>
                 <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; text-align:center;">${fmt(r.meanSel)}</td>
                 <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; text-align:center; color:#6b7280;">${fmt(r.meanOther)}</td>
                 <td style="padding:4px 8px; border-bottom:1px solid #f3f4f6; text-align:center; font-weight:600; color:${r.delta < 0 ? '#dc2626' : '#2563eb'};">${fmt(r.delta)}</td>
@@ -61473,7 +61483,7 @@ ${clone.innerHTML}
                 const badge = m.type === 'hotspot'
                     ? '<span style="background:#b58a3c;color:white;padding:1px 5px;border-radius:3px;font-size:9px;">hotspot</span>'
                     : '<span style="background:#a8553a;color:white;padding:1px 5px;border-radius:3px;font-size:9px;">damaging</span>';
-                html += `<tr><td style="padding:4px;border-bottom:1px solid #eee;color:#0066cc;cursor:pointer;text-decoration:underline;" onclick="event.stopPropagation();app.showUmapGateGenePlot('${m.gene}','mutation')">${this.gi(m.gene)}</td>
+                html += `<tr><td style="padding:4px;border-bottom:1px solid #eee;color:#0066cc;cursor:pointer;text-decoration:underline;" data-hover-gene="${m.gene}" onclick="event.stopPropagation();app.showUmapGateGenePlot('${m.gene}','mutation')">${this.gi(m.gene)}</td>
                     <td style="padding:4px;text-align:center;border-bottom:1px solid #eee;">${badge}</td>
                     <td style="padding:4px;text-align:center;border-bottom:1px solid #eee;color:#2563eb;">${m.mutA}</td>
                     <td style="padding:4px;text-align:center;border-bottom:1px solid #eee;color:#2563eb;">${m.pctA.toFixed(1)}</td>
@@ -61517,7 +61527,7 @@ ${clone.innerHTML}
             filtered.slice(0, 100).forEach(d => {
                 const color = d.diff > 0.2 ? '#5d9239' : d.diff < -0.2 ? '#dc2626' : '';
                 const pStr = this.formatPValue(d.pValue);
-                html += `<tr style="cursor:pointer;" onclick="app.showUmapGateGenePlot('${d.gene}','ge')"><td style="padding:4px;border-bottom:1px solid #eee;color:#0066cc;text-decoration:underline;">${this.gi(d.gene)}</td>
+                html += `<tr style="cursor:pointer;" onclick="app.showUmapGateGenePlot('${d.gene}','ge')"><td style="padding:4px;border-bottom:1px solid #eee;color:#0066cc;text-decoration:underline;" data-hover-gene="${d.gene}">${this.gi(d.gene)}</td>
                     <td style="padding:4px;text-align:center;border-bottom:1px solid #eee;color:#2563eb;">${d.meanA.toFixed(3)}</td>
                     <td style="padding:4px;text-align:center;border-bottom:1px solid #eee;color:#dc2626;">${d.meanB.toFixed(3)}</td>
                     <td style="padding:4px;text-align:center;border-bottom:1px solid #eee;font-weight:500;${color ? `color:${color}` : ''}">${d.diff > 0 ? '+' : ''}${d.diff.toFixed(3)}</td>
@@ -61559,7 +61569,7 @@ ${clone.innerHTML}
             filtered.slice(0, 100).forEach(d => {
                 const color = d.diff > 0.5 ? '#5d9239' : d.diff < -0.5 ? '#dc2626' : '';
                 const pStr = this.formatPValue(d.pValue);
-                html += `<tr style="cursor:pointer;" onclick="app.showUmapGateGenePlot('${d.gene}','expression')"><td style="padding:4px;border-bottom:1px solid #eee;color:#0066cc;text-decoration:underline;">${this.gi(d.gene)}</td>
+                html += `<tr style="cursor:pointer;" onclick="app.showUmapGateGenePlot('${d.gene}','expression')"><td style="padding:4px;border-bottom:1px solid #eee;color:#0066cc;text-decoration:underline;" data-hover-gene="${d.gene}">${this.gi(d.gene)}</td>
                     <td style="padding:4px;text-align:center;border-bottom:1px solid #eee;color:#2563eb;">${d.meanA.toFixed(2)}</td>
                     <td style="padding:4px;text-align:center;border-bottom:1px solid #eee;color:#dc2626;">${d.meanB.toFixed(2)}</td>
                     <td style="padding:4px;text-align:center;border-bottom:1px solid #eee;font-weight:500;${color ? `color:${color}` : ''}">${d.diff > 0 ? '+' : ''}${d.diff.toFixed(2)}</td>
@@ -63674,7 +63684,7 @@ ${clone.innerHTML}
                 html += '<tr style="border-bottom:1px solid #e5e7eb;"><th style="text-align:left;padding:1px 6px;">Gene</th><th style="text-align:right;padding:1px 6px;">Loading</th></tr>';
                 top10.forEach(l => {
                     const color = l.loading > 0 ? '#b91c1c' : '#1d4ed8';
-                    html += `<tr style="cursor:pointer;" onclick="app.applyUmapGeneColor_fromTop('${l.gene}', '${l.src || ''}')"><td style="padding:1px 6px;text-decoration:underline;color:#4f46e5;">${this.gi(l.gene)}${this._clbUmapData.mixedSrc && l.src ? ` <span style="font-size:9px;color:#6b7280;">${l.src === 'expr' ? 'mRNA' : 'CRISPR'}</span>` : ''}</td><td style="text-align:right;padding:1px 6px;color:${color};">${l.loading.toFixed(4)}</td></tr>`;
+                    html += `<tr style="cursor:pointer;" onclick="app.applyUmapGeneColor_fromTop('${l.gene}', '${l.src || ''}')"><td style="padding:1px 6px;text-decoration:underline;color:#4f46e5;" data-hover-gene="${l.gene}">${this.gi(l.gene)}${this._clbUmapData.mixedSrc && l.src ? ` <span style="font-size:9px;color:#6b7280;">${l.src === 'expr' ? 'mRNA' : 'CRISPR'}</span>` : ''}</td><td style="text-align:right;padding:1px 6px;color:${color};">${l.loading.toFixed(4)}</td></tr>`;
                 });
                 html += '</table></div>';
             });
@@ -63732,7 +63742,7 @@ ${clone.innerHTML}
                 return `<td style="text-align:right;padding:1px 6px;color:${col};${!signed && b === 'strong' ? 'font-weight:600;' : ''}" title="${b} (|r| ${Math.abs(r).toFixed(2)})">${r.toFixed(3)}${!signed && b !== 'strong' ? ` <span style="font-size:9px;">${b}</span>` : ''}</td>`;
             };
             top10.forEach(c => {
-                html += `<tr style="cursor:pointer;" onclick="app.applyUmapGeneColor_fromTop('${c.gene}', '${c.src || ''}')"><td style="padding:1px 6px;text-decoration:underline;color:#4f46e5;">${this.gi(c.gene)}${this._clbUmapData.mixedSrc && c.src ? ` <span style="font-size:9px;color:#6b7280;">${c.src === 'expr' ? 'mRNA' : 'CRISPR'}</span>` : ''}</td>${rCell(c.rX, true)}${rCell(c.rY, true)}${rCell(c.rCombined, false)}</tr>`;
+                html += `<tr style="cursor:pointer;" onclick="app.applyUmapGeneColor_fromTop('${c.gene}', '${c.src || ''}')"><td style="padding:1px 6px;text-decoration:underline;color:#4f46e5;" data-hover-gene="${c.gene}">${this.gi(c.gene)}${this._clbUmapData.mixedSrc && c.src ? ` <span style="font-size:9px;color:#6b7280;">${c.src === 'expr' ? 'mRNA' : 'CRISPR'}</span>` : ''}</td>${rCell(c.rX, true)}${rCell(c.rY, true)}${rCell(c.rCombined, false)}</tr>`;
             });
             html += '</table>';
             html += '<div style="font-size:10px;color:#6b7280;margin-top:4px;">|r| below 0.3 is weak (gray), 0.3 to 0.5 moderate, 0.5 and above strong.</div>';
@@ -71281,13 +71291,53 @@ document.addEventListener('DOMContentLoaded', () => {
 // name's own click (opening Gene effect, say) does not also run.
 document.addEventListener('click', (e) => {
     if (!e.shiftKey || !window.app?.openGeneBrowser) return;
-    const el = e.target.closest?.('.gene-hover[data-gene], .clb-gene-link[data-gene], .gene-effect-btn[data-gene], .si-row[data-gene]');
-    if (!el || !el.dataset.gene) return;
+    const el = e.target.closest?.('.gene-hover[data-gene], .clb-gene-link[data-gene], .gene-effect-btn[data-gene], .si-row[data-gene], [data-hover-gene]');
+    const gene = el?.dataset.gene || el?.dataset.hoverGene;
+    if (!gene) return;
     e.preventDefault();
     e.stopPropagation();
     window.app.hideGeneTooltip?.(true);
-    window.app.openGeneBrowser(String(el.dataset.gene).toUpperCase());
+    window.app.openGeneBrowser(String(gene).toUpperCase());
 }, true);
+
+// One hover card for any name tagged data-hover-gene or data-hover-cl, so a
+// view only tags its names and never wires them. data-hover-why adds a line.
+(() => {
+    let timer = null, cur = null;
+    const SEL = '[data-hover-gene], [data-hover-cl]';
+    document.addEventListener('mouseover', (e) => {
+        const el = e.target.closest?.(SEL);
+        // Its name was re-rendered under the pointer, so no mouseout came.
+        if (!el && cur) { cur = null; clearTimeout(timer); window.app?.hideCellLineTooltip?.(); }
+        if (!el || el === cur || !window.app) return;
+        cur = el;
+        clearTimeout(timer);
+        const ev = { clientX: e.clientX, clientY: e.clientY };
+        timer = setTimeout(() => {
+            if (!el.isConnected || !el.matches(':hover')) return;
+            if (el.dataset.hoverCl) { window.app.showCellLineTooltip(ev, el.dataset.hoverCl, el.dataset.hoverWhy || 'Shift-click to open its Wiki'); return; }
+            window.app.showGeneTooltip(ev, el.dataset.hoverGene, el.dataset.hoverWhy || null);
+            window.app._tagGeneTooltipSource?.(el);
+        }, window.app._HOVER_DELAY);
+    });
+    document.addEventListener('mouseout', (e) => {
+        const el = e.target.closest?.(SEL);
+        if (!el || el.contains(e.relatedTarget)) return;
+        cur = null;
+        clearTimeout(timer);
+        if (el.dataset.hoverCl) window.app?.hideCellLineTooltip?.(); else window.app?.hideGeneTooltip?.();
+    });
+    // Shift-click on a tagged cell line opens its Wiki, as on a plot dot.
+    document.addEventListener('click', (e) => {
+        if (!e.shiftKey || !window.app) return;
+        const el = e.target.closest?.('[data-hover-cl]');
+        if (!el) return;
+        e.preventDefault();
+        e.stopPropagation();
+        window.app.hideCellLineTooltip?.();
+        window.app.openCellLineWiki(el.dataset.hoverCl);
+    }, true);
+})();
 
 // Whether Shift is being held right now. The gene tooltip needs this because
 // it is created on a timer, long after the keydown that would have told it.
