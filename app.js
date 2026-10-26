@@ -45270,7 +45270,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 const f = document.createElement('input');
                 f.type = 'text';
                 f.className = 'select-proxy-filter';
-                f.placeholder = 'Filter, or type an abbreviation like CLL';
+                f.placeholder = select.dataset.filterPlaceholder || 'Filter, or type an abbreviation like CLL';
                 panel.appendChild(f);
                 f.addEventListener('input', () => {
                     const q = f.value.trim().toLowerCase();
@@ -51879,7 +51879,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 const n = parseInt(x.transcript_support_level);
                 sup.set(x.id, { tsl: n >= 1 && n <= 5 ? n : null, basic: (x.tag || []).includes('gencode_basic'), longRead: /tagene/.test(x.source || '') });
             }
-        } catch (e) { /* ranked without support levels */ }
+        } catch (e) { /* ranked without support levels; flagged below */ }
         const manes = (t) => (t.MANE || []).map(m => m.type);
         const mk = (t) => {
             const strand = t.strand, tl = t.Translation || null;
@@ -51909,7 +51909,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const ref = transcripts[0];
         const out = {
             geneId: d.id, chr: d.seq_region_name, start: d.start, end: d.end, strand: d.strand, biotype: d.biotype,
-            ...ref, transcripts, nTranscripts: transcripts.length,
+            ...ref, transcripts, nTranscripts: transcripts.length, noTsl: !sup.size,
             plus: transcripts.filter(t => t.tx.plus && t !== ref).map(t => ({ id: t.tx.id, name: t.tx.name, refseq: t.tx.refseq }))
         };
         cache.set(gene, out);
@@ -52086,7 +52086,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
     }
 
     // The key under the transcript menu: what each tag means for trusting it.
-    _gbTxKey() {
+    _gbTxKey(st) {
         const row = (k, v) => `<tr><td style="padding:2px 10px 2px 0; white-space:nowrap; vertical-align:top; font-weight:600; color:#374151;">${k}</td><td style="padding:2px 0; color:#4b5563;">${v}</td></tr>`;
         return `<div style="margin-top:6px; padding:7px 10px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:6px; font-size:11px; line-height:1.45;">`
             + `<div style="font-weight:600; color:#3f6b25; margin-bottom:3px;">How to read this list</div><table style="border-collapse:collapse;">`
@@ -52096,6 +52096,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             + row('long-read', 'Built from long-read sequencing, which reads whole RNA molecules end to end: good evidence for the full structure, though not scored.')
             + row('alt. start', 'The protein starts at a different start codon than the reference, so its beginning (N-terminus) differs.')
             + row('Order', 'Reference first, then scored transcripts from best to worst, then unscored ones by protein length. The same length (e.g. 303 aa) does not mean an identical protein, and many transcripts differ only in their untranslated ends.')
+            + (st?.noTsl ? row('This time', 'Ensembl did not return the support levels, so no transcript here carries a TSL and the order falls back to protein length. Reopening the gene usually gets them.') : '')
             + `</table><div style="margin-top:4px; color:#6b7280;">Sources: <a href="https://www.ensembl.org/info/genome/genebuild/transcript_quality_tags.html" target="_blank" rel="noopener" style="color:#3730a3;">Ensembl transcript support levels &#8599;</a> · <a href="https://www.gencodegenes.org/" target="_blank" rel="noopener" style="color:#3730a3;">GENCODE (basic set, long-read models) &#8599;</a> · <a href="https://www.ncbi.nlm.nih.gov/refseq/MANE/" target="_blank" rel="noopener" style="color:#3730a3;">MANE &#8599;</a>. Read live from the Ensembl REST API; see Methods.</div></div>`;
     }
 
@@ -52225,7 +52226,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const opts = st.transcripts.map((x, i) => `<option value="${i}"${x === t ? ' selected' : ''}>${e(this._gbTxLabel(x, st))}</option>`).join('');
         const pos = `chr${st.chr}:${st.start}-${st.end}`;
         const note = `<div style="padding:7px 10px; background:#fffbeb; border-left:3px solid #f59e0b; font-size:11px; color:#78350f; margin:4px 0 10px;">`
-            + `<b>${st._partial ? (st._failed ? 'The reference transcript.' : `The reference transcript, while the other transcripts load from Ensembl <span class="gb-elapsed" data-t0="${st._t0}"></span>`) : st.nTranscripts === 1 ? 'The only annotated transcript.' : `One of ${st.nTranscripts.toLocaleString()} transcripts.`}</b> ${isRef && t.tx.mane ? `Shown is the MANE Select transcript${t.tx.refseq ? ` (${e(t.tx.refseq)})` : ''}. It is the agreed reference, not necessarily the form every cell type makes.` : `Shown is ${e(t.tx.name || t.tx.id)}, not the reference transcript.`}`
+            + `<b>${st._partial ? (st._failed ? 'Only the reference transcript: Ensembl did not answer, so this gene\'s other transcripts are missing from the menu.' : `The reference transcript, while the other transcripts load from Ensembl <span class="gb-elapsed" data-t0="${st._t0}"></span>`) : st.nTranscripts === 1 ? 'The only annotated transcript.' : `One of ${st.nTranscripts.toLocaleString()} transcripts.`}</b> ${isRef && t.tx.mane ? `Shown is the MANE Select transcript${t.tx.refseq ? ` (${e(t.tx.refseq)})` : ''}. It is the agreed reference, not necessarily the form every cell type makes.` : `Shown is ${e(t.tx.name || t.tx.id)}, not the reference transcript.`}`
             + `${others ? ` ${e(gene)} has ${others.toLocaleString()} other annotated transcript${others === 1 ? '' : 's'} (splice variants and non-coding forms) that can differ in exons, UTRs and protein: pick one in the menu to draw and download it, compare them all in ${a(`https://www.ensembl.org/Homo_sapiens/Gene/Splice?g=${encodeURIComponent(st.geneId)}`, 'Ensembl’s transcript view')} or the ${a(this._gbUcscUrl(pos), 'UCSC Genome Browser')}.` : ''}`
             + ` To check where a primer or sequence matches, UCSC ${a('https://genome.ucsc.edu/cgi-bin/hgBlat?db=hg38', 'BLAT')} and ${a('https://genome.ucsc.edu/cgi-bin/hgPcr?db=hg38', 'In-Silico PCR')} are quicker than BLAST for human sequences.</div>`;
         const stats = [
@@ -52239,10 +52240,11 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         ].join('');
         const btn = (k, txt, title) => `<button class="btn btn-outline btn-sm" data-gb-act="${k}" title="${title}">${txt}</button>`;
         return this._gbDesc('The exons of one transcript, read from 5′ to 3′. Tall boxes are protein-coding, low boxes untranslated (UTR); exons are to scale, introns shortened.' + (hot.length ? ' Red marks are hotspot codons, sized by how many cell lines carry a change there.' : '') + ' A gene can be read into several transcripts. Shown first is its MANE Select transcript (Matched Annotation from NCBI and EMBL-EBI): the one reference version of each gene that NCBI and Ensembl agree on, and the one clinical variant reports use.')
-            + `<div class="gb-kv" style="align-items:flex-start;"><span class="gb-kv-l" style="padding-top:4px;">Transcript shown</span><span class="gb-kv-v"><select id="gbTxSelect" class="form-control" style="font-size:11px; padding:2px 6px; max-width:460px;">${opts}</select>`
-            + (st.transcripts.length > 1 ? this._gbTxKey() : '')
+            + `<div class="gb-kv" style="align-items:flex-start;"><span class="gb-kv-l" style="padding-top:4px;">Transcript shown</span><span class="gb-kv-v"><select id="gbTxSelect" data-filter-placeholder="Filter by name, exons, length or tag" class="form-control" style="font-size:11px; padding:2px 6px; max-width:460px;">${opts}</select>`
+            + (st.transcripts.length > 1 ? this._gbTxKey(st) : '')
             + `</span></div>`
             + note
+            + (st._failed ? `<div class="gb-actions" style="margin:-6px 0 8px;"><button class="btn btn-outline btn-sm" data-gb-act="struct-retry">Load the transcripts again</button></div>` : '')
             + `<div id="gbStructFig" style="background:#fff; padding:2px 0;">${this._gbStructureSvg(gene, st, t, hot)}</div>`
             + (hot.length ? `<div class="gb-m" style="margin:-4px 0 2px;"><span style="color:#dc2626;">●</span> Hotspot codons: where DepMap calls recurrent mutations, sized by how many cell lines carry one; hover a mark for the specific changes.</div>` : '')
             + `<div class="gb-m" style="display:flex; justify-content:flex-end; margin:-2px 0 8px;"><button class="btn btn-outline btn-sm mobile-hide" data-gb-act="copy-struct" style="font-size:10px; padding:1px 8px;" title="Copy the exon figure as an image">Copy figure</button></div>`
