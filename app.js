@@ -25956,7 +25956,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             `Pearson correlations were computed over the cell lines with both values: expression against gene effect, copy number against expression, drug sensitivity (PRISM AUC) against gene effect for compounds annotated to target ${gene}, and ${gene}'s gene effect against that of every other gene in the screen (genes with at least 100 shared lines).`,
             `Genes whose mRNA expression correlated with ${gene}'s mRNA were ranked by absolute Pearson r (genes with at least 100 shared lines).`,
             'Relative copy number of at least 3 was counted as amplification and below 0.3 as deep deletion.',
-            'Named protein complexes came from EBI Complex Portal (Meldal et al., 2022), further complex partners from CORUM (Steinkamp et al., 2025) and pathways from Reactome (Milacic et al., 2024); gene annotation from MyGene.info, transcripts from Ensembl with the MANE Select reference, and genomic sequence from the UCSC Genome Browser (GRCh38).',
+            'Named protein complexes came from EBI Complex Portal (Meldal et al., 2022), further complex partners from CORUM (Steinkamp et al., 2025) and pathways from Reactome (Milacic et al., 2024); gene annotation from MyGene.info, transcripts from Ensembl with the MANE Select reference (Morales et al., 2022) and transcript support levels and long-read models from Ensembl and GENCODE (Dyer et al., 2025; Mudge et al., 2025), and genomic sequence from the UCSC Genome Browser (GRCh38).',
             this._methodsCitation()
         ]);
         const long = this._mBlocks([
@@ -25967,7 +25967,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             `RANKING AGAINST ALL GENES\n   The sentence at the top of the Dependency and Expression sections ranks the gene's mean across the lines, and its spread (standard deviation), against the same numbers for every gene in the panel. Expression levels: very high (top 10% of genes), high (top 30%), moderate, low (bottom 35%), very low (bottom 15%); "restricted" when it is expressed in under half the lines and cancer type explains at least 30% of the variation. "Varies a lot" means a spread in the top 20% of genes (for gene effect, only when under 60% of lines are below the cutoff and the gene is not common essential). The share explained by cancer type is eta squared: the variance between tissue means over the total, tissues of 5 or more lines; 20% or more is reported as differing with cancer type, 40% or more as strongly tied to it.`,
             `MUTATIONS AND FUSIONS\n   Hotspot, any-mutation, functional-loss and fusion calls as used across the app. Percentages use all ${this._mNum(s.N)} lines as the denominator, including lines that were never sequenced. Specific variants come from the inferred-subtype layer.${s.split ? ` Mutated (${s.split.label}, n = ${s.split.mut.length}) and wild-type (n = ${s.split.wt.length}) lines were compared with a two-sided Welch t-test on gene effect.` : ''}`,
             'COPY NUMBER\n   Gene-level relative copy number (1 = the line\'s own baseline). The app\'s copy-number tiers: amplified from 3, deep deletion below 0.3.',
-            this._gbStructure ? `GENE STRUCTURE\n   Exons, transcript, coding and protein lengths of the MANE Select transcript (else the Ensembl canonical one), fetched live from the Ensembl REST API (GRCh38).` : '',
+            this._gbStructure ? `GENE STRUCTURE\n   Exons, transcript, coding and protein lengths of the MANE Select transcript (else the Ensembl canonical one), fetched live from the Ensembl REST API (GRCh38). The other transcripts are listed by evidence: the reference, then GENCODE basic transcripts by Ensembl transcript support level (TSL 1 to 5; https://www.ensembl.org/info/genome/genebuild/transcript_quality_tags.html), then transcripts without a TSL (added after the levels were computed; not scored), by protein length. Long-read models are those of the GENCODE TAGENE pipeline (Ensembl source havana_tagene). Start sites: the genomic position of each protein-coding transcript's start codon, compared with the transcript shown; an alternative counts as well supported when a GENCODE basic transcript with TSL 1 or 2 (or MANE) uses it. Transcription starts are the transcripts' 5' ends, grouped when within 500 bp. The genomic sequence view shows the chosen transcript plus 1 kb on each side; the whole gene region (the span of all transcripts) is a separate choice.` : '',
             `RELATED GENES\n   Co-dependencies: the 10 genes whose gene effect correlates most positively with ${gene}'s, and the 10 most negatively (Pearson r, genes with at least 100 shared lines, p from the t distribution, not corrected for the number of genes tested).\n   Expression correlations: the 10 genes whose mRNA correlates most strongly (largest absolute r) with ${gene}'s mRNA across the cell lines with both values (same rules). Co-dependencies that are also CORUM complex partners, or share a curated pathway or a Reactome pathway with ${gene}, are tagged.\n   Protein complexes: the named human complexes in EBI Complex Portal that contain ${gene}, each member shown with its gene-effect r with ${gene}; complexes ordered by the median r of their members (co-dependent at 0.3 or more, partly at 0.15 to 0.3). Further complex partners from CORUM. Pathways: Reactome pathways of 5 to 150 genes containing ${gene}, smallest first, with the members whose r is 0.3 or more.`,
             'WHAT THIS DOES NOT SAY\nA correlation across cell lines does not show that two genes act together, and differences between tissues can drive it. A mutated-versus-wild-type difference across the whole panel can reflect lineage rather than the mutation; Mutation analysis inside one tissue separates the two.',
             'REFERENCES\n' + CorrelationExplorer.GB_REFS.map(r => `   ${r.name} (${r.url}): ${r.cite}`).join('\n')
@@ -43595,7 +43595,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const det = Object.entries(r.v).filter(([, x]) => x.detected).sort((a, b) => b[1].rpm - a[1].rpm);
         const trace = Object.entries(r.v).filter(([, x]) => !x.detected).sort((a, b) => b[1].reads - a[1].reads);
         const pct = (b) => `${Math.round(b * 100)}%`;
-        let html = p(`Reads in this cell line's RNA-seq that did not match the human genome, checked against 18 viruses and one mycoplasma. ${this.esc(V.modeNote)} A virus counts as detected with at least ${V.thresholds.reads} reads, ${V.thresholds.rpm} per million unmapped reads and reads across at least ${pct(V.thresholds.breadth)} of its genome: an infection covers the genome, a vector fragment does not.`);
+        let html = p(`Reads in this cell line's RNA-seq that did not match the human genome, checked against 18 viruses and one mycoplasma. ${this.esc(V.modeNote)} A virus counts as detected with at least ${V.thresholds.reads} reads, ${V.thresholds.rpm} per million unmapped reads and reads across at least ${pct(V.thresholds.breadth)} of its genome: an infection covers the genome, a vector fragment does not. Strong is at least 1,000 per million unmapped reads, moderate at least 300.`);
         html += kv('Unmapped reads checked', r.scanned.toLocaleString());
         if (det.length) {
             for (const [k, x] of det) {
@@ -43607,8 +43607,21 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         } else html += kv('Viral RNA', '<span style="color:#4c782e;">None found in the reads checked.</span>');
         if (trace.length) html += kv('Traces', `<span style="color:#6b7280;">${trace.slice(0, 6).map(([k, x]) => `${this.esc(this._virusRnaLabel(k))} ${x.reads} reads, ${pct(x.breadth)} of genome`).join('; ')}. Below the detection rule; usually shared or conserved fragments.</span>`);
         const missed = rec.filter(h => !this._virusRnaKeys(h.agent).some(k => r.v[k]?.detected));
+        const srcHtml = this._virusRnaSources();
         if (missed.length) html += kv('Recorded, not found', `<span style="color:#6b7280;">Cellosaurus records ${missed.map(h => this.esc(h.name)).join(', ')}, but no RNA of it was found in the reads checked. A latent virus can make little RNA${V.mode === 'sample' ? ', and only a sample of the reads was checked' : ''}.</span>`);
-        return html;
+        return html + srcHtml;
+    }
+
+    // How the viral RNA numbers were made, with links; shared by the Cell
+    // Line Browser panel and the cell line Wiki.
+    _virusRnaSources() {
+        const a = (h, t) => `<a href="${h}" target="_blank" rel="noopener" style="color:#3730a3;">${t} &#8599;</a>`;
+        return `<div style="margin-top:10px; padding:7px 10px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:6px; font-size:11px; line-height:1.5; color:#4b5563;">`
+            + `<div style="font-weight:600; color:#3f6b25; margin-bottom:2px;">Methods and sources</div>`
+            + `RNA-seq alignments of the CCLE cell lines (hg19 TopHat and hg38 STAR) from the public DepMap bucket ${a('https://github.com/broadinstitute/depmap-omics-ccle', 'depmap-omics-ccle')} (Ghandi M et al. Next-generation characterization of the Cancer Cell Line Encyclopedia. Nature 2019;569:503-508). `
+            + `In each file the block of reads that did not map to the human genome was located and the last 25 MB of it read. Each read was cut into 25-base pieces and matched exactly against 18 virus genomes and Mycoplasma hyorhinis from ${a('https://www.ncbi.nlm.nih.gov/refseq/', 'NCBI RefSeq')} (O'Leary NA et al. Nucleic Acids Res 2016;44:D733-D745); a read counts with 2 or more matching pieces, pieces shared by two genomes are ignored. `
+            + `Virus-transformation records: ${a('https://www.cellosaurus.org/', 'Cellosaurus')} (Bairoch A. The Cellosaurus, a cell-line knowledge resource. J Biomol Tech 2018;29:25-38). `
+            + `Code, references and the raw counts: ${a('https://github.com/fredrikwermeling/correlate-v2/tree/main/scripts/virus_aws', 'scripts/virus_aws')}.</div>`;
     }
 
     // The Viral RNA panel of the Cell Line Browser: every virus found, the
@@ -43646,7 +43659,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             + `<label class="gb-m" style="display:inline-flex; gap:5px; align-items:center; font-size:11px; margin-bottom:6px;"><input type="checkbox" data-vir-listed ${onlyListed ? 'checked' : ''} ${listed.length ? '' : 'disabled'}> Only the ${listed.length.toLocaleString()} cell lines listed in the browser</label>`
             + `<div class="gb-verdict"><b>${clear.size} of ${ids.length.toLocaleString()}</b> measured cell lines carry viral RNA at a moderate or strong level (or a low level Cellosaurus confirms)${anyHit.size > clear.size ? `; ${anyHit.size - clear.size} more show only low-level reads, which can be carry-over` : ''}. <span class="gb-m">${((onlyListed ? listed.length : this.metadata.cellLines.length) - ids.length).toLocaleString()} ${onlyListed ? 'listed ' : ''}cell lines have no public RNA-seq file and were not measured.</span></div>`
             + (table.length ? this._gbTable(['Virus', 'Cell lines', 'Cellosaurus records found', 'Cell lines'], table).replace('gb-table"', 'gb-table gb-table-left"') : '<div class="gb-empty">No virus detected in these cell lines.</div>')
-            + (missed.length ? `<div class="gb-sub">Recorded by Cellosaurus, not found in the RNA</div><div class="gb-m" style="font-size:11px;">${missed.join(', ')}. A latent virus can make little RNA${V.mode === 'sample' ? ', and only a sample of the reads was checked' : ''}.</div>` : '');
+            + (missed.length ? `<div class="gb-sub">Recorded by Cellosaurus, not found in the RNA</div><div class="gb-m" style="font-size:11px;">${missed.join(', ')}. A latent virus can make little RNA${V.mode === 'sample' ? ', and only a sample of the reads was checked' : ''}.</div>` : '')
+            + this._virusRnaSources();
     }
 
     // Where a cell line came from, and what it is a version of. Everything
@@ -51915,11 +51929,25 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         return this._gbRow('Start sites', parts.map(x => x.startsWith('<div') ? x : `<div>${x}</div>`).join('') + '<div class="gb-m">As annotated in Ensembl. Well supported means GENCODE basic with TSL 1 or 2; many weakly supported models are automatic and may not be real. The RNA-seq data here is per gene, so which start a cell line uses is not measured.</div>');
     }
 
+    // The key under the transcript menu: what each tag means for trusting it.
+    _gbTxKey() {
+        const row = (k, v) => `<tr><td style="padding:2px 10px 2px 0; white-space:nowrap; vertical-align:top; font-weight:600; color:#374151;">${k}</td><td style="padding:2px 0; color:#4b5563;">${v}</td></tr>`;
+        return `<div style="margin-top:6px; padding:7px 10px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:6px; font-size:11px; line-height:1.45;">`
+            + `<div style="font-weight:600; color:#3f6b25; margin-bottom:3px;">How to read this list</div><table style="border-collapse:collapse;">`
+            + row('MANE Select', 'The reference transcript that NCBI and Ensembl agree on. Use it unless you have a reason not to.')
+            + row('TSL 1 to 5', 'Transcript support level: how well RNA evidence backs the whole transcript. TSL 1: a full-length mRNA matches every exon junction (well supported). TSL 2: supported, with a caveat. TSL 3: only short RNA fragments. TSL 4 and 5: weak or no support for the transcript as a whole.')
+            + row('not scored', 'Added after the support levels were computed, so it has no TSL. This is not a low score: a curator built it from evidence, but its support has not been rated.')
+            + row('long-read', 'Built from long-read sequencing, which reads whole RNA molecules end to end: good evidence for the full structure, though not scored.')
+            + row('alt. start', 'The protein starts at a different start codon than the reference, so its beginning (N-terminus) differs.')
+            + row('Order', 'Reference first, then scored transcripts from best to worst, then unscored ones by protein length. The same length (e.g. 303 aa) does not mean an identical protein, and many transcripts differ only in their untranslated ends.')
+            + `</table><div style="margin-top:4px; color:#6b7280;">Sources: <a href="https://www.ensembl.org/info/genome/genebuild/transcript_quality_tags.html" target="_blank" rel="noopener" style="color:#3730a3;">Ensembl transcript support levels &#8599;</a> · <a href="https://www.gencodegenes.org/" target="_blank" rel="noopener" style="color:#3730a3;">GENCODE (basic set, long-read models) &#8599;</a> · <a href="https://www.ncbi.nlm.nih.gov/refseq/MANE/" target="_blank" rel="noopener" style="color:#3730a3;">MANE &#8599;</a>. Read live from the Ensembl REST API; see Methods.</div></div>`;
+    }
+
     _gbTxLabel(t, st) {
         const ref = st?.transcripts?.[0];
         const alt = st && ref && t !== ref && t.protein && ref.protein && this._gbAtg(st, t) !== this._gbAtg(st, ref);
         const tags = [t.tx.mane ? 'MANE Select' : '', t.tx.plus ? 'MANE Plus Clinical' : '', !t.tx.mane && t.tx.canonical ? 'Ensembl canonical' : '',
-            t.tx.tsl ? `TSL ${t.tx.tsl}` : t.tx.longRead ? 'long-read' : '', alt ? 'alt. start' : ''].filter(Boolean).join(' · ');
+            t.tx.tsl ? `TSL ${t.tx.tsl}` : t.tx.longRead ? 'long-read' : t.tx.basic !== null && !t.tx.mane ? 'not scored' : '', alt ? 'alt. start' : ''].filter(Boolean).join(' · ');
         return `${t.tx.name || t.tx.id} · ${t.exons.length} exons · ${t.protein ? `${t.protein.length} aa` : String(t.tx.biotype || '').replace(/_/g, ' ')}${tags ? ` · ${tags}` : ''}`;
     }
 
@@ -52045,8 +52073,8 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         ].join('');
         const btn = (k, txt, title) => `<button class="btn btn-outline btn-sm" data-gb-act="${k}" title="${title}">${txt}</button>`;
         return this._gbDesc('The exons of one transcript, read from 5′ to 3′. Tall boxes are protein-coding, low boxes untranslated (UTR); exons are to scale, introns shortened.' + (hot.length ? ' Red marks are hotspot codons, sized by how many cell lines carry a change there.' : '') + ' A gene can be read into several transcripts. Shown first is its MANE Select transcript (Matched Annotation from NCBI and EMBL-EBI): the one reference version of each gene that NCBI and Ensembl agree on, and the one clinical variant reports use.')
-            + `<div class="gb-kv" style="align-items:center;"><span class="gb-kv-l">Transcript shown</span><span class="gb-kv-v"><select id="gbTxSelect" class="form-control" style="font-size:11px; padding:2px 6px; max-width:460px;">${opts}</select>`
-            + (st.transcripts.length > 1 ? `<div class="gb-m" style="margin-top:2px;">Listed by evidence: the reference first, then protein-coding transcripts in the GENCODE basic set, by transcript support level (TSL 1: every exon junction confirmed by a full-length mRNA; TSL 5: none). Transcripts added after the scores were computed have no TSL: not scored, which is not a low score. "long-read" marks transcripts built from long-read sequencing, which reads whole molecules.</div>` : '')
+            + `<div class="gb-kv" style="align-items:flex-start;"><span class="gb-kv-l" style="padding-top:4px;">Transcript shown</span><span class="gb-kv-v"><select id="gbTxSelect" class="form-control" style="font-size:11px; padding:2px 6px; max-width:460px;">${opts}</select>`
+            + (st.transcripts.length > 1 ? this._gbTxKey() : '')
             + `</span></div>`
             + note
             + `<div id="gbStructFig" style="background:#fff; padding:2px 0;">${this._gbStructureSvg(gene, st, t, hot)}</div>`
@@ -54040,7 +54068,8 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         { name: 'Reactome', what: 'named pathways and their members', url: 'https://reactome.org/', cite: 'Milacic M et al. The Reactome Pathway Knowledgebase 2024. Nucleic Acids Res 2024;52:D672-D678.' },
         { name: 'NCBI Gene', what: 'gene description and aliases (RefSeq and Alliance of Genome Resources summaries, credited in the text), mouse orthologs (HomoloGene)', url: 'https://www.ncbi.nlm.nih.gov/gene/', cite: 'Brown GR et al. Gene: a gene-centered information resource at NCBI. Nucleic Acids Res 2015;43:D36-D42.' },
         { name: 'MyGene.info', what: 'live access to the NCBI, HGNC, Ensembl, UniProt and OMIM records', url: 'https://mygene.info/', cite: 'Xin J et al. High-performance web services for querying gene and variant annotation. Genome Biol 2016;17:91.' },
-        { name: 'Ensembl', what: 'transcripts and exons, GRCh38', url: 'https://www.ensembl.org/', cite: 'Dyer SC et al. Ensembl 2025. Nucleic Acids Res 2025;53:D948-D957.' },
+        { name: 'Ensembl', what: 'transcripts and exons, GRCh38; transcript support levels (TSL)', url: 'https://www.ensembl.org/info/genome/genebuild/transcript_quality_tags.html', cite: 'Dyer SC et al. Ensembl 2025. Nucleic Acids Res 2025;53:D948-D957.' },
+        { name: 'GENCODE', what: 'the basic transcript set and long-read (TAGENE) transcript models', url: 'https://www.gencodegenes.org/', cite: 'Mudge JM et al. GENCODE 2025: reference gene annotation for human and mouse. Nucleic Acids Res 2025;53:D966-D975.' },
         { name: 'MANE', what: 'reference transcript', url: 'https://www.ncbi.nlm.nih.gov/refseq/MANE/', cite: 'Morales J et al. A joint NCBI and EMBL-EBI transcript set for clinical genomics and research. Nature 2022;604:310-315.' },
         { name: 'UCSC Genome Browser', what: 'genomic sequence and chromosome bands, hg38', url: 'https://genome.ucsc.edu/', cite: 'Perez G et al. The UCSC Genome Browser database: 2025 update. Nucleic Acids Res 2025;53:D1243-D1249.' }
     ];
