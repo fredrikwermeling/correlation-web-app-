@@ -19983,7 +19983,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         for (const part of String(text || '').split(/[\n,;\t]+/)) {
             const t = part.trim();
             if (!t) continue;
-            if (/^(tissue|lineage|subtype|disease)\s*[:=]/i.test(t)) out.push(t);
+            if (/^(tissue|lineage|subtype|disease|virus)\s*[:=]/i.test(t)) out.push(t);
             else out.push(...t.split(/\s+/).filter(Boolean));
         }
         return out;
@@ -20003,6 +20003,20 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         return exact.length ? exact : ids.filter(cl => String(of(cl) || '').toLowerCase().includes(w));
     }
 
+    // Cell lines whose RNA carries a virus (virus:EBV, or virus:any), at a
+    // moderate or strong level or confirmed by Cellosaurus: the same rule as
+    // the quick filter, so low-level carry-over is left out.
+    _virusHighlightIds(want) {
+        const w = String(want).trim().toLowerCase(), out = [];
+        for (const [cl, r] of Object.entries(this.virusRna?.byCellLine || {})) {
+            const rec = new Set((this._virusAgents(cl) || []).flatMap(h => this._virusRnaKeys(h.agent)));
+            const hit = Object.entries(r.v).some(([k, x]) => x.detected && (x.level !== 'low' || rec.has(k))
+                && (w === 'any' || k.toLowerCase() === w || this._virusRnaLabel(k).toLowerCase().includes(w)));
+            if (hit) out.push(cl);
+        }
+        return out;
+    }
+
     // A "highlight a group" menu beside a highlight box. It lists the
     // tissues, subtypes and diseases of the cell lines currently shown,
     // rebuilt each time it opens, and adds the chosen one (tissue:Skin) to
@@ -20012,7 +20026,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (!input || input._groupPicker) return;
         const sel = document.createElement('select');
         sel.className = 'hl-group-picker mobile-hide';
-        sel.title = 'Highlight every cell line of a tissue, subtype or disease among those shown';
+        sel.title = 'Highlight every cell line of a tissue, subtype or disease among those shown, or those whose RNA carries a virus';
         sel.style.cssText = 'font-size:11px; padding:2px 4px; border:1px solid #d1d5db; border-radius:4px; max-width:150px; background:#fff;';
         const head = '<option value="">+ Highlight group...</option>';
         sel.innerHTML = head;
@@ -20024,13 +20038,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 for (const id of ids) { const v = fn(id); if (v) m.set(v, (m.get(v) || 0) + 1); }
                 return [...m.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
             };
+            const shown = new Set(ids);
+            const vir = Object.keys(this.virusRna?.viruses || {}).map(k => [k, this._virusHighlightIds(k).filter(id => shown.has(id)).length]).filter(([, n]) => n).sort((a, b) => b[1] - a[1]);
             const groups = [
                 ['tissue', 'Tissue', count(id => this.getCellLineLineage(id))],
                 ['subtype', 'Subtype', count(id => this.getCellLineSublineage(id))],
-                ['disease', 'Disease', count(id => md.oncotreeSubtype?.[id])]
+                ['disease', 'Disease', count(id => md.oncotreeSubtype?.[id])],
+                ['virus', 'Viral RNA (RNA-seq)', vir.map(([k, n]) => [k, n])],
             ];
             sel.innerHTML = head + (ids.length ? groups.map(([k, label, items]) => items.length
-                ? `<optgroup label="${label}">${items.map(([v, n]) => `<option value="${k}:${this.esc(v)}">${this.esc(v)} (${n})</option>`).join('')}</optgroup>` : '').join('')
+                ? `<optgroup label="${label}">${items.map(([v, n]) => `<option value="${k}:${this.esc(v)}">${this.esc(k === 'virus' ? this._virusRnaLabel(v) : v)} (${n})</option>`).join('')}</optgroup>` : '').join('')
                 : '<option value="" disabled>Draw a plot first</option>');
         };
         sel.addEventListener('mousedown', fill);
@@ -20180,8 +20197,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const keys = [];
         const groupIds = new Set();
         for (const t of (terms || [])) {
-            const g = String(t).match(/^(tissue|lineage|subtype|disease)\s*[:=]\s*(.+)$/i);
-            if (g) { this._groupHighlightIds(g[1].toLowerCase(), g[2]).forEach(id => groupIds.add(id)); continue; }
+            const g = String(t).match(/^(tissue|lineage|subtype|disease|virus)\s*[:=]\s*(.+)$/i);
+            if (g) { (g[1].toLowerCase() === 'virus' ? this._virusHighlightIds(g[2]) : this._groupHighlightIds(g[1].toLowerCase(), g[2])).forEach(id => groupIds.add(id)); continue; }
             const key = norm(t);
             if (key) keys.push(key);
         }
@@ -36385,7 +36402,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 viralRna: (() => {
                     const r = cl ? this._virusRnaOf(cl) : null;
                     if (!r) return { measured: false, note: 'No public RNA-seq file, so viral RNA was not measured. Unmeasured, not negative.' };
-                    return { measured: true, unmappedReadsChecked: r.scanned, viruses: r.v, mode: this.virusRna.mode, modeNote: this.virusRna.modeNote, thresholds: this.virusRna.thresholds,
+                    const F = this.virusRna.features || {};
+                    const viruses = Object.fromEntries(Object.entries(r.v).map(([k, x]) => { const { cov, genes, ...rest } = x; return [k, { ...rest,
+                        ...(genes ? { genes: genes.map(([fi, reads, tpm]) => ({ gene: F[k]?.[fi]?.name, product: F[k]?.[fi]?.product, positions: F[k]?.[fi]?.seg, reads, approxTPM: tpm })), readsPerMillionAllReads: x.rpmAll } : {}) }]; }));
+                    return { measured: true, unmappedReadsChecked: r.scanned, viruses, mode: this.virusRna.mode, genesReadMe: this.virusRna.tpmNote, modeNote: this.virusRna.modeNote, thresholds: this.virusRna.thresholds,
                         cellosaurusRecord: (this._virusAgents(cl) || []).map(h => h.agent),
                         readMe: 'Reads that did not map to the human genome, matched by 25-mers to viral genomes. rpm = reads per million unmapped reads checked; breadth = share of 50 genome bins covered. Detected needs reads, rpm and breadth over the thresholds; a narrow hit can be a plasmid vector (SV40, MLV) rather than an infection. Absence is weak evidence for latent viruses.' };
                 })(),
@@ -43555,6 +43575,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 const note = V.viruses[k]?.note ? `<div style="font-size:10px; color:#6b7280;">${this.esc(V.viruses[k].note)}</div>` : '';
                 const lvl = x.level === 'low' && !recKeys.has(k) ? '<div style="font-size:10px; color:#6b7280;">Low level: this can also be carry-over from another sample sequenced in the same run, so treat it as a lead, not a finding.</div>' : '';
                 html += kv(`<b style="color:${x.level === 'low' ? '#6b7280' : '#b45309'};">${this.esc(this._virusRnaLabel(k))}</b>`, `<b>${x.level ? x.level.charAt(0).toUpperCase() + x.level.slice(1) + ': ' : ''}${x.reads.toLocaleString()} reads</b> (${x.rpm.toLocaleString()} per million unmapped), across ${pct(x.breadth)} of the genome. ${agree}${lvl}${note}`);
+                // Gene detail only for a clear detection: at a low level the
+                // read positions are too few to say which genes they came from.
+                if (x.genes?.length && (x.level !== 'low' || recKeys.has(k))) html += this._virusGenesHtml(cellLineId, k, x);
             }
         } else html += kv('Viral RNA', '<span style="color:#4c782e;">None found in the reads checked.</span>');
         if (trace.length) html += kv('Traces', `<span style="color:#6b7280;">${trace.slice(0, 6).map(([k, x]) => `${this.esc(this._virusRnaLabel(k))} ${x.reads} reads, ${pct(x.breadth)} of genome`).join('; ')}. Below the detection rule; usually shared or conserved fragments.</span>`);
@@ -43574,6 +43597,54 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             + `In each file the block of reads that did not map to the human genome was located and the last 25 MB of it read. Each read was cut into 25-base pieces and matched exactly against 18 virus genomes and Mycoplasma hyorhinis from ${a('https://www.ncbi.nlm.nih.gov/refseq/', 'NCBI RefSeq')} (O'Leary NA et al. Nucleic Acids Res 2016;44:D733-D745); a read counts with 2 or more matching pieces, pieces shared by two genomes are ignored. `
             + `Virus-transformation records: ${a('https://www.cellosaurus.org/', 'Cellosaurus')} (Bairoch A. The Cellosaurus, a cell-line knowledge resource. J Biomol Tech 2018;29:25-38). `
             + `Code, references and the raw counts: ${a('https://github.com/fredrikwermeling/correlate-v2/tree/main/scripts/virus_aws', 'scripts/virus_aws')}.</div>`;
+    }
+
+    // A cell line's own human expression, as TPM, for scale: the share of its
+    // genes below a value, and GAPDH / ACTB. Null without expression data.
+    _virusHumanScale(cellLineId) {
+        const i = this.metadata.cellLines.indexOf(cellLineId);
+        const e = this.expressionCellLineMap?.[i];
+        if (!this.expressionData || e === undefined || e === -1) return null;
+        const nE = this.expressionMetadata.nCellLines, G = this.expressionMetadata.genes.length, X = this.expressionData;
+        const tpm = new Float64Array(G);
+        for (let g = 0; g < G; g++) { const v = X[g * nE + e]; tpm[g] = v === v ? Math.pow(2, v) - 1 : 0; }
+        const sorted = Array.from(tpm).sort((a, b) => a - b);
+        const at = (name) => { const g = this.expressionGeneIndex?.get(name); return g === undefined ? null : tpm[g]; };
+        return {
+            pct: (t) => { let lo = 0, hi = sorted.length; while (lo < hi) { const m = (lo + hi) >> 1; if (sorted[m] < t) lo = m + 1; else hi = m; } return 100 * lo / sorted.length; },
+            gapdh: at('GAPDH'), actb: at('ACTB'),
+        };
+    }
+
+    // Which genes of a virus a cell line expresses: a coverage strip along
+    // the genome, then each gene with its sequence link, reads and an
+    // approximate TPM placed among the cell line's own genes.
+    _virusGenesHtml(cellLineId, key, x) {
+        const V = this.virusRna, F = V.features?.[key] || {}, acc = V.viruses[key]?.acc, L = V.genomeLength?.[key] || 1;
+        const scale = this._virusHumanScale(cellLineId);
+        const fmt = (t) => t >= 100 ? Math.round(t).toLocaleString() : t >= 10 ? t.toFixed(0) : t.toFixed(1);
+        const W = 560, H = 34, mx = Math.max(1, ...x.cov);
+        const bars = x.cov.map((c, j) => c ? `<rect x="${(j * W / 100).toFixed(1)}" y="${(H - 4 - (H - 6) * c / mx).toFixed(1)}" width="${(W / 100 - 0.6).toFixed(1)}" height="${((H - 6) * c / mx).toFixed(1)}" fill="#b45309" opacity="0.8"><title>${Math.round(j * L / 100 + 1).toLocaleString()} to ${Math.round((j + 1) * L / 100).toLocaleString()}: ${c} reads</title></rect>` : '').join('');
+        const ticks = x.genes.slice(0, 6).map(([fi]) => {
+            const f = F[fi]; if (!f) return '';
+            const lo = Math.min(...f.seg.map(q => q[0])), mid = (lo + Math.max(...f.seg.map(q => q[1]))) / 2;
+            return `<text x="${(mid / L * W).toFixed(1)}" y="${H + 10}" font-size="9" text-anchor="middle" fill="#6b7280">${this.esc(f.name.length > 14 ? f.name.slice(0, 13) + '…' : f.name)}</text>`;
+        }).join('');
+        const svg = `<svg viewBox="0 0 ${W} ${H + 14}" width="100%" style="max-width:${W}px; display:block; margin:4px 0 2px;"><rect x="0" y="${H - 4}" width="${W}" height="2" fill="#d1d5db"/>${bars}${ticks}</svg>`
+            + `<div style="font-size:10px; color:#6b7280; display:flex; justify-content:space-between; max-width:${W}px;"><span>1</span><span>Reads along the ${L.toLocaleString()}-base genome (${this.esc(acc || '')})</span><span>${L.toLocaleString()}</span></div>`;
+        const rows = x.genes.map(([fi, reads, tpm]) => {
+            const f = F[fi]; if (!f) return '';
+            const lo = Math.min(...f.seg.map(q => q[0])), hi = Math.max(...f.seg.map(q => q[1]));
+            const where = f.seg.map(q => `${q[0].toLocaleString()}–${q[1].toLocaleString()}`).join(', ');
+            const link = acc ? `<a href="https://www.ncbi.nlm.nih.gov/nuccore/${acc}?from=${lo}&to=${hi}" target="_blank" rel="noopener" style="color:#3730a3;" title="Open this stretch of the ${this.esc(acc)} sequence at NCBI">${where} &#8599;</a>` : where;
+            const rank = scale ? `top ${Math.max(1, Math.round(100 - scale.pct(tpm)))}%` : '';
+            return `<tr><td style="padding:2px 8px 2px 0; font-weight:600;">${this.esc(f.name)}</td><td style="padding:2px 8px 2px 0; color:#6b7280;">${this.esc(f.product && f.product !== f.name ? f.product : '')}</td><td style="padding:2px 8px 2px 0; white-space:nowrap;">${link}${f.strand === -1 ? ' <span style="color:#9ca3af;">(minus strand)</span>' : ''}</td><td style="padding:2px 8px; text-align:right;">${reads.toLocaleString()}</td><td style="padding:2px 8px; text-align:right;"><b>${fmt(tpm)}</b></td><td style="padding:2px 0 2px 8px; color:#6b7280; white-space:nowrap;">${rank}</td></tr>`;
+        }).join('');
+        const scaleTxt = scale ? ` For scale, this cell line's GAPDH is ${scale.gapdh != null ? fmt(scale.gapdh) : 'n/a'} TPM and ACTB ${scale.actb != null ? fmt(scale.actb) : 'n/a'} TPM (DepMap).` : '';
+        return `<div style="margin:2px 0 10px 202px; font-size:11px;">${svg}`
+            + `<div style="margin:6px 0 3px; color:#374151;">Viral reads are about <b>${x.rpmAll != null ? fmt(x.rpmAll) : '?'} per million</b> of all this cell line's RNA-seq reads.${scaleTxt}</div>`
+            + `<table style="border-collapse:collapse; font-size:11px;"><thead><tr style="color:#6b7280; text-align:left;"><th style="font-weight:600; padding:2px 8px 2px 0;">Gene</th><th style="font-weight:600; padding:2px 8px 2px 0;">Product</th><th style="font-weight:600; padding:2px 8px 2px 0;">Position on the genome</th><th style="font-weight:600; padding:2px 8px; text-align:right;">Reads</th><th style="font-weight:600; padding:2px 8px; text-align:right;">≈ TPM</th><th style="font-weight:600; padding:2px 0 2px 8px;">Among this cell line's human genes</th></tr></thead><tbody>${rows}</tbody></table>`
+            + `<div style="font-size:10px; color:#9ca3af; margin-top:3px;">Reads are placed on the gene they overlap (overlapping viral genes share reads). ≈ TPM is estimated from the share of all reads and a 2 kb average transcript length: approximate, within about twofold, so compare orders of magnitude.</div></div>`;
     }
 
     // The Viral RNA panel of the Cell Line Browser: every virus found, the
@@ -50964,12 +51035,81 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         if (modal) { modal.style.display = 'none'; modal.style.zIndex = '1365'; }
     }
 
+    // A typed virus name to its key in virus_rna.json, or null.
+    _gbVirusKey(raw) {
+        const V = this.virusRna; if (!V) return null;
+        const n = (t) => String(t || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+        const q = n(raw); if (!q) return null;
+        const alias = { EPSTEINBARR: 'EBV', EPSTEINBARRVIRUS: 'EBV', HHV4: 'EBV', HHV8: 'KSHV', MYCOPLASMA: 'Mhyo', MOLONEY: 'MLV', MULV: 'MLV', HEPATITISB: 'HBV', HEPATITISC: 'HCV', ADENOVIRUS: 'HAdV5' };
+        if (alias[q]) return alias[q];
+        return Object.keys(V.viruses).find(k => n(k) === q || n(V.viruses[k].label) === q) || null;
+    }
+
+    // The Gene Browser page for a virus: which cell lines carry its RNA and
+    // at what level, by cancer type, and which of its genes are expressed.
+    _gbRenderVirus(key) {
+        const V = this.virusRna, info = V.viruses[key];
+        this._gbGene = null;
+        this._gbVirus = key;
+        document.getElementById('gbSubtitle').innerHTML = `<b>${this.esc(key)}</b> | ${this.esc(info.label)} | virus`;
+        // The gene-specific exports do not apply to a virus; the page-wide ones do.
+        document.querySelectorAll('#gbModal .gb-needs-gene').forEach(b => { b.disabled = !['gbDownloadBtn', 'gbExportImageBtn', 'gbResetBtn'].includes(b.id); });
+        const ids = this.metadata.cellLines, lin = this.cellLineMetadata?.lineage || {};
+        const meas = (id) => V.byCellLine[id];
+        const clear = (id) => { const x = meas(id)?.v?.[key]; if (!x?.detected) return false; const rec = new Set((this._virusAgents(id) || []).flatMap(h => this._virusRnaKeys(h.agent))); return x.level !== 'low' || rec.has(key); };
+        const pos = ids.filter(id => meas(id)?.v?.[key]?.detected).sort((a, b) => meas(b).v[key].rpm - meas(a).v[key].rpm);
+        const nMeas = ids.filter(meas).length, nClear = pos.filter(clear).length;
+        const rec = ids.filter(id => (this._virusAgents(id) || []).some(h => this._virusRnaKeys(h.agent).includes(key)));
+        const L = V.genomeLength?.[key];
+        const a = (h, t) => `<a href="${h}" target="_blank" rel="noopener" style="color:#3730a3;">${t} &#8599;</a>`;
+        const about = this._gbRow('Virus', this.esc(info.label))
+            + this._gbRow('Reference genome', `${a(`https://www.ncbi.nlm.nih.gov/nuccore/${info.acc}`, this.esc(info.acc))} <span class="gb-m">(${L ? L.toLocaleString() + ' bases, ' : ''}NCBI RefSeq)</span>`)
+            + (info.note ? this._gbRow('Note', `<span class="gb-m" style="font-size:11px;">${this.esc(info.note)}</span>`) : '')
+            + this._gbRow('Cellosaurus records', rec.length ? `${rec.length} cell line${rec.length === 1 ? '' : 's'} recorded as transformed by it` : 'none in the cohort');
+        const verdict = `<div class="gb-verdict"><b>${nClear}</b> of ${nMeas.toLocaleString()} measured cell lines carry ${this.esc(key)} RNA at a moderate or strong level (or a low level Cellosaurus confirms)${pos.length > nClear ? `; ${pos.length - nClear} more show low-level reads that can be carry-over` : ''}. <span class="gb-m">${(ids.length - nMeas).toLocaleString()} cell lines have no public RNA-seq file.</span></div>`;
+        const level = (x) => x.level ? x.level.charAt(0).toUpperCase() + x.level.slice(1) : '';
+        const rows = pos.slice(0, 60).map(id => { const x = meas(id).v[key]; const r = rec.includes(id);
+            return [this._gbClLink(id), `<span class="gb-m">${this.esc(lin[id] || '')}</span>`, `<span style="${x.level === 'low' && !r ? 'color:#9ca3af;' : 'font-weight:600;'}">${level(x)}</span>`, x.rpm.toLocaleString(), `${Math.round(x.breadth * 100)}%`, r ? 'Recorded' : '<span class="gb-m">no record</span>']; });
+        // Genes: across the cell lines that carry it clearly.
+        const F = V.features?.[key] || {}, agg = new Map(), cov = new Array(100).fill(0);
+        for (const id of pos.filter(clear)) {
+            const x = meas(id).v[key];
+            (x.cov || []).forEach((c, j) => { cov[j] += c; });
+            for (const [fi, reads, tpm] of x.genes || []) { const g = agg.get(fi) || agg.set(fi, { n: 0, tpm: [], reads: 0 }).get(fi); if (reads >= 3) { g.n++; g.tpm.push(tpm); } g.reads += reads; }
+        }
+        const geneRows = [...agg.entries()].filter(([fi]) => F[fi]).sort((a, b) => b[1].n - a[1].n || b[1].reads - a[1].reads).slice(0, 20).map(([fi, g]) => {
+            const f = F[fi], lo = Math.min(...f.seg.map(q => q[0])), hi = Math.max(...f.seg.map(q => q[1]));
+            return [`<b>${this.esc(f.name)}</b>`, `<span class="gb-m">${this.esc(f.product && f.product !== f.name ? f.product : '')}</span>`,
+                a(`https://www.ncbi.nlm.nih.gov/nuccore/${info.acc}?from=${lo}&to=${hi}`, `${lo.toLocaleString()}–${hi.toLocaleString()}`),
+                `${g.n}`, g.tpm.length ? this._gbNum(this.median(g.tpm), 1) : '<span class="gb-m">n/a</span>'];
+        });
+        const mx = Math.max(1, ...cov), W = 700, H = 40;
+        const covSvg = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="max-width:${W}px; display:block;"><rect x="0" y="${H - 3}" width="${W}" height="2" fill="#d1d5db"/>${cov.map((c, j) => c ? `<rect x="${(j * W / 100).toFixed(1)}" y="${(H - 3 - (H - 6) * c / mx).toFixed(1)}" width="${(W / 100 - 0.6).toFixed(1)}" height="${((H - 6) * c / mx).toFixed(1)}" fill="#b45309" opacity="0.8"><title>${L ? `${Math.round(j * L / 100 + 1).toLocaleString()} to ${Math.round((j + 1) * L / 100).toLocaleString()}: ` : ''}${c} reads</title></rect>` : '').join('')}</svg>`
+            + `<div class="gb-m" style="display:flex; justify-content:space-between; max-width:${W}px;"><span>1</span><span>Reads along the genome, summed over the cell lines that carry it</span><span>${L ? L.toLocaleString() : ''}</span></div>`;
+        const html = [
+            this._gbSection(`About ${this.esc(key)}`, about, ''),
+            this._gbSection('Cell lines carrying its RNA', verdict
+                + `<div class="gb-sub">By cancer type <span class="gb-m">(each dot is a measured cell line; dashed lines at moderate and strong)</span></div><div id="gbVirTissue"></div>`
+                + (rows.length ? `<div class="gb-sub">Cell lines with ${this.esc(key)} reads</div>` + this._gbTable(['Cell line', 'Tissue', 'Level', 'Per million unmapped', 'Genome covered', 'Cellosaurus'], rows).replace('gb-table"', 'gb-table gb-table-left"') : ''),
+                'Correlate viral RNA screen of the CCLE RNA-seq data; Cellosaurus.'),
+            geneRows.length ? this._gbSection('Viral genes expressed', this._gbDesc(`Which of its genes the reads come from, in the ${nClear} cell line${nClear === 1 ? '' : 's'} that carry it clearly. Positions link to that stretch of the ${this.esc(info.acc)} sequence at NCBI. ≈ TPM is approximate (within about twofold).`) + covSvg
+                + this._gbTable(['Gene', 'Product', 'Position on the genome', 'Cell lines', 'Median ≈ TPM'], geneRows).replace('gb-table"', 'gb-table gb-table-left"'), 'Gene annotation: NCBI RefSeq feature table.') : '',
+            this._gbSection('How this was measured', this._virusRnaSources(), ''),
+        ].join('');
+        document.getElementById('gbCards').innerHTML = html;
+        const s = { N: ids.length, ids, lin };
+        const lg = (v) => Math.log10(v + 1);
+        this._gbTissueBox('gbVirTissue', s, (i) => { const r = meas(ids[i]); if (!r) return NaN; return lg(r.v[key]?.detected ? r.v[key].rpm : 0); },
+            { cuts: [lg(300), lg(1000)], xTitle: `log10(${key} reads per million unmapped + 1)`, hoverLabel: 'log10 reads/M' });
+    }
+
     _gbRenderEmpty() {
         this._gbGene = null;
         document.getElementById('gbSubtitle').textContent = '';
         document.querySelectorAll('#gbModal .gb-needs-gene').forEach(b => { b.disabled = true; });
         const chips = ['KRAS', 'MYC', 'CDK6'].map(g => `<button class="gb-chip" data-gb-gene="${g}">${this.gi(g)}</button>`).join('');
-        document.getElementById('gbCards').innerHTML = `<div class="gb-empty">Type a gene symbol above, or try ${chips}</div>`;
+        const vchips = this.virusRna ? ['EBV', 'HPV16', 'XMRV'].map(k => `<button class="gb-chip" data-gb-gene="${k}" title="${this.esc(this._virusRnaLabel(k))}">${k}</button>`).join('') : '';
+        document.getElementById('gbCards').innerHTML = `<div class="gb-empty">Type a gene symbol above, or try ${chips}${vchips ? `; or a virus found in the cell lines' RNA, ${vchips}` : ''}</div>`;
     }
 
     // While any popout covers the window the page behind must not scroll.
@@ -51109,9 +51249,13 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const box = document.getElementById('gbGene');
         if (box) box.value = String(raw || '').trim();
         if (!box?.value) return;
+        // A virus name (EBV, HPV16, XMRV ...) that is not also a gene opens its page.
+        const vk = this._gbVirusKey(box.value);
+        if (vk && !this._gbHas(box.value.trim().toUpperCase())) { this.hideGeneTooltip?.(true); this._gbRenderVirus(vk); return; }
         const gene = await this._resolveGeneBox(box, (g) => this._gbHas(g), 'the gene-effect or expression data');
         if (!gene) return;
         this.hideGeneTooltip?.(true);
+        this._gbVirus = null;
         this._gbGene = gene;
         await this._gbRender(gene);
     }
