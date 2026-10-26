@@ -4420,20 +4420,6 @@ class CorrelationExplorer {
         const escHandler = (e) => { if (e.key === 'Escape') { popup.remove(); document.removeEventListener('keydown', escHandler); } };
         document.addEventListener('keydown', escHandler);
 
-        // Close on click outside
-        setTimeout(() => {
-            const outsideHandler = (e) => {
-                const upsetPopup = document.getElementById('upsetPopup');
-                const upsetSetup = document.getElementById('upsetSetupPopup');
-                if (!popup.contains(e.target) && !/^paramGrid(Hotspot|Fusion|Cn)Btn$/.test(e.target.id)
-                    && (!upsetPopup || !upsetPopup.contains(e.target))
-                    && (!upsetSetup || !upsetSetup.contains(e.target))) {
-                    popup.remove();
-                    document.removeEventListener('mousedown', outsideHandler);
-                }
-            };
-            document.addEventListener('mousedown', outsideHandler);
-        }, 100);
     }
 
     _oncoprintSyncFilters() {
@@ -6954,8 +6940,6 @@ class CorrelationExplorer {
         const closeNet = () => this._gbPopClose(false);
         document.getElementById('gbNetCloseBtn')?.addEventListener('click', closeNet);
         document.getElementById('gbNetBackBtn')?.addEventListener('click', closeNet);
-        document.getElementById('gbNetModal')?.addEventListener('click', (e) => { if (e.target.id === 'gbNetModal') closeNet(); });
-        document.getElementById('mutModal')?.addEventListener('click', (e) => { if (e.target.id === 'mutModal') closeMut(); });
         this._filterModeKey = this._modeFilterKey();
         this._syncAnalysisModeButtons();
 
@@ -7156,14 +7140,6 @@ class CorrelationExplorer {
             this._geHighlightCellLine = null;
             this._geSelectionHighlight = null;
             this._restoreAfterGeneEffect();
-        });
-        document.getElementById('geneEffectModal').addEventListener('click', (e) => {
-            if (e.target.id === 'geneEffectModal') {
-                document.getElementById('geneEffectModal').style.display = 'none';
-                this._geHighlightCellLine = null;
-                this._geSelectionHighlight = null;
-                this._restoreAfterGeneEffect();
-            }
         });
         document.getElementById('downloadGeneEffectPNG').addEventListener('click', () => this.downloadGeneEffectPNG());
 
@@ -7814,11 +7790,6 @@ class CorrelationExplorer {
         document.getElementById('enrichrCloseBtn')?.addEventListener('click', () => {
             document.getElementById('enrichrModal').style.display = 'none';
         });
-        document.getElementById('enrichrModal')?.addEventListener('click', (e) => {
-            if (e.target.id === 'enrichrModal') {
-                document.getElementById('enrichrModal').style.display = 'none';
-            }
-        });
         document.getElementById('enrichrDownloadBtn')?.addEventListener('click', () => this.downloadEnrichrCSV());
         document.getElementById('enrichrExportAIBtn')?.addEventListener('click', () => this.exportEnrichrForAI());
 
@@ -7832,11 +7803,6 @@ class CorrelationExplorer {
         });
         document.getElementById('closeInfoGraphic')?.addEventListener('click', () => {
             document.getElementById('infographicModal').style.display = 'none';
-        });
-        document.getElementById('infographicModal')?.addEventListener('click', (e) => {
-            if (e.target.id === 'infographicModal') {
-                document.getElementById('infographicModal').style.display = 'none';
-            }
         });
 
         // Gene Effect modal controls
@@ -8076,11 +8042,6 @@ class CorrelationExplorer {
         document.getElementById('closeCorrAnalysis')?.addEventListener('click', () => {
             document.getElementById('corrAnalysisModal').style.display = 'none';
         });
-        document.getElementById('corrAnalysisModal')?.addEventListener('click', (e) => {
-            if (e.target.id === 'corrAnalysisModal') {
-                document.getElementById('corrAnalysisModal').style.display = 'none';
-            }
-        });
         document.getElementById('caViewTissue')?.addEventListener('click', () => {
             this.switchCorrAnalysisView('tissue');
         });
@@ -8287,9 +8248,6 @@ class CorrelationExplorer {
         document.getElementById('aiAnalysisDialogClose')?.addEventListener('click', () => {
             const dlg = document.getElementById('aiAnalysisDialog');
             if (dlg) dlg.style.display = 'none';
-        });
-        document.getElementById('aiAnalysisDialog')?.addEventListener('click', (e) => {
-            if (e.target.id === 'aiAnalysisDialog') e.target.style.display = 'none';
         });
 
         // Once the user picks a format explicitly, exportFullAIAnalysis stops
@@ -23504,7 +23462,6 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 .observe(ge, { attributes: true, attributeFilter: ['style', 'class'] });
             modal.querySelector('#gcClose').onclick = close;
             modal.querySelector('#gcClose2').onclick = close;
-            modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
             const S = () => this._gcState;
             const onGrid = () => {
                 const clamp = (id, cur) => { const el = modal.querySelector(id); const v = Math.max(1, Math.min(8, parseInt(el.value, 10) || cur)); el.value = v; return v; };
@@ -24040,7 +23997,6 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const close = () => { modal.classList.remove('active'); document.getElementById('compPanelPop')?.remove(); this._compReturnAltFilters(); };
             modal.querySelector('#compClose').onclick = close;
             modal.querySelector('#compClose2').onclick = close;
-            modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
             const onGrid = () => {
                 const clamp = (id, cur) => { const el = modal.querySelector(id); const v = Math.max(1, Math.min(8, parseInt(el.value, 10) || cur)); el.value = v; return v; };
                 const r = clamp('#compRows', st.rows), c = clamp('#compCols', st.cols);
@@ -25840,7 +25796,6 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const close = () => modal.classList.remove('active');
             modal.querySelector('#ctCompClose').onclick = close;
             modal.querySelector('#ctCompCloseBtn').onclick = close;
-            modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
             const onGrid = () => {
                 const st = this._ctComp;
                 const clamp = (id, cur) => { const el = modal.querySelector(id); const v = Math.max(1, Math.min(8, parseInt(el.value, 10) || cur)); el.value = v; return v; };
@@ -26588,7 +26543,6 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             document.removeEventListener('keydown', onKey);
         };
         const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
-        overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
         document.addEventListener('keydown', onKey);
         document.body.appendChild(overlay);
     }
@@ -28154,7 +28108,6 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const done = (val) => { ov.remove(); resolve(val); };
             ov.querySelector('#askValueOk').onclick = () => done(input.value);
             ov.querySelector('#askValueCancel').onclick = () => done(null);
-            ov.addEventListener('mousedown', (e) => { if (e.target === ov) done(null); });
             input.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') { e.preventDefault(); done(input.value); }
                 if (e.key === 'Escape') { e.preventDefault(); done(null); }
@@ -35260,7 +35213,6 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (!dlg.dataset.wired) {
             dlg.dataset.wired = '1';
             document.getElementById('customAIClose')?.addEventListener('click', () => { dlg.style.display = 'none'; });
-            dlg.addEventListener('click', (e) => { if (e.target === dlg) dlg.style.display = 'none'; });
             document.getElementById('caiReset')?.addEventListener('click', () => {
                 this._aiCustom = this._aiCustomDefaults();
                 this._syncCustomAIDialog();
@@ -46853,7 +46805,6 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 if (plot?.data && window.Plotly) { try { Plotly.Plots.resize(plot); } catch (e) { /* not drawn yet */ } }
             });
             document.getElementById('clbUmapCloseBtn')?.addEventListener('click', closeUmap);
-            umapSec.addEventListener('click', (e) => { if (e.target === umapSec) closeUmap(); });
             document.addEventListener('keydown', (e) => {
                 if (e.key !== 'Escape' || umapSec.style.display === 'none') return;
                 // Anything opened from it sits above and takes Esc first.
@@ -46886,9 +46837,6 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         document.getElementById('clbInfoCloseBtn')?.addEventListener('click', () => {
             document.getElementById('clbInfoModal').style.display = 'none';
         });
-        document.getElementById('clbInfoModal')?.addEventListener('click', (e) => {
-            if (e.target.id === 'clbInfoModal') e.target.style.display = 'none';
-        });
 
         // CLB cell-line Wiki modal. The open-button is wired inside openInspect
         // (the button is rendered dynamically per cell line); the modal-close
@@ -46913,7 +46861,6 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const close = () => { if (vm) vm.style.display = 'none'; };
             document.getElementById('virCloseBtn')?.addEventListener('click', close);
             vm?.addEventListener('click', (e) => {
-                if (e.target === vm) { close(); return; }
                 const a = e.target.closest('[data-vir-cl]');
                 if (!a) return;
                 e.preventDefault();
@@ -46928,9 +46875,6 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
         document.getElementById('clbWikiDownloadBtn')?.addEventListener('click', () => this.downloadCellLineWiki());
         document.getElementById('clbWikiExportGenesBtn')?.addEventListener('click', () => this.exportWikiCellLineGenesCSV());
-        document.getElementById('clbWikiModal')?.addEventListener('click', (e) => {
-            if (e.target.id === 'clbWikiModal') closeCellLineWiki();
-        });
         // Gene-link clicks within the Wiki body open the GE modal (same UX as detail panel)
         document.getElementById('clbWikiBody')?.addEventListener('click', (e) => {
             const link = e.target.closest('.clb-gene-link');
@@ -51077,7 +51021,6 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             document.getElementById('gbModal').scrollTop = 0;
             box?.focus();
         });
-        document.getElementById('gbModal')?.addEventListener('click', (e) => { if (e.target.id === 'gbModal') this.closeGeneBrowser(); });
         const box = document.getElementById('gbGene');
         document.getElementById('gbShowBtn')?.addEventListener('click', () => this._gbGo(box.value));
         box?.addEventListener('keypress', (e) => { if (e.key === 'Enter') { e.preventDefault(); this._gbGo(box.value); } });
@@ -52796,7 +52739,6 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
 
     _sqWire(modal) {
         const close = () => { modal.style.display = 'none'; };
-        modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
         document.getElementById('sqClose').addEventListener('click', close);
         document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && modal.style.display !== 'none') { e.stopPropagation(); close(); } }, true);
         document.getElementById('sqScroll').addEventListener('scroll', () => { cancelAnimationFrame(this._sqRaf); this._sqRaf = requestAnimationFrame(() => this._sqRender()); });
@@ -54725,7 +54667,6 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         modal._wired = true;
         const close = () => { modal.style.display = 'none'; const gb = document.getElementById('gbModal'); if (gb) gb.style.zIndex = ''; };
         document.getElementById('ctwCloseBtn')?.addEventListener('click', close);
-        modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
         document.getElementById('ctwPdfBtn')?.addEventListener('click', () => this.downloadCellLineWiki({
             title: document.getElementById('ctwTitle')?.textContent, subtitle: document.getElementById('ctwSubtitle')?.textContent, bodyId: 'ctwBody', btnId: 'ctwPdfBtn' }));
         document.getElementById('ctwFilterBtn')?.addEventListener('click', () => {
@@ -57791,7 +57732,7 @@ ${clone.innerHTML}
                 </div>`;
             document.body.appendChild(m);
             m.addEventListener('click', (e) => {
-                if (e.target === m || e.target.dataset.close) m.style.display = 'none';
+                if (e.target.dataset.close) m.style.display = 'none';
             });
         }
         document.getElementById('geInspectHelpBody').innerHTML = `
@@ -71380,7 +71321,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!modal) return;
     const close = () => window.app?.closeMethods();
     document.getElementById('methodsCloseBtn')?.addEventListener('click', close);
-    modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && modal.style.display !== 'none' && modal.style.display !== '') close();
     });
@@ -71400,7 +71340,6 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('showReferenceData')?.addEventListener('click', open);
     document.getElementById('optionsRefDataLink')?.addEventListener('click', open);
     document.getElementById('closeReferenceData')?.addEventListener('click', close);
-    modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
 });
 
 // ============================================================================
