@@ -51739,6 +51739,38 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${mid + 62}" width="100%" style="max-width:${W}px; display:block;" role="img" aria-label="Exon structure of ${this.esc(gene)}">${defs}${pops}${g}${labels}${flag(startX, 'ATG')}${flag(stopX, 'Stop')}${span}${ends}</svg>`;
     }
 
+    // Annotated start codons and transcription starts across the gene's
+    // transcripts, against the one shown. Exons run 5' to 3', so the first
+    // coding exon holds the start codon on either strand.
+    _gbStartSites(st, t) {
+        if (st._partial || !st.transcripts || st.transcripts.length < 2) return '';
+        const e = (x) => this.esc(x), sd = st.strand === -1 ? -1 : 1;
+        const atg = (x) => { const f = x.exons.find(q => q.c0 !== null); return f ? (sd === 1 ? f.start + f.c0 : f.end - f.c0) : null; };
+        const tss = (x) => sd === 1 ? x.exons[0].start : x.exons[0].end;
+        const dist = (d) => { const a = Math.abs(d); return `${a < 1000 ? `${a} nt` : `${(a / 1000).toFixed(1)} kb`} ${d > 0 ? 'downstream' : 'upstream'}`; };
+        const name = (x) => e(x.tx.name || x.tx.id);
+        const parts = [];
+        const pc = st.transcripts.filter(x => x.protein && atg(x) !== null);
+        const mine = t.protein ? atg(t) : null;
+        if (pc.length > 1) {
+            const by = new Map();
+            for (const x of pc) { const k = atg(x); (by.get(k) || by.set(k, []).get(k)).push(x); }
+            if (by.size === 1) parts.push(`All ${pc.length} protein-coding transcripts use the same start codon.`);
+            else {
+                const alt = [...by.entries()].filter(([k]) => k !== mine).sort((a, b) => b[1].length - a[1].length);
+                const list = alt.slice(0, 4).map(([k, xs]) => `<div style="padding-left:10px;">· ${xs.length} transcript${xs.length === 1 ? '' : 's'} ${mine !== null ? dist(sd * (k - mine)) : 'elsewhere'} <span class="gb-m">(${xs.slice(0, 2).map(x => `${name(x)}, ${x.protein.length} aa`).join('; ')}${xs.length > 2 ? '; ...' : ''})</span></div>`);
+                parts.push(`<div><b>${by.size} different start codons</b> among ${pc.length} protein-coding transcripts${mine !== null ? `; ${by.get(mine)?.length || 1} use this one's, the others start:` : ':'}</div>${list.join('')}${alt.length > 4 ? `<div style="padding-left:10px;" class="gb-m">and ${alt.length - 4} more</div>` : ''}`);
+            }
+        }
+        // 5' ends more than 500 bp apart count as separate start regions.
+        const ends = [...new Set(st.transcripts.map(tss))].sort((a, b) => a - b);
+        let regions = ends.length ? 1 : 0;
+        for (let i = 1; i < ends.length; i++) if (ends[i] - ends[i - 1] > 500) regions++;
+        if (regions > 1) parts.push(`<div style="margin-top:3px;">Transcription starts in <b>${regions} regions</b> more than 500 bp apart (alternative promoters or first exons).</div>`);
+        else if (ends.length) parts.push('<div style="margin-top:3px;">Every transcript starts in the same region.</div>');
+        return this._gbRow('Start sites', parts.map(x => x.startsWith('<div') ? x : `<div>${x}</div>`).join('') + '<div class="gb-m">As annotated in Ensembl. The RNA-seq data here is per gene, so which start a cell line uses is not measured.</div>');
+    }
+
     _gbTxLabel(t) {
         const tags = [t.tx.mane ? 'MANE Select' : '', t.tx.plus ? 'MANE Plus Clinical' : '', !t.tx.mane && t.tx.canonical ? 'Ensembl canonical' : ''].filter(Boolean).join(', ');
         return `${t.tx.name || t.tx.id} · ${t.exons.length} exons · ${t.protein ? `${t.protein.length} aa` : String(t.tx.biotype || '').replace(/_/g, ' ')}${tags ? ` · ${tags}` : ''}`;
@@ -51828,7 +51860,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         return [
             ensGene ? a(`https://www.ensembl.org/Homo_sapiens/Gene/Summary?g=${encodeURIComponent(ensGene)}`, 'Ensembl gene') : '',
             t ? a(`https://www.ensembl.org/Homo_sapiens/Transcript/Exons?t=${encodeURIComponent(t.tx.id)}`, 'Ensembl exons') : '',
-            pos ? a(`https://genome.ucsc.edu/cgi-bin/hgTracks?db=hg38&position=${encodeURIComponent(pos)}`, 'UCSC Genome Browser') : '',
+            pos ? a(`https://genome.ucsc.edu/cgi-bin/hgTracks?db=hg38&position=${encodeURIComponent(pos)}&knownGene=full`, 'UCSC Genome Browser') : '',
             t?.tx.refseq ? a(`https://www.ncbi.nlm.nih.gov/nuccore/${encodeURIComponent(t.tx.refseq)}`, `NCBI RefSeq ${this.esc(t.tx.refseq)}`) : '',
             this.geneInfoCache?.[gene]?.uniprot ? a(`https://www.uniprot.org/uniprotkb/${encodeURIComponent(this.geneInfoCache[gene].uniprot)}/entry#sequences`, 'UniProt') : '',
         ].filter(Boolean).join(' <span style="color:#9ca3af;">&middot;</span> ');
@@ -51852,6 +51884,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             this._gbRow('Transcript', `${e(t.tx.name || t.tx.id)} <span class="gb-m">${e(t.tx.id)}${t.tx.version ? '.' + t.tx.version : ''}${t.tx.refseq ? ` · RefSeq ${e(t.tx.refseq)}` : ''}${t.tx.mane ? ' · MANE Select' : t.tx.plus ? ' · MANE Plus Clinical' : t.tx.canonical ? ' · Ensembl canonical' : ''}</span>`),
             this._gbRow('Strand', st.strand === -1 ? 'Minus (read right to left on the chromosome)' : 'Plus'),
             this._gbRow('Exons', `${t.exons.length}${t.protein ? ` <span class="gb-m">(${coding} with coding sequence)</span>` : ''}`),
+            this._gbStartSites(st, t),
             this._gbRow('Lengths', `gene ${(span / 1000).toFixed(1)} kb · mRNA ${(t.tx.length || 0).toLocaleString()} nt${t.protein ? ` · coding ${t.cdsLength.toLocaleString()} nt · protein ${t.protein.length.toLocaleString()} aa` : ''}`),
             hot.length ? this._gbRow('Hotspot codons', hot.map(h => `${e(h.label)} <span class="gb-m">in ${h.n} line${h.n === 1 ? '' : 's'}${h.detail ? ` (${e(h.detail)})` : ''}</span>`).join('; ')
                 + `<div class="gb-m">Protein positions where DepMap calls recurrent hotspot mutations, with the number of cell lines carrying one; the red marks in the figure.</div>`) : '',
@@ -52921,10 +52954,12 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             + `<div class="gb-sub">By cancer type <span class="gb-m">(each dot is a cell line; dashed line at ${this._gbNum(cut, 0)}, the cutoff for expressed)</span></div><div id="gbExprTissue"></div><div class="gb-m" style="display:flex; justify-content:flex-end; margin-top:2px;"><button class="btn btn-outline btn-sm mobile-hide" data-gb-copy="gbExprTissue" data-gb-copy-label="Expression by cancer type" style="font-size:10px; padding:1px 8px;" title="Copy this figure as an image">Copy figure</button></div>`
             + `<div class="gb-grid" style="margin-top:6px;"><div><div class="gb-sub">Summary</div>${stats.join('')}${link}</div>`
             + `<div><div class="gb-sub">Highest-expressing cell lines</div>${this._gbTopLines(topL, 'log₂ TPM+1')}</div></div>`
-            + `<div class="gb-grid" style="margin-top:12px;"><div><div class="gb-sub">Highest tissues <span class="gb-m">(median)</span></div>${this._gbTissueRows(high, r => this._gbNum(r.med), 'Median')}`
-            + `<div class="gb-sub" style="margin-top:12px;">Lowest tissues <span class="gb-m">(median)</span></div>${this._gbTissueRows(low, r => this._gbNum(r.med), 'Median')}</div>`
-            + `<div>${fineHigh.length ? `<div class="gb-sub">Highest subtypes and diseases <span class="gb-m">(median)</span></div>${this._gbTissueRows(fineHigh, r => this._gbNum(r.med), 'Median')}`
-            + `<div class="gb-sub" style="margin-top:12px;">Lowest subtypes and diseases <span class="gb-m">(median)</span></div>${this._gbTissueRows(fineLow, r => this._gbNum(r.med), 'Median')}` : ''}</div></div>`
+            // One grid row per pair, so the Lowest headers stay level even
+            // when subtype names wrap.
+            + `<div class="gb-grid" style="margin-top:12px;"><div><div class="gb-sub">Highest tissues <span class="gb-m">(median)</span></div>${this._gbTissueRows(high, r => this._gbNum(r.med), 'Median')}</div>`
+            + `<div>${fineHigh.length ? `<div class="gb-sub">Highest subtypes and diseases <span class="gb-m">(median)</span></div>${this._gbTissueRows(fineHigh, r => this._gbNum(r.med), 'Median')}` : ''}</div></div>`
+            + `<div class="gb-grid" style="margin-top:12px;"><div><div class="gb-sub">Lowest tissues <span class="gb-m">(median)</span></div>${this._gbTissueRows(low, r => this._gbNum(r.med), 'Median')}</div>`
+            + `<div>${fineLow.length ? `<div class="gb-sub">Lowest subtypes and diseases <span class="gb-m">(median)</span></div>${this._gbTissueRows(fineLow, r => this._gbNum(r.med), 'Median')}` : ''}</div></div>`
             + `<div class="gb-actions"><button class="btn btn-outline btn-sm" data-gb-act="expr" title="Open this gene in the Gene effect / expression view, as mRNA by tissue">Open in expression view</button>`
             + (s.hasGe ? `<button class="btn btn-outline btn-sm" data-gb-act="sc-expr-ge" title="A scatter of each cell line's expression of this gene against its gene effect">Expression vs gene effect scatter</button>` : '')
             + `</div>`;
@@ -53102,12 +53137,12 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 ? `Known partners among them: ${[nCx ? `${nCx} in the same complex` : '', nPw ? `${nPw} in a shared pathway` : ''].filter(Boolean).join(', ')} (tagged); the rest are links found only in the data.`
                 : 'None is a known complex or pathway partner: every link here comes from the data alone.'}</div>`;
             const ns = list.map(h => h.n), nA = Math.min(...ns), nB = Math.max(...ns);
-            const table = this._gbTable(['Gene', 'r', 'p', ''], list.map(h => [
+            const table = this._gbTable(['Gene', `r <span class="gb-th-note">gray: weak, below 0.3</span>`, 'p', ''], list.map(h => [
                     `<a href="#" data-gb-gene="${this.esc(h.gene)}" class="gb-cl">${this.gi(h.gene)}</a>${this._gbKnownTag(gene, h.gene)}`,
                     this._gbRCell(h.r),
                     `<span class="gb-m" title="${h.n.toLocaleString()} cell lines">${this._gbP(h.p)}</span>`,
                     `<button class="btn btn-sm inspect-btn" style="padding:2px 6px; font-size:10px; background:#6ba544; color:white;" data-gb-scatter="${this.esc(h.gene)}" title="Open the correlation plot of ${this.esc(gene)} against ${this.esc(h.gene)}">Correlation</button>`]));
-            const tableCap = `<div class="gb-m" style="margin-top:3px;">Pearson r of gene effect across the cell lines screened for both genes (${nA === nB ? nA.toLocaleString() : `${nA.toLocaleString()} to ${nB.toLocaleString()}`}; hover p for each n). ${neg ? '−1 = mirror-image pattern.' : '1 = identical pattern.'} <span class="gb-rweak">Gray</span>: r below 0.3 either way, a weak correlation.</div>`
+            const tableCap = `<div class="gb-m" style="margin-top:3px;">Pearson r of gene effect across the cell lines screened for both genes (${nA === nB ? nA.toLocaleString() : `${nA.toLocaleString()} to ${nB.toLocaleString()}`}; hover p for each n). ${neg ? '−1 = mirror-image pattern.' : '1 = identical pattern.'}</div>`
                 + `<div class="gb-actions">`
                 + `<button class="btn btn-outline btn-sm" data-gb-act="net-codep${neg ? '-neg' : ''}" title="Run Gene set analysis on ${this.esc(gene)} and these ${list.length} genes, drawn as a correlation network">Network of these genes</button>`
                 + (this._hasHeatmap() ? `<button class="btn btn-outline btn-sm" data-gb-act="hm-codep${neg ? '-neg' : ''}" title="Show ${this.esc(gene)} and these ${list.length} genes as a heatmap across the cell lines">Heatmap</button>` : '')
@@ -53240,7 +53275,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         }).join('');
         const notes = lists.map(m => `<div class="gb-m" style="margin:2px 0 4px;" data-gb-xpanel="${m.key}"${m.key === pick ? '' : ' hidden'}>${m.note(g)}</div>`).join('');
         const panels = lists.map(m => `<div class="gb-xpanel" data-gb-xpanel="${m.key}"${m.key === pick ? '' : ' hidden'}>`
-            + this._gbTable(['Gene', 'r', 'p', 'Location', ''], res[m.key].map(h => [
+            + this._gbTable(['Gene', `r <span class="gb-th-note">gray: weak, below 0.3</span>`, 'p', 'Location', ''], res[m.key].map(h => [
                 `<a href="#" data-gb-gene="${this.esc(h.gene)}" class="gb-cl">${this.gi(h.gene)}</a>${this._gbKnownTag(gene, h.gene)}`,
                 this._gbRCell(h.r),
                 `<span class="gb-m" title="${h.n.toLocaleString()} cell lines">${this._gbP(h.p)}</span>`,
@@ -53252,7 +53287,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             + `<div class="gb-relgrid"><div class="gb-relleft">`
             + (lists.length > 1 ? `<div class="gb-xtabs">${tabs}</div>` : `<div class="gb-m" style="margin:2px 0;"><b style="color:#374151;">${lists[0].head(g)}</b>${(() => { const k = res[lists[0].key].filter(isNear).length; return k ? ` <span class="gb-near">${k} nearby</span>` : ''; })()}</div>`) + notes
             + `${panels}</div><div class="gb-relfig">${hm.fig}</div>`
-            + `<div class="gb-relleft"><div class="gb-m" style="margin-top:3px;">Pearson r across the cell lines with both values (hover p for n), strongest in either direction, genes measured in at least 100 lines; <span class="gb-rweak">gray</span>: r below 0.3 either way, a weak correlation. `
+            + `<div class="gb-relleft"><div class="gb-m" style="margin-top:3px;">Pearson r across the cell lines with both values (hover p for n), strongest in either direction, genes measured in at least 100 lines. `
             + `${g} is at ${this.esc(this.geneLocations?.[gene]?.band || 'an unknown band')}; <span class="gb-near">amber</span> marks genes within ${near} Mb on the same chromosome. Neighbors are often gained or lost together, so their mRNA can correlate through shared copy number rather than shared function.</div></div>`
             + `<div class="gb-relfig">${hm.cap}</div></div>` + fewGe;
         // The heatmap's grid (not its column labels) starts level with the table.
