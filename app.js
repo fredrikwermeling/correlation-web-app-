@@ -45375,7 +45375,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             `<div style="display:flex; gap:4px; flex-wrap:wrap;">` +
             `<button id="cbgAll" style="font-size:10px; padding:3px 8px; border:1px solid #d1d5db; border-radius:4px; background:#f9fafb; cursor:pointer; white-space:nowrap;">Color all</button>` +
             `<button id="cbgTop" style="font-size:10px; padding:3px 8px; border:1px solid #d1d5db; border-radius:4px; background:#f9fafb; cursor:pointer; white-space:nowrap;" title="The ${this.COLOR_BY_DEFAULT_TOP} groups holding the most cell lines">${this.COLOR_BY_DEFAULT_TOP} largest</button>` +
-            `<button id="cbgSuggest" style="font-size:10px; padding:3px 8px; border:1px solid #bbf7d0; border-radius:4px; background:#f0fdf4; color:#4c782e; cursor:pointer; white-space:nowrap;" title="The 5 groups with the strongest correlation of their own, counting only groups of at least 10 cell lines">Strongest r</button>` +
+            `<button id="cbgSuggest" style="font-size:10px; padding:3px 8px; border:1px solid #d1d5db; border-radius:4px; background:#f9fafb; cursor:pointer; white-space:nowrap;" title="The 5 groups with the strongest correlation of their own, counting only groups of at least 10 cell lines">Strongest r</button>` +
             `<button id="cbgNone" style="font-size:10px; padding:3px 8px; border:1px solid #d1d5db; border-radius:4px; background:#f9fafb; cursor:pointer; white-space:nowrap;">None</button>` +
             `</div>` +
             `<div style="display:flex; gap:8px; align-items:center; margin-top:8px;">` +
@@ -45392,9 +45392,24 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         const checks = () => [...panel.querySelectorAll('.cbg-check')];
         const countEl = panel.querySelector('#cbgCount');
+        // The preset that matches what is ticked is the one marked as on.
+        let sugg = null;
+        const same = (set, on) => set.size === on.length && on.every(c => set.has(c));
         const refresh = () => {
-            const n = checks().filter(c => c.checked).length;
+            const on = checks().filter(c => c.checked).map(c => c.dataset.cat);
+            const n = on.length;
             countEl.textContent = n === cats.length ? `all ${n}` : n ? `${n} of ${cats.length}` : 'none selected';
+            sugg ||= new Set(this._suggestColorByGroups(cats));
+            const active = n === cats.length ? 'cbgAll' : !n ? 'cbgNone'
+                : same(new Set(cats.slice(0, this.COLOR_BY_DEFAULT_TOP)), on) ? 'cbgTop'
+                : sugg.size && same(sugg, on) ? 'cbgSuggest' : null;
+            for (const id of ['cbgAll', 'cbgTop', 'cbgSuggest', 'cbgNone']) {
+                const b = panel.querySelector('#' + id), a = id === active;
+                b.style.borderColor = a ? '#6ba544' : '#d1d5db';
+                b.style.background = a ? '#f0fdf4' : '#f9fafb';
+                b.style.color = a ? '#3f6b25' : '';
+                b.style.fontWeight = a ? '600' : '';
+            }
         };
         refresh();
         const rowsFor = (tissue) => checks().filter(c => (tree.find(g => g.tissue === tissue)?.items || []).includes(c.dataset.cat));
@@ -51281,11 +51296,18 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             line: { color: '#374151', width: 1 }, fillcolor: 'rgba(200,200,200,0.3)',
             hovertemplate: `<b>%{text}</b><br>${r.name.replace(/[<>&]/g, '')}<br>${hoverLabel}: %{x:.2f}<extra></extra>`
         }));
-        const shapes = (cuts || [cut]).filter(c => c === c).map(c => ({ type: 'line', xref: 'x', yref: 'paper', x0: c, x1: c, y0: 0, y1: 1, line: { color: '#dc2626', width: 1.5, dash: 'dash' } }));
+        const cutVals = (cuts || [cut]).filter(c => c === c);
+        const shapes = cutVals.map(c => ({ type: 'line', xref: 'x', yref: 'paper', x0: c, x1: c, y0: 0, y1: 1, line: { color: '#dc2626', width: 1.5, dash: 'dash' } }));
+        // The range always takes in the cutoffs: a cutoff past the data was
+        // drawn in the margin, over the row labels.
+        let lo = Infinity, hi = -Infinity;
+        for (const r of rows) for (const [v] of r.pts) { if (v < lo) lo = v; if (v > hi) hi = v; }
+        for (const c of cutVals) { if (c < lo) lo = c; if (c > hi) hi = c; }
+        const pad = (hi - lo) * 0.04 || 0.1;
         Plotly.newPlot(el, traces, {
             height: Math.max(260, rows.length * 17 + 60), margin: { l: 10, r: 12, t: 6, b: 42, autoexpand: true },
             shapes, showlegend: false,
-            xaxis: { title: { text: xTitle, font: { size: 11 }, standoff: 6 }, gridcolor: '#eeeeee', zeroline: true, zerolinecolor: '#9ca3af', tickfont: { size: 10 } },
+            xaxis: { title: { text: xTitle, font: { size: 11 }, standoff: 6 }, range: [lo - pad, hi + pad], gridcolor: '#eeeeee', zeroline: true, zerolinecolor: '#9ca3af', tickfont: { size: 10 } },
             yaxis: { automargin: true, tickfont: { size: 10 } },
             paper_bgcolor: '#ffffff', plot_bgcolor: '#ffffff', font: { family: 'Open Sans, sans-serif' }
         }, { displayModeBar: false, responsive: true });
@@ -53072,10 +53094,10 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             const ns = list.map(h => h.n), nA = Math.min(...ns), nB = Math.max(...ns);
             const table = this._gbTable(['Gene', 'r', 'p', ''], list.map(h => [
                     `<a href="#" data-gb-gene="${this.esc(h.gene)}" class="gb-cl">${this.gi(h.gene)}</a>${this._gbKnownTag(gene, h.gene)}`,
-                    `<span class="${neg ? 'corr-negative' : 'corr-positive'}">${h.r.toFixed(3)}</span>`,
+                    this._gbRCell(h.r),
                     `<span class="gb-m" title="${h.n.toLocaleString()} cell lines">${this._gbP(h.p)}</span>`,
                     `<button class="btn btn-sm inspect-btn" style="padding:2px 6px; font-size:10px; background:#6ba544; color:white;" data-gb-scatter="${this.esc(h.gene)}" title="Open the correlation plot of ${this.esc(gene)} against ${this.esc(h.gene)}">Correlation</button>`]));
-            const tableCap = `<div class="gb-m" style="margin-top:3px;">Pearson r of gene effect across the cell lines screened for both genes (${nA === nB ? nA.toLocaleString() : `${nA.toLocaleString()} to ${nB.toLocaleString()}`}; hover p for each n). ${neg ? '−1 = mirror-image pattern.' : '1 = identical pattern.'}</div>`
+            const tableCap = `<div class="gb-m" style="margin-top:3px;">Pearson r of gene effect across the cell lines screened for both genes (${nA === nB ? nA.toLocaleString() : `${nA.toLocaleString()} to ${nB.toLocaleString()}`}; hover p for each n). ${neg ? '−1 = mirror-image pattern.' : '1 = identical pattern.'} <span class="gb-rweak">Gray</span>: r below 0.3 either way, a weak correlation.</div>`
                 + `<div class="gb-actions">`
                 + `<button class="btn btn-outline btn-sm" data-gb-act="net-codep${neg ? '-neg' : ''}" title="Run Gene set analysis on ${this.esc(gene)} and these ${list.length} genes, drawn as a correlation network">Network of these genes</button>`
                 + (this._hasHeatmap() ? `<button class="btn btn-outline btn-sm" data-gb-act="hm-codep${neg ? '-neg' : ''}" title="Show ${this.esc(gene)} and these ${list.length} genes as a heatmap across the cell lines">Heatmap</button>` : '')
@@ -53210,7 +53232,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const panels = lists.map(m => `<div class="gb-xpanel" data-gb-xpanel="${m.key}"${m.key === pick ? '' : ' hidden'}>`
             + this._gbTable(['Gene', 'r', 'p', 'Location', ''], res[m.key].map(h => [
                 `<a href="#" data-gb-gene="${this.esc(h.gene)}" class="gb-cl">${this.gi(h.gene)}</a>${this._gbKnownTag(gene, h.gene)}`,
-                `<span class="${h.r < 0 ? 'corr-negative' : 'corr-positive'}">${h.r.toFixed(3)}</span>`,
+                this._gbRCell(h.r),
                 `<span class="gb-m" title="${h.n.toLocaleString()} cell lines">${this._gbP(h.p)}</span>`,
                 locCell(h),
                 `<button class="btn btn-sm inspect-btn" style="padding:2px 6px; font-size:10px; background:#6ba544; color:white;" data-gb-scatter="${this.esc(h.gene)}" data-gb-x="${m.tx}" data-gb-y="${m.ty}" title="Open the correlation plot">Correlation</button>`]))
@@ -53220,7 +53242,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             + `<div class="gb-relgrid"><div class="gb-relleft">`
             + (lists.length > 1 ? `<div class="gb-xtabs">${tabs}</div>` : `<div class="gb-m" style="margin:2px 0;"><b style="color:#374151;">${lists[0].head(g)}</b>${(() => { const k = res[lists[0].key].filter(isNear).length; return k ? ` <span class="gb-near">${k} nearby</span>` : ''; })()}</div>`) + notes
             + `${panels}</div><div class="gb-relfig">${hm.fig}</div>`
-            + `<div class="gb-relleft"><div class="gb-m" style="margin-top:3px;">Pearson r across the cell lines with both values (hover p for n), strongest in either direction, genes measured in at least 100 lines. `
+            + `<div class="gb-relleft"><div class="gb-m" style="margin-top:3px;">Pearson r across the cell lines with both values (hover p for n), strongest in either direction, genes measured in at least 100 lines; <span class="gb-rweak">gray</span>: r below 0.3 either way, a weak correlation. `
             + `${g} is at ${this.esc(this.geneLocations?.[gene]?.band || 'an unknown band')}; <span class="gb-near">amber</span> marks genes within ${near} Mb on the same chromosome. Neighbors are often gained or lost together, so their mRNA can correlate through shared copy number rather than shared function.</div></div>`
             + `<div class="gb-relfig">${hm.cap}</div></div>` + fewGe;
         // The heatmap's grid (not its column labels) starts level with the table.
@@ -53452,6 +53474,14 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
     // sideways so no line crosses a name. Network colors: green nodes with
     // a dark outline, blue links thicker for higher r, dashed gray for CORUM.
     // A link opens the correlation plot, a gene its gene effect view.
+    // An r value in a related-genes table; below 0.3 either way it is gray,
+    // a weak correlation.
+    _gbRCell(r) {
+        return Math.abs(r) < 0.3
+            ? `<span class="gb-rweak" title="Below 0.3: a weak correlation">${r.toFixed(3)}</span>`
+            : `<span class="${r < 0 ? 'corr-negative' : 'corr-positive'}">${r.toFixed(3)}</span>`;
+    }
+
     _gbRelSchematic(gene, top, corum, neg = false) {
         const cset = new Set(corum);
         const right = top.slice(0, 10).map(h => ({ g: h.gene, r: h.r, cx: cset.has(h.gene), known: this._gbKnownLink(gene, h.gene) }));
@@ -53474,7 +53504,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             const w = co ? 1.4 + 3.2 * (Math.abs(n.r) - rMin) / ((rMax - rMin) || 1) : 1.4;
             const what = co ? `r = ${n.r.toFixed(2)}${n.known ? `; ${n.known.why.charAt(0).toLowerCase() + n.known.why.slice(1)}` : ''}` : 'same complex (CORUM)';
             links += `<g class="gb-edge" data-gb-edge="${this.esc(n.g)}" style="cursor:pointer;"><title>${this.esc(gene)} and ${this.esc(n.g)}: ${what}. Click to open their correlation plot.</title>`
-                + `<path class="gb-edge-line" d="${d}" fill="none" stroke="${co ? edgeCol : '#9ca3af'}" stroke-width="${w.toFixed(1)}"${co ? '' : ' stroke-dasharray="4 3"'}/>`
+                + `<path class="gb-edge-line" d="${d}" fill="none" stroke="${co ? (Math.abs(n.r) < 0.3 ? '#cbd5e1' : edgeCol) : '#9ca3af'}" stroke-width="${w.toFixed(1)}"${co ? '' : ' stroke-dasharray="4 3"'}/>`
                 + `<path d="${d}" fill="none" stroke="transparent" stroke-width="12"/></g>`;
             const filled = co;
             const tx = x + dir * 13, anchor = dir > 0 ? 'start' : 'end';
@@ -53482,7 +53512,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 + (n.known && filled ? `<circle cx="${x}" cy="${y.toFixed(1)}" r="11" fill="none" stroke="${n.known.kind === 'complex' ? '#6ba544' : '#9ca3af'}" stroke-width="1.6" stroke-dasharray="3 2"/>` : '')
                 + `<circle cx="${x}" cy="${y.toFixed(1)}" r="7.5" fill="${filled ? '#6ba544' : '#ffffff'}" stroke="${filled ? '#000000' : '#6ba544'}" stroke-width="${filled ? 1.2 : 2}"/>`
                 + `<text x="${tx}" y="${(y + 4).toFixed(1)}" text-anchor="${anchor}" font-size="12" font-family="${font}" fill="#333333"><tspan font-style="italic">${this.esc(n.g)}</tspan>`
-                + (co ? `<tspan dx="6" font-size="10.5" fill="${rCol}">${n.r.toFixed(2)}</tspan>` : '')
+                + (co ? `<tspan dx="6" font-size="10.5" fill="${Math.abs(n.r) < 0.3 ? '#9ca3af' : rCol}">${n.r.toFixed(2)}</tspan>` : '')
                 + (co && n.known ? `<tspan dx="5" font-size="9.5" fill="${n.known.kind === 'complex' ? '#3f6b25' : '#6b7280'}">${n.known.kind}</tspan>` : '')
                 + `</text></g>`;
         });
@@ -53850,8 +53880,8 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
     _ctwGoAttrs(g) {
         return `data-ctw-t="${this.esc(g.tissue || '')}" data-ctw-s="${this.esc(g.subtype || '')}" data-ctw-d="${this.esc(g.disease || '')}"`;
     }
-    _ctwGeneLink(gene) { return `<a href="#" class="gb-cl" data-ctw-gene="${this.esc(gene)}" title="Open in the Gene Browser">${this.gi(gene)}</a>`; }
-    _ctwClLink(id) { return `<a href="#" class="gb-cl" data-ctw-cl="${this.esc(id)}" title="Open the Wiki for this cell line">${this.esc(this.getCellLineName(id) || id)}</a>`; }
+    _ctwGeneLink(gene) { return `<a href="#" class="gb-cl" data-ctw-gene="${this.esc(gene)}">${this.gi(gene)}</a>`; }
+    _ctwClLink(id) { return `<a href="#" class="gb-cl" data-ctw-cl="${this.esc(id)}">${this.esc(this.getCellLineName(id) || id)}</a>`; }
     _ctwPct(k, n) { return n ? this._gbFmtPct(k, n) : 'n/a'; }
     // Every gene the Wiki's sections name, for the Export for AI matrices.
     _ctwAiGenes() {
@@ -53884,7 +53914,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         body.innerHTML = this._gbLoading('Comparing this group with every other cell line...');
         const token = (this._ctwToken = (this._ctwToken || 0) + 1);
         for (const t0 = Date.now(); !this.geneEffects && Date.now() - t0 < 120000;) await new Promise(r => setTimeout(r, 300));
-        await Promise.all([this._ensureCommonEssentials(), this._ensureGeneClasses(), this._gbWaitExpression()]);
+        await Promise.all([this._ensureCommonEssentials(), this._ensureGeneClasses(), this._gbWaitExpression(), this._ensureAliasTables()]);
         if (token !== this._ctwToken) return;
         await new Promise(r => setTimeout(r, 30));
         const ids = this.metadata.cellLines, N = ids.length;
@@ -54128,6 +54158,24 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         return this._gbSection('Characteristic expression', body, 'DepMap 26Q1 OmicsExpressionTPMLogp1; Welch t-test against the other cell lines.');
     }
 
+    // The CD name of a CD-marker gene (EPCAM is CD326), from the alias table;
+    // genes already named CD... are their own CD name.
+    _cdName(gene) {
+        if (/^CD\d/.test(gene)) return gene;
+        if (!this._cdNames && this.synonymLookup) {
+            const m = {}, fix = (k) => k.replace(/^CDW/, 'CDw').replace(/(\d)([A-Z]+)$/, (_, d, l) => d + l.toLowerCase());
+            for (const [k, v] of Object.entries(this.synonymLookup)) {
+                if (!/^CDW?\d+[A-Z]{0,2}\d?$/.test(k) || !v?.d || v.d === k) continue;
+                const cur = m[v.d];
+                // Prefer the plain CD number over a provisional CDw one.
+                if (!cur || (/^CDw/.test(cur) && !/^CDW/.test(k))) m[v.d] = fix(k);
+            }
+            Object.assign(m, { BTN3A1: 'CD277', DDR2: 'CD167b', IL2RA: 'CD25', KIR2DL1: 'CD158a', KIR3DL2: 'CD158k' });
+            this._cdNames = m;
+        }
+        return this._cdNames?.[gene] || null;
+    }
+
     // Surface protein candidates in the expression table, with a CD flag.
     _ctwSurfaceGenes() {
         if (this._ctwSurf) return this._ctwSurf;
@@ -54175,16 +54223,20 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             if (cdOnly && !sf.cd.has(sf.names[j])) continue;
             const off = j * R.M;
             let rs = 0, onG = 0, offG = 0, onR = 0;
-            const gv = [];
+            const gv = [], rv = [];
             for (let r = 0; r < R.M; r++) {
                 const v = R.vals[off + r];
                 if (inR[r]) { rs += R.ranks[off + r]; gv.push(v); if (v >= BRIGHT) onG++; if (v < OFF) offG++; }
-                else if (v >= BRIGHT) onR++;
+                else { rv.push(v); if (v >= BRIGHT) onR++; }
             }
             const auc = (rs - ng * (ng + 1) / 2) / (ng * nr);
-            res.push({ j, gene: sf.names[j], auc, med: this.median(gv), onG: onG / ng, offG: offG / ng, onR: onR / nr });
+            res.push({ j, gene: sf.names[j], auc, med: this.median(gv), medR: this.median(rv), onG: onG / ng, offG: offG / ng, onR: onR / nr });
         }
-        const tag = (gname) => sf.cd.has(gname) ? '<span class="gb-tag gb-tag-pathway" title="A CD marker: antibodies for flow cytometry are usually available">CD</span>' : '';
+        const tag = (gname) => {
+            if (!sf.cd.has(gname)) return '';
+            const cd = this._cdName(gname);
+            return `<span class="gb-tag gb-tag-pathway" title="${cd ? `${this.esc(cd)}: ` : ''}a CD marker, so antibodies for flow cytometry are usually available">${cd && cd !== gname ? this.esc(cd) : 'CD'}</span>`;
+        };
         const gl = (r) => this._ctwGeneLink(r.gene) + tag(r.gene);
         const pc = (f) => `${Math.round(f * 100)}%`;
         // Where an absent marker is high instead: those cell lines serve as
@@ -54199,7 +54251,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const bright = res.filter(r => r.onG >= 0.9).sort((a, b) => b.med - a.med).slice(0, 12);
         const absent = res.filter(r => r.offG >= 0.8 && r.onR >= 0.3).sort((a, b) => b.onR - a.onR).slice(0, 12);
         const empty = (t) => `<div class="gb-empty">${t}</div>`;
-        const aiRow = (r) => ({ gene: r.gene, cdMarker: sf.cd.has(r.gene), medianLog2TpmGroup: +r.med.toFixed(2), fractionBrightGroup: +r.onG.toFixed(3), fractionAbsentGroup: +r.offG.toFixed(3), fractionBrightOthers: +r.onR.toFixed(3), specificityAuc: +r.auc.toFixed(3) });
+        const aiRow = (r) => ({ gene: r.gene, cdMarker: sf.cd.has(r.gene), ...(sf.cd.has(r.gene) && this._cdName(r.gene) ? { cdName: this._cdName(r.gene) } : {}), medianLog2TpmGroup: +r.med.toFixed(2), medianLog2TpmOthers: +r.medR.toFixed(2), fractionBrightGroup: +r.onG.toFixed(3), fractionAbsentGroup: +r.offG.toFixed(3), fractionBrightOthers: +r.onR.toFixed(3), specificityAuc: +r.auc.toFixed(3) });
         c.ai.surfaceProteins = {
             basis: 'mRNA (RNA-seq log2 TPM+1) of genes coding for cell-surface proteins, not measured protein',
             cellLinesWithMrna: ng, brightCutoff: BRIGHT, absentCutoff: OFF, cdMarkersOnly: cdOnly,
@@ -54210,15 +54262,15 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         return this._ctwMrnaNote() + this._gbDesc(`Proteins on the cell surface and how much of their mRNA the ${ng} cell lines with mRNA data make (log₂ TPM+1). Bright means at least ${BRIGHT} (about 15 TPM, usually enough to stain); absent means below ${OFF}.`)
             + `<label class="gb-m" style="display:inline-flex; gap:5px; align-items:center; font-size:11px; margin-bottom:4px;"><input type="checkbox" data-ctw-cdonly ${cdOnly ? 'checked' : ''}> CD markers only</label>`
             + `<div class="gb-grid"><div><div class="gb-sub">Specific to this group <span class="gb-m">(bright here, lower elsewhere)</span></div>`
-            + (specific.length ? this._gbTable(['Protein', 'Median here', 'Bright here', 'Bright elsewhere', 'Specificity'],
-                specific.map(r => [gl(r), `<b>${this._gbNum(r.med, 1)}</b>`, pc(r.onG), pc(r.onR), `<span title="The chance that a random cell line of this group expresses more than a random other cell line (0.5 = no difference, 1 = always more)">${this._gbNum(r.auc)}</span>`])) : empty('None stands out.'))
-            + `<div class="gb-sub" style="margin-top:12px;">Bright in nearly all of its cell lines <span class="gb-m">(positive staining controls)</span></div>`
-            + (bright.length ? this._gbTable(['Protein', 'Median here', 'Bright here', 'Bright elsewhere'],
-                bright.map(r => [gl(r), `<b>${this._gbNum(r.med, 1)}</b>`, pc(r.onG), pc(r.onR)])) : empty('None is bright in 90% of these cell lines.'))
-            + `</div><div><div class="gb-sub">Absent in most of its cell lines <span class="gb-m">(negative staining controls)</span></div>`
-            + (absent.length ? this._gbTable(['Protein', 'Absent here', 'Bright elsewhere', 'High instead in'],
-                absent.map(r => [gl(r), `<b>${pc(r.offG)}</b>`, pc(r.onR), highIn(r)])) : empty('None is absent in 80% of these cell lines and bright elsewhere.'))
-            + `<p class="gb-m" style="margin:6px 0 0;">An absent protein makes a negative control on these cells; the cancer types where it is high give the antibody a positive control.</p></div></div>`;
+            + (specific.length ? this._gbTable(['Protein', 'Median here', 'Median elsewhere', 'Bright here', 'Bright elsewhere', 'Specificity'],
+                specific.map(r => [gl(r), `<b>${this._gbNum(r.med, 1)}</b>`, this._gbNum(r.medR, 1), pc(r.onG), pc(r.onR), `<span title="The chance that a random cell line of this group expresses more than a random other cell line (0.5 = no difference, 1 = always more)">${this._gbNum(r.auc)}</span>`])) : empty('None stands out.'))
+            + `</div><div><div class="gb-sub">Bright in nearly all of its cell lines <span class="gb-m">(positive staining controls)</span></div>`
+            + (bright.length ? this._gbTable(['Protein', 'Median here', 'Median elsewhere', 'Bright here', 'Bright elsewhere'],
+                bright.map(r => [gl(r), `<b>${this._gbNum(r.med, 1)}</b>`, this._gbNum(r.medR, 1), pc(r.onG), pc(r.onR)])) : empty('None is bright in 90% of these cell lines.'))
+            + `</div></div><div class="gb-sub" style="margin-top:14px;">Absent in most of its cell lines <span class="gb-m">(negative staining controls)</span></div>`
+            + (absent.length ? this._gbTable(['Protein', 'Median here', 'Median elsewhere', 'Absent here', 'Bright elsewhere', 'High instead in'],
+                absent.map(r => [gl(r), `<b>${this._gbNum(r.med, 1)}</b>`, this._gbNum(r.medR, 1), `<b>${pc(r.offG)}</b>`, pc(r.onR), highIn(r)])) : empty('None is absent in 80% of these cell lines and bright elsewhere.'))
+            + `<p class="gb-m" style="margin:6px 0 0;">An absent protein makes a negative control on these cells; the cancer types where it is high give the antibody a positive control.</p>`;
     }
 
     // The surface panel that tells tissues apart: per tissue up to 8 surface
@@ -54303,7 +54355,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             return `rgb(${mix(255, 63)},${mix(255, 107)},${mix(255, 37)})`;
         };
         const cellTd = (v, gene, where) => `<td data-ctw-expr="${this.esc(gene)}" title="${this.esc(gene)} in ${this.esc(where)}: median ${this._gbNum(v, 1)} log₂ TPM+1. Click to open its expression in the Gene Browser" style="background:${color(v)}; width:13px; height:13px; padding:0; border:1px solid #fff; cursor:pointer;"></td>`;
-        const head = `<tr><th></th>${P.shown.map(p => `<th data-ctw-expr="${this.esc(p.gene)}" title="${this.esc(p.gene)}: marks ${this.esc(p.tissue)} (specificity ${this._gbNum(p.auc)}). Click to open its expression in the Gene Browser" style="padding:0 0 3px; vertical-align:bottom; font-weight:400; cursor:pointer;"><div style="writing-mode:vertical-rl; transform:rotate(180deg); font-size:9.5px; font-style:italic; white-space:nowrap; line-height:13px;">${this.esc(p.gene)}</div></th>`).join('')}</tr>`;
+        const head = `<tr><th></th>${P.shown.map(p => `<th data-ctw-expr="${this.esc(p.gene)}" data-ctw-why="Marks ${this.esc(p.tissue)} (specificity ${this._gbNum(p.auc)}). Click to open its expression in the Gene Browser." style="padding:0 0 3px; vertical-align:bottom; font-weight:400; cursor:pointer;"><div style="writing-mode:vertical-rl; transform:rotate(180deg); font-size:9.5px; font-style:italic; white-space:nowrap; line-height:13px;">${this.esc(p.gene)}</div></th>`).join('')}</tr>`;
         const trs = P.tissues.map((t, k) => {
             const me = t === g.tissue;
             return `<tr><td style="padding:0 8px 0 0; font-size:10.5px; white-space:nowrap; text-align:right;${me ? ' font-weight:700; color:#3f6b25;' : ''}">${me ? '▶ ' : ''}${this.esc(t)} <span class="gb-m">(${P.nT[k]})</span></td>${P.med[k].map((v, q) => cellTd(v, P.shown[q].gene, t)).join('')}</tr>`;
@@ -54465,6 +54517,30 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             if (!a) return;
             e.preventDefault();
             this.openCancerTypeWiki({ tissue: a.dataset.ctwT, subtype: a.dataset.ctwS, disease: a.dataset.ctwD }, { scrollTo: a.dataset.ctwTo });
+        });
+        // Gene and cell line names show the shared hover cards, as everywhere.
+        let tipTimer = null;
+        const hoverSel = '[data-ctw-gene], [data-ctw-cl], th[data-ctw-expr]';
+        document.getElementById('ctwBody')?.addEventListener('mouseover', (e) => {
+            const a = e.target.closest(hoverSel);
+            if (!a) return;
+            const ev = { clientX: e.clientX, clientY: e.clientY };
+            clearTimeout(tipTimer);
+            tipTimer = setTimeout(() => {
+                if (!a.matches(':hover')) return;
+                if (a.dataset.ctwCl) { this.showCellLineTooltip(ev, a.dataset.ctwCl, 'Click to open its Wiki'); return; }
+                const gene = a.dataset.ctwGene || a.dataset.ctwExpr;
+                const cd = this._geneClasses?.cd?.genes?.includes(gene) ? this._cdName(gene) : null;
+                const why = [cd && cd !== gene ? `${cd}, a CD marker.` : '', a.dataset.ctwWhy || ''].filter(Boolean).join(' ');
+                this.showGeneTooltip(ev, gene, why || null);
+                this._tagGeneTooltipSource(a);
+            }, this._HOVER_DELAY);
+        });
+        document.getElementById('ctwBody')?.addEventListener('mouseout', (e) => {
+            const a = e.target.closest(hoverSel);
+            if (!a || a.contains(e.relatedTarget)) return;
+            clearTimeout(tipTimer);
+            if (a.dataset.ctwCl) this.hideCellLineTooltip(); else this.hideGeneTooltip();
         });
         document.getElementById('ctwBody')?.addEventListener('change', (e) => {
             if (!e.target.matches('[data-ctw-cdonly]') || !this._ctwCtx) return;
