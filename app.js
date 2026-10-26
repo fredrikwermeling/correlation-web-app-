@@ -56553,12 +56553,24 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                     sigResults.push({ name, meanZ, n: zs.length, total: info.genes.length, info, present });
                 }
                 sigResults.sort((a, b) => b.meanZ - a.meanZ);
+                // Hovering a program names its panel: the score is a mean over
+                // these genes, so which they are, and how each one scored here,
+                // is what the number rests on.
+                const sigTitle = (s) => {
+                    const rows = s.present.map(g => ({ g, z: zByGene.get(g) }))
+                        .sort((a, b) => (b.z ?? -99) - (a.z ?? -99))
+                        .map(x => `${x.g}  z ${fmtZ(x.z)}`);
+                    const missing = s.info.genes.filter(g => !s.present.includes(g));
+                    const txt = `${s.info.note}\n\nPanel genes, with this cell line's z-score, highest first:\n${rows.join('\n')}`
+                        + (missing.length ? `\n\nNot measured in this cell line: ${missing.join(', ')}` : '');
+                    return this.esc(txt).replace(/\n/g, '&#10;');
+                };
                 const activeSig = sigResults.filter(s => s.meanZ > 0.75);
                 const sigHtml = activeSig.length > 0
                     ? `<div style="margin-top:8px; padding:6px 10px; background:#eef2ff; border-left:3px solid #3730a3; font-size:11px;">`
                         + `<b style="color:#3730a3;">Gene programs expressed above average</b> <span style="color:#9ca3af; font-size:10px;">(each program is a curated gene panel, for example MYC targets or the interferon response. Its score is the <b>mean z-score of the panel's mRNA levels</b> against every cell line in the expression table; a program is listed when that mean exceeds +0.75, meaning its genes are consistently higher than in the average line. This is mRNA abundance, not a measurement of pathway activity: transcripts can be high without the pathway running, and a pathway can run while its transcripts look ordinary)</span>`
                         + activeSig.map(s => `<div style="margin:3px 0 3px 4px;">`
-                            + `<span style="font-weight:600; color:#3730a3;" title="${s.info.note.replace(/"/g, '&quot;')}">${s.name}</span> `
+                            + `<span style="font-weight:600; color:#3730a3; cursor:help;" title="${sigTitle(s)}">${s.name}</span> `
                             + `<span style="color:#9ca3af; font-size:10px;">, mean z = ${fmtZ(s.meanZ)} across ${s.n}/${s.total} panel genes</span>`
                             + `</div>`).join('')
                         + `</div>`
@@ -56570,7 +56582,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                     ? `<div style="margin-top:6px; padding:6px 10px; background:#f9fafb; border-left:3px solid #6b7280; font-size:11px;">`
                         + `<b style="color:#374151;">Gene programs expressed below average</b> <span style="color:#9ca3af; font-size:10px;">(same measure, mean z below &minus;0.75: the program's genes are consistently lower than in the average cell line)</span>`
                         + inactiveSig.map(s => `<div style="margin:3px 0 3px 4px;">`
-                            + `<span style="font-weight:600; color:#4b5563;" title="${s.info.note.replace(/"/g, '&quot;')}">${s.name}</span> `
+                            + `<span style="font-weight:600; color:#4b5563; cursor:help;" title="${sigTitle(s)}">${s.name}</span> `
                             + `<span style="color:#9ca3af; font-size:10px;">, mean z = ${fmtZ(s.meanZ)} across ${s.n}/${s.total} panel genes</span>`
                             + `</div>`).join('')
                         + `</div>`
