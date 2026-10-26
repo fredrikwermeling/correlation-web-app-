@@ -43573,7 +43573,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const r = this._virusRnaOf(cellLineId), V = this.virusRna;
         const p = (t) => `<p style="margin:0 0 8px; font-size:11px; color:#6b7280;">${t}</p>`;
         if (!V) return p('Viral RNA data not loaded.');
-        if (!r) return p(`Not measured: this cell line has no public RNA-seq file in the CCLE collection. ${Object.keys(V.byCellLine).length.toLocaleString()} of ${this.metadata.cellLines.length.toLocaleString()} cell lines are covered.`);
+        if (!r) return `<div style="padding:8px 10px; background:#f3f4f6; border-left:3px solid #9ca3af; font-size:11px; color:#4b5563;">`
+            + `<b>Not tested.</b> This cell line has no public RNA-seq file in the CCLE collection, so its reads could not be checked for viruses. `
+            + `This is missing data, not a negative result: nothing here says the cells are free of any virus. `
+            + `${Object.keys(V.byCellLine).length.toLocaleString()} of the ${this.metadata.cellLines.length.toLocaleString()} cell lines in the panel have a file and were tested.</div>`
+            + this._virusRnaSources();
         const kv = (label, value) => `<div class="wiki-kv" style="display:flex; gap:12px; padding:3px 0; align-items:baseline;"><span class="wiki-kv-label" style="flex:0 0 190px; color:#6b7280; font-size:11px;">${label}</span><span style="flex:1; min-width:0;">${value}</span></div>`;
         const rec = this._virusAgents(cellLineId) || [];
         const recKeys = new Set(rec.flatMap(h => this._virusRnaKeys(h.agent)));
@@ -43592,7 +43596,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 // read positions are too few to say which genes they came from.
                 if (x.genes?.length && (x.level !== 'low' || recKeys.has(k))) html += this._virusGenesHtml(cellLineId, k, x);
             }
-        } else html += kv('Viral RNA', '<span style="color:#4c782e;">None found in the reads checked.</span>');
+        } else html += kv('Viral RNA', '<span style="color:#4c782e;">None of the 18 viruses or the mycoplasma was found</span> <span class="gb-m">in the reads checked. A virus outside the panel, or one making very little RNA, would not show here.</span>');
         if (trace.length) html += kv('Traces', `<span style="color:#6b7280;">${trace.slice(0, 6).map(([k, x]) => `${this.esc(this._virusRnaLabel(k))} ${x.reads} reads, ${pct(x.breadth)} of genome`).join('; ')}. Below the detection rule; usually shared or conserved fragments.</span>`);
         const missed = rec.filter(h => !this._virusRnaKeys(h.agent).some(k => r.v[k]?.detected));
         const srcHtml = this._virusRnaSources();
@@ -51104,7 +51108,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             this._gbSection(`About ${this.esc(key)}`, about, ''),
             this._gbSection('Cell lines carrying its RNA', verdict
                 + `<div class="gb-sub">By cancer type <span class="gb-m">(each dot is a measured cell line; dashed lines at moderate and strong)</span></div><div id="gbVirTissue"></div>`
-                + (rows.length ? `<div class="gb-sub">Cell lines with ${this.esc(key)} reads</div>` + this._gbTable(['Cell line', 'Tissue', 'Level', 'Per million unmapped', 'Genome covered', 'Cellosaurus'], rows).replace('gb-table"', 'gb-table gb-table-left"') : ''),
+                + (rows.length ? `<div class="gb-sub">Cell lines with ${this.esc(key)} reads <span class="gb-m">(of the ${nMeas.toLocaleString()} tested; the other ${(ids.length - nMeas).toLocaleString()} have no public RNA-seq file and were not tested, so they are missing rather than negative)</span></div>` + this._gbTable(['Cell line', 'Tissue', 'Level', 'Per million unmapped', 'Genome covered', 'Cellosaurus'], rows).replace('gb-table"', 'gb-table gb-table-left"') : ''),
                 'Correlate viral RNA screen of the CCLE RNA-seq data; Cellosaurus.'),
             geneRows.length ? this._gbSection('Viral genes expressed', this._gbDesc(`Which of its genes the reads come from, in the ${nClear} cell line${nClear === 1 ? '' : 's'} that carry it clearly. Positions link to that stretch of the ${this.esc(info.acc)} sequence at NCBI. ≈ TPM is approximate (within about twofold).`) + covSvg
                 + this._gbTable(['Gene', 'Product', 'Position on the genome', 'Cell lines', 'Median ≈ TPM'], geneRows).replace('gb-table"', 'gb-table gb-table-left"'), 'Gene annotation: NCBI RefSeq feature table.') : '',
