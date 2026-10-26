@@ -54825,14 +54825,14 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             return `rgb(${mix(255, 63)},${mix(255, 107)},${mix(255, 37)})`;
         };
         const cellTd = (v, gene, where) => `<td data-ctw-expr="${this.esc(gene)}" title="${this.esc(gene)} in ${this.esc(where)}: median ${this._gbNum(v, 1)} log₂ TPM+1. Click to open its expression in the Gene Browser" style="background:${color(v)}; width:13px; height:13px; padding:0; border:1px solid #fff; cursor:pointer;"></td>`;
-        const head = `<tr><th></th>${P.shown.map(p => `<th data-ctw-expr="${this.esc(p.gene)}" data-ctw-why="Marks ${this.esc(p.tissue)} (specificity ${this._gbNum(p.auc)}). Click to open its expression in the Gene Browser." style="padding:0 0 3px; vertical-align:bottom; font-weight:400; cursor:pointer;"><div style="writing-mode:vertical-rl; transform:rotate(180deg); font-size:9.5px; font-style:italic; white-space:nowrap; line-height:13px;">${this.esc(p.gene)}</div></th>`).join('')}</tr>`;
+        const head = `<tr><th></th>${P.shown.map(p => `<th data-ctw-expr="${this.esc(p.gene)}" data-ctw-why="Marks ${this.esc(p.tissue)} (specificity ${this._gbNum(p.auc)}). Click to open its expression in the Gene Browser." style="padding:0 0 3px; vertical-align:bottom; font-weight:400; cursor:pointer;"><div class="ctw-vlabel">${this.esc(p.gene)}</div></th>`).join('')}</tr>`;
         const trs = P.tissues.map((t, k) => {
             const me = t === g.tissue;
             return `<tr><td style="padding:0 8px 0 0; font-size:10.5px; white-space:nowrap; text-align:right;${me ? ' font-weight:700; color:#3f6b25;' : ''}">${me ? '▶ ' : ''}${this.esc(t)} <span class="gb-m">(${P.nT[k]})</span></td>${P.med[k].map((v, q) => cellTd(v, P.shown[q].gene, t)).join('')}</tr>`;
         });
         if (own) trs.unshift(`<tr><td style="padding:0 8px 0 0; font-size:10.5px; white-space:nowrap; text-align:right; font-weight:700; color:#3f6b25;">▶ ${this.esc(this._ctwName(g))} <span class="gb-m">(${memRows.length})</span></td>${own.map((v, q) => cellTd(v, P.shown[q].gene, this._ctwName(g))).join('')}</tr>`);
         const matrix = `<div style="overflow-x:auto;"><table style="border-collapse:collapse; margin:4px 0;">${head}${trs.join('')}</table></div>`
-            + `<div class="gb-m" style="display:flex; align-items:center; gap:6px; margin-top:4px;">0 <span style="display:inline-block; width:120px; height:9px; background:linear-gradient(90deg, ${color(0)}, ${color(7)}); border:1px solid #e5e7eb;"></span> 7+ log₂ TPM+1, median per cancer type</div>`;
+            + `<div style="display:flex; align-items:center; gap:6px; margin-top:6px; font-size:11px; color:#4b5563;">0 <span style="display:inline-block; width:140px; height:11px; background:linear-gradient(90deg, ${color(0)}, ${color(7)}); border:1px solid #e5e7eb;"></span> 7+ log₂ TPM+1, median per cancer type</div>`;
         c.ai.surfacePanel = {
             basis: 'mRNA (RNA-seq log2 TPM+1), not measured protein',
             cancerTypes: Object.fromEntries(P.tissues.map((t, k) => [t, P.nT[k]])),
@@ -55501,6 +55501,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             else if (lofHit('CDKN2A')) geno.push('CDKN2A functional loss');
             if (ccnd1Hot) geno.push('CCND1 hotspot');
             lines.push(`<b>${geno.length ? geno.join(', ') : 'No mutation or functional loss in RB1 / CDKN2A / CCND1'}</b>`);
+            const cdkn2aLost = cdkn2aMut || lofHit('CDKN2A');
             const cdkGE = (cdk4GE !== null && cdk6GE !== null) ? Math.min(cdk4GE, cdk6GE) : (cdk4GE ?? cdk6GE);
             if (cdkGE !== null) {
                 let bullet;
@@ -55510,6 +55511,14 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                     bullet = `CDK4/6 knockout <b>moderately reduces growth</b> (best score ${fmtGE(cdkGE)}), partial dependency on CDK4/6.`;
                 } else {
                     bullet = `CDK4/6 knockout is neutral (${fmtGE(cdkGE)}), cell does not depend on CDK4/6 (may use CDK2 or a CDK4/6-independent cell cycle).`;
+                }
+                // The CRISPR result is only evidence once it is tied to the
+                // alteration above: CDKN2A blocks CDK4/6, so its loss predicts
+                // this dependency, and the bullet says whether that holds.
+                if (cdkn2aLost && !rb1Mut) {
+                    bullet += cdkGE < -0.2
+                        ? ` <span style="color:#4b5563;">CDKN2A normally blocks CDK4/6, so with it lost the cell cycle runs through CDK4/6: this dependency is what the loss above predicts.</span>`
+                        : ` <span style="color:#4b5563;">CDKN2A normally blocks CDK4/6, so its loss would predict a CDK4/6 dependency. There is none here, so the cell cycle is driven some other way.</span>`;
                 }
                 // RB1 loss bypasses the CDK4/6 inhibitor mechanism. When RB1
                 // is also damaged AND CDK4/6 looks essential, the naive
@@ -55524,7 +55533,10 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 lines.push(`CCND1 knockout reduces growth (${fmtGE(ccnd1GE)}), consistent with cyclin-D1-driven proliferation.`);
             }
             let synthesis, color;
-            if ((cdkn2aMut || ccnd1Hot) && cdkGE !== null && cdkGE < -0.2) {
+            // A CDKN2A deletion or inferred loss releases the brake just as a
+            // damaging mutation does, so the reading must not fall through to
+            // "no obvious mutation driving it" while the card says brake lost.
+            if ((cdkn2aLost || ccnd1Hot) && cdkGE !== null && cdkGE < -0.2) {
                 synthesis = '<b>G1/S brake released</b> at the genome level <em>and</em> the cell remains CDK4/6-dependent by gene-effect.';
                 color = '#059669';
             } else if (rb1Mut) {
@@ -55803,9 +55815,13 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             // Built as HTML from its parts, not from a joined string: only the
             // gene token in each item is italic.
             const detail = c.ev.map(e => `${this.gi(e.label || e.gene)} ${this.esc(e.bits.join(' + '))}`).join('; ');
+            // The bullets are the case for the verdict in the corner, so the
+            // list says so: without a heading the CRISPR measurements read as
+            // loose facts rather than as support for the call.
             const richLines = c.rich
-                ? `<ul class="wiki-pw-rich">${c.rich.lines.map(l => `<li>${l}</li>`).join('')}</ul>`
-                  + `<div class="wiki-pw-synth">${c.rich.synthesis}</div>`
+                ? `<div class="wiki-pw-lbl">What the data shows</div>`
+                  + `<ul class="wiki-pw-rich">${c.rich.lines.map(l => `<li>${l}</li>`).join('')}</ul>`
+                  + `<div class="wiki-pw-synth"><span class="wiki-pw-lbl wiki-pw-lbl-in">Taken together</span>${c.rich.synthesis}</div>`
                 : '';
             return `<div class="wiki-pw" style="border-left-color:${c.tone};">`
                 + `<div class="wiki-pw-head"><span class="wiki-pw-name">${c.name}</span>`
@@ -56570,7 +56586,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 const markerScores = lineageMarkers.map(g => ({ gene: g, val: exprByGene.get(g), z: zByGene.get(g) })).filter(x => x.val !== undefined);
                 markerScores.sort((a, b) => b.val - a.val);
                 const markerHtml = markerScores.length > 0
-                    ? `<div style="margin-top:8px; padding:6px 10px; background:#eef2ff; border-left:3px solid #3730a3; font-size:11px;"><b style="color:#3730a3;">${lin} lineage markers</b> <span style="color:#9ca3af; font-size:10px;">(TPM &gt; 1 = expressed; z = enrichment vs cohort)</span><br>${markerScores.map(m => {
+                    ? `<div style="margin-top:8px; padding:6px 10px; background:#eef2ff; border-left:3px solid #3730a3; font-size:11px;"><b style="color:#3730a3;">Genes that mark ${lin} tissue</b> <span style="color:#9ca3af; font-size:10px;">(log₂ TPM+1: above 1 means the cell line still expresses it; z is how far above the average cell line)</span><br>${markerScores.map(m => {
                         const zStr = m.z != null ? ` <span style="color:#9ca3af; font-size:10px;">[z ${fmtZ(m.z)}]</span>` : '';
                         return `<span class="gene-hover clb-gene-link" data-gene="${m.gene}" style="cursor:help; ${m.val > 1 ? 'font-weight:600; color:#3730a3;' : 'color:#9ca3af;'}">${this.gi(m.gene)}</span>&nbsp;(${m.val.toFixed(1)})${zStr}`;
                     }).join(', ')}</div>`
@@ -56616,13 +56632,10 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                     .map(([g, v]) => ({ gene: g, val: v, z: zByGene.get(g) }))
                     .sort((a, b) => (b.z ?? -99) - (a.z ?? -99) || b.val - a.val)
                     .slice(0, 12);
-                const linFacs = get('lineage');
-                const facsLink = (to, text, tip) => `<a href="#" ${this._ctwGoAttrs({ tissue: linFacs })} data-ctw-to="${to}" style="color:#3730a3;" title="${tip}">${text}</a>`;
                 const facsHtml = `<div style="margin-top:6px; padding:6px 10px; background:#f0fdf4; border-left:3px solid #4c782e; font-size:11px;"><b style="color:#4c782e;">Potential FACS markers</b> <span style="color:#9ca3af; font-size:10px;">(from mRNA, not protein: cell-surface antigens, CD molecules, receptor tyrosine kinases, immune checkpoints, ADC targets whose mRNA is above 4 log₂ TPM+1; sorted by how uniquely high vs cohort; confirm with the antibody)</span>: ${facsHits.length ? facsHits.map(e => {
                         const zStr = e.z != null ? ` <span style="color:#9ca3af; font-size:10px;">[z ${fmtZ(e.z)}]</span>` : '';
                         return `<span class="gene-hover clb-gene-link" data-gene="${e.gene}" style="cursor:help;">${this.gi(e.gene)}</span> (${e.val.toFixed(1)})${zStr}`;
                     }).join(', ') : '<span style="color:#6b7280;">none above 4</span>'}`
-                    + (linFacs ? `<div style="margin-top:4px; font-size:10.5px;">${facsLink('ctwSurfaceCard', `Staining controls for ${this.esc(linFacs)}`, 'Surface proteins bright or absent in nearly all cell lines of this cancer type')} <span style="color:#9ca3af;">·</span> ${facsLink('ctwPanelCard', 'Surface protein matrix of all cancer types', 'The surface proteins that tell cancer types apart, with an identity check')}</div>` : '')
                     + `</div>`;
 
                 exprSigHtml = `
