@@ -51886,6 +51886,13 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             + `</table><div style="margin-top:4px; color:#6b7280;">Sources: <a href="https://www.ensembl.org/info/genome/genebuild/transcript_quality_tags.html" target="_blank" rel="noopener" style="color:#3730a3;">Ensembl transcript support levels &#8599;</a> · <a href="https://www.gencodegenes.org/" target="_blank" rel="noopener" style="color:#3730a3;">GENCODE (basic set, long-read models) &#8599;</a> · <a href="https://www.ncbi.nlm.nih.gov/refseq/MANE/" target="_blank" rel="noopener" style="color:#3730a3;">MANE &#8599;</a>. Read live from the Ensembl REST API; see Methods.</div></div>`;
     }
 
+    // UCSC Genome Browser on a region with only the GENCODE track, every
+    // transcript on its own row: UCSC's default dozens of tracks over a long
+    // gene loaded slowly or not at all.
+    _gbUcscUrl(pos) {
+        return `https://genome.ucsc.edu/cgi-bin/hgTracks?db=hg38&position=${encodeURIComponent(pos)}&ignoreCookie=1&hideTracks=1&ruler=dense&knownGene=full&knownGene.show.set=all`;
+    }
+
     _gbTxLabel(t, st) {
         const ref = st?.transcripts?.[0];
         const alt = st && ref && t !== ref && t.protein && ref.protein && this._gbAtg(st, t) !== this._gbAtg(st, ref);
@@ -51985,7 +51992,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         return [
             ensGene ? a(`https://www.ensembl.org/Homo_sapiens/Gene/Summary?g=${encodeURIComponent(ensGene)}`, 'Ensembl gene') : '',
             t ? a(`https://www.ensembl.org/Homo_sapiens/Transcript/Exons?t=${encodeURIComponent(t.tx.id)}`, 'Ensembl exons') : '',
-            pos ? a(`https://genome.ucsc.edu/cgi-bin/hgTracks?db=hg38&position=${encodeURIComponent(pos)}&knownGene=full`, 'UCSC Genome Browser') : '',
+            pos ? a(this._gbUcscUrl(pos), 'UCSC Genome Browser') : '',
             t?.tx.refseq ? a(`https://www.ncbi.nlm.nih.gov/nuccore/${encodeURIComponent(t.tx.refseq)}`, `NCBI RefSeq ${this.esc(t.tx.refseq)}`) : '',
             this.geneInfoCache?.[gene]?.uniprot ? a(`https://www.uniprot.org/uniprotkb/${encodeURIComponent(this.geneInfoCache[gene].uniprot)}/entry#sequences`, 'UniProt') : '',
         ].filter(Boolean).join(' <span style="color:#9ca3af;">&middot;</span> ');
@@ -52003,7 +52010,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const pos = `chr${st.chr}:${st.start}-${st.end}`;
         const note = `<div style="padding:7px 10px; background:#fffbeb; border-left:3px solid #f59e0b; font-size:11px; color:#78350f; margin:4px 0 10px;">`
             + `<b>${st._partial ? (st._failed ? 'The reference transcript.' : `The reference transcript, while the other transcripts load from Ensembl <span class="gb-elapsed" data-t0="${st._t0}"></span>`) : st.nTranscripts === 1 ? 'The only annotated transcript.' : `One of ${st.nTranscripts.toLocaleString()} transcripts.`}</b> ${isRef && t.tx.mane ? `Shown is the MANE Select transcript${t.tx.refseq ? ` (${e(t.tx.refseq)})` : ''}. It is the agreed reference, not necessarily the form every cell type makes.` : `Shown is ${e(t.tx.name || t.tx.id)}, not the reference transcript.`}`
-            + `${others ? ` ${e(gene)} has ${others.toLocaleString()} other annotated transcript${others === 1 ? '' : 's'} (splice variants and non-coding forms) that can differ in exons, UTRs and protein: pick one in the menu to draw and download it, compare them all in ${a(`https://www.ensembl.org/Homo_sapiens/Gene/Splice?g=${encodeURIComponent(st.geneId)}`, 'Ensembl’s transcript view')} or the ${a(`https://genome.ucsc.edu/cgi-bin/hgTracks?db=hg38&position=${encodeURIComponent(pos)}`, 'UCSC Genome Browser')}.` : ''}`
+            + `${others ? ` ${e(gene)} has ${others.toLocaleString()} other annotated transcript${others === 1 ? '' : 's'} (splice variants and non-coding forms) that can differ in exons, UTRs and protein: pick one in the menu to draw and download it, compare them all in ${a(`https://www.ensembl.org/Homo_sapiens/Gene/Splice?g=${encodeURIComponent(st.geneId)}`, 'Ensembl’s transcript view')} or the ${a(this._gbUcscUrl(pos), 'UCSC Genome Browser')}.` : ''}`
             + ` To check where a primer or sequence matches, UCSC ${a('https://genome.ucsc.edu/cgi-bin/hgBlat?db=hg38', 'BLAT')} and ${a('https://genome.ucsc.edu/cgi-bin/hgPcr?db=hg38', 'In-Silico PCR')} are quicker than BLAST for human sequences.</div>`;
         const stats = [
             this._gbRow('Transcript', `${e(t.tx.name || t.tx.id)} <span class="gb-m">${e(t.tx.id)}${t.tx.version ? '.' + t.tx.version : ''}${t.tx.refseq ? ` · RefSeq ${e(t.tx.refseq)}` : ''}${t.tx.mane ? ' · MANE Select' : t.tx.plus ? ' · MANE Plus Clinical' : t.tx.canonical ? ' · Ensembl canonical' : ''}</span>`),
@@ -52373,7 +52380,9 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             + (hasStart ? sw('sq-cds sq-start', 'start codon') : '') + (hasStop ? sw('sq-cds sq-stop', 'stop codon') : '')
             + (m.hot.length ? sw('sq-cds sq-hot', 'hotspot codon') : '')
             + sw('sq-ins', 'inserted') + sw('sq-del', 'deleted')
-            + `<span class="sq-m">Hover for the exon or intron. <span class="sq-xkey"></span> marks where one exon meets the next.</span>`;
+            + `<span class="sq-m">Hover for the exon or intron. <span class="sq-xkey"></span> marks where one exon meets the next.</span>`
+            + `<span id="sqSelInfo" class="sq-m" style="margin-left:auto; white-space:nowrap;"></span>`;
+        this._sqSelInfo();
         document.getElementById('sqFind').value = '';
         document.getElementById('sqHits').textContent = '';
         this._sqEditUi();
@@ -52678,6 +52687,20 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         return null;
     }
 
+    // How many bases (or amino acids) the mouse selection covers, and where;
+    // struck-out bases are not counted, as copy leaves them out.
+    _sqSelInfo() {
+        const el = document.getElementById('sqSelInfo'), s = this._sq;
+        if (!el || !s) return;
+        const unit = s.prot ? 'amino acids' : 'bases', one = s.prot ? 'amino acid' : 'base';
+        const r = this._sqSelRange();
+        if (!r) { el.innerHTML = `Drag over the sequence to count ${unit}`; el.style.color = ''; return; }
+        let before = 0, n = 0;
+        for (let d = 0; d < r[1]; d++) { if (s.cls[d] & 16) continue; if (d < r[0]) before++; else n++; }
+        el.style.color = '#374151';
+        el.innerHTML = n ? `<b style="color:#3f6b25;">${n.toLocaleString()} ${n === 1 ? one : unit} selected</b> <span class="sq-m">(position ${(before + 1).toLocaleString()} to ${(before + n).toLocaleString()})</span>` : `0 ${unit} selected`;
+    }
+
     _sqSelRange() {
         const sel = window.getSelection();
         if (!sel || !sel.rangeCount || sel.isCollapsed) return null;
@@ -52738,6 +52761,8 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
     }
 
     _sqWire(modal) {
+        // Live count of the selected bases while dragging.
+        document.addEventListener('selectionchange', () => { if (modal.style.display !== 'none') this._sqSelInfo(); });
         const close = () => { modal.style.display = 'none'; };
         document.getElementById('sqClose').addEventListener('click', close);
         document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && modal.style.display !== 'none') { e.stopPropagation(); close(); } }, true);
