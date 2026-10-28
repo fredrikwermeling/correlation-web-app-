@@ -413,14 +413,11 @@ class CorrelationExplorer {
             // Add more routes here as needed.
             this._handleUrlHash();
             window.addEventListener('hashchange', () => this._handleUrlHash());
-            // Preload expression data in the background (non-blocking)
-            setTimeout(() => {
-                if (!this.expressionLoaded) {
-                    this.loadExpressionData().catch(e => {
-                        console.warn('Background expression preload failed:', e.message);
-                    });
-                }
-            }, 2000);
+            // The mRNA matrix is 43 MB, half of everything the page pulls, and
+            // a session that only correlates gene effect never reads it. It is
+            // fetched the first time something needs it instead; every such
+            // path goes through _gbWaitExpression or loadExpressionData, both
+            // of which show the byte counter while it comes in.
         } catch (error) {
             console.error('Initialization error:', error);
             this.updateLoadingText('Error loading data: ' + error.message);
@@ -1595,7 +1592,7 @@ class CorrelationExplorer {
         const _dv = (document.querySelector('script[src*="app.js"]')?.src.split('?v=')[1]) || '';
         const dfetch = (path) => fetch(_dv ? `${path}?v=${_dv}` : path);
 
-        const [metadataRes, cellLineRes, mutationsRes, orthologsRes, translocationsRes, damagingMutRes, growthRateRes, retroRes, drugRes, clinicalFusionsRes, inferredSubtypesRes, globalSigRes, corumRes, reactomeRes, hlaCnRes, lehmannRes, clinicalCnRes, validatedFusionsRes, functionalLossRes, curatedFusionsRes, problematicRes, virusRes, cnArtefactRes, derivativeRes, txIdentityRes, virusRnaRes] = await Promise.all([
+        const [metadataRes, cellLineRes, mutationsRes, orthologsRes, translocationsRes, damagingMutRes, growthRateRes, retroRes, drugRes, clinicalFusionsRes, inferredSubtypesRes, globalSigRes, corumRes, hlaCnRes, lehmannRes, clinicalCnRes, validatedFusionsRes, functionalLossRes, curatedFusionsRes, problematicRes, virusRes, cnArtefactRes, derivativeRes, txIdentityRes, virusRnaRes] = await Promise.all([
             dfetch('web_data/metadata.json'),
             dfetch('web_data/cellLineMetadata.json'),
             dfetch('web_data/mutations.json'),
@@ -1612,7 +1609,6 @@ class CorrelationExplorer {
             dfetch('web_data/inferred_subtypes.json').catch(() => null),
             dfetch('web_data/global_signatures.json').catch(() => null),
             dfetch('web_data/corum_partners.json').catch(() => null),
-            dfetch('web_data/reactome_partners.json').catch(() => null),
             dfetch('web_data/hla_cn.json').catch(() => null),
             dfetch('web_data/lehmann_tnbc.json').catch(() => null),
             dfetch('web_data/clinical_cn.json').catch(() => null),
@@ -1662,9 +1658,6 @@ class CorrelationExplorer {
         }
         if (corumRes && corumRes.ok) {
             this.corumPartners = await corumRes.json();
-        }
-        if (reactomeRes && reactomeRes.ok) {
-            this.reactomePartners = await reactomeRes.json();
         }
         if (hlaCnRes && hlaCnRes.ok) {
             this.hlaCn = await hlaCnRes.json();
@@ -8943,6 +8936,9 @@ class CorrelationExplorer {
     // without its subunits, so a real dependency difference should move them
     // together. Returns null when no partner set is known.
     _partnerCoMovement(gene, cellLinesA, cellLinesB) {
+        // Reactome is the fallback when CORUM lists nothing, and it arrives on
+        // demand; ask for it so a later render of this view has it.
+        if (!this.reactomePartners && !this.corumPartners?.partners?.[gene]) this._ensureReactome();
         const partners = (this.corumPartners?.partners?.[gene] || this.reactomePartners?.partners?.[gene] || [])
             .filter(g => this.geneIndex?.has(g));
         if (partners.length < 3) return null;
@@ -25032,6 +25028,27 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         sel.value = '';
     }
 
+    // 5.9 MB of Reactome memberships, and the only readers are the Gene
+    // Browser's partner tags, the AI exports and the co-movement check, so it
+    // is fetched the first time one of those runs rather than with everything
+    // else at startup. One fetch at a time, like the matrices.
+    // The mRNA matrix is not fetched at startup any more, so the views built
+    // on it ask for it as they open: the 40 MB and the decode then run while
+    // the user is reading the page rather than when they want a number from
+    // it. Harmless to call repeatedly, loadExpressionData allows one load.
+    _wantExpressionSoon() {
+        if (!this.expressionLoaded) this.loadExpressionData?.().catch(() => { });
+    }
+
+    _ensureReactome() {
+        if (this.reactomePartners) return Promise.resolve();
+        this._reactomeLoading ||= fetch(this._dataUrl('web_data/reactome_partners.json'))
+            .then(r => r.json())
+            .then(d => { this.reactomePartners = d; })
+            .catch(() => { this.reactomePartners = { partners: {} }; });
+        return this._reactomeLoading;
+    }
+
     async _ensureCommonEssentials() {
         if (this._commonEssentials) return;
         try { const r = await fetch(this._dataUrl('web_data/common_essentials.json')); this._commonEssentials = new Set(await r.json()); }
@@ -35602,6 +35619,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
 
     async exportFullAIAnalysis(opts = {}) {
+        // Pathway partners are read in three places below, all of them sync.
+        await this._ensureReactome();
         // Settings from the custom dialog, when it was the one that asked.
         const custom = opts.custom && opts.custom.active ? opts.custom : null;
         // A full export runs for tens of seconds on the big cohorts. Without a
@@ -45116,6 +45135,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // is integrated in renderCellLineList: a line passes the collection
     // filter iff it is in every include set AND in no exclude set.
     _renderCollectionPanel() {
+        // Neuroendocrine, EMT and the breast subtypes are read off the mRNA
+        // matrix; _computeCollectionMemberships re-runs and re-renders this
+        // panel when it arrives, so asking for it here is enough.
+        if (!this.expressionLoaded) this.loadExpressionData?.().catch(() => { });
         const panel = document.getElementById('clbCollectionPanel');
         const btnLabel = document.getElementById('clbCollectionCount');
         if (!panel) return;
@@ -47578,6 +47601,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
 
     openCellLineBrowser() {
+        this._wantExpressionSoon();
         if (document.getElementById('clbUmapGeneClass')) this._ensureGeneClasses();
         // Reset all filters for a fresh start
         this._oncoprintFilters = {};
@@ -51217,6 +51241,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
     }
 
     openGeneBrowser(gene) {
+        this._wantExpressionSoon();
         const modal = document.getElementById('gbModal');
         if (!modal || !this.metadata) return;
         // Opened from a gene card it can sit over any popout: stack above
@@ -53477,12 +53502,10 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
     async _gbWaitExpression() {
         if (this.expressionLoaded) return true;
         const t0 = Date.now();
-        let started = false;
+        // At once: nothing fetches the matrix in the background any more, so
+        // a wait that did not start it would wait for ever.
+        this._wantExpressionSoon();
         while (!this.expressionLoaded && Date.now() - t0 < 120000) {
-            if (!started && Date.now() - t0 > 3000 && document.getElementById('exprDataLoadingIndicator')?.style.display !== 'block') {
-                started = true;
-                this.loadExpressionData().catch(() => { });
-            }
             await new Promise(r => setTimeout(r, 400));
         }
         return !!this.expressionLoaded;
@@ -53650,6 +53673,10 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
     }
 
     async _gbFillRelated(s) {
+        // Starts here and is awaited below, so the 5.9 MB of pathway
+        // memberships the partner tags need travels while the gene-effect
+        // scan runs rather than after it.
+        const reactomeReady = this._ensureReactome();
         const gene = s.gene;
         const cache = (this._gbCoDepCache ||= new Map());
         let top = cache.get(gene);
@@ -53682,12 +53709,14 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             }
             hits.sort((a, b) => b.r - a.r);
             (this._gbAllRCache ||= new Map()).set(gene, new Map(hits.map(h => [h.gene, h.r])));
+            this._gbTrimCaches(gene);
             top = hits.slice(0, 10).map(h => ({ ...h, p: this._pearsonP(h.r, h.n) }));
             cache.set(gene, top);
             // The strongest negative ones too: lines that depend on one gene
             // tend not to depend on the other (paralogs, opposing pathways).
             (this._gbAntiCache ||= new Map()).set(gene, hits.slice(-10).reverse().filter(h => h.r < 0).map(h => ({ ...h, p: this._pearsonP(h.r, h.n) })));
         }
+        await reactomeReady;
         const anti = this._gbAntiCache?.get(gene) || [];
         if (this._gbGene !== gene) return;
         const card = document.getElementById('gbRelCard');
@@ -53811,6 +53840,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
     async _gbFillExprCorr(s) {
         const gene = s.gene;
         const ok = await this._gbWaitExpression();
+        await this._ensureReactome();
         if (this._gbGene !== gene) return;
         const cache = (this._gbXCorrCache ||= new Map());
         let res = cache.get(gene);
@@ -53957,6 +53987,17 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         this._complexLoading ||= fetch(this._dataUrl('web_data/complexes.json')).then(r => r.json())
             .then(d => (this._complexData = d)).catch(() => (this._complexData = { complexes: [], pathways: [] }));
         return this._complexLoading;
+    }
+
+    // Each entry is one gene's r against every other gene, about a megabyte,
+    // and nothing used to drop them: a long session in the Gene Browser kept
+    // every gene it had ever shown. Keep the last few.
+    _gbTrimCaches(keep) {
+        for (const name of ['_gbAllRCache', '_gbAllERCache']) {
+            const m = this[name];
+            if (!m || m.size <= 6) continue;
+            for (const k of [...m.keys()].slice(0, m.size - 6)) if (k !== keep) m.delete(k);
+        }
     }
 
     // The two bases a complex or pathway member can be scored on: gene effect
@@ -55306,6 +55347,20 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         // Remember which cell line the wiki is showing so the header export
         // buttons (gene-info CSV etc.) know what to export.
         this._wikiCellLineId = cellLineId;
+        // Much of this page is mRNA (the surface panel, lineage markers, the
+        // gene programs, the class I call), and those blocks drop out when the
+        // matrix is absent. Open on a loading line and wait for it rather than
+        // showing a page with holes in it.
+        if (!this.expressionLoaded) {
+            const m0 = document.getElementById('clbWikiModal'), b0 = document.getElementById('clbWikiBody');
+            if (m0 && b0) {
+                b0.innerHTML = this._gbLoading('Loading mRNA expression, which much of this page is built on...');
+                m0.style.display = 'flex';
+                m0.scrollTop = 0;
+            }
+            await this._gbWaitExpression();
+            if (this._wikiCellLineId !== cellLineId) return;
+        }
         // Ensure the common-essentials gene list is loaded, used to filter
         // pan-essentials out of the "uniquely essential" view below. Small
         // file; loaded once and cached for the session. Silently falls back
@@ -58595,6 +58650,13 @@ ${clone.innerHTML}
     }
 
     inspectSelectionGE() {
+        // The mRNA half of this comparison is built only when the matrix is
+        // in. Draw the gene-effect half now and run again once it lands.
+        if (!this.expressionLoaded) {
+            this.loadExpressionData?.().then(() => {
+                if (document.getElementById('selectionInspectModal')?.style.display === 'flex') this.inspectSelectionGE();
+            }).catch(() => { });
+        }
         // Back to the ordinary selection-vs-rest reading, in case the last
         // thing open here was Inspect A vs B: the mode flag is
         // what tells the shared table/volcano/label code which of the two
@@ -58924,6 +58986,13 @@ ${clone.innerHTML}
     // ('heatmap' default, or 'scatter') only decides the words for where the
     // gates came from; the comparison is the same either way.
     inspectGateComparison(aIds, bIds, opts = {}) {
+        // As in inspectSelectionGE: the gene-effect rows are drawn now, the
+        // mRNA rows fill in when the matrix arrives.
+        if (!this.expressionLoaded) {
+            this.loadExpressionData?.().then(() => {
+                if (document.getElementById('selectionInspectModal')?.style.display === 'flex') this.inspectGateComparison(aIds, bIds, opts);
+            }).catch(() => { });
+        }
         aIds = [...new Set(aIds || [])];
         bIds = [...new Set(bIds || [])];
         if (!aIds.length || !bIds.length) {
@@ -62419,7 +62488,9 @@ ${clone.innerHTML}
 
         } else if (type === 'expression') {
             if (!this.expressionLoaded || !this.expressionData || !this.expressionMetadata) {
-                plotDiv.innerHTML = '<div style="padding:10px;text-align:center;color:#6b7280;font-size:11px;">Expression data not loaded</div>'; return;
+                plotDiv.innerHTML = '<div style="padding:10px;text-align:center;color:#6b7280;font-size:11px;">Loading mRNA expression...</div>';
+                this.loadExpressionData?.().then(() => this.showUmapGateGenePlot?.(gene, type)).catch(() => { });
+                return;
             }
             const exprGeneIdx = this.expressionGeneIndex.get(gene.toUpperCase());
             if (exprGeneIdx === undefined) { plotDiv.innerHTML = `<div style="padding:10px;text-align:center;color:#6b7280;font-size:11px;">Gene not in expression data: ${gene}</div>`; return; }
@@ -64221,7 +64292,10 @@ ${clone.innerHTML}
         const colorType = document.getElementById('clbUmapColorGeneType').value; // 'ge' or 'expr'
         const statusEl = document.getElementById('clbUmapColorGeneStatus');
         if (!document.getElementById('clbUmapColorGene').value.trim()) { statusEl.textContent = 'Enter a gene name.'; return; }
-        if (colorType !== 'ge' && !this.expressionLoaded) { statusEl.textContent = 'Expression data not loaded.'; return; }
+        if (colorType !== 'ge' && !this.expressionLoaded) {
+            statusEl.textContent = 'Loading mRNA expression...';
+            try { await this.loadExpressionData(); } catch (e) { statusEl.textContent = 'mRNA expression could not be loaded.'; return; }
+        }
         // Synonyms and unknown names are handled as in every gene box.
         const gene = await this._resolveGeneBox(document.getElementById('clbUmapColorGene'),
             colorType === 'ge' ? (g) => this.geneIndex.has(g) : (g) => !!this.expressionGeneIndex?.has(g),
