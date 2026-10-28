@@ -25940,7 +25940,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             `MUTATIONS AND FUSIONS\n   Hotspot, any-mutation, functional-loss and fusion calls as used across the app. Percentages use all ${this._mNum(s.N)} lines as the denominator, including lines that were never sequenced. Specific variants come from the inferred-subtype layer.${s.split ? ` Mutated (${s.split.label}, n = ${s.split.mut.length}) and wild-type (n = ${s.split.wt.length}) lines were compared with a two-sided Welch t-test on gene effect.` : ''}`,
             'COPY NUMBER\n   Gene-level relative copy number (1 = the line\'s own baseline). The app\'s copy-number tiers: amplified from 3, deep deletion below 0.3.',
             this._gbStructure ? `GENE STRUCTURE\n   Exons, transcript, coding and protein lengths of the MANE Select transcript (else the Ensembl canonical one), fetched live from the Ensembl REST API (GRCh38). The UCSC Genome Browser link opens the same region with two tracks: GENCODE, every transcript on its own row labeled gene/transcript id, and MANE Select Plus Clinical. UCSC colors those rows by annotation type: MANE #0C6DAD, coding #0c0c78, non-coding #006400, pseudogene #ff33ff, problem transcript (retained intron, TEC or disrupted domain) #fe0000. The other transcripts are listed by evidence: the reference, then GENCODE basic transcripts by Ensembl transcript support level (TSL 1 to 5; https://www.ensembl.org/info/genome/genebuild/transcript_quality_tags.html), then transcripts without a TSL (added after the levels were computed; not scored), by protein length. Long-read models are those of the GENCODE TAGENE pipeline (Ensembl source havana_tagene). Start sites: the genomic position of each protein-coding transcript's start codon, compared with the transcript shown; an alternative counts as well supported when a GENCODE basic transcript with TSL 1 or 2 (or MANE) uses it. Transcription starts are the transcripts' 5' ends, grouped when within 500 bp. The genomic sequence view shows the chosen transcript plus 1 kb on each side; the whole gene region (the span of all transcripts) is a separate choice.` : '',
-            `RELATED GENES\n   Co-dependencies: the 10 genes whose gene effect correlates most positively with ${gene}'s, and the 10 most negatively (Pearson r, genes with at least 100 shared lines, p from the t distribution, not corrected for the number of genes tested).\n   Expression correlations: the 10 genes whose mRNA correlates most strongly (largest absolute r) with ${gene}'s mRNA across the cell lines with both values (same rules). Co-dependencies that are also CORUM complex partners, or share a curated pathway or a Reactome pathway with ${gene}, are tagged.\n   Protein complexes: the named human complexes in EBI Complex Portal that contain ${gene}, each member shown with its gene-effect r with ${gene}; complexes ordered by the median r of their members (co-dependent at 0.3 or more, partly at 0.15 to 0.3). Further complex partners from CORUM. Pathways: Reactome pathways of 5 to 150 genes containing ${gene}, smallest first, with the members whose r is 0.3 or more.`,
+            `RELATED GENES\n   Co-dependencies: the 10 genes whose gene effect correlates most positively with ${gene}'s, and the 10 most negatively (Pearson r, genes with at least 100 shared lines, p from the t distribution, not corrected for the number of genes tested).\n   Expression correlations: the 10 genes whose mRNA correlates most strongly (largest absolute r) with ${gene}'s mRNA across the cell lines with both values (same rules). Co-dependencies that are also CORUM complex partners, or share a curated pathway or a Reactome pathway with ${gene}, are tagged.\n   Protein complexes: the named human complexes in EBI Complex Portal that contain ${gene}, each member shown with its r with ${gene} on the basis chosen on the page, gene effect (co-dependency) or mRNA (co-expression); complexes ordered by the median r of their members (co-dependent or co-expressed at 0.3 or more, partly at 0.15 to 0.3). Further complex partners from CORUM. Pathways: Reactome pathways of 5 to 150 genes containing ${gene}, smallest first, with the members whose r is 0.3 or more.`,
             'WHAT THIS DOES NOT SAY\nA correlation across cell lines does not show that two genes act together, and differences between tissues can drive it. A mutated-versus-wild-type difference across the whole panel can reflect lineage rather than the mutation; Mutation analysis inside one tissue separates the two.',
             'REFERENCES\n' + CorrelationExplorer.GB_REFS.map(r => `   ${r.name} (${r.url}): ${r.cite}`).join('\n')
         ]);
@@ -53805,27 +53805,70 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         return this._complexLoading;
     }
 
-    // A gene chip carrying its co-dependency r with the page's gene, tinted
-    // blue (positive) or red (negative) by strength, as in the figure above.
-    _gbRChip(gene, x) {
-        if (x === gene) return `<span class="gb-chip gb-chip-me">${this.gi(x)}</span>`;
-        const r = this._gbAllRCache?.get(gene)?.get(x);
-        if (r === undefined) return `<button class="gb-chip gb-rchip" data-gb-gene="${this.esc(x)}" title="${this.esc(x)}: no co-dependency value (not screened, or fewer than 100 shared lines)">${this.gi(x)} <span class="gb-rv">n/a</span></button>`;
-        const a = Math.min(1, Math.abs(r) / 0.6) * 0.42;
-        const bg = r >= 0 ? `rgba(37,99,235,${a.toFixed(2)})` : `rgba(220,38,38,${a.toFixed(2)})`;
-        return `<button class="gb-chip gb-rchip" data-gb-gene="${this.esc(x)}" style="background:${bg};" title="${this.esc(x)}: gene effect r = ${r.toFixed(2)} with ${this.esc(gene)} across the cell lines">${this.gi(x)} <span class="gb-rv">${r.toFixed(2).replace(/^(-?)0\./, '$1.')}</span></button>`;
+    // The two bases a complex or pathway member can be scored on: gene effect
+    // (co-dependency) and mRNA (co-expression). Both are gene -> r Maps.
+    _gbRMap(gene, basis) {
+        return (basis === 'mrna' ? this._gbAllERCache : this._gbAllRCache)?.get(gene);
     }
 
-    // How strongly a group's members share the gene's dependency pattern:
-    // the median r of the members with a value, and how many reach 0.3.
-    _gbGroupDep(gene, genes) {
-        const m = this._gbAllRCache?.get(gene);
+    // mRNA r between the gene and each gene named, over the cohort's cell
+    // lines with both values. Only the genes asked for are computed, so the
+    // complex and pathway lists cost one pass over a few thousand genes.
+    _gbExprRSet(gene, genes) {
+        const cache = (this._gbAllERCache ||= new Map());
+        let m = cache.get(gene);
+        if (!m) cache.set(gene, m = new Map());
+        const gi = this.expressionGeneIndex?.get(gene);
+        if (gi === undefined || !this.expressionData) return m;
+        const nE = this.expressionMetadata.nCellLines;
+        if (!this._gbExprCols) {
+            const eIdx = new Map(this.expressionMetadata.cellLines.map((cl, i) => [cl, i]));
+            this._gbExprCols = this.metadata.cellLines.map(cl => eIdx.get(cl)).filter(i => i !== undefined);
+        }
+        const cols = this._gbExprCols, off0 = gi * nE;
+        for (const x of genes) {
+            if (x === gene || m.has(x)) continue;
+            const xi = this.expressionGeneIndex.get(x);
+            if (xi === undefined) { m.set(x, undefined); continue; }
+            const off = xi * nE;
+            let n = 0, sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0;
+            for (const j of cols) {
+                const u = this.expressionData[off0 + j], v = this.expressionData[off + j];
+                if (u !== u || v !== v) continue;
+                n++; sx += u; sy += v; sxx += u * u; syy += v * v; sxy += u * v;
+            }
+            const den = Math.sqrt((n * sxx - sx * sx) * (n * syy - sy * sy));
+            m.set(x, n >= 100 && den > 1e-12 ? (n * sxy - sx * sy) / den : undefined);
+        }
+        return m;
+    }
+
+    // A gene chip carrying its r with the page's gene on the chosen basis,
+    // tinted blue (positive) or red (negative) by strength, as in the figure.
+    _gbRChip(gene, x, basis = 'ge') {
+        if (x === gene) return `<span class="gb-chip gb-chip-me">${this.gi(x)}</span>`;
+        const r = this._gbRMap(gene, basis)?.get(x);
+        const what = basis === 'mrna' ? 'mRNA' : 'gene effect';
+        if (r === undefined) return `<button class="gb-chip gb-rchip" data-gb-gene="${this.esc(x)}" title="${this.esc(x)}: no ${what} value (not ${basis === 'mrna' ? 'measured' : 'screened'}, or fewer than 100 shared cell lines)">${this.gi(x)} <span class="gb-rv">n/a</span></button>`;
+        const a = Math.min(1, Math.abs(r) / 0.6) * 0.42;
+        const bg = r >= 0 ? `rgba(37,99,235,${a.toFixed(2)})` : `rgba(220,38,38,${a.toFixed(2)})`;
+        return `<button class="gb-chip gb-rchip" data-gb-gene="${this.esc(x)}" style="background:${bg};" title="${this.esc(x)}: ${what} r = ${r.toFixed(2)} with ${this.esc(gene)} across the cell lines">${this.gi(x)} <span class="gb-rv">${r.toFixed(2).replace(/^(-?)0\./, '$1.')}</span></button>`;
+    }
+
+    // How strongly a group's members follow the gene on the chosen basis: the
+    // median r of the members with a value, and how many reach 0.3.
+    _gbGroupDep(gene, genes, basis = 'ge') {
+        const mr = basis === 'mrna';
+        const m = this._gbRMap(gene, basis);
         const rs = genes.filter(x => x !== gene).map(x => m?.get(x)).filter(r => r !== undefined).sort((a, b) => a - b);
-        if (!rs.length) return { med: NaN, n: 0, nHi: 0, html: '<span class="gb-cpx-tag gb-cpx-na">no co-dependency data</span>' };
+        if (!rs.length) return { med: NaN, n: 0, nHi: 0, html: `<span class="gb-cpx-tag gb-cpx-na">no ${mr ? 'mRNA' : 'co-dependency'} data</span>` };
         const med = rs.length % 2 ? rs[(rs.length - 1) / 2] : (rs[rs.length / 2 - 1] + rs[rs.length / 2]) / 2;
         const nHi = rs.filter(r => r >= 0.3).length;
-        const [cls, word] = med >= 0.3 ? ['gb-cpx-hi', 'co-dependent'] : med >= 0.15 ? ['gb-cpx-mid', 'partly co-dependent'] : ['gb-cpx-lo', 'little shared dependency'];
-        return { med, n: rs.length, nHi, html: `<span class="gb-cpx-tag ${cls}" title="Median gene effect r with ${this.esc(gene)} over ${rs.length} member${rs.length === 1 ? '' : 's'}; ${nHi} at 0.3 or above">${word} · median r ${med.toFixed(2)}</span>` };
+        const word = med >= 0.3 ? (mr ? 'co-expressed' : 'co-dependent')
+            : med >= 0.15 ? (mr ? 'partly co-expressed' : 'partly co-dependent')
+                : (mr ? 'little shared expression' : 'little shared dependency');
+        const cls = med >= 0.3 ? 'gb-cpx-hi' : med >= 0.15 ? 'gb-cpx-mid' : 'gb-cpx-lo';
+        return { med, n: rs.length, nHi, html: `<span class="gb-cpx-tag ${cls}" title="Median ${mr ? 'mRNA' : 'gene effect'} r with ${this.esc(gene)} over ${rs.length} member${rs.length === 1 ? '' : 's'}; ${nHi} at 0.3 or above">${word} · median r ${med.toFixed(2)}</span>` };
     }
 
     // Named protein complexes (Complex Portal) and Reactome pathways that
@@ -53839,65 +53882,104 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const box = document.getElementById('gbCpxBox');
         if (!box) return;
         const g = this.gi(gene);
-        const groups = this._gbGroups = [];
-        const acts = (genes, name) => {
-            const k = groups.push({ genes, name }) - 1;
-            return `<span class="gb-set-acts"><button class="gb-scatter-btn" data-gb-grp="${k}" data-gb-grp-do="net" title="Run Gene set analysis on these ${genes.length} genes">Network</button>`
-                + (this._hasHeatmap() ? `<button class="gb-scatter-btn" data-gb-grp="${k}" data-gb-grp-do="hm" title="Show these ${genes.length} genes as a heatmap across the cell lines">Heatmap</button>` : '') + `</span>`;
-        };
-        const cpx = d.complexes.filter(c => c.genes.includes(gene)).map(c => ({ ...c, dep: this._gbGroupDep(gene, c.genes) }))
-            .sort((a, b) => (b.dep.med === b.dep.med ? b.dep.med : -9) - (a.dep.med === a.dep.med ? a.dep.med : -9) || a.genes.length - b.genes.length);
-        // The gene first, then members from most to least co-dependent.
-        const byR = (genes) => {
-            const m = this._gbAllRCache?.get(gene);
-            return [gene, ...genes.filter(x => x !== gene).sort((a, b) => (m?.get(b) ?? -9) - (m?.get(a) ?? -9))];
-        };
-        const card = (c) => `<div class="gb-cpx">`
-            + `<div class="gb-cpx-head">${acts(c.genes, c.name)}<b>${this.esc(c.name)}</b>`
-            + (() => { const aka = c.aka.filter(a => a.length <= 32).slice(0, 2); return aka.length ? ` <span class="gb-m">(${aka.map(a => this.esc(a)).join(', ')})</span>` : ''; })()
-            + ` <span class="gb-m">· ${c.genes.length} proteins${c.ev === 'inferred' ? ' · <span title="Assembled by the curators from related complexes (orthology, paralogy or background knowledge) rather than shown directly in human cells">inferred</span>' : ''} · <a href="https://www.ebi.ac.uk/complexportal/complex/${this.esc(c.id)}" target="_blank" rel="noopener" style="white-space:nowrap;">${this.esc(c.id)} &#8599;</a></span></div>`
-            + (c.desc ? `<div class="gb-m gb-clamp" title="Click to show all">${this._italicizeGenesInHtml(this.esc(c.desc))}</div>` : '')
-            + (c.go.length ? `<div class="gb-m" style="margin-top:1px;"><span style="color:#374151;">Function:</span> ${c.go.map(x => this.esc(x)).join(' · ')}</div>` : '')
-            + `<div class="gb-cpx-dep">${c.dep.html}</div>`
-            + `<div class="gb-chips">${byR(c.genes).map(x => this._gbRChip(gene, x)).join('')}</div></div>`;
-        const SHOW = 5;
-        const cpxHtml = cpx.length
-            ? `<div class="gb-sub gb-part">Protein complexes <span class="gb-m">(${cpx.length} named complex${cpx.length === 1 ? '' : 'es'} containing ${g}, EBI Complex Portal)</span></div>`
-                + `<div class="gb-m" style="margin:0 0 4px;">The number on each protein is how closely its gene effect follows ${g}'s across the cell lines (r; <span style="background:rgba(37,99,235,.35); padding:0 3px; border-radius:3px;">blue</span> together, <span style="background:rgba(220,38,38,.3); padding:0 3px; border-radius:3px;">red</span> opposite). Members of a complex that works as one unit tend to be co-dependent; a member that does not follow may have another role, a redundant paralog, or too little effect to measure. Most co-dependent complexes first.</div>`
-                + cpx.slice(0, SHOW).map(card).join('')
-                + (cpx.length > SHOW ? `<details class="gb-details"><summary>${cpx.length - SHOW} more complex${cpx.length - SHOW === 1 ? '' : 'es'}</summary>${cpx.slice(SHOW).map(card).join('')}</details>` : '')
-            : `<div class="gb-sub gb-part">Protein complexes</div><div class="gb-m">No named complex in EBI Complex Portal contains ${g}${corum.length ? '; CORUM partners are listed below' : ''}.</div>`;
+        const cpxAll = d.complexes.filter(c => c.genes.includes(gene));
         const pws = d.pathways.filter(p => p.genes.includes(gene))
             .sort((a, b) => a.genes.length - b.genes.length);
-        // A pathway's median says little (most members are unrelated), so the
-        // summary names the members that do share the dependency.
-        const pwDep = (p) => {
-            const m = this._gbAllRCache?.get(gene);
-            const hi = p.genes.filter(x => x !== gene && (m?.get(x) ?? -1) >= 0.3).sort((a, b) => m.get(b) - m.get(a));
-            return hi.length
-                ? `<span class="gb-cpx-tag gb-cpx-hi" title="Members whose gene effect r with ${this.esc(gene)} is 0.3 or more">${hi.length} co-dependent</span> <span class="gb-m">${hi.slice(0, 4).map(x => `${this.gi(x)} ${m.get(x).toFixed(2)}`).join(', ')}${hi.length > 4 ? ', ...' : ''}</span>`
-                : `<span class="gb-cpx-tag gb-cpx-lo">none co-dependent</span>`;
+        const SHOW = 5, PSHOW = 8;
+        // Both bases say something different: gene effect asks whether the
+        // cell needs the members together, mRNA whether it makes them
+        // together, and mRNA is the only reading for a gene no screen
+        // separates.
+        const draw = (basis, withTabs) => {
+            const mr = basis === 'mrna';
+            const rmap = () => this._gbRMap(gene, basis);
+            const groups = this._gbGroups = [];
+            const acts = (genes, name) => {
+                const k = groups.push({ genes, name }) - 1;
+                return `<span class="gb-set-acts"><button class="gb-scatter-btn" data-gb-grp="${k}" data-gb-grp-do="net" title="Run Gene set analysis on these ${genes.length} genes">Network</button>`
+                    + (this._hasHeatmap() ? `<button class="gb-scatter-btn" data-gb-grp="${k}" data-gb-grp-do="hm" title="Show these ${genes.length} genes as a heatmap across the cell lines">Heatmap</button>` : '') + `</span>`;
+            };
+            const cpx = cpxAll.map(c => ({ ...c, dep: this._gbGroupDep(gene, c.genes, basis) }))
+                .sort((a, b) => (b.dep.med === b.dep.med ? b.dep.med : -9) - (a.dep.med === a.dep.med ? a.dep.med : -9) || a.genes.length - b.genes.length);
+            // The gene first, then members from the closest r down.
+            const byR = (genes) => {
+                const m = rmap();
+                return [gene, ...genes.filter(x => x !== gene).sort((a, b) => (m?.get(b) ?? -9) - (m?.get(a) ?? -9))];
+            };
+            const card = (c) => `<div class="gb-cpx">`
+                + `<div class="gb-cpx-head">${acts(c.genes, c.name)}<b>${this.esc(c.name)}</b>`
+                + (() => { const aka = c.aka.filter(a => a.length <= 32).slice(0, 2); return aka.length ? ` <span class="gb-m">(${aka.map(a => this.esc(a)).join(', ')})</span>` : ''; })()
+                + ` <span class="gb-m">· ${c.genes.length} proteins${c.ev === 'inferred' ? ' · <span title="Assembled by the curators from related complexes (orthology, paralogy or background knowledge) rather than shown directly in human cells">inferred</span>' : ''} · <a href="https://www.ebi.ac.uk/complexportal/complex/${this.esc(c.id)}" target="_blank" rel="noopener" style="white-space:nowrap;">${this.esc(c.id)} &#8599;</a></span></div>`
+                + (c.desc ? `<div class="gb-m gb-clamp" title="Click to show all">${this._italicizeGenesInHtml(this.esc(c.desc))}</div>` : '')
+                + (c.go.length ? `<div class="gb-m" style="margin-top:1px;"><span style="color:#374151;">Function:</span> ${c.go.map(x => this.esc(x)).join(' · ')}</div>` : '')
+                + `<div class="gb-cpx-dep">${c.dep.html}</div>`
+                + `<div class="gb-chips">${byR(c.genes).map(x => this._gbRChip(gene, x, basis)).join('')}</div></div>`;
+            const cpxHtml = cpx.length
+                ? `<div class="gb-sub gb-part">Protein complexes <span class="gb-m">(${cpx.length} named complex${cpx.length === 1 ? '' : 'es'} containing ${g}, EBI Complex Portal)</span></div>`
+                    + `<div class="gb-m" style="margin:0 0 4px;">The number on each protein is how closely its ${mr ? 'mRNA' : 'gene effect'} follows ${g}'s across the cell lines (r; <span style="background:rgba(37,99,235,.35); padding:0 3px; border-radius:3px;">blue</span> together, <span style="background:rgba(220,38,38,.3); padding:0 3px; border-radius:3px;">red</span> opposite). ${mr
+                        ? `Members of a complex made as one unit tend to be co-expressed; a member that does not follow may be made in excess, shared with another complex, or regulated on its own. Most co-expressed complexes first.`
+                        : `Members of a complex that works as one unit tend to be co-dependent; a member that does not follow may have another role, a redundant paralog, or too little effect to measure. Most co-dependent complexes first.`}</div>`
+                    + cpx.slice(0, SHOW).map(card).join('')
+                    + (cpx.length > SHOW ? `<details class="gb-details"><summary>${cpx.length - SHOW} more complex${cpx.length - SHOW === 1 ? '' : 'es'}</summary>${cpx.slice(SHOW).map(card).join('')}</details>` : '')
+                : `<div class="gb-sub gb-part">Protein complexes</div><div class="gb-m">${corum.length
+                    ? `No named complex in EBI Complex Portal contains ${g}; its CORUM complex partners are listed below.`
+                    : this.corumPartners?.partners
+                        ? `Neither EBI Complex Portal nor CORUM records ${g} as part of a protein complex.`
+                        : `No named complex in EBI Complex Portal contains ${g}.`}</div>`;
+            // A pathway's median says little (most members are unrelated), so
+            // the summary names the members that do follow the gene.
+            const pwDep = (p) => {
+                const m = rmap();
+                const hi = p.genes.filter(x => x !== gene && (m?.get(x) ?? -1) >= 0.3).sort((a, b) => m.get(b) - m.get(a));
+                return hi.length
+                    ? `<span class="gb-cpx-tag gb-cpx-hi" title="Members whose ${mr ? 'mRNA' : 'gene effect'} r with ${this.esc(gene)} is 0.3 or more">${hi.length} ${mr ? 'co-expressed' : 'co-dependent'}</span> <span class="gb-m">${hi.slice(0, 4).map(x => `${this.gi(x)} ${m.get(x).toFixed(2)}`).join(', ')}${hi.length > 4 ? ', ...' : ''}</span>`
+                    : `<span class="gb-cpx-tag gb-cpx-lo">none ${mr ? 'co-expressed' : 'co-dependent'}</span>`;
+            };
+            const pw = (p) => `<details class="gb-pw"><summary><span class="gb-pw-name">${this.esc(p.name)}</span> <span class="gb-m">${p.genes.length} genes</span> ${pwDep(p)}</summary>`
+                + `<div class="gb-pw-body"><div class="gb-cpx-head">${acts(p.genes, p.name)}<a class="gb-m" href="https://reactome.org/content/detail/${this.esc(p.id)}" target="_blank" rel="noopener">${this.esc(p.id)} on Reactome &#8599;</a></div>`
+                + `<div class="gb-chips">${byR(p.genes).map(x => this._gbRChip(gene, x, basis)).join('')}</div></div></details>`;
+            const pwHtml = pws.length
+                ? `<div class="gb-sub gb-part">Pathways <span class="gb-m">(${pws.length} Reactome pathway${pws.length === 1 ? '' : 's'} of 5 to 150 genes containing ${g}, most specific first)</span></div>`
+                    + `<div class="gb-m" style="margin:0 0 4px;">Beside each pathway: its members whose ${mr ? 'mRNA' : 'gene effect'} follows ${g}'s (r 0.3 or more). Click a pathway for all its genes.</div>`
+                    + pws.slice(0, PSHOW).map(pw).join('')
+                    + (pws.length > PSHOW ? `<details class="gb-details"><summary>${pws.length - PSHOW} more pathway${pws.length - PSHOW === 1 ? '' : 's'}</summary>${pws.slice(PSHOW).map(pw).join('')}</details>` : '')
+                : `<div class="gb-sub gb-part">Pathways</div><div class="gb-m">No Reactome pathway of 5 to 150 genes contains ${g}.</div>`;
+            // CORUM partners the named complexes above do not already show.
+            const cpxGenes = new Set(cpx.flatMap(c => c.genes));
+            const corumRest = corum.filter(x => !cpxGenes.has(x));
+            const db = corumRest.length ? `<details class="gb-details"><summary>More protein-complex partners (CORUM): ${corumRest.length}</summary>`
+                + `<div class="gb-m" style="margin:4px 0;">Proteins recorded in a complex with ${g} in CORUM that the named complexes above do not list. CORUM does not say here which complex each comes from. The number on each gene is its ${mr ? 'co-expression with' : 'co-dependency with'} ${g} (r of ${mr ? 'mRNA' : 'gene effect'}).</div>`
+                + `<div class="gb-chips">${corumRest.slice(0, 60).map(x => this._gbRChip(gene, x, basis)).join('')}${corumRest.length > 60 ? ` <span class="gb-m">and ${corumRest.length - 60} more</span>` : ''}</div>`
+                + `<div class="gb-actions"><button class="btn btn-outline btn-sm" data-gb-act="net-corum" title="Run Gene set analysis on ${this.esc(gene)} and its CORUM complex partners">Network of these</button>`
+                + (this._hasHeatmap() ? `<button class="btn btn-outline btn-sm" data-gb-act="hm-corum" title="Show ${this.esc(gene)} and its CORUM complex partners as a heatmap">Heatmap of these</button>` : '') + `</div>`
+                + `</details>` : '';
+            const tabs = withTabs ? `<div class="gb-xtabs">`
+                + `<span class="gb-m" style="align-self:center;">Number on each gene:</span>`
+                + `<button class="gb-scatter-btn gb-xtab${mr ? '' : ' on'}" data-gb-cpx-basis="ge" title="How closely each member's gene effect follows ${this.esc(gene)}'s across the cell lines">Gene effect <span style="font-weight:400;">(co-dependency)</span></button>`
+                + `<button class="gb-scatter-btn gb-xtab${mr ? ' on' : ''}" data-gb-cpx-basis="mrna" title="How closely each member's mRNA follows ${this.esc(gene)}'s across the cell lines">mRNA <span style="font-weight:400;">(co-expression)</span></button>`
+                + `</div>` : '';
+            box.innerHTML = tabs + cpxHtml + db + pwHtml;
         };
-        const pw = (p) => `<details class="gb-pw"><summary><span class="gb-pw-name">${this.esc(p.name)}</span> <span class="gb-m">${p.genes.length} genes</span> ${pwDep(p)}</summary>`
-            + `<div class="gb-pw-body"><div class="gb-cpx-head">${acts(p.genes, p.name)}<a class="gb-m" href="https://reactome.org/content/detail/${this.esc(p.id)}" target="_blank" rel="noopener">${this.esc(p.id)} on Reactome &#8599;</a></div>`
-            + `<div class="gb-chips">${byR(p.genes).map(x => this._gbRChip(gene, x)).join('')}</div></div></details>`;
-        const PSHOW = 8;
-        const pwHtml = pws.length
-            ? `<div class="gb-sub gb-part">Pathways <span class="gb-m">(${pws.length} Reactome pathway${pws.length === 1 ? '' : 's'} of 5 to 150 genes containing ${g}, most specific first)</span></div>`
-                + `<div class="gb-m" style="margin:0 0 4px;">Beside each pathway: its members whose gene effect follows ${g}'s (r 0.3 or more). Click a pathway for all its genes.</div>`
-                + pws.slice(0, PSHOW).map(pw).join('')
-                + (pws.length > PSHOW ? `<details class="gb-details"><summary>${pws.length - PSHOW} more pathway${pws.length - PSHOW === 1 ? '' : 's'}</summary>${pws.slice(PSHOW).map(pw).join('')}</details>` : '')
-            : '';
-        // CORUM partners the named complexes below do not already show.
-        const cpxGenes = new Set(cpx.flatMap(c => c.genes));
-        const corumRest = corum.filter(x => !cpxGenes.has(x));
-        const db = corumRest.length ? `<details class="gb-details"><summary>More protein-complex partners (CORUM): ${corumRest.length}</summary>`
-            + `<div class="gb-m" style="margin:4px 0;">Proteins recorded in a complex with ${g} in CORUM that the named complexes above do not list. CORUM does not say here which complex each comes from. The number on each gene is its co-dependency with ${g} (r of gene effect).</div>`
-            + `<div class="gb-chips">${corumRest.slice(0, 60).map(x => this._gbRChip(gene, x)).join('')}${corumRest.length > 60 ? ` <span class="gb-m">and ${corumRest.length - 60} more</span>` : ''}</div>`
-            + `<div class="gb-actions"><button class="btn btn-outline btn-sm" data-gb-act="net-corum" title="Run Gene set analysis on ${this.esc(gene)} and its CORUM complex partners">Network of these</button>`
-            + (this._hasHeatmap() ? `<button class="btn btn-outline btn-sm" data-gb-act="hm-corum" title="Show ${this.esc(gene)} and its CORUM complex partners as a heatmap">Heatmap of these</button>` : '') + `</div>`
-            + `</details>` : '';
-        box.innerHTML = cpxHtml + db + pwHtml;
+        const allGenes = () => [...new Set([...cpxAll.flatMap(c => c.genes), ...pws.flatMap(p => p.genes), ...corum])];
+        const haveE = () => !!(this.expressionLoaded && this.expressionGeneIndex?.has(gene) && this.expressionData);
+        if (haveE()) this._gbExprRSet(gene, allGenes());
+        draw(haveE() && this._gbCpxBasis === 'mrna' ? 'mrna' : 'ge', haveE());
+        // The box element outlives every redraw, so the switch is bound once.
+        box.addEventListener('click', (e) => {
+            const b = e.target.closest('[data-gb-cpx-basis]');
+            if (!b || !box.contains(b)) return;
+            this._gbCpxBasis = b.dataset.gbCpxBasis;
+            const open = [...box.querySelectorAll('details')].map(x => x.open);
+            draw(this._gbCpxBasis, true);
+            [...box.querySelectorAll('details')].forEach((x, i) => { if (open[i]) x.open = true; });
+        });
+        if (haveE()) return;
+        const ok = await this._gbWaitExpression();
+        if (!ok || this._gbGene !== gene || !document.body.contains(box) || !haveE()) return;
+        this._gbExprRSet(gene, allGenes());
+        const open = [...box.querySelectorAll('details')].map(x => x.open);
+        draw(this._gbCpxBasis === 'mrna' ? 'mrna' : 'ge', true);
+        [...box.querySelectorAll('details')].forEach((x, i) => { if (open[i]) x.open = true; });
     }
 
     // Distance window for "nearby" in the expression-correlation tables.
