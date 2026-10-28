@@ -393,7 +393,7 @@ class CorrelationExplorer {
             this.setupUI();
             this._setupGlobalCohortBar();
             this._armPhoneCollapsibles();
-            this._armTabletCollapsibles();
+            this._armSidebarCollapsibles();
             // A node drawn at 25px and an edge at 3px are a fine mouse target
             // and a poor finger one: opening the next level by tapping a node
             // or an edge was mostly luck. vis has no hit tolerance to widen, so
@@ -13401,12 +13401,12 @@ class CorrelationExplorer {
         }).observe(document.body, { childList: true, subtree: true });
     }
 
-    // An iPad held upright: the start page stacks, so "Lineage and
-    // disease" and "Genetic alterations" sit between the gene box and Run just
-    // as they do on a phone. Same open-on-tap treatment, but ONLY those two
-    // sidebar sections; every other panel keeps its desktop layout.
-    _armTabletCollapsibles() {
-        if (window.innerWidth <= 640 || window.innerWidth > 900 || this._tabletCollapseArmed) return;
+    // "Lineage and disease" and "Genetic alterations" are two blocks of
+    // selectors most runs never touch, sitting between the gene box and Run.
+    // They are headings you open instead, everywhere above phone width; ONLY
+    // those two sections, every other panel keeps its layout.
+    _armSidebarCollapsibles() {
+        if (window.innerWidth <= 640 || this._tabletCollapseArmed) return;
         this._tabletCollapseArmed = true;
         const run = () => this._setupPhoneCollapsibles(document, true);
         run();
@@ -13445,9 +13445,16 @@ class CorrelationExplorer {
         }
     }
 
+    // The controls a closed sidebar section reports in its heading. Named
+    // rather than inferred: these panels also hold selects that carry a value
+    // while they are not in use, and listing those would read as a filter.
+    static SECTION_SUMMARY_IDS = new Set([
+        'lineageFilter', 'subLineageFilter', 'paramOncotreeFilter',
+        'paramHotspotGene', 'paramCnFilter', 'paramTranslocationGene'
+    ]);
+
     _setupPhoneCollapsibles(root, sidebarOnly = false) {
-        if (sidebarOnly ? (window.innerWidth <= 640 || window.innerWidth > 900)
-                        : window.innerWidth > 640) return;
+        if (sidebarOnly ? window.innerWidth <= 640 : window.innerWidth > 640) return;
         const scope = root || document;
 
         // Which panels the user has opened, kept on the app and keyed by the
@@ -13508,7 +13515,11 @@ class CorrelationExplorer {
         };
 
         const wire = (head, body, opts = {}) => {
-            if (!head || !body || head.dataset.phoneCollapse) return;
+            if (!head || !body) return;
+            // Seen before: only refresh what it reports, since a filter can be
+            // set from elsewhere (a best-filter pick, a restored view) without
+            // the control firing an event of its own.
+            if (head.dataset.phoneCollapse) { head._sectionSummarize?.(); return; }
             head.dataset.phoneCollapse = '1';
             head.style.cursor = 'pointer';
             head.style.userSelect = 'none';
@@ -13527,11 +13538,35 @@ class CorrelationExplorer {
             // flush against its left border.
             const box = head.parentElement;
             const ownsBox = !!box && [...box.children].every(c => c === head || c === body);
+            // A filter that is set must never disappear with the panel: a
+            // closed heading carries what is set inside it, and says so while
+            // it is still being set.
+            const sum = document.createElement('span');
+            sum.className = 'param-sec-sum';
+            head.appendChild(sum);
+            const summarize = () => {
+                const bits = [];
+                for (const el of body.querySelectorAll('select, input[type="text"]')) {
+                    if (!CorrelationExplorer.SECTION_SUMMARY_IDS.has(el.id)) continue;
+                    const v = el.tagName === 'SELECT' ? (el.selectedOptions?.[0]?.value ? el.selectedOptions[0].textContent : '') : el.value;
+                    const t = (v || '').replace(/\s*\(n=[\d,]+\)\s*$/, '').trim();
+                    if (t) bits.push(t);
+                }
+                if (this.excludedTissues?.size) bits.push(`${this.excludedTissues.size} excluded`);
+                sum.textContent = bits.length ? bits.slice(0, 3).join(', ') + (bits.length > 3 ? ', …' : '') : '';
+                sum.title = bits.join(', ');
+            };
+            head._sectionSummarize = summarize;
+            body.addEventListener('change', summarize);
+            body.addEventListener('input', summarize);
             const caret = document.createElement('span');
             caret.textContent = '▾';
             caret.style.cssText = 'font-size:12px; color:#9ca3af; margin-left:8px; transition:transform .12s;';
-            head.appendChild(caret);
+            // Before the summary: the summary takes a line of its own, so a
+            // caret after it would be pushed onto a third line.
+            head.insertBefore(caret, sum);
             const set = (open, remember) => {
+                summarize();
                 if (remember) state[key] = open;
                 // `contents` rather than `block`: the wrapper has to disappear
                 // from layout when open, or the box's own flex/grid rules apply
@@ -13562,7 +13597,13 @@ class CorrelationExplorer {
         // Sidebar sections on the start page: same treatment, so "Lineage and
         // disease" and "Genetic alterations" are headings you open rather than
         // two blocks of selectors between you and the Run button.
-        scope.querySelectorAll('.param-section-heading').forEach(head => {
+        // Above tablet width only these two, by name: other panels keep their
+        // desktop layout, and a heading the app writes into a results card
+        // (Active filters) is not a section to fold away.
+        const heads = sidebarOnly && window.innerWidth > 900
+            ? scope.querySelectorAll('#lineageFilterGroup .param-section-heading, #geneticAlterationsHeading')
+            : scope.querySelectorAll('.param-section-heading');
+        heads.forEach(head => {
             if (head.offsetParent === null && head.style.display === 'none') return;
             const box = head.parentElement;
             if (!box) return;

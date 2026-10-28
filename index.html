@@ -855,6 +855,7 @@
         /* Section headings that give box 1 its structure ("Lineage filter",
            "Genetic alterations"). */
         .param-section-heading {
+            flex-wrap: wrap;
             border-top: 1px solid #e5e7eb;
             margin: 12px 0 6px;
             padding-top: 10px;
@@ -862,6 +863,22 @@
             font-size: 0.9em;
             color: #374151;
         }
+
+        /* What a closed section reports: set between the title and the caret,
+           so a filter that is on is never hidden with the panel. */
+        .param-sec-sum {
+            flex-basis: 100%;
+            min-width: 0;
+            margin: -2px 0 2px;
+            font-size: 11px;
+            font-weight: 400;
+            color: #6ba544;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .param-sec-sum:empty,
+        [aria-expanded="true"] > .param-sec-sum { display: none; }
 
         /* The filter inputs in box 1 were set at the same weight and size as the
            headings, so the eye landed on "Search hotspot gene..." rather than on
@@ -5978,7 +5995,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v91_90"></script>
+    <script src="app.js?v=v91_91"></script>
     <script src="tour.js?v=v91_87"></script>
 </body>
 </html>
