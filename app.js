@@ -7221,8 +7221,12 @@ class CorrelationExplorer {
                 sl.value = '100';
                 document.getElementById('spreadBubble').textContent = '100';
                 this._applyNetworkSpread();
+                // With the solver live the nodes walk to the new spacing over
+                // the next moment, so fitting at once would frame where they
+                // were rather than where they are going.
+                if (this.physicsEnabled !== false) { setTimeout(() => this._netFitFill(), 750); return; }
             }
-            this.network.fit();
+            this._netFitFill();
         });
         document.getElementById('restoreAllNodes').addEventListener('click', () => this.showHiddenNodes());
         document.getElementById('showGeneEffect').addEventListener('change', (e) => {
@@ -15991,10 +15995,16 @@ Results:
         if (!networkCanvas || !container) return null;
         const cssWidth = container.clientWidth;
         const cssHeight = container.clientHeight;
-        const legendHeight = 160;
-        const padding = 30;
+        // Banner and legend are drawn at on-screen pixel sizes and the whole
+        // composition is then scaled to the requested print width, so a wider
+        // panel shrank them against the figure. The full page is wider than
+        // the normal one, so scale that chrome by the same factor and the
+        // exported figure keeps the proportions of the normal view.
+        const chromeScale = this._netExportChromeScale(cssWidth);
+        const legendHeight = Math.round(160 * chromeScale);
+        const padding = Math.round(30 * chromeScale);
         const filterText = this._getNetworkFilterText();
-        const bannerFs = this._netBannerFontSize || 20;
+        const bannerFs = Math.round((this._netBannerFontSize || 20) * chromeScale);
         // The highlight note travels with the figure: rings with no caption
         // are meaningless once the picture leaves the app.
         const hlNote = this._netHighlightNote || '';
@@ -16007,11 +16017,20 @@ Results:
         const noteH = noteLines.length ? Math.round(noteLines.length * noteFs * 1.35 + 6) : 0;
         const headerH = (filterText || noteLines.length) ? bannerH + noteH + 12 : 0;
         return {
-            networkCanvas, cssWidth, cssHeight, legendHeight, padding,
+            networkCanvas, cssWidth, cssHeight, legendHeight, padding, chromeScale,
             filterText, bannerFs, headerH, bannerH, noteLines, noteFs,
             totalWidth: cssWidth,
             totalHeight: headerH + cssHeight + legendHeight + padding
         };
+    }
+
+    // 1 in the normal panel, so its exports are untouched; in the full page,
+    // how much wider that panel is than the normal one.
+    _netExportChromeScale(cssWidth) {
+        const nb = this._netNormalBox;
+        const pl = document.getElementById('networkPlot');
+        if (!nb?.w || !cssWidth || !pl || !document.getElementById('netFullModal')?.contains(pl)) return 1;
+        return Math.max(1, Math.min(3, cssWidth / nb.w));
     }
 
     async downloadNetworkPNG() {
@@ -16086,7 +16105,7 @@ Results:
         const geo = this._networkExportGeometry();
         if (!geo) return null;
         const {
-            networkCanvas, cssWidth, cssHeight, legendHeight, padding,
+            networkCanvas, cssWidth, cssHeight, legendHeight, padding, chromeScale,
             filterText, bannerFs, headerH, bannerH, noteLines, noteFs,
             totalWidth, totalHeight
         } = geo;
@@ -16184,29 +16203,34 @@ Results:
         } catch (e) { /* fall back to no shift */ }
         ctx.drawImage(src, 0, 0, src.width, src.height, netOffsetX, headerH, cssWidth, cssHeight);
 
+        // Drawn in its own coordinate space and scaled as a whole, so the
+        // spacing, rules and swatches keep their proportions to the text.
+        ctx.save();
+        ctx.scale(chromeScale, chromeScale);
+        const legW = totalWidth / chromeScale;
         // Draw legend frame only when the user opted in via the dialog —
         // the previous default of a gray-filled box was visually noisy on
         // the printed page. White background still gets the white canvas
         // fill from above; this just controls the legend block's frame.
-        const legendTop = headerH + cssHeight;
+        const legendTop = (headerH + cssHeight) / chromeScale;
         if (legendFrame && !transparentBg) {
             ctx.fillStyle = '#f9fafb';
             ctx.strokeStyle = '#e5e7eb';
             ctx.lineWidth = 1;
-            ctx.fillRect(15, legendTop + 10, totalWidth - 30, legendHeight - 10);
-            ctx.strokeRect(15, legendTop + 10, totalWidth - 30, legendHeight - 10);
+            ctx.fillRect(15, legendTop + 10, legW - 30, 160 - 10);
+            ctx.strokeRect(15, legendTop + 10, legW - 30, 160 - 10);
         } else if (legendFrame && transparentBg) {
             // Just the outline, no fill, so the frame is still visible on
             // a transparent canvas without introducing a colored block.
             ctx.strokeStyle = '#e5e7eb';
             ctx.lineWidth = 1;
-            ctx.strokeRect(15, legendTop + 10, totalWidth - 30, legendHeight - 10);
+            ctx.strokeRect(15, legendTop + 10, legW - 30, 160 - 10);
         }
 
         // Draw legend. Font sizes derive from the user's legend text-setting so
         // changes to it are reflected in the export (previously hardcoded, so
         // legend tweaks showed live but not in exported images).
-        const legendY = legendTop + padding + 10;
+        const legendY = legendTop + 30 + 10;
         const _legFs = this._netLegendFontSize || 15;
         const titleFont = `bold ${_legFs + 1}px Arial`;
         const textFont = `${_legFs}px Arial`;
@@ -16215,7 +16239,7 @@ Results:
         // Measured width of what the legend actually paints, so it centers.
         const totalLegendWidth = this._exportLegendWidth();
 
-        let legendX = Math.max(40, (totalWidth - totalLegendWidth) / 2);
+        let legendX = Math.max(40, (legW - totalLegendWidth) / 2);
 
         // Correlation legend
         ctx.font = titleFont;
@@ -16494,6 +16518,7 @@ Results:
             ctx.fillStyle = '#333';
             ctx.fillText('* = synonym/ortholog used', legendX, legendY + 25);
         }
+        ctx.restore();
 
         return canvas;
     }
@@ -16545,9 +16570,13 @@ Results:
         const container = document.getElementById('networkPlot');
         const width = container.clientWidth;
         const networkHeight = container.clientHeight;
-        const legendHeight = 160;
+        // Banner and legend are drawn at on-screen pixel sizes, so a wider
+        // panel (the full page) shrank them against the figure. See
+        // _netExportChromeScale.
+        const chromeScale = this._netExportChromeScale(width);
+        const legendHeight = Math.round(160 * chromeScale);
         const filterText = this._getNetworkFilterText();
-        const svgBannerFs = this._netBannerFontSize || 20;
+        const svgBannerFs = Math.round((this._netBannerFontSize || 20) * chromeScale);
         // The highlight caption travels with the figure too: a ring with no
         // sentence explaining it means nothing once the picture leaves the app.
         const svgNoteFs = Math.max(10, Math.round(svgBannerFs * 0.62));
@@ -16675,21 +16704,25 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
             }
         });
 
-        // Draw legend - LARGER for publication
-        const legendTop = headerH + networkHeight;
+        // Draw legend - LARGER for publication. Written in its own coordinate
+        // space and scaled as one group, so spacing, rules and swatches keep
+        // their proportions to the text whatever the panel's size.
+        const legSvgStart = svg.length;
+        const legW = width / chromeScale;
+        const legendTop = (headerH + networkHeight) / chromeScale;
         const legendY = legendTop + 35;
 
         // Measured width of what the legend actually paints, so it centers.
         const totalLegendWidth = this._exportLegendWidth();
 
-        let legendX = Math.max(40, (width - totalLegendWidth) / 2);
+        let legendX = Math.max(40, (legW - totalLegendWidth) / 2);
 
         // Legend frame: opt-in via the export dialog. Skipping by default
         // gives a cleaner figure on the page.
         if (legendFrame && !transparentBg) {
-            svg += `  <rect x="15" y="${legendTop + 10}" width="${width - 30}" height="145" fill="#f9fafb" stroke="#e5e7eb" rx="4"/>\n`;
+            svg += `  <rect x="15" y="${legendTop + 10}" width="${legW - 30}" height="145" fill="#f9fafb" stroke="#e5e7eb" rx="4"/>\n`;
         } else if (legendFrame && transparentBg) {
-            svg += `  <rect x="15" y="${legendTop + 10}" width="${width - 30}" height="145" fill="none" stroke="#e5e7eb" rx="4"/>\n`;
+            svg += `  <rect x="15" y="${legendTop + 10}" width="${legW - 30}" height="145" fill="none" stroke="#e5e7eb" rx="4"/>\n`;
         }
 
         // Correlation legend
@@ -16835,6 +16868,10 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
         // Synonym legend
         if (this.hasSynonymsInNetwork) {
             svg += `  <text x="${legendX}" y="${legendY + 25}" class="legend-text">* = synonym/ortholog used</text>\n`;
+        }
+        if (chromeScale !== 1) {
+            svg = svg.slice(0, legSvgStart) + `  <g transform="scale(${chromeScale})">\n`
+                + svg.slice(legSvgStart) + `  </g>\n`;
         }
 
         // Embed metadata
@@ -17883,8 +17920,37 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
     _redrawThenFit() {
         if (!this.network) return;
         try { this.network.redraw(); } catch (e) {}
-        try { this.network.fit({ animation: false }); } catch (e) {}
+        this._netFitFill();
         this._matchLabelsToFontSlider();
+    }
+
+    // vis caps fit() at zoom 1.0, so on a canvas larger than the layout was
+    // built for (the full page above all) Fit left the network sitting small
+    // in the middle with wide empty margins. Fit first, then zoom the rest of
+    // the way by hand, measuring the nodes WITH their labels so nothing is
+    // cut off at the edges.
+    _netFitFill(fill = 0.92) {
+        const net = this.network;
+        if (!net) return;
+        try {
+            net.fit({ animation: false });
+            const ids = this.networkData?.nodes?.getIds?.() || [];
+            if (!ids.length) return;
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (const id of ids) {
+                const b = net.getBoundingBox(id);
+                if (!b) continue;
+                minX = Math.min(minX, b.left); maxX = Math.max(maxX, b.right);
+                minY = Math.min(minY, b.top); maxY = Math.max(maxY, b.bottom);
+            }
+            const cv = net.canvas?.frame?.canvas;
+            const w = cv?.clientWidth, h = cv?.clientHeight;
+            if (!w || !h || !isFinite(minX) || maxX <= minX || maxY <= minY) return;
+            const scale = net.getScale();
+            const k = Math.min(w * fill / ((maxX - minX) * scale), h * fill / ((maxY - minY) * scale));
+            if (!isFinite(k) || k <= 1.01) return;
+            net.moveTo({ scale: Math.min(scale * k, 2.5), position: { x: (minX + maxX) / 2, y: (minY + maxY) / 2 }, animation: false });
+        } catch (e) { /* not drawn yet */ }
     }
 
     // Make the font slider mean what it says. vis draws labels in world units,
@@ -17922,7 +17988,7 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
             });
             ds.update(updates);
             this.network.redraw();
-            this.network.fit({ animation: false });
+            this._netFitFill();
         } catch (e) {}
     }
 
