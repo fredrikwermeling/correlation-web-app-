@@ -28360,6 +28360,45 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         this._attachDotHoverSummary(plotId, extract);
     }
 
+    // The same plots inside a popout. Opening a cell line there would change
+    // the Cell Line Browser behind a modal the user cannot see past, so a
+    // plain click labels the dot instead (click it again, or the label, to
+    // drop it) and Shift-click opens the cell line, closing the popout so the
+    // change is in view. Labels survive a redraw only until the plot is
+    // rebuilt, which is when the figure they belong to is gone anyway.
+    _attachDotLabel(plotId, openCellLine) {
+        const el = document.getElementById(plotId);
+        if (!el || !el.on) return;
+        const extract = pt => Array.isArray(pt.customdata) ? pt.customdata[pt.customdata.length - 1] : pt.customdata;
+        const labels = el._dotLabels = [];
+        const apply = () => Plotly.relayout(el, { annotations: labels.map(l => l.ann) });
+        el.removeAllListeners?.('plotly_click');
+        el.removeAllListeners?.('plotly_clickannotation');
+        el.on('plotly_click', (ev) => {
+            const pt = ev.points?.[0];
+            if (!pt || !Number.isInteger(pt.pointNumber)) return;
+            const id = extract(pt);
+            if (typeof id !== 'string' || !id) return;
+            if (ev.event?.shiftKey || ev.event?.metaKey || ev.event?.ctrlKey) { openCellLine(id); return; }
+            const k = labels.findIndex(l => l.id === id);
+            if (k >= 0) labels.splice(k, 1);
+            else labels.push({ id, ann: {
+                x: pt.x, y: pt.y, text: this.getCellLineName(id), captureevents: true,
+                showarrow: true, arrowhead: 0, arrowwidth: 1, arrowcolor: '#6b7280', ax: 0, ay: -20,
+                font: { size: 10, color: '#111827', family: 'Open Sans, sans-serif' },
+                bgcolor: 'rgba(255,255,255,0.9)', bordercolor: '#9ca3af', borderwidth: 1, borderpad: 2
+            } });
+            apply();
+        });
+        el.on('plotly_clickannotation', (ev) => {
+            if (!labels[ev.index]) return;
+            labels.splice(ev.index, 1);
+            apply();
+            ev.event?.preventDefault?.();
+        });
+        this._attachDotHoverSummary(plotId, extract);
+    }
+
     async _exportScatterChart(format) {
         const plotEl = document.getElementById('scatterPlot');
         if (!plotEl || !plotEl.data) return;
@@ -51647,7 +51686,15 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             yaxis: { automargin: true, tickfont: { size: 10 } },
             paper_bgcolor: '#ffffff', plot_bgcolor: '#ffffff', font: { family: 'Open Sans, sans-serif' }
         }, { displayModeBar: false, responsive: true });
-        this._attachDotShiftOpen(elId);
+        this._attachDotLabel(elId, (id) => { this.closeGeneBrowser(); this._openCellLineInBrowser(id); });
+        const hint = 'Click a dot to label the cell line, shift-click to open it in the Cell Line Browser';
+        const row = el.nextElementSibling;
+        if (row && row.classList.contains('gb-m') && row.querySelector('[data-gb-copy]') && !row.querySelector('.gb-dothint')) {
+            row.style.justifyContent = 'space-between';
+            row.insertAdjacentHTML('afterbegin', `<span class="gb-dothint">${hint}</span>`);
+        } else if (!el.nextElementSibling?.classList.contains('gb-dothint')) {
+            el.insertAdjacentHTML('afterend', `<div class="gb-m gb-dothint" style="margin-top:2px;">${hint}</div>`);
+        }
     }
 
     async _gbRender(gene) {
