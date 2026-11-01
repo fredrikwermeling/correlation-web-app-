@@ -13726,6 +13726,8 @@ class CorrelationExplorer {
     }
 
     displayNetwork() {
+        // A network built inside the full page starts unspread.
+        if (this._netPage) Object.assign(this._netPage, { k: 1, s: 0, view: null });
         this._syncBasisNetworkLabels();
         const container = document.getElementById('networkPlot');
         container.innerHTML = '';
@@ -14424,16 +14426,24 @@ class CorrelationExplorer {
         const legend = document.getElementById('networkLegend');
         const parts = [controls, wrap, legend].filter(Boolean);
         const inside = modal.contains(wrap);
+        let back = null;
         if (on && !inside) {
-            // The normal panel's size, so the full page can draw the same
-            // picture (labels in the same proportion to nodes), only larger.
+            // The full page is a bigger sheet for the same figure: nodes,
+            // labels and edges keep the size they have here and the layout
+            // spreads to fill the page (_netPageFit). On the way back it
+            // contracts and the view returns to exactly where it was.
             const pl = document.getElementById('networkPlot');
-            if (pl?.clientWidth) this._netNormalBox = { w: pl.clientWidth, h: pl.clientHeight };
+            let view = null;
+            try { if (this.network) view = { scale: this.network.getScale(), position: this.network.getViewPosition() }; } catch (e) { /* not drawn yet */ }
+            this._netPage = { w: pl?.clientWidth || 0, h: pl?.clientHeight || 0, s: view?.scale || 0, k: 1, view };
             this._netFullMarks = parts.map(el => { const m = document.createComment('netFull home'); el.before(m); return [m, el]; });
             document.getElementById('netFullMain').append(wrap);
             document.getElementById('netFullSide').append(...[controls, legend].filter(Boolean));
             modal.style.display = 'flex';
         } else if (!on && inside) {
+            back = this._netPage?.view || null;
+            this._netSetPageSpread(1);
+            this._netPage = null;
             for (const [m, el] of this._netFullMarks || []) if (m.parentNode) m.replaceWith(el);
             this._netFullMarks = null;
             modal.style.display = 'none';
@@ -14442,7 +14452,13 @@ class CorrelationExplorer {
         if (btn) { btn.innerHTML = on ? '&times; Exit full page' : '&#10530; Full page'; btn.title = on ? 'Back to the normal view' : 'Open the network in a full-window view with all its settings beside it'; }
         // vis keeps the canvas size it last measured; size it to the new box
         // once layout has settled (twice: a note added meanwhile shifts it).
-        const resize = () => { try { this.network?.setSize('100%', '100%'); this._redrawThenFit(); } catch (e) { /* not drawn yet */ } };
+        const resize = () => {
+            try {
+                this.network?.setSize('100%', '100%');
+                if (back) { this.network.redraw(); this.network.moveTo({ ...back, animation: false }); }
+                else this._redrawThenFit();
+            } catch (e) { /* not drawn yet */ }
+        };
         requestAnimationFrame(() => requestAnimationFrame(resize));
         setTimeout(resize, 300);
     }
@@ -14762,11 +14778,12 @@ class CorrelationExplorer {
             // historical failures here came from re-fitting the camera after
             // a spring change, which cancels it on screen exactly;
             // holding the zoom is what makes it visible.
-            const spring = this._recomputeSpring();
+            const pk = this._netPage?.k || 1;
+            const spring = Math.round(this._recomputeSpring() * pk);
             this._netSpringLength = spring;
             this.network.setOptions({ physics: { forceAtlas2Based: {
                 springLength: spring,
-                gravitationalConstant: -60 * spreadVal
+                gravitationalConstant: -60 * spreadVal * pk * pk
             } } });
             // The solver sleeps once stabilized; wake it so it walks to the
             // new equilibrium visibly. startSimulation alone is not enough in
@@ -16032,16 +16049,10 @@ Results:
         if (!networkCanvas || !container) return null;
         const cssWidth = container.clientWidth;
         const cssHeight = container.clientHeight;
-        // Banner and legend are drawn at on-screen pixel sizes and the whole
-        // composition is then scaled to the requested print width, so a wider
-        // panel shrank them against the figure. The full page is wider than
-        // the normal one, so scale that chrome by the same factor and the
-        // exported figure keeps the proportions of the normal view.
-        const chromeScale = this._netExportChromeScale(cssWidth);
-        const legendHeight = Math.round(160 * chromeScale);
-        const padding = Math.round(30 * chromeScale);
+        const legendHeight = 160;
+        const padding = 30;
         const filterText = this._getNetworkFilterText();
-        const bannerFs = Math.round((this._netBannerFontSize || 20) * chromeScale);
+        const bannerFs = this._netBannerFontSize || 20;
         // The highlight note travels with the figure: rings with no caption
         // are meaningless once the picture leaves the app.
         const hlNote = this._netHighlightNote || '';
@@ -16054,20 +16065,11 @@ Results:
         const noteH = noteLines.length ? Math.round(noteLines.length * noteFs * 1.35 + 6) : 0;
         const headerH = (filterText || noteLines.length) ? bannerH + noteH + 12 : 0;
         return {
-            networkCanvas, cssWidth, cssHeight, legendHeight, padding, chromeScale,
+            networkCanvas, cssWidth, cssHeight, legendHeight, padding,
             filterText, bannerFs, headerH, bannerH, noteLines, noteFs,
             totalWidth: cssWidth,
             totalHeight: headerH + cssHeight + legendHeight + padding
         };
-    }
-
-    // 1 in the normal panel, so its exports are untouched; in the full page,
-    // how much wider that panel is than the normal one.
-    _netExportChromeScale(cssWidth) {
-        const nb = this._netNormalBox;
-        const pl = document.getElementById('networkPlot');
-        if (!nb?.w || !cssWidth || !pl || !document.getElementById('netFullModal')?.contains(pl)) return 1;
-        return Math.max(1, Math.min(3, cssWidth / nb.w));
     }
 
     async downloadNetworkPNG() {
@@ -16142,7 +16144,7 @@ Results:
         const geo = this._networkExportGeometry();
         if (!geo) return null;
         const {
-            networkCanvas, cssWidth, cssHeight, legendHeight, padding, chromeScale,
+            networkCanvas, cssWidth, cssHeight, legendHeight, padding,
             filterText, bannerFs, headerH, bannerH, noteLines, noteFs,
             totalWidth, totalHeight
         } = geo;
@@ -16240,34 +16242,29 @@ Results:
         } catch (e) { /* fall back to no shift */ }
         ctx.drawImage(src, 0, 0, src.width, src.height, netOffsetX, headerH, cssWidth, cssHeight);
 
-        // Drawn in its own coordinate space and scaled as a whole, so the
-        // spacing, rules and swatches keep their proportions to the text.
-        ctx.save();
-        ctx.scale(chromeScale, chromeScale);
-        const legW = totalWidth / chromeScale;
         // Draw legend frame only when the user opted in via the dialog —
         // the previous default of a gray-filled box was visually noisy on
         // the printed page. White background still gets the white canvas
         // fill from above; this just controls the legend block's frame.
-        const legendTop = (headerH + cssHeight) / chromeScale;
+        const legendTop = headerH + cssHeight;
         if (legendFrame && !transparentBg) {
             ctx.fillStyle = '#f9fafb';
             ctx.strokeStyle = '#e5e7eb';
             ctx.lineWidth = 1;
-            ctx.fillRect(15, legendTop + 10, legW - 30, 160 - 10);
-            ctx.strokeRect(15, legendTop + 10, legW - 30, 160 - 10);
+            ctx.fillRect(15, legendTop + 10, totalWidth - 30, legendHeight - 10);
+            ctx.strokeRect(15, legendTop + 10, totalWidth - 30, legendHeight - 10);
         } else if (legendFrame && transparentBg) {
             // Just the outline, no fill, so the frame is still visible on
             // a transparent canvas without introducing a colored block.
             ctx.strokeStyle = '#e5e7eb';
             ctx.lineWidth = 1;
-            ctx.strokeRect(15, legendTop + 10, legW - 30, 160 - 10);
+            ctx.strokeRect(15, legendTop + 10, totalWidth - 30, legendHeight - 10);
         }
 
         // Draw legend. Font sizes derive from the user's legend text-setting so
         // changes to it are reflected in the export (previously hardcoded, so
         // legend tweaks showed live but not in exported images).
-        const legendY = legendTop + 30 + 10;
+        const legendY = legendTop + padding + 10;
         const _legFs = this._netLegendFontSize || 15;
         const titleFont = `bold ${_legFs + 1}px Arial`;
         const textFont = `${_legFs}px Arial`;
@@ -16276,7 +16273,7 @@ Results:
         // Measured width of what the legend actually paints, so it centers.
         const totalLegendWidth = this._exportLegendWidth();
 
-        let legendX = Math.max(40, (legW - totalLegendWidth) / 2);
+        let legendX = Math.max(40, (totalWidth - totalLegendWidth) / 2);
 
         // Correlation legend
         ctx.font = titleFont;
@@ -16555,7 +16552,6 @@ Results:
             ctx.fillStyle = '#333';
             ctx.fillText('* = synonym/ortholog used', legendX, legendY + 25);
         }
-        ctx.restore();
 
         return canvas;
     }
@@ -16607,13 +16603,9 @@ Results:
         const container = document.getElementById('networkPlot');
         const width = container.clientWidth;
         const networkHeight = container.clientHeight;
-        // Banner and legend are drawn at on-screen pixel sizes, so a wider
-        // panel (the full page) shrank them against the figure. See
-        // _netExportChromeScale.
-        const chromeScale = this._netExportChromeScale(width);
-        const legendHeight = Math.round(160 * chromeScale);
+        const legendHeight = 160;
         const filterText = this._getNetworkFilterText();
-        const svgBannerFs = Math.round((this._netBannerFontSize || 20) * chromeScale);
+        const svgBannerFs = this._netBannerFontSize || 20;
         // The highlight caption travels with the figure too: a ring with no
         // sentence explaining it means nothing once the picture leaves the app.
         const svgNoteFs = Math.max(10, Math.round(svgBannerFs * 0.62));
@@ -16741,25 +16733,21 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
             }
         });
 
-        // Draw legend - LARGER for publication. Written in its own coordinate
-        // space and scaled as one group, so spacing, rules and swatches keep
-        // their proportions to the text whatever the panel's size.
-        const legSvgStart = svg.length;
-        const legW = width / chromeScale;
-        const legendTop = (headerH + networkHeight) / chromeScale;
+        // Draw legend - LARGER for publication
+        const legendTop = headerH + networkHeight;
         const legendY = legendTop + 35;
 
         // Measured width of what the legend actually paints, so it centers.
         const totalLegendWidth = this._exportLegendWidth();
 
-        let legendX = Math.max(40, (legW - totalLegendWidth) / 2);
+        let legendX = Math.max(40, (width - totalLegendWidth) / 2);
 
         // Legend frame: opt-in via the export dialog. Skipping by default
         // gives a cleaner figure on the page.
         if (legendFrame && !transparentBg) {
-            svg += `  <rect x="15" y="${legendTop + 10}" width="${legW - 30}" height="145" fill="#f9fafb" stroke="#e5e7eb" rx="4"/>\n`;
+            svg += `  <rect x="15" y="${legendTop + 10}" width="${width - 30}" height="145" fill="#f9fafb" stroke="#e5e7eb" rx="4"/>\n`;
         } else if (legendFrame && transparentBg) {
-            svg += `  <rect x="15" y="${legendTop + 10}" width="${legW - 30}" height="145" fill="none" stroke="#e5e7eb" rx="4"/>\n`;
+            svg += `  <rect x="15" y="${legendTop + 10}" width="${width - 30}" height="145" fill="none" stroke="#e5e7eb" rx="4"/>\n`;
         }
 
         // Correlation legend
@@ -16905,10 +16893,6 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
         // Synonym legend
         if (this.hasSynonymsInNetwork) {
             svg += `  <text x="${legendX}" y="${legendY + 25}" class="legend-text">* = synonym/ortholog used</text>\n`;
-        }
-        if (chromeScale !== 1) {
-            svg = svg.slice(0, legSvgStart) + `  <g transform="scale(${chromeScale})">\n`
-                + svg.slice(legSvgStart) + `  </g>\n`;
         }
 
         // Embed metadata
@@ -17962,31 +17946,98 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
     }
 
     // vis caps fit() at zoom 1.0, so on a canvas larger than the layout was
-    // built for (the full page above all) Fit left the network sitting small
-    // in the middle with wide empty margins. Fit first, then zoom the rest of
-    // the way by hand, measuring the nodes WITH their labels so nothing is
-    // cut off at the edges.
+    // built for Fit left the network sitting small in the middle with wide
+    // empty margins. Fit first, then zoom the rest of the way by hand,
+    // measuring the nodes WITH their labels so nothing is cut off at the
+    // edges.
     _netFitFill(fill = 0.92) {
         const net = this.network;
         if (!net) return;
+        if (this._netPage) { try { this._netPageFit(fill); } catch (e) { /* not drawn yet */ } return; }
         try {
             net.fit({ animation: false });
-            const ids = this.networkData?.nodes?.getIds?.() || [];
-            if (!ids.length) return;
-            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-            for (const id of ids) {
-                const b = net.getBoundingBox(id);
-                if (!b) continue;
-                minX = Math.min(minX, b.left); maxX = Math.max(maxX, b.right);
-                minY = Math.min(minY, b.top); maxY = Math.max(maxY, b.bottom);
-            }
             const cv = net.canvas?.frame?.canvas;
-            const w = cv?.clientWidth, h = cv?.clientHeight;
-            if (!w || !h || !isFinite(minX) || maxX <= minX || maxY <= minY) return;
-            const scale = net.getScale();
-            const k = Math.min(w * fill / ((maxX - minX) * scale), h * fill / ((maxY - minY) * scale));
-            if (!isFinite(k) || k <= 1.01) return;
-            net.moveTo({ scale: Math.min(scale * k, 2.5), position: { x: (minX + maxX) / 2, y: (minY + maxY) / 2 }, animation: false });
+            const v = this._netFillView(cv?.clientWidth, cv?.clientHeight, fill);
+            if (!v || !isFinite(v.scale) || v.scale <= net.getScale() * 1.01) return;
+            net.moveTo({ scale: Math.min(v.scale, 2.5), position: { x: v.x, y: v.y }, animation: false });
+        } catch (e) { /* not drawn yet */ }
+    }
+
+    // The zoom and center that frame every node, label included, at `fill`
+    // of a w x h canvas. Bounding boxes are in layout units, so this does not
+    // depend on the current view.
+    _netFillView(w, h, fill = 0.92) {
+        const net = this.network;
+        const ids = this.networkData?.nodes?.getIds?.() || [];
+        if (!net || !w || !h || !ids.length) return null;
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const id of ids) {
+            const b = net.getBoundingBox(id);
+            if (!b) continue;
+            minX = Math.min(minX, b.left); maxX = Math.max(maxX, b.right);
+            minY = Math.min(minY, b.top); maxY = Math.max(maxY, b.bottom);
+        }
+        if (!isFinite(minX) || maxX <= minX || maxY <= minY) return null;
+        return { scale: Math.min(w * fill / (maxX - minX), h * fill / (maxY - minY)), x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+    }
+
+    // Fit in the full page: the view keeps the normal panel's zoom, so nodes,
+    // labels and edges stay the size they are there, and the layout is
+    // spread until it fills the page instead.
+    _netPageFit(fill = 0.92) {
+        const net = this.network, p = this._netPage;
+        const cv = net.canvas?.frame?.canvas;
+        const W = cv?.clientWidth, H = cv?.clientHeight;
+        if (!W || !H) return;
+        if (!p.s) {
+            // A network built inside the full page: the zoom the normal panel
+            // would give it, measured on the unspread layout.
+            this._netSetPageSpread(1);
+            const v0 = this._netFillView(p.w, p.h, fill);
+            if (!v0) return;
+            p.s = Math.min(v0.scale, 2.5);
+        }
+        // Labels keep their size as the layout spreads, so one pass falls
+        // short of filling the page; a second closes the gap.
+        let v = null;
+        for (let i = 0; i < 3; i++) {
+            net.redraw();
+            v = this._netFillView(W, H, fill);
+            if (!v) return;
+            const k = Math.max(1, p.k * v.scale / p.s);
+            if (Math.abs(k / p.k - 1) < 0.01) break;
+            this._netSetPageSpread(k);
+            v = this._netFillView(W, H, fill) || v;
+        }
+        net.moveTo({ scale: Math.min(p.s, v.scale), position: { x: v.x, y: v.y }, animation: false });
+    }
+
+    // Scale the layout about the origin to k times the normal panel's, with
+    // the solver's spring length and repulsion scaled to match so a floating
+    // network rests in the spread layout instead of pulling back. Springs
+    // pull in proportion to distance and repulsion falls off as 1/distance,
+    // so r times larger is at rest with springs x r and repulsion x r^2.
+    _netSetPageSpread(k) {
+        const net = this.network, p = this._netPage;
+        const r = k / (p?.k || 1);
+        if (!net || !p || !isFinite(r) || Math.abs(r - 1) < 0.001) return;
+        p.k = k;
+        const live = this.physicsEnabled !== false;
+        try {
+            // The solver owns the drawn positions while it is on.
+            if (live) net.setOptions({ physics: { enabled: false } });
+            const pos = net.getPositions();
+            for (const id in pos) net.moveNode(id, pos[id].x * r, pos[id].y * r);
+            const base = this._netBasePositions;
+            if (base) for (const id in base) base[id] = { x: base[id].x * r, y: base[id].y * r };
+            if (this._netSpreadAnchor) this._netSpreadAnchor = { x: this._netSpreadAnchor.x * r, y: this._netSpreadAnchor.y * r };
+            const fa = net.physics?.options?.forceAtlas2Based || {};
+            this._netSpringLength = Math.round((this._netSpringLength || fa.springLength || 140) * r);
+            net.setOptions({ physics: { enabled: live, forceAtlas2Based: {
+                springLength: this._netSpringLength,
+                gravitationalConstant: (fa.gravitationalConstant ?? -60) * r * r
+            } } });
+            net.redraw();
         } catch (e) { /* not drawn yet */ }
     }
 
@@ -18003,13 +18054,6 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
         let scale = 0;
         try { scale = this.network.getScale(); } catch (e) { return; }
         if (!scale || !isFinite(scale)) return;
-        // In the full page, compensate as the normal panel would: the bigger
-        // panel then enlarges nodes and labels together instead of giving the
-        // labels a different proportion.
-        const pl = document.getElementById('networkPlot'), nb = this._netNormalBox;
-        if (nb && pl?.clientWidth && document.getElementById('netFullModal')?.contains(pl)) {
-            scale *= Math.min(nb.w / pl.clientWidth, nb.h / pl.clientHeight);
-        }
         // Cap the boost: on a very large network full compensation would give
         // labels wider than the clusters they name.
         const target = Math.round(Math.min(slider / scale, slider * 1.8));
