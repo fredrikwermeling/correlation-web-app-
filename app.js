@@ -47513,11 +47513,18 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             }
         });
 
-        document.getElementById('clbExportMinimal').addEventListener('click', () => this.exportCellLineBrowserCSV('minimal'));
-        document.getElementById('clbExportComprehensive')?.addEventListener('click', () => this.exportCellLineBrowserCSV('comprehensive'));
-        document.getElementById('clbExportGenesBtn')?.addEventListener('click', () => this.exportCellLineBrowserGenesCSV());
-        document.getElementById('clbExportListBtn')?.addEventListener('click', () => this.exportCellLineListOnScreen('csv'));
-        document.getElementById('clbCopyListBtn')?.addEventListener('click', () => this.exportCellLineListOnScreen('copy'));
+        // The spreadsheet exports share one menu in the header, beside the
+        // other two exports, instead of a row of their own under the toolbar.
+        document.getElementById('clbExportCsvBtn')?.addEventListener('click', (e) => {
+            document.getElementById('clbChipMenu')?.remove();
+            this._simpleChipMenu(e.currentTarget, [
+                { label: 'Cell line: GE + expression', title: 'One or a few selected cell lines: gene effect and expression for every gene. Includes the DepMap version and citation.', act: () => this.exportCellLineBrowserCSV('minimal') },
+                { label: 'Cell line: full profile', title: 'Selected cell lines: every gene with gene effect, expression, hotspot and damaging mutations, fusions and focal copy-number events.', act: () => this.exportCellLineBrowserCSV('comprehensive') },
+                { sep: true, label: 'List on screen: CSV', title: 'Every cell line in the list, in its current order, with tissue, subtype, disease and the value the list is sorted by.', act: () => this.exportCellLineListOnScreen('csv') },
+                { label: 'List on screen: copy', title: 'The same list as tab-separated text on the clipboard, ready to paste into a spreadsheet.', act: () => this.exportCellLineListOnScreen('copy') },
+                { sep: true, label: 'Genes: full profile', title: 'One or a few genes across the selected or listed cell lines: gene effect, expression, mutations, fusions and focal copy number.', act: () => this.exportCellLineBrowserGenesCSV() },
+            ], () => {});
+        });
         document.getElementById('clbInspectGEBtn')?.addEventListener('click', () => {
             // Opening Inspect is a fresh start. Carrying the last session's
             // comparison choice over meant reopening it with "my own list"
@@ -49111,7 +49118,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             (o.danger || o.sep ? '<div style="border-top:1px solid #e5e7eb; margin:4px 0;"></div>' : '')
             + (o.href
                 ? `<a href="${o.href}" target="_blank" rel="noopener" style="${rowCss}color:#6b7280; text-decoration:none;">${o.label}</a>`
-                : `<button type="button" data-i="${i}" style="${rowCss}${o.danger ? 'color:#b91c1c;' : o.active ? 'font-weight:700; background:#f0fdf4; color:#4c782e;' : 'color:#374151;'}">${o.label}</button>`)
+                : `<button type="button" data-i="${i}"${o.title ? ` title="${this.esc(o.title)}"` : ''} style="${rowCss}${o.danger ? 'color:#b91c1c;' : o.active ? 'font-weight:700; background:#f0fdf4; color:#4c782e;' : 'color:#374151;'}">${o.label}</button>`)
         ).join('');
         document.body.appendChild(menu);
         const r = anchorEl.getBoundingClientRect();

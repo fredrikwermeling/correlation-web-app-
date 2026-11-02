@@ -1971,7 +1971,6 @@
            label names and swallowed its hover. The label box still drags. */
         .js-plotly-plot path.annotation-arrow.anndrag { pointer-events: none !important; }
         /* Forces the next group onto its own line of a wrapping row. */
-        .clb-break { flex-basis: 100%; height: 0; }
         .clb-sep { display: inline-block; width: 1px; height: 20px; background: var(--gray-200); margin: 0 3px; flex: 0 0 auto; }
         .clb-toolbar input[type="text"],
         .clb-toolbar select,
@@ -2947,8 +2946,7 @@
             #downloadMutationResults, #copyMutationGenes, #exportMutTablePNG,
             #copyCorrelationGenes, #copyClustersGenes, #downloadCorrelations,
             #downloadClusters, #downloadSummary, #downloadAllData,
-            #clbExportMinimal, #clbExportComprehensive, #clbExportListBtn,
-            #clbCopyListBtn, #clbExportGenesBtn, #clbCopyNamesBtn,
+            #clbExportCsvBtn, #clbCopyNamesBtn,
             #clbExportImageBtn, #clbWikiDownloadBtn, #clbWikiExportGenesBtn,
             #selectionInspectCSV, #selectionInspectCSVCells,
             #selectionInspectCopyData, #selectionInspectSettings,
@@ -5510,6 +5508,7 @@
           <div style="margin-left:auto; display:flex; align-items:center; gap:6px;">
             <button id="clbInfoBtn" class="btn btn-outline btn-sm clb-icon-btn" title="How the Cell Line Browser works: the filters, sorts, quick filters, symbols, warnings and where each piece of data comes from">?</button>
             <button id="clbExportImageBtn" class="btn btn-outline btn-sm mobile-hide" title="Capture the Cell Line Browser as an image (PNG / TIFF / PDF / PowerPoint)">Export image...</button>
+            <button id="clbExportCsvBtn" class="btn btn-outline btn-sm mobile-hide" title="Spreadsheet exports: the selected cell lines across every gene, the list as it is on screen, or a few genes across the cell lines">Export CSV &#9662;</button>
             <button id="clbVirusBtn" class="btn btn-outline btn-sm" title="Which cell lines carry viral RNA in their RNA-seq data, beside the Cellosaurus virus records">Viral RNA</button>
             <button id="clbExportAIBtn" class="btn btn-outline btn-sm mobile-hide" title="Send the cell lines currently listed, with their alterations and gene-effect data, to an AI assistant for analysis">Export for AI</button>
             <button class="btn btn-outline btn-sm mobile-hide" onclick="app.openMethods('clb')" title="Write out how this list was arrived at, as a methods paragraph and as a plain walk-through">Methods</button>
@@ -5622,15 +5621,13 @@
                    or not anything is filtered, so nothing jumps as chips come
                    and go, and Reset is where the filters are rather than at the
                    far end of the toolbar. -->
-              <div id="clbActiveFiltersBox" style="width:100%; margin-top:6px; padding:5px 7px; background:#f8faf7; border:1px solid #e5e7eb; border-radius:5px;">
-                <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
-                  <span style="font-size:10px; font-weight:600; color:#6b7280; text-transform:uppercase; letter-spacing:0.03em;">Active filters</span>
-                  <button id="clbResetActiveFilters" class="btn btn-outline btn-sm" style="font-size:10px; padding:1px 8px;" title="Clear every filter: tissue, subtype, disease, sex, alterations, grid picks, quick filters and pasted lists">Reset</button>
-                </div>
-                <div style="display:flex; gap:4px; flex-wrap:wrap; align-items:center; min-height:16px; margin-top:3px;">
-                  <div id="clbActiveFilters" class="clb-active-filters"></div>
+              <div id="clbActiveFiltersBox" style="width:100%; margin-top:6px; padding:3px 7px; background:#f8faf7; border:1px solid #e5e7eb; border-radius:5px; display:flex; align-items:center; gap:8px;">
+                <span style="font-size:10px; font-weight:600; color:#6b7280; text-transform:uppercase; letter-spacing:0.03em; white-space:nowrap;">Active filters</span>
+                <div style="display:flex; gap:4px; flex-wrap:wrap; align-items:center; min-height:20px; flex:1; min-width:0;">
+                  <div id="clbActiveFilters" class="clb-active-filters" style="width:auto;"></div>
                   <span id="clbNoFiltersNote" style="font-size:9px; color:#9ca3af;">none</span>
                 </div>
+                <button id="clbResetActiveFilters" class="btn btn-outline btn-sm" style="font-size:10px; padding:1px 8px;" title="Clear every filter: tissue, subtype, disease, sex, alterations, grid picks, quick filters and pasted lists">Reset</button>
               </div>
             </div>
           </div>
@@ -5689,18 +5686,6 @@
               <button id="clbInspectGEBtn" class="btn btn-outline btn-sm clb-tall-btn" style="color:#5d9239; border-color:#6ba544;" title="Compare the selected cell lines against every other cell line, gene by gene. Fast (~seconds).">Inspect<br><span>selected vs rest</span></button>
               <button id="clbSendToBtn" class="btn btn-outline btn-sm clb-tall-btn" style="color:#5d9239; border-color:#6ba544;" title="Carry these cell lines over to another view: highlight them on a chart, or narrow that view to them.">Send to<br><span>another view</span></button>
 
-              <span class="clb-break"></span>
-
-              <span class="clb-group-label mobile-hide" style="color:var(--earth-700);">Export CSV</span>
-              <button id="clbExportMinimal" class="btn btn-outline btn-sm clb-tall-btn" style="color:var(--earth-700); border-color:var(--earth-300);" title="One or a few selected cell lines: Gene Effect + Expression for every gene (CSV). Includes DepMap version and citation.">Cell line:<br><span>GE + expression</span></button>
-              <button id="clbExportComprehensive" class="btn btn-outline btn-sm clb-tall-btn" style="color:var(--earth-700); border-color:var(--earth-300);" title="Selected cell line(s): full profile for every gene, GE + Expression + Hotspot + Damaging + Fusion + focal CN amplifications / deletions (CSV).">Cell line:<br><span>full profile</span></button>
-              <button id="clbExportListBtn" class="btn btn-outline btn-sm clb-tall-btn" style="color:var(--earth-700); border-color:var(--earth-300);" title="The list exactly as it is on screen: every visible cell line in its current sort order, with tissue, subtype, disease and whichever value the list is sorted by (expression, drug response, copy number, mutation counts).">List on screen:<br><span>CSV</span></button>
-              <button id="clbCopyListBtn" class="btn btn-outline btn-sm clb-tall-btn" style="color:var(--earth-700); border-color:var(--earth-300);" title="Copy the same on-screen list to the clipboard as tab-separated text, ready to paste straight into a spreadsheet.">List on screen:<br><span>copy</span></button>
-              <button id="clbExportGenesBtn" class="btn btn-outline btn-sm clb-tall-btn" style="color:var(--earth-700); border-color:var(--earth-300);" title="One or a few genes: full profile (GE, Expression, Hotspot, Damaging, Fusion, focal CN) across the selected / visible cell lines (CSV).">Genes:<br><span>full profile</span></button>
-              <!-- Outside the "Export CSV" label's run of buttons: it writes text,
-                   not a spreadsheet, and sitting under that heading read as one. -->
-              <span class="clb-sep mobile-hide"></span>
-              <button class="btn btn-outline btn-sm clb-tall-btn mobile-hide" onclick="app.openMethods('clb')" style="color:var(--earth-700); border-color:var(--earth-300);" title="Write out how this list was arrived at, as a methods paragraph and as a plain walk-through">Methods:<br><span>how this list was made</span></button>
             </div>
           </div>
         </div>
@@ -5995,7 +5980,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v91_95"></script>
+    <script src="app.js?v=v91_96"></script>
     <script src="tour.js?v=v91_93"></script>
 </body>
 </html>
