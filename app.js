@@ -955,6 +955,9 @@ class CorrelationExplorer {
         const setOne = (id, v) => {
             const el = document.getElementById(id);
             if (!el) return;
+            // What this app saves in a text box is a gene, cell line, tissue or
+            // number, and none of those contain markup characters.
+            if (typeof v === 'string' && el.tagName === 'INPUT') v = v.replace(/[<>"'`]/g, '');
             // Disease selects: rebuild the scoped option list first, and add the
             // saved value as an option when the rescoped list lacks it, else the
             // assignment silently drops and the restored cohort widens.
@@ -1382,7 +1385,7 @@ class CorrelationExplorer {
             }
             this._restorePopoutControls(popout.controls, 'geTissueFilter', () => {
                 this._savedScatterTextSettings = ts;
-                if (popout.geChartWidthRatio) this.geChartWidthRatio = popout.geChartWidthRatio;
+                if (popout.geChartWidthRatio) this.geChartWidthRatio = this._clampRatio(popout.geChartWidthRatio, 0.3, 1.8);
                 if (popout.compareMode && this._geCompareSides) this.setGeScopeMode('compare');
                 else { this._syncGeScopeToggle?.(); this.switchGeneEffectView(popout.view || 'tissue'); }
             });
@@ -3165,7 +3168,7 @@ class CorrelationExplorer {
         let html = `<div id="upsetDragHandle" style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:#f0fdf4; border-radius:8px 8px 0 0; cursor:move; user-select:none;">`;
         const upsetKindWord = { fusion: 'curated fusions', cn: 'copy-number events' }[this._oncoprintKind] || 'hotspot mutations';
         html += `<span style="font-weight:600; font-size:12px;">UpSet, ${upsetLabel} <span style="font-weight:400; color:#9ca3af;">(${upsetKindWord})</span></span>`;
-        html += `<span style="font-size:10px; color:#6b7280;">${cls.length} cell lines${filterCtx ? ' · ' + filterCtx : ''}</span>`;
+        html += `<span style="font-size:10px; color:#6b7280;">${cls.length} cell lines${filterCtx ? ' · ' + this.esc(filterCtx) : ''}</span>`;
         html += `<button onclick="app._upsetClose()" style="background:none;border:none;font-size:16px;cursor:pointer;color:#999;">&times;</button>`;
         html += `</div>`;
         html += `<div style="padding:10px; overflow:auto; flex:1;">`;
@@ -4118,7 +4121,7 @@ class CorrelationExplorer {
         // nothing to scroll it back, so the grid could be opened and not shut.
         const _wrapTitle = _oncoPhone ? 'white-space:normal; flex:1 1 auto; min-width:0;' : 'white-space:nowrap;';
         html += `<span style="font-weight:600; font-size:12px; ${_wrapTitle}">${gridTitle} <span style="font-weight:400; color:#9ca3af;">(oncoprint)</span></span>`;
-        html += `<span style="font-size:10px; color:#6b7280; ${_oncoPhone ? 'white-space:normal;' : 'white-space:nowrap;'}">${sortedCLs.length} cell lines${filterLabel ? ' · ' + filterLabel : ''}</span>`;
+        html += `<span style="font-size:10px; color:#6b7280; ${_oncoPhone ? 'white-space:normal;' : 'white-space:nowrap;'}">${sortedCLs.length} cell lines${filterLabel ? ' · ' + this.esc(filterLabel) : ''}</span>`;
         html += `<button onclick="document.getElementById('oncoprintPopup').remove()" title="Close the grid" style="background:none;border:none;cursor:pointer;color:#999;${_oncoPhone ? 'font-size:28px;min-width:44px;min-height:44px;margin-left:auto;flex:0 0 auto;line-height:1;' : 'font-size:16px;'}">&times;</button>`;
         html += `</div>`;
         html += `<div style="padding:6px 10px; overflow-y:auto; overflow-x:hidden; flex:1;">`;
@@ -4308,7 +4311,7 @@ class CorrelationExplorer {
                 }
                 const tags = activeFilters.map(([gene, state]) => {
                     const on = !self._gridStateIsWT(state);
-                    return `<span style="display:inline-flex;align-items:center;gap:2px;padding:1px 6px;border-radius:10px;font-size:10px;background:${on ? '#dcfce7' : '#fef2f2'};color:${on ? '#5d9239' : '#dc2626'};border:1px solid ${on ? '#86efac' : '#fecaca'};">${self.gi(gene)} ${self._gridStateWord(state)}<button onclick="app._oncoprintClearGene('${gene}')" style="background:none;border:none;cursor:pointer;font-size:10px;color:#999;padding:0 0 0 2px;">×</button></span>`;
+                    return `<span style="display:inline-flex;align-items:center;gap:2px;padding:1px 6px;border-radius:10px;font-size:10px;background:${on ? '#dcfce7' : '#fef2f2'};color:${on ? '#5d9239' : '#dc2626'};border:1px solid ${on ? '#86efac' : '#fecaca'};">${self.gi(gene)} ${self._gridStateWord(state)}<button data-gene="${self.esc(gene)}" onclick="app._oncoprintClearGene(this.dataset.gene)" style="background:none;border:none;cursor:pointer;font-size:10px;color:#999;padding:0 0 0 2px;">×</button></span>`;
                 }).join('');
                 statusEl.innerHTML = `${tags} <span style="color:#6b7280;">${matchCount}/${filteredCLs.length} CLs</span> <button onclick="app._oncoprintApplyFilters()" style="padding:5px 16px;font-size:12px;font-weight:700;background:#4c782e;color:white;border:none;border-radius:5px;cursor:pointer;box-shadow:0 2px 6px rgba(76, 120, 46,0.35);" title="Apply these include / exclude choices and close the grid">Apply &rarr;</button> <button onclick="app._oncoprintClearAll()" style="padding:2px 8px;font-size:10px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;">Clear</button>`;
             }
@@ -5265,7 +5268,7 @@ class CorrelationExplorer {
     // carry the legacy "★ NAME (n=N)" decoration we briefly used.
     _stripFusionFilterDecoration(raw) {
         if (!raw) return '';
-        return raw.replace(/^★\s+/, '').replace(/\s*\(n=\d+\)\s*$/, '').trim();
+        return String(raw).replace(/[<>"'`]/g, '').replace(/^★\s+/, '').replace(/\s*\(n=\d+\)\s*$/, '').trim();
     }
 
     // Re-render the custom fusion-filter dropdown. Two-line entries: name + n
@@ -5454,7 +5457,7 @@ class CorrelationExplorer {
             + `</div>`;
 
         if (matches.length === 0) {
-            dd.innerHTML = headerHtml + `<div style="padding:10px 12px; color:#9ca3af;">No PRISM compound matches "${filter}".</div>`;
+            dd.innerHTML = headerHtml + `<div style="padding:10px 12px; color:#9ca3af;">No PRISM compound matches "${this.esc(filter)}".</div>`;
             return;
         }
 
@@ -5553,7 +5556,7 @@ class CorrelationExplorer {
             if (candidates.length > 3000) break;
         }
         if (candidates.length === 0) {
-            dd.innerHTML = `<div style="padding:10px 12px; color:#9ca3af;">No gene symbol matches "${filter}".</div>`;
+            dd.innerHTML = `<div style="padding:10px 12px; color:#9ca3af;">No gene symbol matches "${this.esc(filter)}".</div>`;
             return;
         }
         candidates.sort((a, b) => a.score - b.score || a.g.localeCompare(b.g));
@@ -5671,8 +5674,8 @@ class CorrelationExplorer {
 
         if (curatedMatches.length === 0 && matrixMatches.length === 0) {
             const empty = loadingMatrix
-                ? `Matrix loading, only curated-panel genes searchable for now. No match for "${filter}".`
-                : `No gene matches "${filter}".`;
+                ? `Matrix loading, only curated-panel genes searchable for now. No match for "${this.esc(filter)}".`
+                : `No gene matches "${this.esc(filter)}".`;
             dd.innerHTML = header + `<div style="padding:10px 12px; color:#9ca3af;">${empty}</div>`;
             return;
         }
@@ -5773,7 +5776,7 @@ class CorrelationExplorer {
     // "GENE_del" key.
     _stripCnFilterDecoration(raw) {
         if (!raw) return '';
-        return raw.replace(/^[▲▼]\s+/, '').replace(/\s*\(n=\d+\)\s*$/, '').trim();
+        return String(raw).replace(/[<>"'`]/g, '').replace(/^[▲▼]\s+/, '').replace(/\s*\(n=\d+\)\s*$/, '').trim();
     }
 
     // --- Mutation filter kinds -------------------------------------------
@@ -5783,8 +5786,10 @@ class CorrelationExplorer {
     //   "TP53 (any mutation)"     hotspot OR likely loss-of-function variant
     //   "TP53 (functional loss)"  DepMap's integrated TSG call (8 genes)
 
+    // Markup characters are dropped: no gene symbol has them, and the parsed
+    // gene is printed in many places that assume a plain symbol.
     _parseMutFilter(raw) {
-        const s = String(raw == null ? '' : raw).trim();
+        const s = String(raw == null ? '' : raw).replace(/[<>"'`]/g, '').trim();
         if (!s) return { gene: '', kind: 'hotspot' };
         const m = s.match(/^(.*?)\s*\(\s*(any\s+mutation|functional\s+loss)\s*\)$/i);
         if (!m || !m[1].trim()) return { gene: s, kind: 'hotspot' };
@@ -9397,9 +9402,9 @@ class CorrelationExplorer {
         fdrColSelect.innerHTML = '<option value="">None</option>';
 
         headers.forEach((h, idx) => {
-            geneColSelect.innerHTML += `<option value="${idx}">${h}</option>`;
-            lfcColSelect.innerHTML += `<option value="${idx}">${h}</option>`;
-            fdrColSelect.innerHTML += `<option value="${idx}">${h}</option>`;
+            geneColSelect.add(new Option(h, idx));
+            lfcColSelect.add(new Option(h, idx));
+            fdrColSelect.add(new Option(h, idx));
         });
 
         // Auto-select columns based on common names
@@ -11269,7 +11274,7 @@ class CorrelationExplorer {
         // the interpretation open: whether a different partner counts as a
         // control depends on the question being asked.
         if (mr.isTranslocation && mr.altFusions?.length) {
-            const txt = mr.altFusions.map(([f, k]) => `${f} \u00d7${k}`).join(', ');
+            const txt = mr.altFusions.map(([f, k]) => `${this.giFusion(f)} \u00d7${this.esc(k)}`).join(', ');
             settingsText += ` | comparison group carries ${txt}`;
         }
         if (hasFusion) {
@@ -11278,33 +11283,33 @@ class CorrelationExplorer {
         settingsText += ` | `;
         settingsText += `Min cells: ${mr.minN} | p < ${mr.pThreshold}`;
         if (mr.lineageFilter) {
-            let lineageText = mr.lineageFilter;
+            let lineageText = this.esc(mr.lineageFilter);
             if (mr.subLineageFilter) {
-                lineageText += ` (${mr.subLineageFilter})`;
+                lineageText += ` (${this.esc(mr.subLineageFilter)})`;
             }
             settingsText += ` | Lineage: ${lineageText}`;
         }
-        if (mr.oncotreeFilterMulti?.length) settingsText += ` | Diseases: ${mr.oncotreeFilterMulti.join(', ')}`;
-        if (mr.tissueGroups?.length) settingsText += ` | Tissue split: ${this._tissueGroupsLabel(mr.tissueGroups)}`;
-        else if (mr.oncotreeFilter) settingsText += ` | Disease: ${mr.oncotreeFilter}`;
+        if (mr.oncotreeFilterMulti?.length) settingsText += ` | Diseases: ${mr.oncotreeFilterMulti.map(d => this.esc(d)).join(', ')}`;
+        if (mr.tissueGroups?.length) settingsText += ` | Tissue split: ${this.esc(this._tissueGroupsLabel(mr.tissueGroups))}`;
+        else if (mr.oncotreeFilter) settingsText += ` | Disease: ${this.esc(mr.oncotreeFilter)}`;
         // Collect all mutation filters into one label
         const mutFilterParts = [];
         const shownGenes = new Set();
         if (mr.hotspotGene) shownGenes.add(mr.hotspotGene);
         if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') {
             const ll = { '0': 'WT', '1': 'Mut', '2': 'Mut', '1+2': 'Mut' };
-            mutFilterParts.push(this._mutFilterPhrase(mr.additionalHotspot, mr.additionalHotspotLevel, ll[mr.additionalHotspotLevel] || mr.additionalHotspotLevel));
+            mutFilterParts.push(this._mutFilterPhrase(mr.additionalHotspot, mr.additionalHotspotLevel, this.esc(ll[mr.additionalHotspotLevel] || mr.additionalHotspotLevel), true));
             shownGenes.add(this._stripMutDecoration(mr.additionalHotspot));
         }
         if (mr.additionalTransGene && mr.additionalTransLevel !== 'all') {
             const ll = { '0': 'WT', '1': 'Fused', '2': 'Fused', '1+2': 'Fused' };
-            mutFilterParts.push(`${mr.additionalTransGene} ${ll[mr.additionalTransLevel] || mr.additionalTransLevel}`);
+            mutFilterParts.push(`${this.giFusion(mr.additionalTransGene)} ${this.esc(ll[mr.additionalTransLevel] || mr.additionalTransLevel)}`);
             shownGenes.add(mr.additionalTransGene);
         }
         if (this._activeOncoprintFilters && this._activeOncoprintFilters.length > 0) {
             for (const f of this._activeOncoprintFilters) {
                 if (!shownGenes.has(f.gene)) {
-                    mutFilterParts.push(`${f.gene} ${this._gridStateWord(f.state)}`);
+                    mutFilterParts.push(`${this.gi(f.gene)} ${this.esc(this._gridStateWord(f.state))}`);
                     shownGenes.add(f.gene);
                 }
             }
@@ -11319,7 +11324,7 @@ class CorrelationExplorer {
                 : [];
             const included = allLineages.filter(t => !mr.excludedTissues.has(t));
             if (included.length <= 5) {
-                settingsText += ` | Tissues: ${included.join(', ')}`;
+                settingsText += ` | Tissues: ${included.map(t => this.esc(t)).join(', ')}`;
             } else {
                 settingsText += ` | ${mr.excludedTissues.size} tissues excluded`;
             }
@@ -14928,7 +14933,7 @@ class CorrelationExplorer {
                 <span style="color:#374151;flex:1;min-width:55px;font-size:11px;">${label}</span>
                 <div style="display:flex; align-items:center;">
                     <button onclick="app._netTsStep('${id}',-1)" style="width:20px;height:20px;border:1px solid #d1d5db;background:#f9fafb;border-radius:4px 0 0 4px;cursor:pointer;font-size:12px;line-height:1;">−</button>
-                    <input type="number" id="${id}" value="${val}" min="${min}" max="${max}" style="width:36px;text-align:center;border:1px solid #d1d5db;border-left:none;border-right:none;font-size:10px;padding:1px;-moz-appearance:textfield;appearance:textfield;" oninput="app._netTsApply()">
+                    <input type="number" id="${id}" value="${this.esc(val)}" min="${min}" max="${max}" style="width:36px;text-align:center;border:1px solid #d1d5db;border-left:none;border-right:none;font-size:10px;padding:1px;-moz-appearance:textfield;appearance:textfield;" oninput="app._netTsApply()">
                     <button onclick="app._netTsStep('${id}',1)" style="width:20px;height:20px;border:1px solid #d1d5db;background:#f9fafb;border-radius:0 4px 4px 0;cursor:pointer;font-size:12px;line-height:1;">+</button>
                 </div>
             </div>`;
@@ -14937,7 +14942,7 @@ class CorrelationExplorer {
             <div style="display:flex; align-items:center; margin-bottom:5px; gap:4px;">
                 <span style="width:15px;"></span>
                 <span style="color:#374151;flex:1;min-width:55px;font-size:11px;">${label}</span>
-                <input type="color" id="${id}" value="${val}" style="width:28px;height:22px;border:1px solid #d1d5db;border-radius:4px;padding:0;cursor:pointer;" oninput="app._netTsApply()">
+                <input type="color" id="${id}" value="${this.esc(val)}" style="width:28px;height:22px;border:1px solid #d1d5db;border-radius:4px;padding:0;cursor:pointer;" oninput="app._netTsApply()">
             </div>`;
 
         // Current values
@@ -19611,12 +19616,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // alert() and the stored state need.
     _scatterFilterParts(html = false) {
         const g = (x) => html ? this.gi(x) : x;
+        const t = (x) => html ? this.esc(x) : x;
         const parts = [];
         const cancerFilter = document.getElementById('scatterCancerFilter')?.value || '';
         const subtypeFilter = document.getElementById('scatterSubtypeFilter')?.value || '';
-        if (cancerFilter) parts.push(`Cancer: ${cancerFilter}${subtypeFilter ? ` / ${subtypeFilter}` : ''}`);
+        if (cancerFilter) parts.push(`Cancer: ${t(cancerFilter)}${subtypeFilter ? ` / ${t(subtypeFilter)}` : ''}`);
         const onc = document.getElementById('scatterOncotreeFilter');
-        if (onc?.value) parts.push(`Disease: ${onc.selectedOptions?.[0]?.textContent?.trim() || onc.value}`);
+        if (onc?.value) parts.push(`Disease: ${t(onc.selectedOptions?.[0]?.textContent?.trim() || onc.value)}`);
         const mutFilterGene = document.getElementById('mutationFilterGene')?.value || '';
         if (mutFilterGene) {
             const lvl = document.getElementById('mutationFilterLevel')?.value || '1+2';
@@ -19884,7 +19890,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const existingSubtype = document.getElementById('scatterSubtypeFilter')?.value || '';
             cancerFilter.innerHTML = `<option value="">All tissues (n=${plotData.length})</option>`;
             lineages.forEach(l => {
-                cancerFilter.innerHTML += `<option value="${l}">${l} (n=${lineageCounts[l]})</option>`;
+                cancerFilter.add(new Option(`${l} (n=${lineageCounts[l]})`, l));
             });
             if (existingCancer && lineages.includes(existingCancer)) {
                 cancerFilter.value = existingCancer;
@@ -22546,14 +22552,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const mutLabel = isFusion ? 'Fused (1+)' : ow.altWord;
         const filterInfo = filterDesc ? `<p style="font-size: 11px; color: #333; margin-bottom: 8px; background: #f0f9ff; padding: 4px 8px; border-radius: 4px;"><b>Filter:</b> ${filterDesc}</p>` : '';
         const exclusionNote = (isFusion || mutMin < 2) ? '' : ' Note: Cells with exactly 1 mutation are excluded from this comparison.';
-        const wtDesc = isFusion ? `no ${hotspotGene} fusions` : ow.refDesc;
-        const mutDesc = isFusion ? `${hotspotGene} fused (1+)` : ow.altDesc;
+        const wtDesc = this.esc(isFusion ? `no ${hotspotGene} fusions` : ow.refDesc);
+        const mutDesc = this.esc(isFusion ? `${hotspotGene} fused (1+)` : ow.altDesc);
         let html = `
             <h4 style="margin-bottom: 8px;">Effect of <span style="color: #0066cc;">${this.gi(geneLabel)}</span> ${typeLabel} on ${this.gi(gene1)} vs ${this.gi(gene2)} Correlation</h4>
             ${filterInfo}
             <p style="font-size: 11px; color: #666; margin-bottom: 8px;">
                 Comparing correlation between ${wtLabel} (${wtDesc}) vs ${mutLabel} (${mutDesc}) cells, stratified by cancer type.${exclusionNote}
-                <strong>Click a cancer type</strong> to view its scatter plot with the ${geneLabel} ${typeLabel.toLowerCase()} overlay.
+                <strong>Click a cancer type</strong> to view its scatter plot with the ${this.gi(geneLabel)} ${typeLabel.toLowerCase()} overlay.
             </p>
             <p style="font-size: 10px; color: #0c4a6e; background: #f0f9ff; padding: 4px 8px; border-radius: 4px; margin-bottom: 12px;">
                 <b>Statistics:</b> p(Δr) uses Fisher z-transformation to compare correlations. p(Δslope) is an approximation based on correlation difference.
@@ -22583,8 +22589,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const deltaSlopeColor = row.deltaSlope < 0 ? '#dc2626' : '#6ba544';
 
             html += `
-                <tr class="clickable-row" data-lineage="${row.lineage}" style="cursor: pointer;" title="Click to view ${row.lineage} scatter plot with ${hotspotGene} overlay">
-                    <td style="color: var(--green-700); font-weight: 500;">${row.lineage}</td>
+                <tr class="clickable-row" data-lineage="${this.esc(row.lineage)}" style="cursor: pointer;" title="Click to view ${this.esc(row.lineage)} scatter plot with ${this.esc(hotspotGene)} overlay">
+                    <td style="color: var(--green-700); font-weight: 500;">${this.esc(row.lineage)}</td>
                     <td style="border-left: 2px solid #2563eb;">${row.nWT}</td>
                     <td>${row.rWT.toFixed(3)}</td>
                     <td>${row.slopeWT.toFixed(3)}</td>
@@ -23584,7 +23590,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         try {
             await this.submitToEnrichr(genes);
         } catch (err) {
-            content.innerHTML = `<div style="text-align:center; padding:60px; color:#ef4444;">Failed to connect to Enrichr. Check internet connection.<br><small style="color:#888;">${err.message}</small></div>`;
+            content.innerHTML = `<div style="text-align:center; padding:60px; color:#ef4444;">Failed to connect to Enrichr. Check internet connection.<br><small style="color:#888;">${this.esc(err.message)}</small></div>`;
         }
     }
 
@@ -28250,7 +28256,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         try {
             await this.loadExpressionData();
         } catch (err) {
-            container.innerHTML = `<div style="padding:20px;text-align:center;color:#ef4444;">Failed to load expression data: ${err.message}</div>`;
+            container.innerHTML = `<div style="padding:20px;text-align:center;color:#ef4444;">Failed to load expression data: ${this.esc(err.message)}</div>`;
             return;
         }
 
@@ -28371,7 +28377,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         modal.style.display = 'block';
 
         this.submitToEnrichr(genes).catch(err => {
-            content.innerHTML = `<div style="text-align:center; padding:60px; color:#ef4444;">Failed to connect to Enrichr.<br><small style="color:#888;">${err.message}</small></div>`;
+            content.innerHTML = `<div style="text-align:center; padding:60px; color:#ef4444;">Failed to connect to Enrichr.<br><small style="color:#888;">${this.esc(err.message)}</small></div>`;
         });
     }
 
@@ -28398,7 +28404,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         modal.style.display = 'block';
 
         this.submitToEnrichr(genes).catch(err => {
-            content.innerHTML = `<div style="text-align:center; padding:60px; color:#ef4444;">Failed to connect to Enrichr.<br><small style="color:#888;">${err.message}</small></div>`;
+            content.innerHTML = `<div style="text-align:center; padding:60px; color:#ef4444;">Failed to connect to Enrichr.<br><small style="color:#888;">${this.esc(err.message)}</small></div>`;
         });
     }
 
@@ -28425,7 +28431,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         modal.style.display = 'block';
 
         this.submitToEnrichr(genes).catch(err => {
-            content.innerHTML = `<div style="text-align:center; padding:60px; color:#ef4444;">Failed to connect to Enrichr.<br><small style="color:#888;">${err.message}</small></div>`;
+            content.innerHTML = `<div style="text-align:center; padding:60px; color:#ef4444;">Failed to connect to Enrichr.<br><small style="color:#888;">${this.esc(err.message)}</small></div>`;
         });
     }
 
@@ -29256,13 +29262,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (meta.graphType === 'network' && meta.geneList && meta.geneList.length > 0) {
             document.getElementById('geneTextarea').value = meta.geneList.join('\n');
             if (meta.mode) {
-                const radio = document.querySelector(`input[name="analysisMode"][value="${meta.mode}"]`);
+                const radio = document.querySelector(`input[name="analysisMode"][value="${CSS.escape(String(meta.mode))}"]`);
                 if (radio) radio.checked = true;
                 // Setting .checked fires no change event, so bring the Options
                 // buttons and box 1 in line with the restored mode by hand.
                 this._syncAnalysisModeButtons();
             }
-            if (meta.analysisBasis) {
+            if (meta.analysisBasis === 'ge' || meta.analysisBasis === 'expr') {
                 const b = document.querySelector(`input[name="analysisBasis"][value="${meta.analysisBasis}"]`);
                 if (b) b.checked = true;
             }
@@ -29294,7 +29300,15 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 setSlider('netEdgeWidth', 'edgeWidthBubble', ns.edgeWidth);
                 setSlider('netSpread', 'spreadBubble', ns.spread);
                 // Aa text settings and label style, defaulted when the export
-                // predates them so a reopen is deterministic either way.
+                // predates them so a reopen is deterministic either way. The
+                // file is not trusted to hold a color, size or font name: these
+                // go into style attributes and the Settings panel's inputs.
+                const col = (v) => /^#[0-9a-f]{3,8}$/i.test(String(v ?? '')) ? v : null;
+                const size = (v) => { const n = Number(v); return v != null && v !== '' && Number.isFinite(n) && n > 0 ? n : null; };
+                const fam = (v) => (typeof v === 'string' && /^[\w\s,'-]{1,80}$/.test(v)) ? v : null;
+                ns.fontFamily = fam(ns.fontFamily); ns.labelColor = col(ns.labelColor); ns.nodeColor = col(ns.nodeColor);
+                ns.legendColor = col(ns.legendColor); ns.bannerColor = col(ns.bannerColor);
+                ns.legendFontSize = size(ns.legendFontSize); ns.bannerFontSize = size(ns.bannerFontSize);
                 this._netFontFamily = ns.fontFamily || 'Arial, sans-serif';
                 this._netLabelColor = ns.labelColor || '#333333';
                 this._netNodeColor = ns.nodeColor || '#6ba544';
@@ -29412,7 +29426,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // shape (no exprGene) falls through to the plain-scatter fallback.
         if (meta.graphType === 'expr_correlate' && meta.exprGene && meta.gene && meta.hotspotGene) {
             return this._restoreMutationInspectMeta(meta, async () => {
-                const sub = document.querySelector(`input[name="exprSubgroup"][value="${meta.subgroup || 'all'}"]`);
+                const sub = document.querySelector(`input[name="exprSubgroup"][value="${CSS.escape(String(meta.subgroup || 'all'))}"]`);
                 if (sub) sub.checked = true;
                 const btn = document.getElementById('toggleExprCorrelatesBtn');
                 if (btn) btn.style.display = '';
@@ -29449,7 +29463,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
 
         // Wiki screenshot → reopen the cell line wiki for that line.
-        if (meta.graphType === 'wiki' && meta.wikiCellLine != null) {
+        // A DepMap model id is all a saved wiki carries; anything else is not
+        // one of ours and is not opened.
+        if (meta.graphType === 'wiki' && /^ACH-\d+$/.test(String(meta.wikiCellLine ?? ''))) {
             this.openCellLineWiki(meta.wikiCellLine);
             return;
         }
@@ -29656,7 +29672,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     document.getElementById('mutationTableWrap')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                     return;
                 }
-                if (meta.geChartWidthRatio) this.geChartWidthRatio = meta.geChartWidthRatio;
+                if (meta.geChartWidthRatio) this.geChartWidthRatio = this._clampRatio(meta.geChartWidthRatio, 0.3, 1.8);
                 // The first render is what populates the inspect-level filter
                 // dropdowns (tissue etc.) from the cohort, so saved control
                 // values can only be applied after it. Replay them through the
@@ -29674,7 +29690,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     if (meta.textSettings) {
                         setTimeout(() => {
                             this._savedScatterTextSettings = meta.textSettings;
-                            if (meta.geChartWidthRatio) this.geChartWidthRatio = meta.geChartWidthRatio;
+                            if (meta.geChartWidthRatio) this.geChartWidthRatio = this._clampRatio(meta.geChartWidthRatio, 0.3, 1.8);
                         }, 200);
                     }
                     if (onOpened) setTimeout(onOpened, 400);
@@ -30031,7 +30047,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
         const set = (id, v) => {
             const el = document.getElementById(id);
-            if (el && v != null) el.value = v;
+            if (el && v != null) el.value = (typeof v === 'string' && el.tagName === 'INPUT') ? v.replace(/[<>"'`]/g, '') : v;
         };
         // Put the browser back the way it was BEFORE the grid is rebuilt, since
         // the grid is built over whatever the browser is showing. Opening the
@@ -30859,8 +30875,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             stats.forEach(s => {
                 const color = s.pValue < 0.05 ? (s.correlation > 0.3 ? '#5d9239' : s.correlation < -0.3 ? '#dc2626' : '#374151') : '#6b7280';
                 const pStr = this.formatPValue(s.pValue);
-                tbody.innerHTML += `<tr class="clickable-row" data-group="${s.group}" style="cursor: pointer;">
-                    <td>${s.group}</td>
+                tbody.innerHTML += `<tr class="clickable-row" data-group="${this.esc(s.group)}" style="cursor: pointer;">
+                    <td>${this.esc(s.group)}</td>
                     <td style="text-align: center;">${s.n}</td>
                     <td style="text-align: center; font-weight: 500; color: ${color};">${s.correlation.toFixed(3)}</td>
                     <td style="text-align: center;">${s.slope.toFixed(3)}</td>
@@ -30871,8 +30887,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             stats.forEach(s => {
                 const pStr = this.formatPValue(s.pValue);
                 const diffColor = s.diff > 0.15 ? '#5d9239' : s.diff < -0.15 ? '#dc2626' : '#374151';
-                tbody.innerHTML += `<tr class="clickable-row" data-group="${s.group}" style="cursor: pointer;">
-                    <td>${s.group}</td>
+                tbody.innerHTML += `<tr class="clickable-row" data-group="${this.esc(s.group)}" style="cursor: pointer;">
+                    <td>${this.esc(s.group)}</td>
                     <td style="text-align: center; color: #2563eb; border-left: 2px solid #2563eb;">${s.n0}</td>
                     <td style="text-align: center; color: #2563eb;">${s.r0.toFixed(3)}</td>
                     <td style="text-align: center; color: #dc2626; border-left: 2px solid #dc2626;">${s.nMut}</td>
@@ -31111,7 +31127,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (lineages.length > 0) {
             cancerFilter.innerHTML = `<option value="">All tissues (n=${data.length})</option>`;
             lineages.forEach(l => {
-                cancerFilter.innerHTML += `<option value="${l}">${l} (n=${lineageCounts[l]})</option>`;
+                cancerFilter.add(new Option(`${l} (n=${lineageCounts[l]})`, l));
             });
             // Set the filter to the selected tissue
             cancerFilter.value = tissue;
@@ -33258,8 +33274,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             stats.forEach(s => {
                 const color = s.pValue < 0.05 ? (s.mean < -0.5 ? '#dc2626' : s.mean > 0.5 ? '#5d9239' : '#374151') : '#6b7280';
                 const pStr = this.formatPValue(s.pValue);
-                tbody.innerHTML += `<tr class="clickable-row" data-group="${s.group}" style="cursor: pointer;">
-                    <td>${s.group}</td>
+                tbody.innerHTML += `<tr class="clickable-row" data-group="${this.esc(s.group)}" style="cursor: pointer;">
+                    <td>${this.esc(s.group)}</td>
                     <td style="text-align: center;">${s.n}</td>
                     <td style="text-align: center; font-weight: 500; color: ${color};">${s.mean.toFixed(2)}</td>
                     <td style="text-align: center;">${s.sd.toFixed(2)}</td>
@@ -33278,7 +33294,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     : s.type === 'cn'
                     ? '<span style="background:#ccfbf1;color:#0f766e;padding:0 5px;border-radius:8px;font-size:9px;font-weight:600;">amp/del</span>'
                     : '<span style="background:#f3f4f6;color:#374151;padding:0 5px;border-radius:8px;font-size:9px;font-weight:600;">hotspot</span>';
-                tbody.innerHTML += `<tr class="clickable-row" data-group="${s.group}" data-ftype="${s.type || 'hotspot'}" data-clickval="${(s.clickVal || s.group).replace(/"/g, '&quot;')}" style="cursor: pointer;">
+                tbody.innerHTML += `<tr class="clickable-row" data-group="${this.esc(s.group)}" data-ftype="${this.esc(s.type || 'hotspot')}" data-clickval="${this.esc(s.clickVal || s.group)}" style="cursor: pointer;">
                     <td style="line-height:1.35;">${tChip}<br>${this._geScanGroupHtml(s)}</td>
                     <td style="text-align: center; color: #2563eb; border-left: 2px solid #2563eb;">${s.n0}</td>
                     <td style="text-align: center; color: #2563eb;">${s.mean0.toFixed(2)}</td>
@@ -35092,7 +35108,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (!m) continue;
             sawKey = true;
             const key = m[1].trim().toLowerCase().replace(/\s+/g, '-');
-            const val = m[2].trim();
+            // A block may come from anywhere, so values that name a gene,
+            // compound or tissue lose markup characters; the note keeps its text.
+            const val = (key === 'why' || key === 'look-for' || key === 'note') ? m[2].trim() : m[2].replace(/[<>"`]/g, '').trim();
             const gene = () => val.split(/[,;]/)[0].trim().toUpperCase();
             if (key === 'view' || key === 'plot' || key === 'open') {
                 const v = VIEWS[val.toLowerCase().trim()];
@@ -35808,6 +35826,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             }
         }
         return (this._clMeanGeCache = { sum, cnt });
+    }
+
+    // A saved size ratio, as a number inside the control's range; 1 when the
+    // file holds anything else.
+    _clampRatio(v, lo, hi) {
+        const n = Number(v);
+        return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : 1;
     }
 
     // The browser's own gzip where it has one: about 2.5x faster than pako on
@@ -39313,23 +39338,26 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const data = await res.json();
             if (data.hits && data.hits.length > 0) {
                 const hit = data.hits[0];
+                // Identifiers go into links and page text, so each must look
+                // like one; anything else from the service is dropped.
+                const idOk = (v, re) => (v != null && re.test(String(v))) ? String(v) : null;
                 const info = {
                     symbol: hit.symbol || gene,
                     name: hit.name || '',
                     summary: hit.summary || '',
-                    entrezgene: hit.entrezgene || null,
-                    hgnc: hit.HGNC || null,
+                    entrezgene: idOk(hit.entrezgene, /^\d+$/),
+                    hgnc: idOk(hit.HGNC, /^(HGNC:)?\d+$/),
                     typeOfGene: hit.type_of_gene || '',
                     aliases: [].concat(hit.alias || []),
                     // Several ids when the gene also sits on alternate-haplotype
                     // patches; the one on a main chromosome comes first.
                     ensemblIds: (() => {
-                        const ids = [].concat(hit.ensembl || []).map(e => e && e.gene).filter(Boolean);
+                        const ids = [].concat(hit.ensembl || []).map(e => e && e.gene).filter(g => /^ENSG\d+$/.test(String(g || '')));
                         const main = new Set([].concat(hit.genomic_pos || []).filter(p => /^([1-9]|1\d|2[0-2]|X|Y|MT)$/.test(String(p?.chr))).map(p => p.ensemblgene));
                         return [...ids.filter(i => main.has(i)), ...ids.filter(i => !main.has(i))];
                     })(),
-                    uniprot: [].concat(hit.uniprot?.['Swiss-Prot'] || [])[0] || null,
-                    mim: hit.MIM || null
+                    uniprot: idOk([].concat(hit.uniprot?.['Swiss-Prot'] || [])[0], /^[A-Z0-9]{6,10}$/),
+                    mim: idOk(hit.MIM, /^\d+$/)
                 };
                 info.ensembl = info.ensemblIds[0] || null;
                 this.geneInfoCache[gene] = info;
@@ -42380,7 +42408,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         try {
             await this.submitToEnrichr(genes);
         } catch (err) {
-            content.innerHTML = `<div style="text-align:center; padding:60px; color:#ef4444;">Failed to connect to Enrichr. Check internet connection.<br><small style="color:#888;">${err.message}</small></div>`;
+            content.innerHTML = `<div style="text-align:center; padding:60px; color:#ef4444;">Failed to connect to Enrichr. Check internet connection.<br><small style="color:#888;">${this.esc(err.message)}</small></div>`;
         }
     }
 
@@ -42409,7 +42437,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         const results = {};
         await Promise.all(libraries.map(async (lib) => {
-            const res = await fetch(`https://maayanlab.cloud/Enrichr/enrich?userListId=${userListId}&backgroundType=${lib.key}`);
+            const res = await fetch(`https://maayanlab.cloud/Enrichr/enrich?userListId=${encodeURIComponent(userListId)}&backgroundType=${lib.key}`);
             if (!res.ok) throw new Error(`Enrichr enrich failed for ${lib.key}: ${res.status}`);
             const data = await res.json();
             results[lib.key] = data[lib.key] || [];
@@ -42475,7 +42503,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         // Parse rows: [rank, term, pvalue, zscore, combined_score, overlapping_genes, adj_pvalue, old_p, old_adj_p]
         let parsed = rows.map(r => ({
-            rank: r[0],
+            rank: Number(r[0]),
             term: r[1],
             pValue: r[2],
             zScore: r[3],
@@ -47457,7 +47485,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     content.innerHTML = '<div style="text-align:center; padding:60px; color:#aaa;"><div style="font-size:24px; margin-bottom:12px;">⏳</div>Submitting to Enrichr...</div>';
                     modal.style.display = 'block';
                     this.submitToEnrichr(genes).catch(err => {
-                        content.innerHTML = `<div style="text-align:center; padding:60px; color:#ef4444;">Failed to connect to Enrichr.<br><small style="color:#888;">${err.message}</small></div>`;
+                        content.innerHTML = `<div style="text-align:center; padding:60px; color:#ef4444;">Failed to connect to Enrichr.<br><small style="color:#888;">${this.esc(err.message)}</small></div>`;
                     });
                 } else {
                     this.showCopyNotification('Need at least 2 genes for Enrichr analysis');
@@ -49254,8 +49282,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const bg = state === 'include' ? '#dcfce7' : '#fef2f2';
             const color = state === 'include' ? '#4c782e' : '#991b1b';
             const sign = state === 'include' ? '+' : '−';
-            parts.push(`<span class="clb-chip" data-chip="collection" data-collection="${id}" title="Click to switch between include and exclude" style="background:${bg};color:${color};padding:1px 6px;border-radius:10px;">${sign} ${lbl}`
-                + ` <a href="#" data-clear-collection="${id}" style="color:${color}; text-decoration:none; margin-left:2px; font-weight:700;" title="Remove this filter">×</a></span>`);
+            parts.push(`<span class="clb-chip" data-chip="collection" data-collection="${this.esc(id)}" title="Click to switch between include and exclude" style="background:${bg};color:${color};padding:1px 6px;border-radius:10px;">${sign} ${this.esc(lbl)}`
+                + ` <a href="#" data-clear-collection="${this.esc(id)}" style="color:${color}; text-decoration:none; margin-left:2px; font-weight:700;" title="Remove this filter">×</a></span>`);
         }
         if (this._activeOncoprintFilters) {
             const shown = new Set([this._stripMutDecoration(hotspot), trans].filter(Boolean));
@@ -52191,10 +52219,36 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             protein: tl ? { id: String(m.ensemblProtAcc || '').split('.')[0], length: Math.max(0, Math.round(cdsLength / 3) - 1) } : null,
             cdsLength, exons
         };
-        return {
+        return this._gbCleanStructure({
             geneId: String(m.geneName || '').split('.')[0], chr: String(loc.chr), start: loc.start, end: loc.end, strand, biotype: m.geneType,
             ...t, transcripts: [t], nTranscripts: null, plus: [], _partial: true, _t0: Date.now()
+        });
+    }
+
+    // Ensembl and UCSC answers end up in the structure card's HTML, so each
+    // id must look like one and each position must be a number; anything
+    // else is blanked rather than printed.
+    _gbCleanStructure(st) {
+        const id = (v, re) => (v != null && re.test(String(v))) ? String(v) : '';
+        const num = (v) => (v == null || v === '' || !Number.isFinite(Number(v))) ? null : Number(v);
+        const word = (v) => (typeof v === 'string' && /^[\w .()-]{0,60}$/.test(v)) ? v : null;
+        const refseq = (v) => id(v, /^[NX][MRP]_\d+(\.\d+)?$/) || null;
+        const cleanT = (t) => {
+            if (!t || !t.tx) return;
+            const x = t.tx;
+            x.id = id(x.id, /^ENST\d+$/); x.version = id(x.version, /^\d+$/);
+            x.name = word(x.name); x.biotype = word(x.biotype); x.refseq = refseq(x.refseq);
+            x.length = num(x.length); x.start = num(x.start); x.end = num(x.end);
+            if (t.protein) { t.protein.id = id(t.protein.id, /^ENSP\d+$/); t.protein.length = num(t.protein.length); }
+            (t.exons || []).forEach(e => { e.id = id(e.id, /^ENSE\d+$/); e.start = num(e.start); e.end = num(e.end); e.len = num(e.len); });
         };
+        st.geneId = id(st.geneId, /^ENSG\d+$/);
+        st.biotype = word(st.biotype);
+        st.start = num(st.start); st.end = num(st.end);
+        if (st.tx) cleanT(st);
+        (st.transcripts || []).forEach(cleanT);
+        st.plus = (st.plus || []).map(p => ({ id: id(p.id, /^ENST\d+$/), name: word(p.name), refseq: refseq(p.refseq) }));
+        return st;
     }
 
     async _gbFetchStructure(gene) {
@@ -52260,6 +52314,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             ...ref, transcripts, nTranscripts: transcripts.length, noTsl: !sup.size,
             plus: transcripts.filter(t => t.tx.plus && t !== ref).map(t => ({ id: t.tx.id, name: t.tx.name, refseq: t.tx.refseq }))
         };
+        this._gbCleanStructure(out);
         cache.set(gene, out);
         return out;
     }
@@ -52514,7 +52569,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const info = this.geneInfoCache?.[gene];
         if (info && info.ensembl && info.ensembl !== st.geneId) {
             const about = document.getElementById('gbAboutCard');
-            if (about) about.innerHTML = about.innerHTML.split(info.ensembl).join(st.geneId);
+            if (about && st.geneId) about.innerHTML = about.innerHTML.split(info.ensembl).join(st.geneId);
             info.ensembl = st.geneId;
         }
         card.outerHTML = this._gbSection('Gene structure', `<div id="gbStructBody">${this._gbStructBody(gene, st, this._gbTxSel)}</div>`,
@@ -53935,7 +53990,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             let list = [];
             if (ids.length) {
                 const r = await (await fetch(`https://mygene.info/v3/gene?ids=${ids.join(',')}&fields=symbol`, { method: 'POST' })).json();
-                list = [].concat(r || []).filter(x => x && x.symbol).map(x => ({ symbol: x.symbol, id: x._id }));
+                list = [].concat(r || []).filter(x => x && x.symbol && /^\d+$/.test(String(x._id))).map(x => ({ symbol: String(x.symbol), id: String(x._id) }));
             }
             cache.set(gene, list);
             return list;
@@ -59620,7 +59675,7 @@ ${clone.innerHTML}
             content.innerHTML = '<div style="text-align:center; padding:60px; color:#aaa;"><div style="font-size:24px; margin-bottom:12px;">⏳</div>Submitting to Enrichr...</div>';
             modal.style.display = 'block';
             this.submitToEnrichr(genes).catch(err => {
-                content.innerHTML = `<div style="text-align:center; padding:60px; color:#ef4444;">Failed to connect to Enrichr.<br><small style="color:#888;">${err.message}</small></div>`;
+                content.innerHTML = `<div style="text-align:center; padding:60px; color:#ef4444;">Failed to connect to Enrichr.<br><small style="color:#888;">${this.esc(err.message)}</small></div>`;
             });
         };
 
@@ -61502,7 +61557,7 @@ ${clone.innerHTML}
             // Show filters
             filterArea.innerHTML = filters.map(f => `<div>${f}</div>`).join('');
         } catch (err) {
-            previewArea.innerHTML = `<div style="color:red;">Error generating preview: ${err.message}</div>`;
+            previewArea.innerHTML = `<div style="color:red;">Error generating preview: ${this.esc(err.message)}</div>`;
             console.error('Export preview error:', err);
         }
     }
@@ -62983,7 +63038,7 @@ ${clone.innerHTML}
             }
         } catch (err) {
             console.error(`${method} error:`, err);
-            document.getElementById('clbUmapPlot').innerHTML = `<div style="padding:20px;text-align:center;color:#ef4444;">Computation failed: ${err.message}</div>`;
+            document.getElementById('clbUmapPlot').innerHTML = `<div style="padding:20px;text-align:center;color:#ef4444;">Computation failed: ${this.esc(err.message)}</div>`;
         }
     }
 
@@ -63154,8 +63209,8 @@ ${clone.innerHTML}
             const barColor = s >= 0.25 ? '#5d9239' : s >= 0 ? '#f59e0b' : '#dc2626';
             const bg = r.group === highlightGroup ? '#dcfce7' : '';
             return `
-                <tr class="clb-umap-cs-row" data-group="${r.group}" style="cursor:pointer; background:${bg};">
-                    <td style="padding:4px 6px; border-bottom:1px solid #f3f4f6;">${r.group}</td>
+                <tr class="clb-umap-cs-row" data-group="${this.esc(r.group)}" style="cursor:pointer; background:${bg};">
+                    <td style="padding:4px 6px; border-bottom:1px solid #f3f4f6;">${this.esc(r.group)}</td>
                     <td style="padding:4px 6px; border-bottom:1px solid #f3f4f6; text-align:right; color:#6b7280;">${r.n}</td>
                     <td style="padding:4px 6px; border-bottom:1px solid #f3f4f6; text-align:right; font-weight:600; color:${barColor};">${s.toFixed(3)}</td>
                     <td style="padding:4px 6px; border-bottom:1px solid #f3f4f6; width:80px;">
@@ -64887,7 +64942,7 @@ ${clone.innerHTML}
                 <span style="color:#374151;flex:1;min-width:55px;font-size:11px;">${label}</span>
                 <div style="display:flex; align-items:center;">
                     <button onclick="app._tsStep('${id}',-1)" style="width:20px;height:20px;border:1px solid #d1d5db;background:#f9fafb;border-radius:4px 0 0 4px;cursor:pointer;font-size:12px;line-height:1;">−</button>
-                    <input type="number" id="${id}" value="${val}" min="${min}" max="${max}" style="width:36px;text-align:center;border:1px solid #d1d5db;border-left:none;border-right:none;font-size:10px;padding:1px;-moz-appearance:textfield;appearance:textfield;" oninput="app._tsApply()">
+                    <input type="number" id="${id}" value="${this.esc(val)}" min="${min}" max="${max}" style="width:36px;text-align:center;border:1px solid #d1d5db;border-left:none;border-right:none;font-size:10px;padding:1px;-moz-appearance:textfield;appearance:textfield;" oninput="app._tsApply()">
                     <button onclick="app._tsStep('${id}',1)" style="width:20px;height:20px;border:1px solid #d1d5db;background:#f9fafb;border-radius:0 4px 4px 0;cursor:pointer;font-size:12px;line-height:1;">+</button>
                 </div>
             </div>`;
@@ -64961,7 +65016,7 @@ ${clone.innerHTML}
             <div style="display:flex;align-items:center;margin-bottom:5px;gap:4px;">
                 <span style="width:15px;"></span>
                 <span style="color:#374151;flex:1;min-width:55px;font-size:11px;">Color</span>
-                <input type="color" id="ts_dotColor" value="${document.getElementById('scatterDotColor')?.value || '#6b9fcf'}" onchange="app._tsDotColor(this.value)" style="width:44px;height:22px;border:1px solid #d1d5db;border-radius:4px;padding:1px;cursor:pointer;" title="Color of the cell line dots (same setting as in the Plot size box)">
+                <input type="color" id="ts_dotColor" value="${this.esc(document.getElementById('scatterDotColor')?.value || '#6b9fcf')}" onchange="app._tsDotColor(this.value)" style="width:44px;height:22px;border:1px solid #d1d5db;border-radius:4px;padding:1px;cursor:pointer;" title="Color of the cell line dots (same setting as in the Plot size box)">
             </div>` : ''}
             ${this._tsHasBoxTraces(plotEl) ? `
             <div style="border-top:1px solid #e5e7eb;margin:6px 0;"></div>
@@ -64981,11 +65036,11 @@ ${clone.innerHTML}
             <div style="font-weight:600;margin-bottom:4px;color:#1f2937;font-size:11px;">Plot Size</div>
             <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;font-size:11px;">
                 <span style="flex:0 0 42px;color:#374151;">Width</span>
-                <input type="range" min="0.3" max="1.8" step="0.05" value="${this.geChartWidthRatio || 1}" oninput="app._geSizeFromSettings('width', this.value)" style="flex:1;">
+                <input type="range" min="0.3" max="1.8" step="0.05" value="${this.esc(this.geChartWidthRatio || 1)}" oninput="app._geSizeFromSettings('width', this.value)" style="flex:1;">
             </div>
             <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;font-size:11px;">
                 <span style="flex:0 0 42px;color:#374151;">Height</span>
-                <input type="range" min="0.5" max="2" step="0.1" value="${this.geChartHeightRatio || 1}" oninput="app._geSizeFromSettings('height', this.value)" style="flex:1;">
+                <input type="range" min="0.5" max="2" step="0.1" value="${this.esc(this.geChartHeightRatio || 1)}" oninput="app._geSizeFromSettings('height', this.value)" style="flex:1;">
             </div>
             <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:#374151;cursor:pointer;">
                 <input type="checkbox" ${document.getElementById('geShowZeroLine')?.checked !== false ? 'checked' : ''} onchange="app._geZeroFromSettings(this.checked)"> Zero line
@@ -70533,13 +70588,21 @@ ${clone.innerHTML}
     // just takes the default. Shared by _hmLoadSettings (localStorage) and
     // _hmRestoreView (a saved view's `settings` block) so an old file
     // migrates the same way an old localStorage value does.
+    // Only the known keys are kept, sizes as numbers in the panel's range and
+    // tree detail as one of its levels: a saved view comes from a file, and
+    // the merged result is stored and printed back into the Settings panel.
     _hmMergeSettings(raw) {
         const defaults = this._HM_SETTINGS_DEFAULTS();
-        const merged = Object.assign({}, defaults, (raw && typeof raw === 'object') ? raw : {});
-        if (raw && typeof raw === 'object' && 'treeDetail' in raw) {
-            merged.treeDetailCells = raw.treeDetail;
-            delete merged.treeDetail;
+        const src = (raw && typeof raw === 'object') ? { ...raw } : {};
+        if ('treeDetail' in src) src.treeDetailCells = src.treeDetail;
+        const RANGE = { geneFont: [6, 20], labelFont: [6, 20], legendFont: [6, 20], cellWMax: [2, 40], cellH: [4, 40] };
+        const LEVELS = ['full', 'medium', 'coarse', 'xcoarse', 'minimal'];
+        const merged = { ...defaults };
+        for (const [k, [lo, hi]] of Object.entries(RANGE)) {
+            const v = Number(src[k]);
+            if (src[k] != null && Number.isFinite(v)) merged[k] = Math.min(hi, Math.max(lo, v));
         }
+        for (const k of ['treeDetailCells', 'treeDetailGenes']) if (LEVELS.includes(src[k])) merged[k] = src[k];
         return merged;
     }
 
@@ -70571,7 +70634,7 @@ ${clone.innerHTML}
                 <span style="color:#374151;flex:1;min-width:55px;font-size:11px;">${label}</span>
                 <div style="display:flex; align-items:center;">
                     <button onclick="app._hmTsStep('${id}',-1)" style="width:20px;height:20px;border:1px solid #d1d5db;background:#f9fafb;border-radius:4px 0 0 4px;cursor:pointer;font-size:12px;line-height:1;">−</button>
-                    <input type="number" id="${id}" value="${val}" min="${min}" max="${max}" style="width:36px;text-align:center;border:1px solid #d1d5db;border-left:none;border-right:none;font-size:10px;padding:1px;-moz-appearance:textfield;appearance:textfield;" oninput="app._hmTsApply()">
+                    <input type="number" id="${id}" value="${this.esc(val)}" min="${min}" max="${max}" style="width:36px;text-align:center;border:1px solid #d1d5db;border-left:none;border-right:none;font-size:10px;padding:1px;-moz-appearance:textfield;appearance:textfield;" oninput="app._hmTsApply()">
                     <button onclick="app._hmTsStep('${id}',1)" style="width:20px;height:20px;border:1px solid #d1d5db;background:#f9fafb;border-radius:0 4px 4px 0;cursor:pointer;font-size:12px;line-height:1;">+</button>
                 </div>
             </div>`;
