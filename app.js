@@ -6666,6 +6666,15 @@ class CorrelationExplorer {
         return document.querySelector('input[name="analysisBasis"]:checked')?.value || 'ge';
     }
 
+    // What the gene box accepts: on the mRNA basis also genes that have
+    // expression data but were never screened. Null while the mRNA gene list
+    // is still on its way, so callers can wait instead of calling them unknown.
+    _geneBoxHas() {
+        if (this._analysisBasis() !== 'expr') return (g) => this.geneIndex.has(g);
+        const ex = this.expressionGeneIndex;
+        return ex ? (g) => this.geneIndex.has(g) || ex.has(g) : null;
+    }
+
     // Full-cohort vector for the current run's basis, in GE cell-line order.
     // For expression, values are remapped through expressionCellLineMap; genes
     // or lines without expression come back NaN and fall out via minN.
@@ -6799,7 +6808,11 @@ class CorrelationExplorer {
 
         document.getElementById('minCellLines')?.addEventListener('change', () => this._markMutationRunStale());
         document.querySelectorAll('input[name="analysisBasis"]').forEach(r => {
-            r.addEventListener('change', () => this._markMutationRunStale());
+            r.addEventListener('change', () => {
+                this._markMutationRunStale();
+                // What counts as found depends on the basis.
+                if (document.getElementById('geneTextarea').value.trim()) this.updateGeneCount();
+            });
         });
 
         // Gene textarea
@@ -8379,10 +8392,17 @@ class CorrelationExplorer {
 
     validateGenes(genes) {
         const upperGenes = genes.map(g => g.toUpperCase().trim());
-        const found = upperGenes.filter(g => this.geneIndex.has(g));
-        const notFound = upperGenes.filter(g => !this.geneIndex.has(g));
-
         const display = document.getElementById('geneValidationDisplay');
+        const has = this._geneBoxHas();
+        if (!has) {
+            this._validateToken = (this._validateToken || 0) + 1;
+            display.innerHTML = `<div class="status-box status-info">Loading the mRNA gene list&hellip;</div>`;
+            this.loadExpressionData().then(() => this.updateGeneCount()).catch(() => {});
+            return;
+        }
+        const found = upperGenes.filter(g => has(g));
+        const notFound = upperGenes.filter(g => !has(g));
+
         // The standalone Find Synonyms button is retired: the panel below
         // runs the same lookup automatically and shows the result inline.
         const synonymBtn = document.getElementById('findSynonyms');
@@ -8392,7 +8412,8 @@ class CorrelationExplorer {
             // Invalidate any check still waiting on synonyms.json, or it
             // lands late and overwrites this with a half-typed name.
             this._validateToken = (this._validateToken || 0) + 1;
-            display.innerHTML = `<div class="status-box status-success">&#10003; All ${found.length} genes found in reference data</div>`;
+            const mrnaOnly = found.filter(g => !this.geneIndex.has(g)).length;
+            display.innerHTML = `<div class="status-box status-success">&#10003; ${found.length === 1 ? 'Gene' : `All ${found.length} genes`} found in reference data${mrnaOnly ? ` (${mrnaOnly} with mRNA data only, no CRISPR knockout)` : ''}</div>`;
             this.genesNotFound = [];
             return;
         }
@@ -8466,14 +8487,15 @@ class CorrelationExplorer {
         const dismissed = (this._synonymDismissed = this._synonymDismissed || new Set());
         const synHits = [];
         const remaining = [];
+        const inData = this._geneBoxHas() || ((g) => this.geneIndex.has(g));
         const offline = (up) => {
-            if (this.geneIndex.has(up)) return { rep: up, src: 'in the data' };
+            if (inData(up)) return { rep: up, src: 'in the data' };
             const m = this.synonymLookup?.[up];
-            if (m && this.geneIndex.has((m.d || '').toUpperCase())) return { rep: m.d.toUpperCase(), src: m.r === 'l' ? 'synonym' : 'synonym, verify' };
+            if (m && inData((m.d || '').toUpperCase())) return { rep: m.d.toUpperCase(), src: m.r === 'l' ? 'synonym' : 'synonym, verify' };
             const o = this.orthologs?.mouseToHuman?.[up];
-            if (o && this.geneIndex.has(o.toUpperCase())) return { rep: o.toUpperCase(), src: 'mouse ortholog' };
+            if (o && inData(o.toUpperCase())) return { rep: o.toUpperCase(), src: 'mouse ortholog' };
             const a = this.libraryGenes?.alias?.[up];
-            if (a && this.geneIndex.has(a)) return { rep: a, src: 'library synonym' };
+            if (a && inData(a)) return { rep: a, src: 'library synonym' };
             return null;
         };
         // Combined library labels (Jacquere, Julianna), read the way Green
@@ -8486,11 +8508,11 @@ class CorrelationExplorer {
         // so they are not sent through the human alias table (CSH1 would
         // become GH1): only an exact match, a mouse ortholog or a library alias.
         const labelPart = (up) => {
-            if (this.geneIndex.has(up)) return { rep: up };
+            if (inData(up)) return { rep: up };
             const o = this.orthologs?.mouseToHuman?.[up];
-            if (o && this.geneIndex.has(o.toUpperCase())) return { rep: o.toUpperCase() };
+            if (o && inData(o.toUpperCase())) return { rep: o.toUpperCase() };
             const a = this.libraryGenes?.alias?.[up];
-            if (a && this.geneIndex.has(a)) return { rep: a };
+            if (a && inData(a)) return { rep: a };
             return null;
         };
         // Strict first (exact, ortholog, library alias); the alias table only
@@ -8684,8 +8706,9 @@ class CorrelationExplorer {
         this._synonymApiTried = true;
         this._synonymApiHits = this._synonymApiHits || new Map();
         let hits = 0;
+        const inData = this._geneBoxHas() || ((g) => this.geneIndex.has(g));
         apiResults.forEach(r => {
-            if (r.replacement && this.geneIndex.has(r.replacement.toUpperCase())) {
+            if (r.replacement && inData(r.replacement.toUpperCase())) {
                 this._synonymApiHits.set(r.original.toUpperCase(),
                     { replacement: r.replacement.toUpperCase(), source: r.source ? `MyGene.info: ${r.source}` : 'MyGene.info' });
                 hits++;
@@ -9685,9 +9708,10 @@ class CorrelationExplorer {
 
     getGeneList() {
         const text = document.getElementById('geneTextarea').value;
+        const has = this._geneBoxHas() || ((g) => this.geneIndex.has(g));
         const genes = text.split(/\s+/)
             .map(g => g.toUpperCase().trim())
-            .filter(g => g !== '' && this.geneIndex.has(g));
+            .filter(g => g !== '' && has(g));
         // Remove duplicates
         return [...new Set(genes)];
     }
@@ -12670,11 +12694,15 @@ class CorrelationExplorer {
             // Design mode: correlate against all genes, minus any measured in
             // too few cell lines to be worth ranking. Genes the user typed are
             // never dropped: they asked for those specifically.
+            // On mRNA the search covers the expressed genes, all measured in
+            // every profiled cell line, so the coverage floor does not apply.
             const _cov = this._geneCoverage(), _minCov = this._minGeneCoverage();
             const _asked = new Set(geneList.map(g => String(g).toUpperCase()));
-            targetGenes = Array.from(this.geneIndex.keys()).filter(g =>
-                !_minCov || _asked.has(String(g).toUpperCase())
-                || _cov[this.geneIndex.get(g)] >= _minCov);
+            targetGenes = (this._runBasis === 'expr' && this.expressionGeneIndex)
+                ? Array.from(this.expressionGeneIndex.keys())
+                : Array.from(this.geneIndex.keys()).filter(g =>
+                    !_minCov || _asked.has(String(g).toUpperCase())
+                    || _cov[this.geneIndex.get(g)] >= _minCov);
         }
 
         // Get gene data for input genes
@@ -19378,12 +19406,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // The scatter opens on the analysis's own basis, so the r on an edge
         // and the r in the plot describe the same numbers. The axis selectors
         // stay live for switching afterwards.
-        if (this.results?.basis) {
+        if (!axisTypes && this.results?.basis) {
             const b = this.results.basis === 'expr' ? 'expr' : 'ge';
-            const xSel = document.getElementById('xAxisDataType');
-            const ySel = document.getElementById('yAxisDataType');
-            if (xSel) xSel.value = b;
-            if (ySel) ySel.value = b;
+            axisTypes = { x: b, y: b };
+        }
+        if (axisTypes) {
+            const xs = document.getElementById('xAxisDataType'), ys = document.getElementById('yAxisDataType');
+            if (xs && axisTypes.x) xs.value = axisTypes.x;
+            if (ys && axisTypes.y) ys.value = axisTypes.y;
         }
         // Find the correlation entry by gene names. If it isn't in the current
         // results (e.g. a discovered-gene edge, or after a filtered re-run via
@@ -19396,11 +19426,6 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         );
         if (!c) {
             // Check each gene against the axis it is about to be drawn on.
-            if (axisTypes) {
-                const xs = document.getElementById('xAxisDataType'), ys = document.getElementById('yAxisDataType');
-                if (xs && axisTypes.x) xs.value = axisTypes.x;
-                if (ys && axisTypes.y) ys.value = axisTypes.y;
-            }
             if (!this._inspectAxisGeneOk(gene1, 'xAxisDataType') || !this._inspectAxisGeneOk(gene2, 'yAxisDataType')) {
                 console.error('Correlation not found for', gene1, gene2);
                 return;
@@ -19417,6 +19442,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (xs && axisTypes.x) xs.value = axisTypes.x;
             if (ys && axisTypes.y) ys.value = axisTypes.y;
         }
+        // Already reset above; openInspect's own reset for a new pair would
+        // put the axes back on gene effect.
+        this._keepInspectSettings = true;
         this.openInspect(c);
         this._applyNetworkFiltersToInspect();
     }
@@ -35662,6 +35690,139 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         };
     }
 
+    // The export's hot loops live in these small methods rather than inline:
+    // exportFullAIAnalysis is too large for the browser to optimize, and the
+    // same loops ran about ten times slower inside it.
+    _aiRowMaxAbs(data, off, cols) {
+        let has = false, maxAbs = 0;
+        for (let k = 0; k < cols.length; k++) {
+            const c = cols[k];
+            if (c === -1) continue;
+            const v = data[off + c];
+            if (!isNaN(v)) { has = true; const a = Math.abs(v); if (a > maxAbs) maxAbs = a; }
+        }
+        return has ? maxAbs : -1;
+    }
+
+    _aiRowMeanSd(data, off, cols) {
+        let sum = 0, count = 0, ssq = 0;
+        for (let k = 0; k < cols.length; k++) {
+            const c = cols[k];
+            if (c === -1) continue;
+            const v = data[off + c];
+            if (!isNaN(v)) { sum += v; count++; }
+        }
+        const mean = count ? sum / count : 0;
+        for (let k = 0; k < cols.length; k++) {
+            const c = cols[k];
+            if (c === -1) continue;
+            const v = data[off + c];
+            if (!isNaN(v)) ssq += (v - mean) ** 2;
+        }
+        return { count, mean, sd: count ? Math.sqrt(ssq / count) : 0 };
+    }
+
+    _aiRoundedRow(data, off, cols) {
+        const row = new Array(cols.length);
+        for (let k = 0; k < cols.length; k++) {
+            const c = cols[k];
+            const v = c === -1 ? NaN : data[off + c];
+            row[k] = isNaN(v) ? null : parseFloat(v.toFixed(3));
+        }
+        return row;
+    }
+
+    // r of one vector against every row of a matrix, over the cell lines in
+    // cols (cols[j] = the matrix column of the j-th cell line, -1 if absent),
+    // skipping rows with fewer than minN complete pairs. Unsorted.
+    _aiScanRows(target, data, nCols, cols, names, minN, skipRow = -1) {
+        const out = [];
+        const x = new Float64Array(cols.length), y = new Float64Array(cols.length);
+        for (let gi = 0; gi < names.length; gi++) {
+            if (gi === skipRow) continue;
+            const off = gi * nCols;
+            let n = 0;
+            for (let j = 0; j < cols.length; j++) {
+                const c = cols[j], t = target[j];
+                if (c === -1 || isNaN(t)) continue;
+                const v = data[off + c];
+                if (!isNaN(v)) { x[n] = t; y[n] = v; n++; }
+            }
+            if (n < minN) continue;
+            const stats = this.pearsonWithSlope(x.subarray(0, n), y.subarray(0, n));
+            if (!isNaN(stats.correlation)) out.push({ gene: names[gi], r: parseFloat(stats.correlation.toFixed(4)), n });
+        }
+        return out;
+    }
+
+    // Copy number for one gene across the given cell lines, 2 decimals; null
+    // when the gene has no value anywhere.
+    _aiCnRow(gene, cellLines) {
+        let any = false;
+        const row = new Array(cellLines.length);
+        for (let k = 0; k < cellLines.length; k++) {
+            const v = this.getCnValue(gene, cellLines[k]);
+            if (v == null || isNaN(v)) row[k] = null;
+            else { row[k] = Math.round(v * 100) / 100; any = true; }
+        }
+        return any ? row : null;
+    }
+
+    // Cell line -> { gene: { hotspot, damaging } } for the given lines, built
+    // from the sparse per-gene calls instead of asking every gene about every
+    // line. Gene order inside each entry is the same as a per-line scan.
+    _aiMutationsByCellLine(cellLines) {
+        const want = new Set(cellLines);
+        const out = new Map();
+        const add = (src, put) => {
+            if (!src?.genes) return;
+            for (const g of src.genes) {
+                const m = src.geneData[g]?.mutations;
+                if (!m) continue;
+                for (const cl in m) {
+                    const level = m[cl] || 0;
+                    if (!(level > 0) || !want.has(cl)) continue;
+                    let e = out.get(cl);
+                    if (!e) out.set(cl, e = {});
+                    put(e[g] || (e[g] = {}), level);
+                }
+            }
+        };
+        add(this.mutations, (o, level) => { o.hotspot = level; });
+        add(this.damagingMutations, (o) => { o.damaging = true; });
+        return out;
+    }
+
+    // Mean gene effect per screened cell line over every gene, in
+    // metadata.cellLines order; fixed for the release, so computed once.
+    _cellLineMeanGeneEffects() {
+        if (this._clMeanGeCache) return this._clMeanGeCache;
+        const nAll = this.nCellLines, E = this.geneEffects;
+        const sum = new Float64Array(nAll), cnt = new Int32Array(nAll);
+        for (let g = 0; g < this.nGenes; g++) {
+            const off = g * nAll;
+            for (let j = 0; j < nAll; j++) {
+                const v = E[off + j];
+                if (isNaN(v) || v === -999) continue;
+                sum[j] += v; cnt[j]++;
+            }
+        }
+        return (this._clMeanGeCache = { sum, cnt });
+    }
+
+    // The browser's own gzip where it has one: about 2.5x faster than pako on
+    // a full-panel export, and off the main thread, so the spinner keeps
+    // turning. Same .gz format either way.
+    async _gzipString(str) {
+        if (typeof CompressionStream === 'function') {
+            try {
+                const cs = new Blob([str]).stream().pipeThrough(new CompressionStream('gzip'));
+                return new Uint8Array(await new Response(cs).arrayBuffer());
+            } catch (e) { /* fall back to pako */ }
+        }
+        return pako.gzip(str);
+    }
+
     async exportFullAIAnalysis(opts = {}) {
         // Pathway partners are read in three places below, all of them sync.
         await this._ensureReactome();
@@ -36970,6 +37131,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // p90 of the measured lines, computed once for the whole loop rather
         // than per cell line; never a hardcoded number.
         const retroCut = this._retroHighCutoff?.();
+        const _mutByCl = this._aiMutationsByCellLine(cellLines);
         for (const cl of cellLines) {
             // `subtype` is the Oncotree *disease group*, which is too coarse to
             // answer a question about one disease inside it: CLL, mantle cell,
@@ -37027,19 +37189,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             // one export away.
             const _gr = this._exportGrowthRate?.[cl] ?? this.growthRateData?.[cl];
             if (_gr !== undefined && _gr !== null && !isNaN(_gr)) entry.growthRate = parseFloat(Number(_gr).toFixed(4));
-            const mutations = {};
-            if (this.mutations?.genes) {
-                for (const g of this.mutations.genes) {
-                    const level = this.mutations.geneData[g]?.mutations?.[cl] || 0;
-                    if (level > 0) (mutations[g] = mutations[g] || {}).hotspot = level;
-                }
-            }
-            if (this.damagingMutations?.genes) {
-                for (const g of this.damagingMutations.genes) {
-                    const level = this.damagingMutations.geneData[g]?.mutations?.[cl] || 0;
-                    if (level > 0) (mutations[g] = mutations[g] || {}).damaging = true;
-                }
-            }
+            const mutations = _mutByCl.get(cl) || {};
             // Tag polymorphic loci (HLA / MIC / KIR) so the LLM knows the
             // call is suspect, these regions accumulate "mutations" that
             // are mostly germline allelic divergence from GRCh38, not
@@ -37151,21 +37301,17 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const focalGene2 = (context.gene2 || '').toUpperCase();
         const geGenes = this.metadata.genes;
         const geCLIndices = cellLines.map(cl => this.metadata.cellLines.indexOf(cl));
-        const geCandidates = []; // { gene, vals, maxAbs, isFocal }
+        // Rows are rounded only for the genes that survive the filter and the
+        // cap: on the full panel that is about a fifth of them, and rounding
+        // every value of every gene was most of this stage's time.
+        const geCandidates = []; // { gene, gi, maxAbs, isFocal }
         for (let gi = 0; gi < this.nGenes; gi++) {
-            const vals = [];
-            let hasData = false, maxAbs = 0;
-            for (const clIdx of geCLIndices) {
-                if (clIdx === -1) { vals.push(null); continue; }
-                const v = this.geneEffects[gi * this.nCellLines + clIdx];
-                if (!isNaN(v)) { vals.push(parseFloat(v.toFixed(3))); hasData = true; maxAbs = Math.max(maxAbs, Math.abs(v)); }
-                else vals.push(null);
-            }
-            if (!hasData) continue;
+            const maxAbs = this._aiRowMaxAbs(this.geneEffects, gi * this.nCellLines, geCLIndices);
+            if (maxAbs < 0) continue;
             const geneName = geGenes[gi];
             const isFocal = (geneName.toUpperCase() === focalGene || geneName.toUpperCase() === focalGene2);
             if (!isFocal && geCutoff > 0 && maxAbs < geCutoff) continue;
-            geCandidates.push({ gene: geneName, vals, maxAbs, isFocal });
+            geCandidates.push({ gene: geneName, gi, maxAbs, isFocal });
         }
         if (Number.isFinite(geneCap) && geCandidates.length > geneCap) {
             // Sort by max-abs but always keep focal genes at the top.
@@ -37174,7 +37320,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
         const geMatrix = {};
         const _addGeneToGeMatrixLater = [];
-        for (const c of geCandidates) geMatrix[c.gene] = c.vals;
+        for (const c of geCandidates) geMatrix[c.gene] = this._aiRoundedRow(this.geneEffects, c.gi * this.nCellLines, geCLIndices);
         // A named gene list narrows the matrix to those genes, which is what
         // makes a file about twelve genes small enough to carry every cell
         // line and every extra layer at once.
@@ -37215,19 +37361,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 const minN = Math.max(50, Math.floor(0.6 * cellLines.length));
                 const exprCLMap2 = new Map();
                 this.expressionMetadata.cellLines.forEach((cl, i) => exprCLMap2.set(cl, i));
-                const correlates = [];
-                for (let gi = 0; gi < this.expressionMetadata.genes.length; gi++) {
-                    const x = [], y = [];
-                    for (let j = 0; j < cellLines.length; j++) {
-                        const ecl = exprCLMap2.get(cellLines[j]);
-                        if (ecl === undefined || isNaN(targetVals[j])) continue;
-                        const ev = this.expressionData[gi * this.expressionMetadata.nCellLines + ecl];
-                        if (!isNaN(ev)) { x.push(targetVals[j]); y.push(ev); }
-                    }
-                    if (x.length < minN) continue;
-                    const stats = this.pearsonWithSlope(x, y);
-                    if (!isNaN(stats.correlation)) correlates.push({ gene: this.expressionMetadata.genes[gi], r: parseFloat(stats.correlation.toFixed(4)), n: x.length });
-                }
+                const correlates = this._aiScanRows(targetVals, this.expressionData, this.expressionMetadata.nCellLines,
+                    cellLines.map(cl => exprCLMap2.get(cl) ?? -1), this.expressionMetadata.genes, minN);
                 correlates.sort((a, b) => Math.abs(b.r) - Math.abs(a.r));
                 topCorrelates = correlates.slice(0, _scanTop);
             }
@@ -37261,22 +37396,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     const fSd = Math.sqrt(validFocal.reduce((s, v) => s + (v - fMean) ** 2, 0) / validFocal.length);
                     if (fSd >= 0.05) {
                         const minN = Math.max(50, Math.floor(0.6 * cellLines.length));
-                        const exprCorrs = [];
-                        for (let gi = 0; gi < this.expressionMetadata.genes.length; gi++) {
-                            if (gi === focalExprIdx) continue;
-                            const x = [], y = [];
-                            for (let j = 0; j < cellLines.length; j++) {
-                                const ei = _exprMetaMap.get(cellLines[j]);
-                                if (ei === undefined || isNaN(focalVals[j])) continue;
-                                const ev = this.expressionData[gi * nExprCL + ei];
-                                if (!isNaN(ev)) { x.push(focalVals[j]); y.push(ev); }
-                            }
-                            if (x.length < minN) continue;
-                            const stats = this.pearsonWithSlope(x, y);
-                            if (!isNaN(stats.correlation)) {
-                                exprCorrs.push({ gene: this.expressionMetadata.genes[gi], r: parseFloat(stats.correlation.toFixed(4)), n: x.length });
-                            }
-                        }
+                        const exprCorrs = this._aiScanRows(focalVals, this.expressionData, nExprCL,
+                            cellLines.map(cl => _exprMetaMap.get(cl) ?? -1), this.expressionMetadata.genes, minN, focalExprIdx);
                         exprCorrs.sort((a, b) => Math.abs(b.r) - Math.abs(a.r));
                         topExpressionCorrelates = exprCorrs.slice(0, _scanTop);
                     } else {
@@ -37307,21 +37428,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 topCoessentials = []; // emit empty so dataStructure description still tells the story
             } else {
                 const minN = Math.max(50, Math.floor(0.6 * cellLines.length));
-                const coess = [];
-                for (let gi = 0; gi < this.nGenes; gi++) {
-                    if (gi === targetIdx) continue;
-                    const x = [], y = [];
-                    for (let j = 0; j < cellLines.length; j++) {
-                        const idx = geCLIndices[j];
-                        if (idx === -1) continue;
-                        const tv = targetVals[j];
-                        const ov = this.geneEffects[gi * this.nCellLines + idx];
-                        if (!isNaN(tv) && !isNaN(ov)) { x.push(tv); y.push(ov); }
-                    }
-                    if (x.length < minN) continue;
-                    const stats = this.pearsonWithSlope(x, y);
-                    if (!isNaN(stats.correlation)) coess.push({ gene: this.metadata.genes[gi], r: parseFloat(stats.correlation.toFixed(4)), n: x.length });
-                }
+                const coess = this._aiScanRows(targetVals, this.geneEffects, this.nCellLines, geCLIndices, this.metadata.genes, minN, targetIdx);
                 coess.sort((a, b) => Math.abs(b.r) - Math.abs(a.r));
                 topCoessentials = coess.slice(0, _scanTop);
             }
@@ -37389,24 +37496,16 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const exprCLMap = new Map();
             this.expressionMetadata.cellLines.forEach((cl, i) => exprCLMap.set(cl, i));
             const exprCLIndices = cellLines.map(cl => exprCLMap.get(cl) ?? -1);
-            const exprCandidates = []; // { gene, vals, sd, isAlways }
+            // As on the gene-effect side, only the kept genes are rounded. The
+            // SD that ranks them is taken on the unrounded values.
+            const exprCandidates = []; // { gene, gi, sd, isAlways }
             for (let gi = 0; gi < exprGenes.length; gi++) {
-                const vals = [];
-                let hasData = false, sum = 0, count = 0, ssq = 0;
-                for (const clIdx of exprCLIndices) {
-                    if (clIdx === -1) { vals.push(null); continue; }
-                    const v = this.expressionData[gi * nExprCL + clIdx];
-                    if (!isNaN(v)) { vals.push(parseFloat(v.toFixed(3))); hasData = true; sum += v; count++; }
-                    else vals.push(null);
-                }
-                if (!hasData || count < 3) continue;
-                const mean = sum / count;
-                vals.forEach(v => { if (v !== null) ssq += (v - mean) ** 2; });
-                const sd = Math.sqrt(ssq / count);
+                const { count, mean, sd } = this._aiRowMeanSd(this.expressionData, gi * nExprCL, exprCLIndices);
+                if (count < 3) continue;
                 const geneName = exprGenes[gi];
                 const isAlways = alwaysIncludeExpr.has(geneName.toUpperCase());
                 if (!isAlways && mean < exprMeanMin && sd < exprSdMin) continue;
-                exprCandidates.push({ gene: geneName, vals, sd, isAlways });
+                exprCandidates.push({ gene: geneName, gi, sd, isAlways });
             }
             if (Number.isFinite(geneCap) && exprCandidates.length > geneCap) {
                 // Sort by SD but always keep focal/correlate genes at the top.
@@ -37414,7 +37513,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 exprCandidates.length = geneCap;
             }
             exprMatrix = {};
-            for (const c of exprCandidates) exprMatrix[c.gene] = c.vals;
+            for (const c of exprCandidates) exprMatrix[c.gene] = this._aiRoundedRow(this.expressionData, c.gi * nExprCL, exprCLIndices);
             if (_wantGenes) {
                 // The focal gene(s) and the correlates the file names stay, as on
                 // the gene-effect side: a gene's expression or a listed
@@ -38371,18 +38470,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (this.geneEffects && this.metadata?.cellLines && this.nGenes && this.nCellLines) {
             setStatus('Screen-quality control per cell line...');
             await new Promise(r => setTimeout(r, 20));
-            const nAll = this.nCellLines;
-            const _sum = new Float64Array(nAll), _cnt = new Int32Array(nAll);
-            for (let g = 0; g < this.nGenes; g++) {
-                const off = g * nAll;
-                for (let j = 0; j < nAll; j++) {
-                    const v = this.geneEffects[off + j];
-                    if (isNaN(v) || v === -999) continue;
-                    _sum[j] += v; _cnt[j]++;
-                }
-            }
+            const { sum: _sum, cnt: _cnt } = this._cellLineMeanGeneEffects();
             const _means = [];
-            for (let j = 0; j < nAll; j++) if (_cnt[j] >= 10) _means.push(_sum[j] / _cnt[j]);
+            for (let j = 0; j < _cnt.length; j++) if (_cnt[j] >= 10) _means.push(_sum[j] / _cnt[j]);
             _means.sort((a, b) => a - b);
             if (_means.length) {
                 const _posOf = new Map(this.metadata.cellLines.map((cl, i) => [cl, i]));
@@ -38465,14 +38555,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     await new Promise(r => setTimeout(r, 20));
                     const cn = {};
                     for (const gene of Object.keys(geMatrix)) {
-                        const row = [];
-                        let any = false;
-                        for (const cl of cellLines) {
-                            const v = this.getCnValue(gene, cl);
-                            if (v == null || isNaN(v)) row.push(null);
-                            else { row.push(Math.round(v * 100) / 100); any = true; }
-                        }
-                        if (any) cn[gene] = row;
+                        const row = this._aiCnRow(gene, cellLines);
+                        if (row) cn[gene] = row;
                     }
                     if (Object.keys(cn).length) {
                         exportData.copyNumber = cn;
@@ -38893,7 +38977,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
 
         const jsonStr = JSON.stringify(exportData);
-        const compressed = pako.gzip(jsonStr);
+        const compressed = await this._gzipString(jsonStr);
         const uncompressedBytes = new Blob([jsonStr]).size;
 
         // A .json.gz needs an unpacking tool switched on; plain JSON needs
@@ -62732,7 +62816,17 @@ ${clone.innerHTML}
         return out;
     }
 
+    // Same spinner as the heatmap: UMAP blocks the thread for seconds on the
+    // full panel, and a second click meanwhile queued another run.
     async runCLBUmap() {
+        const btn = document.getElementById('clbUmapRunBtn');
+        if (btn?.disabled) return;
+        if (btn) btn.disabled = true;
+        try { await this._runCLBUmapCore(); }
+        finally { this._hideAnalysisSpinner(); if (btn) btn.disabled = false; }
+    }
+
+    async _runCLBUmapCore() {
         const method = document.getElementById('clbUmapMethod').value;
         const dataType = document.getElementById('clbUmapDataType').value;
         const colorBy = document.getElementById('clbUmapColorBy').value;
@@ -62754,6 +62848,7 @@ ${clone.innerHTML}
 
         const methodLabel = method === 'pca' ? 'PCA' : 'UMAP';
         document.getElementById('clbUmapPlot').innerHTML = `<div style="padding:40px;text-align:center;color:#6b7280;">Computing ${methodLabel}...</div>`;
+        this._showAnalysisSpinner(`Computing ${methodLabel}...`);
         await new Promise(r => setTimeout(r, 50));
 
         try {
