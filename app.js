@@ -21642,7 +21642,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // A wrapped x label is a line taller, and the color legend under it
         // has to start below its second line rather than across it.
         const _botMargin = colorByCategory ? 100 + (_xLabelRows - 1) * Math.round(_xLabelFont * 1.25)
-            : (_legendBelow ? 90 + _xLabelRows * 17 : 60);
+            : (_legendBelow ? 90 + _xLabelRows * 17 : 60 + (_xLabelRows - 1) * Math.round(_xLabelFont * 1.25));
         // The offsets below are pixels divided by the plot height, so they have
         // to use the height that is actually drawn. On a phone the plot is
         // capped further down, and measuring against the uncapped control
