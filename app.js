@@ -36147,7 +36147,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const t2 = ci?.yType || document.getElementById('yAxisDataType')?.value;
             const axesKnown = !!(g1 && g2);
             const xLabel = axesKnown ? `${g1} ${typeLabel(t1)}` : 'an axis this file did not record';
-            const yLabel = axesKnown ? `${g} ${typeLabel(t2)}` : 'an axis this file did not record';
+            const yLabel = axesKnown ? `${g2} ${typeLabel(t2)}` : 'an axis this file did not record';
             if (axesKnown) { context.gene1 = g1; context.gene2 = g2; context.xType = t1 || 'ge'; context.yType = t2 || 'ge'; }
             else context.axesNotRecorded = 'The plot this file came from was closed before the export ran, so which genes were on the axes was not captured. The companion image still shows the plot; read the axis titles off it, and do not guess from the gene list, which is the export\'s own selection rather than the plot\'s axes.';
             const parts = [
