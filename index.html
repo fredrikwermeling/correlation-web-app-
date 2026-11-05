@@ -3127,8 +3127,8 @@
             <!-- Options card: workspace actions. Button labels wrap to two
                  lines to fit the 415px sidebar on one row. The app's two
                  pillars (gene set analysis + Cell Line Browser) get the
-                 top-level buttons; Mutation analysis and the other tools sit
-                 behind "Other", and while Mutation analysis is active the
+                 top-level buttons; the Gene Browser, Mutation analysis and the
+                 other tools sit behind "Other", and while Mutation analysis is active the
                  "Other" button itself carries the mode (filled green,
                  renamed), see _syncAnalysisModeButtons. -->
             <div class="card" id="optionsCard">
@@ -3137,10 +3137,10 @@
                     <div id="optionsRow">
                         <button class="btn btn-success btn-sm" id="modeGeneSetBtn" title="Correlate the gene-effect profiles of a set of genes, and optionally expand it to find correlated genes">Gene set<br>analysis</button>
                         <button class="btn btn-outline btn-sm" id="showCellLineBrowser" style="color:var(--green-700); border-color:var(--green-400);" title="Browse, filter and compare the cell lines behind the data">Cell Line<br>Browser</button>
-                        <button class="btn btn-outline btn-sm" id="showGeneBrowser" style="color:var(--green-700); border-color:var(--green-400);" title="Look up one gene: dependency, expression, mutations and copy number across the cell lines">Gene<br>Browser</button>
                         <div style="position:relative; display:flex;">
-                            <button class="btn btn-outline btn-sm" id="optionsOtherBtn" aria-haspopup="true" aria-expanded="false" style="color:var(--green-700); border-color:var(--green-400); flex:1 1 0; min-width:0;" title="Mutation analysis, Gene Effect, Correlation and opening a saved figure">Other &#9662;</button>
+                            <button class="btn btn-outline btn-sm" id="optionsOtherBtn" aria-haspopup="true" aria-expanded="false" style="color:var(--green-700); border-color:var(--green-400); flex:1 1 0; min-width:0;" title="Gene Browser, Mutation analysis, Gene Effect, Correlation and opening a saved figure">Other &#9662;</button>
                             <div id="optionsOtherMenu" style="display:none; position:absolute; top:calc(100% + 4px); right:0; z-index:1200; background:#fff; border:1px solid var(--gray-200); border-radius:6px; box-shadow:0 6px 18px rgba(0,0,0,0.12); min-width:180px; padding:4px;">
+                                <button class="options-menu-item" id="showGeneBrowser" title="Look up one gene: dependency, expression, mutations and copy number across the cell lines">Gene Browser</button>
                                 <button class="options-menu-item" id="modeMutationBtn" title="Split the cohort into altered vs wild-type lines for a chosen gene and rank the genes whose gene effect differs most">Mutation analysis</button>
                                 <button class="options-menu-item" id="showGeneEffectDirect" title="One gene across all cell lines, by tissue or mutation, as CRISPR gene effect or mRNA expression">Gene effect / expression</button>
                                 <button class="options-menu-item" id="showCorrelationDirect">Correlation</button>
@@ -5981,6 +5981,6 @@
     </div>
 
     <script src="app.js?v=v91_98"></script>
-    <script src="tour.js?v=v91_93"></script>
+    <script src="tour.js?v=v91_99"></script>
 </body>
 </html>

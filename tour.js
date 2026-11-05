@@ -429,7 +429,7 @@
             <div class="tour-text">
                 <p class="tour-eyebrow">4 &middot; Gene Browser</p>
                 <h2>A comprehensive summary of every gene</h2>
-                <p>Type a gene and get a summary over many sections: how much cells need it and which cancers need it most, how it is expressed, which genes follow it, which complexes and pathways it belongs to, its mutations, structure and sequence. Save it as a PDF.</p>
+                <p>Type a gene and get a summary over many sections: how much cells need it and which cancers need it most, how it is expressed, which genes follow it, which complexes and pathways it belongs to, its mutations, structure and sequence. Save it as a PDF. Open it from <b>Other</b> in the app, or shift-click a gene name.</p>
                 ${checks([
                     'A verdict for dependency and for expression, ranked against every gene.',
                     'Co-dependencies and co-expression, with complex partners ringed.',
