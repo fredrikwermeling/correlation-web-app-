@@ -1842,6 +1842,19 @@ class CorrelationExplorer {
         return out;
     }
 
+    // The browser's own gunzip where it has one: about 5x faster than pako on
+    // the matrices and off the main thread, so the page does not freeze while
+    // a matrix unpacks. Same bytes either way.
+    async _inflate(bytes) {
+        if (typeof DecompressionStream === 'function') {
+            try {
+                const ds = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+                return new Uint8Array(await new Response(ds).arrayBuffer());
+            } catch (e) { /* fall back to pako */ }
+        }
+        return pako.inflate(bytes);
+    }
+
     async loadGeneEffects() {
         const mb = (b) => (b / 1e6).toFixed(0);
         const compressedData = await this._fetchBytes(this._dataUrl('web_data/geneEffects.bin.gz'),
@@ -1850,7 +1863,7 @@ class CorrelationExplorer {
         this.updateLoadingText('Decompressing gene effect data...');
 
         // Decompress using pako
-        const decompressed = pako.inflate(compressedData);
+        const decompressed = await this._inflate(compressedData);
 
         const int16Data = this._int16FromMatrix(decompressed, this.metadata);
 
@@ -1858,14 +1871,36 @@ class CorrelationExplorer {
         const scaleFactor = this.metadata.scaleFactor;
         const naValue = this.metadata.naValue;
 
-        this.geneEffects = new Float32Array(int16Data.length);
-        for (let i = 0; i < int16Data.length; i++) {
-            if (int16Data[i] === naValue) {
-                this.geneEffects[i] = NaN;
-            } else {
-                this.geneEffects[i] = int16Data[i] / scaleFactor;
-            }
+        const ge = new Float32Array(int16Data.length);
+        this._matrixToFloat(int16Data, ge, scaleFactor, naValue);
+        this.geneEffects = ge;
+    }
+
+    // int16 matrix values to floats, NaN for the NA code. A method of its own:
+    // the same loop written inside a large async loader runs several times
+    // slower, and the mRNA loader is one.
+    _matrixToFloat(src, out, sf, na, from = 0, to = src.length) {
+        for (let i = from; i < to; i++) {
+            const v = src[i];
+            out[i] = v === na ? NaN : v / sf;
         }
+    }
+
+    // Median mRNA per cell line over every 10th gene, for the quality flag.
+    _exprCellLineMedians() {
+        const E = this.expressionData;
+        const nC = this.expressionMetadata.nCellLines, nG = this.expressionMetadata.nGenes;
+        const med = new Float32Array(nC);
+        const buf = new Float32Array(Math.ceil(nG / 10));
+        for (let j = 0; j < nC; j++) {
+            let k = 0;
+            for (let gi = 0; gi < nG; gi += 10) {
+                const v = E[gi * nC + j];
+                if (v === v) buf[k++] = v;
+            }
+            med[j] = k ? buf.subarray(0, k).sort()[k >> 1] : 0;
+        }
+        return med;
     }
 
     populateLineageFilter() {
@@ -40902,7 +40937,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const meta = await metaRes.json();
             const binRes = await fetch(this._dataUrl('web_data/cn.bin.gz'));
             const buf = await binRes.arrayBuffer();
-            const decompressed = pako.inflate(new Uint8Array(buf));
+            const decompressed = await this._inflate(new Uint8Array(buf));
             const int16Data = this._int16FromMatrix(decompressed, meta);
             const sf = meta.scaleFactor;
             const na = meta.naValue;
@@ -40913,9 +40948,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const _cnLen = int16Data.length, _CN_CHUNK = 4000000;
             for (let base = 0; base < _cnLen; base += _CN_CHUNK) {
                 const end = Math.min(base + _CN_CHUNK, _cnLen);
-                for (let i = base; i < end; i++) {
-                    out[i] = (int16Data[i] === na) ? NaN : int16Data[i] / sf;
-                }
+                this._matrixToFloat(int16Data, out, sf, na, base, end);
                 if (end < _cnLen) await new Promise(resolve => setTimeout(resolve, 0));
             }
             // int16 at scale 1000 stops at 32.767; the few stronger amplicons
@@ -41116,7 +41149,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             loadingTextEl.textContent = 'Decompressing expression data...';
             await new Promise(resolve => setTimeout(resolve, 50)); // let UI update
 
-            const decompressed = pako.inflate(compressedData);
+            const decompressed = await this._inflate(compressedData);
             const int16Data = this._int16FromMatrix(decompressed, this.expressionMetadata);
 
             const scaleFactor = this.expressionMetadata.scaleFactor;
@@ -41132,9 +41165,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const _exprLen = int16Data.length, _EXPR_CHUNK = 4000000;
             for (let base = 0; base < _exprLen; base += _EXPR_CHUNK) {
                 const end = Math.min(base + _EXPR_CHUNK, _exprLen);
-                for (let i = base; i < end; i++) {
-                    exprArr[i] = (int16Data[i] === naValue) ? NaN : int16Data[i] / scaleFactor;
-                }
+                this._matrixToFloat(int16Data, exprArr, scaleFactor, naValue, base, end);
                 if (end < _exprLen) {
                     loadingTextEl.textContent = `Decompressing expression data... ${Math.round(end / _exprLen * 100)}%`;
                     await new Promise(resolve => setTimeout(resolve, 0));
@@ -41165,17 +41196,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             // Quality filter: flag cell lines with very low median expression
             loadingTextEl.textContent = 'Computing quality metrics...';
             const nExprCL = this.expressionMetadata.nCellLines;
-            const nExprGenes = this.expressionMetadata.nGenes;
-            const clMedians = new Float32Array(nExprCL);
-            for (let j = 0; j < nExprCL; j++) {
-                const vals = [];
-                for (let gi = 0; gi < nExprGenes; gi += 10) { // sample every 10th gene for speed
-                    const v = this.expressionData[gi * nExprCL + j];
-                    if (!isNaN(v)) vals.push(v);
-                }
-                vals.sort((a, b) => a - b);
-                clMedians[j] = vals.length > 0 ? vals[Math.floor(vals.length / 2)] : 0;
-            }
+            await new Promise(resolve => setTimeout(resolve, 0));
+            const clMedians = this._exprCellLineMedians();
             const sortedMedians = Array.from(clMedians).sort((a, b) => a - b);
             const q1Cutoff = sortedMedians[Math.floor(sortedMedians.length * 0.01)];
             this._exprLowQualityCLs = new Set();
@@ -41188,7 +41210,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 console.log(`Expression QC: ${this._exprLowQualityCLs.size} cell lines below 1st percentile median expression (cutoff=${q1Cutoff.toFixed(2)}), excluded from gene set scoring.`);
             }
 
+            // The per-gene stats and the collections each take a moment; a
+            // pause before each lets the page answer clicks in between.
+            await new Promise(resolve => setTimeout(resolve, 0));
             this.expressionLoaded = true;
+            this._ensureExprGeneStats();
+            await new Promise(resolve => setTimeout(resolve, 0));
             // Re-run collection memberships now that expression-based
             // collections (NE, EMT, breast subtypes) can be computed.
             if (typeof this._computeCollectionMemberships === 'function') {
@@ -51301,22 +51328,23 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         if (this._exprGeneStats || !this.expressionLoaded || !this.expressionData || !this.expressionMetadata) return;
         const nG = this.expressionMetadata.genes.length;
         const nC = this.expressionMetadata.nCellLines;
+        const E = this.expressionData;
         const mean = new Float32Array(nG);
         const sd = new Float32Array(nG);
         for (let g = 0; g < nG; g++) {
             const off = g * nC;
             let sum = 0, n = 0;
             for (let i = 0; i < nC; i++) {
-                const v = this.expressionData[off + i];
-                if (!isNaN(v)) { sum += v; n++; }
+                const v = E[off + i];
+                if (v === v) { sum += v; n++; }
             }
             const m = n > 0 ? sum / n : 0;
             mean[g] = m;
             if (n > 1) {
                 let sq = 0;
                 for (let i = 0; i < nC; i++) {
-                    const v = this.expressionData[off + i];
-                    if (!isNaN(v)) sq += (v - m) * (v - m);
+                    const v = E[off + i];
+                    if (v === v) sq += (v - m) * (v - m);
                 }
                 sd[g] = Math.sqrt(sq / (n - 1));
             }
