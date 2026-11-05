@@ -64081,6 +64081,19 @@ ${clone.innerHTML}
         this._updateUmapLabelAnnotations();
     }
 
+    // The thin line from an arrow tip to its label, drawn only when the
+    // label sits clear of the tip; ends at the nearest point of the label.
+    _umapLeaderEnd(l) {
+        const nx = Math.max(l.x0, Math.min(l.x0 + l.w, l.tx));
+        const ny = Math.max(l.y0, Math.min(l.y0 + 11, l.ty));
+        return { nx, ny, far: Math.hypot(nx - l.tx, ny - l.ty) > 8 };
+    }
+
+    _umapLeaderSvg(l, i) {
+        const { nx, ny, far } = this._umapLeaderEnd(l);
+        return `<line data-umap-leader="${i}" x1="${l.tx}" y1="${l.ty}" x2="${nx}" y2="${ny}" stroke="#9ca3af" stroke-width="0.7"${far ? '' : ' display="none"'}/>`;
+    }
+
     _addLoadingsArrows(plotDiv) {
         // Render the PCA loadings biplot into the sidecar next to the main plot.
         // Previously this was an absolute-positioned inset floating over the
@@ -64108,7 +64121,9 @@ ${clone.innerHTML}
         const loadings = this._clbUmapAllLoadings;
         const geneNames = this._clbUmapData.geneNames;
 
-        // Top 8 genes by loading magnitude in selected PC plane
+        // The top 4 genes on each plotted axis, not the 8 longest arrows: a
+        // component many genes share gives each a small weight, so ranking by
+        // length in the plane filled all 8 slots from the other axis.
         const srcs = this._clbUmapData.geneSrc || [];
         const mixed = !!this._clbUmapData.mixedSrc;
         const mags = geneNames.map((g, i) => ({
@@ -64117,9 +64132,14 @@ ${clone.innerHTML}
             ly: loadings[i][compY],
             mag: Math.sqrt(loadings[i][compX] ** 2 + loadings[i][compY] ** 2)
         }));
-        mags.sort((a, b) => b.mag - a.mag);
-        const top = mags.slice(0, 8);
-        const loadTitle = (mags.length > top.length ? `Loadings (top ${top.length})`
+        const PER_AXIS = 4;
+        const picked = new Set();
+        for (const key of ['lx', 'ly']) {
+            [...mags].sort((a, b) => Math.abs(b[key]) - Math.abs(a[key]))
+                .filter(m => !picked.has(m)).slice(0, PER_AXIS).forEach(m => picked.add(m));
+        }
+        const top = [...picked].sort((a, b) => b.mag - a.mag);
+        const loadTitle = (mags.length > top.length ? 'Top loadings'
             : `Loadings (${top.length} gene${top.length === 1 ? '' : 's'})`) + this._umapSrcWord();
         if (top.length === 0) {
             if (sidecar) sidecar.style.display = 'none';
@@ -64170,30 +64190,75 @@ ${clone.innerHTML}
             const lx = ex + (ex - cx) / dist * 7;
             const ly = ey + (ey - cy) / dist * 7;
             const anchor = lx > cx ? 'start' : 'end';
-            labels.push({ gene: t.gene, src: t.src, x: lx, y: ly, anchor, col: mixed ? arrowCol(t.src) : '#374151' });
+            labels.push({ gene: t.gene, src: t.src, x: lx, y: ly, anchor, tx: ex, ty: ey, col: mixed ? arrowCol(t.src) : '#374151' });
         });
 
-        // Space labels 11 px apart within each side, then lift a side's stack
-        // if it would run past the bottom of the box.
-        for (const side of ['start', 'end']) {
-            const g = labels.filter(l => l.anchor === side).sort((a, b) => a.y - b.y);
-            for (let i = 1; i < g.length; i++) if (g[i].y - g[i - 1].y < 11) g[i].y = g[i - 1].y + 11;
-            const over = g.length ? g[g.length - 1].y - (svgH - 3) : 0;
-            if (over > 0) g.forEach(l => { l.y -= over; });
+        // Labels are pushed apart until no two overlap, then kept in the box.
+        // One that ends up away from its arrow gets a thin line to the tip.
+        // A label the user dragged keeps its place for this run and plane.
+        const posKey = `${compX},${compY}`;
+        if (this._umapLoadPos?.run !== this._clbUmapData || this._umapLoadPos?.plane !== posKey) {
+            this._umapLoadPos = { run: this._clbUmapData, plane: posKey, pos: {} };
         }
-
+        const userPos = this._umapLoadPos.pos;
+        const LH = 11;
         labels.forEach(l => {
-            const w = mctx.measureText(l.gene).width;
-            const clampX = l.anchor === 'start' ? Math.max(4, Math.min(svgW - 4 - w, l.x)) : Math.min(svgW - 4, Math.max(4 + w, l.x));
-            const clampY = Math.max(12, Math.min(svgH - 4, l.y));
-            const on = this._clbUmapGeneColorActive?.gene === l.gene && (!mixed || this._clbUmapGeneColorActive.colorType === (l.src || 'ge'));
-            svg += `<text data-umap-load="${this.esc(l.gene)}" data-umap-src="${l.src || ''}" x="${clampX}" y="${clampY}" text-anchor="${l.anchor}" style="font-size:10px;font-style:italic;fill:${l.col};cursor:pointer;${on ? 'font-weight:700;text-decoration:underline;' : ''}" stroke="white" stroke-width="3" paint-order="stroke">${this.esc(l.gene)}</text>`;
+            l.w = mctx.measureText(l.gene).width;
+            l.key = `${l.gene}|${l.src || ''}`;
+            l.x0 = l.anchor === 'start' ? l.x : l.x - l.w;
+            l.y0 = l.y - 9;
         });
+        const clampL = (l) => {
+            l.x0 = Math.max(4, Math.min(svgW - 4 - l.w, l.x0));
+            l.y0 = Math.max(3, Math.min(svgH - 3 - LH, l.y0));
+        };
+        labels.forEach(clampL);
+        for (let it = 0; it < 80; it++) {
+            let moved = false;
+            for (let i = 0; i < labels.length; i++) for (let j = i + 1; j < labels.length; j++) {
+                const a = labels[i], b = labels[j];
+                const ox = Math.min(a.x0 + a.w, b.x0 + b.w) - Math.max(a.x0, b.x0) + 2;
+                const oy = Math.min(a.y0 + LH, b.y0 + LH) - Math.max(a.y0, b.y0) + 1;
+                if (ox <= 0 || oy <= 0) continue;
+                moved = true;
+                // Apart along the shorter overlap; vertical reads best.
+                if (oy <= ox * 1.5) {
+                    const d = (a.y0 <= b.y0 ? -1 : 1) * (oy / 2 + 0.5);
+                    a.y0 += d; b.y0 -= d;
+                } else {
+                    const d = (a.x0 <= b.x0 ? -1 : 1) * (ox / 2 + 0.5);
+                    a.x0 += d; b.x0 -= d;
+                }
+                clampL(a); clampL(b);
+            }
+            if (!moved) break;
+        }
+        labels.forEach(l => {
+            const u = userPos[l.key];
+            if (u) { l.x0 = u.x0; l.y0 = u.y0; }
+        });
+        this._umapLoadLabels = labels;
+
+        const placed = [];
+        let leaders = '', texts = '';
+        labels.forEach((l, i) => {
+            placed.push({ x0: l.x0, x1: l.x0 + l.w, y0: l.y0, y1: l.y0 + LH });
+            leaders += this._umapLeaderSvg(l, i);
+            const on = this._clbUmapGeneColorActive?.gene === l.gene && (!mixed || this._clbUmapGeneColorActive.colorType === (l.src || 'ge'));
+            texts += `<text data-umap-load="${this.esc(l.gene)}" data-umap-src="${l.src || ''}" data-umap-i="${i}" x="${l.x0}" y="${l.y0 + 9}" text-anchor="start" style="font-size:10px;font-style:italic;fill:${l.col};cursor:move;${on ? 'font-weight:700;text-decoration:underline;' : ''}" stroke="white" stroke-width="3" paint-order="stroke"><title>${this.esc(l.gene)}: click to color the plot by it, drag to move the label</title>${this.esc(l.gene)}</text>`;
+        });
+        svg += leaders + texts;
 
         const axX = this._clbUmapData.axisLabels?.[0]?.split('(')[0].trim() || `PC${compX + 1}`;
         const axY = this._clbUmapData.axisLabels?.[1]?.split('(')[0].trim() || `PC${compY + 1}`;
-        svg += `<text x="${boxRight - 4}" y="${cy - 3}" text-anchor="end" style="font-size:9px;fill:#9ca3af;">${axX}</text>`;
-        svg += `<text x="${cx + 3}" y="12" text-anchor="start" style="font-size:9px;fill:#9ca3af;">${axY}</text>`;
+        // Each axis tag takes the side of its line that no gene label covers.
+        mctx.font = '9px Arial, sans-serif';
+        const free = (x0, x1, y0, y1) => !placed.some(r => r.x0 < x1 && r.x1 > x0 && r.y0 < y1 && r.y1 > y0);
+        const wX = mctx.measureText(axX).width, wY = mctx.measureText(axY).width;
+        const tagXy = free(boxRight - 4 - wX, boxRight - 4, cy - 11, cy - 1) ? cy - 3 : cy + 11;
+        const tagYleft = !free(cx + 3, cx + 3 + wY, 4, 14) && free(cx - 3 - wY, cx - 3, 4, 14);
+        svg += `<text x="${boxRight - 4}" y="${tagXy}" text-anchor="end" style="font-size:9px;fill:#9ca3af;">${axX}</text>`;
+        svg += `<text x="${tagYleft ? cx - 3 : cx + 3}" y="12" text-anchor="${tagYleft ? 'end' : 'start'}" style="font-size:9px;fill:#9ca3af;">${axY}</text>`;
         svg += '</svg>';
 
         if (sidecar) {
@@ -64208,7 +64273,44 @@ ${clone.innerHTML}
                 ${svg}${mixed ? `<div style="font-size:10px; color:#6b7280; text-align:center; margin-top:4px;"><span style="color:#4c782e; font-weight:600;">green</span> CRISPR gene effect · <span style="color:#b91c1c; font-weight:600;">red</span> mRNA</div>` : ''}<div style="font-size:10px; color:#9ca3af; text-align:center; margin-top:2px;">Click a gene to color the plot by it</div>`;
             if (!sidecar._loadClick) {
                 sidecar._loadClick = true;
+                // Dragging a label moves it (and its leader line); a press
+                // that does not move is still a click.
+                sidecar.addEventListener('pointerdown', (e) => {
+                    const t = e.target.closest('text[data-umap-i]');
+                    const l = t && this._umapLoadLabels?.[+t.dataset.umapI];
+                    if (!l) return;
+                    const svgEl = t.ownerSVGElement;
+                    const k = svgEl.getScreenCTM()?.a || 1;
+                    const sx = e.clientX, sy = e.clientY, x0 = l.x0, y0 = l.y0;
+                    let dragged = false;
+                    const move = (ev) => {
+                        const dx = (ev.clientX - sx) / k, dy = (ev.clientY - sy) / k;
+                        if (!dragged && Math.hypot(dx, dy) < 3) return;
+                        dragged = true;
+                        l.x0 = Math.max(0, Math.min(182 - l.w, x0 + dx));
+                        l.y0 = Math.max(0, Math.min(182 - 11, y0 + dy));
+                        t.setAttribute('x', l.x0); t.setAttribute('y', l.y0 + 9);
+                        const ln = svgEl.querySelector(`[data-umap-leader="${t.dataset.umapI}"]`);
+                        if (ln) {
+                            const { nx, ny, far } = this._umapLeaderEnd(l);
+                            ln.setAttribute('x2', nx); ln.setAttribute('y2', ny);
+                            if (far) ln.removeAttribute('display'); else ln.setAttribute('display', 'none');
+                        }
+                    };
+                    const up = () => {
+                        window.removeEventListener('pointermove', move);
+                        window.removeEventListener('pointerup', up);
+                        if (!dragged) return;
+                        this._umapLoadPos.pos[l.key] = { x0: l.x0, y0: l.y0 };
+                        sidecar._suppressClick = true;
+                        setTimeout(() => { sidecar._suppressClick = false; }, 0);
+                    };
+                    window.addEventListener('pointermove', move);
+                    window.addEventListener('pointerup', up);
+                    e.preventDefault();
+                });
                 sidecar.addEventListener('click', (e) => {
+                    if (sidecar._suppressClick) return;
                     const el = e.target.closest('[data-umap-load]');
                     if (!el) return;
                     this.applyUmapGeneColor_fromTop(el.dataset.umapLoad, el.dataset.umapSrc || '');
@@ -72127,7 +72229,7 @@ ${clone.innerHTML}
             `WHICH CELL LINES AND WHICH GENES\n   Cohort: ${cohortWord}, ${this._mNum(nCL)} cell lines. The panel refuses to run below 15.\n   Data: ${dataWord}.\n   ${geneRule}\n   ${this._mNum(nGenes)} gene${nGenes === 1 ? '' : 's'} survived into the matrix.\n   Genes missing in more than 30 percent of the cohort were dropped; the remaining gaps were filled with the gene's own mean, which pulls those cell lines toward the middle rather than leaving them out.`,
             `HOW THE PROJECTION WAS COMPUTED\n   ${methodRule}\n`
             + (method === 'PCA'
-                ? `   A principal component is a direction through the data along which the cell lines spread out most; the first explains the most, the second the next most, and so on.${explained ? `\n   Variance explained by the first components: ${explained.slice(0, 5).map((e, i) => `PC${i + 1} ${(e * 100).toFixed(1)} percent`).join(', ')}.` : ''}\n   Distances on a PCA plot are meaningful in the plotted directions, and the components can be read back to the genes that drive them (the loadings option shows this).`
+                ? `   A principal component is a direction through the data along which the cell lines spread out most; the first explains the most, the second the next most, and so on.${explained ? `\n   Variance explained by the first components: ${explained.slice(0, 5).map((e, i) => `PC${i + 1} ${(e * 100).toFixed(1)} percent`).join(', ')}.` : ''}\n   Distances on a PCA plot are meaningful in the plotted directions, and the components can be read back to the genes that drive them (the loadings option shows this).\n   The loadings figure draws the four genes with the largest weight on each plotted axis, as arrows whose ends are each gene's weights on the two axes. A component that many genes share gives each of them a small weight, so the arrows along the first component can be shorter than those along the second even though the first explains more; Top Genes lists the weights per component.`
                 : '   UMAP is a non-linear method: it preserves which cell lines are near each other, and it does NOT preserve distances between clusters. How far apart two groups sit on a UMAP plot is not a measure of how different they are, and the size of a cluster is not a measure of anything. Re-running UMAP will move the picture even on the same data.'),
             'MARKS ON THE PLOT\n'
             + `   Points are colored by ${v('clbUmapColorBy') === 'subtissue' ? 'subtype' : 'tissue'}${v('clbUmapColorGene') ? `, or by ${v('clbUmapColorGene')} ${v('clbUmapColorGeneType') === 'expr' ? 'expression' : 'gene effect'} where that is set` : ''}.\n`
