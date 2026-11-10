@@ -10984,6 +10984,32 @@ class CorrelationExplorer {
         return { t, df, p };
     }
 
+    // Two-sided p for the difference between two regression slopes (y on x),
+    // each group fitted on its own: t = (b1 - b2) / sqrt(se1^2 + se2^2) with
+    // Welch-Satterthwaite degrees of freedom, n - 2 per group. NaN when a
+    // group has fewer than 3 points or no spread in x.
+    _slopeDiffP(pts1, pts2) {
+        const fit = (pts) => {
+            let n = 0, sx = 0, sy = 0;
+            for (const d of pts) if (isFinite(d.x) && isFinite(d.y)) { n++; sx += d.x; sy += d.y; }
+            if (n < 3) return null;
+            const mx = sx / n, my = sy / n;
+            let sxx = 0, sxy = 0, syy = 0;
+            for (const d of pts) if (isFinite(d.x) && isFinite(d.y)) {
+                sxx += (d.x - mx) * (d.x - mx); sxy += (d.x - mx) * (d.y - my); syy += (d.y - my) * (d.y - my);
+            }
+            if (!(sxx > 0)) return null;
+            const b = sxy / sxx;
+            return { b, v: Math.max(0, syy - b * sxy) / (n - 2) / sxx, df: n - 2 };
+        };
+        const f1 = fit(pts1), f2 = fit(pts2);
+        if (!f1 || !f2) return NaN;
+        const v = f1.v + f2.v;
+        if (!(v > 0)) return f1.b === f2.b ? 1 : NaN;
+        const df = v * v / (f1.v * f1.v / f1.df + f2.v * f2.v / f2.df);
+        return this.tDistributionPValue(Math.abs(f1.b - f2.b) / Math.sqrt(v), df);
+    }
+
     tDistributionPValue(t, df) {
         // Two-tailed p for the t-distribution via the incomplete beta
         // function: P(|T| > t) = I_x(df/2, 1/2) with x = df/(df + t²).
@@ -12892,12 +12918,12 @@ class CorrelationExplorer {
 
             // Stats for ALL cells
             const allMean = allValidData.length > 0 ? allValidData.reduce((a, b) => a + b, 0) / allValidData.length : NaN;
-            const allVariance = allValidData.length > 0 ? allValidData.reduce((a, b) => a + (b - allMean) ** 2, 0) / allValidData.length : NaN;
+            const allVariance = allValidData.length > 0 ? allValidData.reduce((a, b) => a + (b - allMean) ** 2, 0) / Math.max(1, allValidData.length - 1) : NaN;
             const allSd = Math.sqrt(allVariance);
 
             // Stats for FILTERED cells
             const filtMean = filteredData.length > 0 ? filteredData.reduce((a, b) => a + b, 0) / filteredData.length : NaN;
-            const filtVariance = filteredData.length > 0 ? filteredData.reduce((a, b) => a + (b - filtMean) ** 2, 0) / filteredData.length : NaN;
+            const filtVariance = filteredData.length > 0 ? filteredData.reduce((a, b) => a + (b - filtMean) ** 2, 0) / Math.max(1, filteredData.length - 1) : NaN;
             const filtSd = Math.sqrt(filtVariance);
 
             return {
@@ -22558,8 +22584,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 const zDiff = (z2 - z1) / se;
                 const pR = 2 * this.normalUpperTail(Math.abs(zDiff));
 
-                // Approximate p-value for slope difference (simplified)
-                const pSlope = pR * 2; // Rough approximation
+                const pSlope = this._slopeDiffP(groups.wt, groups.mut);
 
                 tableData.push({
                     lineage,
@@ -22597,7 +22622,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 <strong>Click a cancer type</strong> to view its scatter plot with the ${this.gi(geneLabel)} ${typeLabel.toLowerCase()} overlay.
             </p>
             <p style="font-size: 10px; color: #0c4a6e; background: #f0f9ff; padding: 4px 8px; border-radius: 4px; margin-bottom: 12px;">
-                <b>Statistics:</b> p(Δr) uses Fisher z-transformation to compare correlations. p(Δslope) is an approximation based on correlation difference.
+                <b>Statistics:</b> p(Δr) uses Fisher z-transformation to compare correlations. p(Δslope) is a t-test on the difference between the two regression slopes, with unequal variances.
             </p>
             <div style="overflow-x: auto;">
             <table id="compareByCancerTable" class="data-table" style="width: 100%; font-size: 12px;">
@@ -26673,6 +26698,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         this.setupSortableTable('compareCancerTypesTable');
     }
 
+    // p for a chi-squared statistic with 1 degree of freedom (a 2x2 table):
+    // chi2 is then the square of a standard normal.
+    _chi2P1(chi2) {
+        if (!(chi2 > 0)) return 1;
+        return Math.min(1, 2 * this.normalUpperTail(Math.sqrt(chi2)));
+    }
+
     // Upper tail of the standard normal, P(Z > z), via Hart's rational
     // approximation (West 2005 arrangement): relative accuracy ~1e-8, stays
     // meaningful down to ~1e-300. The naive `1 - normalCDF(z)` bottoms out at
@@ -26735,6 +26767,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (p === null || p === undefined || isNaN(p)) return '';
         if (p === 0) return '0';
         return (p >= 1e-4 && p < 1e7) ? String(Number(p.toPrecision(6))) : p.toExponential(3);
+    }
+
+    // 1st, 2nd, 3rd, 4th ... 11th, 12th, 13th, 21st.
+    _ordinal(n) {
+        const t = n % 100, u = n % 10;
+        return n + (t >= 11 && t <= 13 ? 'th' : u === 1 ? 'st' : u === 2 ? 'nd' : u === 3 ? 'rd' : 'th');
     }
 
     formatPValue(p) {
@@ -27410,8 +27448,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 const a = mutA, b = mutB, c = nA - mutA, d2 = nB - mutB;
                 const n = a + b + c + d2;
                 const chi2 = n > 0 ? Math.pow(a * d2 - b * c, 2) * n / ((a + b) * (c + d2) * (a + c) * (b + d2) || 1) : 0;
-                // Approximate p-value from chi-squared (1 df)
-                const pApprox = Math.max(0, Math.min(1, Math.exp(-chi2 / 2)));
+                const pApprox = this._chi2P1(chi2);
 
                 mutStats.push({ gene, mutA, mutB, nA, nB, pctA, pctB, diff: pctA - pctB,
                                 pValue: pApprox, chi2, tested,
@@ -27759,7 +27796,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const a = mutA, b = mutB, c = gateA.length - mutA, d2 = gateB.length - mutB;
             const n = a + b + c + d2;
             const chi2 = n > 0 ? Math.pow(a * d2 - b * c, 2) * n / ((a + b) * (c + d2) * (a + c) * (b + d2) || 1) : 0;
-            const pApprox = Math.max(0, Math.min(1, Math.exp(-chi2 / 2)));
+            const pApprox = this._chi2P1(chi2);
 
             if (mutA > 0 || mutB > 0) {
                 mutStats.push({ gene, mutA, mutB, pctA, pctB, diff: pctA - pctB, pValue: pApprox, type });
@@ -28142,7 +28179,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const n = a + b + c + d;
             if (n <= 0) return 1;
             const chi2 = Math.pow(a * d - b * c, 2) * n / ((a + b) * (c + d) * (a + c) * (b + d) || 1);
-            return Math.max(0, Math.min(1, Math.exp(-chi2 / 2)));
+            return this._chi2P1(chi2);
         };
 
         if (type === 'mutation') {
@@ -30633,11 +30670,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 let pValue = 1;
                 if (otherPts.length >= 3) {
                     const otherR = this.pearsonWithSlope(otherPts.map(p => p.x), otherPts.map(p => p.y));
-                    // Clamp away from +/-1: the z transform is infinite there,
-                    // and r is exactly 1 whenever a group has only 3 points.
+                    // Clamp away from +/-1: the z transform is infinite there.
+                    // A 3-point group has no usable variance (se is infinite),
+                    // so its p stays 1.
                     const fisherZ = (r, n) => {
                         const rc = Math.max(-0.999999, Math.min(0.999999, r));
-                        return { z: 0.5 * Math.log((1 + rc) / (1 - rc)), se: 1 / Math.sqrt(Math.max(1, n - 3)) };
+                        return { z: 0.5 * Math.log((1 + rc) / (1 - rc)), se: 1 / Math.sqrt(n - 3) };
                     };
                     if (Number.isFinite(s.correlation) && Number.isFinite(otherR.correlation)) {
                         const fz1 = fisherZ(s.correlation, pts.length);
@@ -30763,7 +30801,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 // exactly 1 whenever a group has only three points.
                 const fisherZ = (r, n) => {
                     const rc = Math.max(-0.999999, Math.min(0.999999, r));
-                    return { z: 0.5 * Math.log((1 + rc) / (1 - rc)), se: 1 / Math.sqrt(Math.max(1, n - 3)) };
+                    return { z: 0.5 * Math.log((1 + rc) / (1 - rc)), se: 1 / Math.sqrt(n - 3) };
                 };
                 let pValue = 1;
                 if (Number.isFinite(wtCorr.correlation) && Number.isFinite(mutCorr.correlation)) {
@@ -31517,7 +31555,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Calculate overall stats
         const allEffects = this.currentGeneEffect.data.map(d => d.geneEffect);
         const mean = allEffects.reduce((a, b) => a + b, 0) / allEffects.length;
-        const sd = Math.sqrt(allEffects.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / allEffects.length);
+        const sd = Math.sqrt(allEffects.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / Math.max(1, allEffects.length - 1));
 
         // Reset data type override
         this._originalGEData = null;
@@ -32610,7 +32648,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (cellData.length >= minGroupSize) {
                 const effects = cellData.map(c => c.geneEffect);
                 const mean = effects.reduce((a, b) => a + b, 0) / effects.length;
-                const sd = Math.sqrt(effects.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / effects.length);
+                const sd = Math.sqrt(effects.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / Math.max(1, effects.length - 1));
 
                 // Calculate p-value comparing this group to all other cells
                 const otherEffects = data.filter(d => keyOf(d) !== groupName).map(d => d.geneEffect);
@@ -32953,7 +32991,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (mutCellData.length < 1 || cellData0.length < 3) return;
             const eff = arr => arr.map(c => c.geneEffect);
             const mean = a => a.reduce((x, y) => x + y, 0) / a.length;
-            const sd = (a, m) => Math.sqrt(a.reduce((x, y) => x + Math.pow(y - m, 2), 0) / a.length);
+            const sd = (a, m) => Math.sqrt(a.reduce((x, y) => x + Math.pow(y - m, 2), 0) / Math.max(1, a.length - 1));
             const e0 = eff(cellData0), e1 = eff(cellData1), e2 = eff(cellData2), eMut = eff(mutCellData);
             const mean0 = mean(e0), sd0 = sd(e0, mean0);
             const mean1 = e1.length ? mean(e1) : NaN, sd1 = e1.length > 1 ? sd(e1, mean1) : NaN;
@@ -33556,10 +33594,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const allStats = calcStats(allEffects);
         const groupStats = calcStats(groupEffects);
 
-        // Calculate p-value comparing group to all cells
+        // p compares the group with the OTHER cell lines, as the table does;
+        // testing against all cells would put the group on both sides.
+        const inGroup = new Set(filteredData);
+        const otherEffects = data.filter(d => !inGroup.has(d)).map(d => d.geneEffect);
         let pValue = NaN;
-        if (groupStats.n >= 3 && allStats.n >= 3) {
-            const tTest = this.welchTTest(groupEffects, allEffects);
+        if (groupStats.n >= 3 && otherEffects.length >= 3) {
+            const tTest = this.welchTTest(groupEffects, otherEffects);
             pValue = tTest.p;
         }
 
@@ -33603,7 +33644,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         statsAnnotations.push(`All cells: n=${allStats.n}, GE=${allStats.mean.toFixed(2)}, SD=${allStats.sd.toFixed(2)}`);
         statsAnnotations.push(`${group}: n=${groupStats.n}, GE=${groupStats.mean.toFixed(2)}, SD=${groupStats.sd.toFixed(2)}`);
         if (!isNaN(pValue)) {
-            statsAnnotations.push(`p-value: ${this.formatPValue(pValue)}`);
+            statsAnnotations.push(`p-value vs other cell lines: ${this.formatPValue(pValue)}`);
         }
         const statsText = statsAnnotations.join('<br>');
 
@@ -38178,20 +38219,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                         return ranks;
                     };
                     const spearmanStats = this.pearsonWithSlope(rank(px), rank(py));
-                    // Two-sided p from Pearson r via t-distribution → normal approx.
                     const r = pearsonStats.correlation;
                     const n = px.length;
-                    let p = null;
-                    if (!isNaN(r) && Math.abs(r) < 0.9999 && n > 2) {
-                        const t = r * Math.sqrt(n - 2) / Math.sqrt(1 - r * r);
-                        // Abramowitz & Stegun normal-CDF
-                        const z = Math.abs(t);
-                        const tt = 1 / (1 + 0.2316419 * z);
-                        const d = 0.3989422804 * Math.exp(-z * z / 2);
-                        const pOneTail = d * tt * (0.31938153 + tt * (-0.356563782 + tt * (1.781477937 + tt * (-1.821255978 + tt * 1.330274429))));
-                        p = 2 * pOneTail;
-                        if (!Number.isFinite(p) || p < 1e-300) p = 1e-300;
-                    }
+                    const p = this._pearsonP(r, n);
                     extras = extras || {};
                     extras.pairCorrelation = {
                         x: { gene: context.gene1, type: context.xType },
@@ -55749,7 +55779,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 const panels = targets.map(t => {
                     const pc = (t.d.mine != null) ? pct(t.d.arr, t.d.mine) : null;
                     const sub = pc == null ? 'not measured'
-                        : `<b style="color:${callColor};">${t.d.mine.toFixed(1)}</b> log₂-TPM &nbsp;<span style="color:#9ca3af;">(${pc}th pct of breast cell lines)</span>`;
+                        : `<b style="color:${callColor};">${t.d.mine.toFixed(1)}</b> log₂-TPM &nbsp;<span style="color:#9ca3af;">(${this._ordinal(pc)} pct of breast cell lines)</span>`;
                     return `<div style="flex:1; min-width:150px;">
                         <div style="font-size:11px; font-weight:600; color:#374151; margin-bottom:2px;">${t.label}</div>
                         <div style="font-size:10px; color:#6b7280; margin-bottom:2px;">${sub}</div>
@@ -56635,7 +56665,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 const isHigh = cut != null && re.t >= cut;
                 retroWikiHtml = `
                 <p style="margin:0 0 8px; font-size:11px; color:#6b7280;">How much RNA 750 retroelements produce, measured from this cell line's public CCLE RNA-seq data. The panel covers full-length <b>LINE-1</b>, <b>HERV-K</b> and <b>SVA</b> copies that lie outside genes, so the reads reflect the elements' own promoter activity rather than a host gene's transcript. Only uniquely mapped reads are counted, summed per element and given as counts per million reads (CPM); an element counts as active above 0.5 CPM. 669 of the 1,208 cell lines have public data; the median total is about 40 CPM, and the top tenth (about 80 CPM and up) is called retroelement-high.</p>
-                ${row('Total signal', `${re.t.toFixed(1)} CPM <span style="font-size:10px; color:#6b7280;">(panel percentile ${pctRank}${pctRank !== null ? 'th' : ''}, panel median is about 40 CPM)</span>`)}
+                ${row('Total signal', `${re.t.toFixed(1)} CPM <span style="font-size:10px; color:#6b7280;">(panel percentile ${pctRank !== null ? this._ordinal(pctRank) : pctRank}, panel median is about 40 CPM)</span>`)}
                 ${row('LINE-1 (L1)', `${re.l1.toFixed(1)} CPM`)}
                 ${row('HERV-K', `${re.hk.toFixed(1)} CPM`)}
                 ${row('SVA', `${re.sva.toFixed(1)} CPM`)}
@@ -62262,7 +62292,7 @@ ${clone.innerHTML}
             const n = a + b + c + d;
             if (n <= 0) return 1;
             const chi2 = Math.pow(a * d - b * c, 2) * n / ((a + b) * (c + d) * (a + c) * (b + d) || 1);
-            return Math.max(0, Math.min(1, Math.exp(-chi2 / 2)));
+            return this._chi2P1(chi2);
         };
 
         // 1. Tissue enrichment
@@ -62311,7 +62341,7 @@ ${clone.innerHTML}
             const a = mutA, b = mutB, c = nA - mutA, d2 = nB - mutB;
             const n = a + b + c + d2;
             const chi2 = n > 0 ? Math.pow(a * d2 - b * c, 2) * n / ((a + b) * (c + d2) * (a + c) * (b + d2) || 1) : 0;
-            const pValue = Math.max(0, Math.min(1, Math.exp(-chi2 / 2)));
+            const pValue = this._chi2P1(chi2);
             if (mutA > 0 || mutB > 0) mutStats.push({ gene, mutA, mutB, pctA, pctB, diff: pctA - pctB, pValue, type });
         });
         mutStats.sort((a, b) => a.pValue - b.pValue);
@@ -62661,7 +62691,7 @@ ${clone.innerHTML}
             const a = mutA, b = mutB, c = nA - mutA, d2 = nB - mutB;
             const n = a + b + c + d2;
             const chi2 = n > 0 ? Math.pow(a * d2 - b * c, 2) * n / ((a + b) * (c + d2) * (a + c) * (b + d2) || 1) : 0;
-            const pValue = Math.max(0, Math.min(1, Math.exp(-chi2 / 2)));
+            const pValue = this._chi2P1(chi2);
             const traces = [
                 { x: ['Gate A'], y: [pctMutA], name: 'Mutated', type: 'bar', marker: { color: '#2563eb' },
                   text: [`${mutA}/${nA} (${pctMutA.toFixed(1)}%)`], textposition: pctMutA > 10 ? 'inside' : 'outside', textfont: { color: pctMutA > 10 ? 'white' : '#2563eb', size: 10 } },
@@ -63532,7 +63562,7 @@ ${clone.innerHTML}
             totalVar = totalVar || 1;
             // Scores: [nc][n] → transpose to [n][nc]
             const scoresT = Array.from({ length: n }, (_, i) =>
-                eigenvectors.map((ev, k) => ev[i] * Math.sqrt(Math.abs(eigenvalues[k])))
+                eigenvectors.map((ev, k) => ev[i] * Math.sqrt(Math.abs(eigenvalues[k]) * (n - 1)))
             );
             // Loadings: [p][nc]
             const loadings = Array.from({ length: p }, () => new Array(nc).fill(0));
