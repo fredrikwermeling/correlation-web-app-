@@ -991,8 +991,8 @@ class CorrelationExplorer {
 
     // Filter/setting controls captured for "Open in new tab" so the new tab
     // reproduces the same view (not just the gene/pair).
-    _GE_NEWTAB_CONTROLS() { return ['geDataType', 'geHotspotGeneSelect', 'geTissueFilter', 'geSubtypeFilter', 'geOncotreeFilter', 'geHotspotFilter', 'geHotspotLevel', 'geFusionFilter', 'geFusionLevel', 'geCnFilter', 'geCnLevel', 'geMinGroupSize', 'geCellLineSearch']; }
-    _SCATTER_NEWTAB_CONTROLS() { return ['inspectGeneX', 'inspectGeneY', 'xAxisDataType', 'yAxisDataType', 'showCorrelationLine', 'showZeroLines', 'scatterDotColor', 'scatterXmin', 'scatterXmax', 'scatterYmin', 'scatterYmax', 'scatterCancerFilter', 'scatterSubtypeFilter', 'scatterOncotreeFilter', 'mutationFilterGene', 'mutationFilterLevel', 'translocationFilterGene', 'translocationFilterLevel', 'scatterCnFilter', 'scatterCnLevel', 'scatterFontSize', 'hotspotGene', 'hotspotMode', 'translocationGene', 'translocationMode', 'colorByCategory', 'colorByPicked', 'colorByLegendStat', 'colorByGene', 'colorByGeneType', 'scatterCellSearch', 'customCellLineFilter', 'scatterWhiteBg']; }
+    _GE_NEWTAB_CONTROLS() { return ['geDataType', 'geHotspotGeneSelect', 'geTissueFilter', 'geSubtypeFilter', 'geOncotreeFilter', 'geHotspotFilter', 'geHotspotLevel', 'geFusionFilter', 'geFusionLevel', 'geCnFilter', 'geCnLevel', 'geMinGroupSize', 'geCellLineSearch', 'geShowZeroLine']; }
+    _SCATTER_NEWTAB_CONTROLS() { return ['inspectGeneX', 'inspectGeneY', 'xAxisDataType', 'yAxisDataType', 'showCorrelationLine', 'showZeroLines', 'scatterDotColor', 'scatterXmin', 'scatterXmax', 'scatterYmin', 'scatterYmax', 'scatterCancerFilter', 'scatterSubtypeFilter', 'scatterOncotreeFilter', 'mutationFilterGene', 'mutationFilterLevel', 'translocationFilterGene', 'translocationFilterLevel', 'scatterCnFilter', 'scatterCnLevel', 'scatterFontSize', 'hotspotGene', 'hotspotMode', 'translocationGene', 'translocationMode', 'colorByCategory', 'colorByPicked', 'colorByLegendStat', 'colorByGene', 'colorByGeneType', 'scatterCellSearch', 'customCellLineFilter', 'scatterWhiteBg', 'plotWidth', 'plotHeight']; }
     _SI_NEWTAB_CONTROLS() { return ['geLeftDeltaCutoff', 'geLeftQCutoff', 'geLeftN', 'geRightDeltaCutoff', 'geRightQCutoff', 'geRightN', 'geInspectSearch', 'geInspectHideThin']; }
     _CA_NEWTAB_CONTROLS() { return ['caTissueFilter', 'caSubtypeFilter', 'caOncotreeFilter', 'caHotspotFilter', 'caHotspotLevel', 'caFusionFilter', 'caFusionLevel', 'caCnFilter', 'caCnLevel']; }
 
@@ -1232,7 +1232,7 @@ class CorrelationExplorer {
                 sort: this._geInspectSort ? JSON.parse(JSON.stringify(this._geInspectSort)) : null,
                 // Names clicked on or off, hidden genes and the auto count, per volcano.
                 volcanoLabels: this._geVolcanoLabels ? Object.fromEntries(Object.entries(this._geVolcanoLabels).map(([k, v]) =>
-                    [k, { added: [...v.added], removed: [...v.removed], hidden: [...v.hidden], autoN: v.autoN }])) : null,
+                    [k, { added: [...v.added], removed: [...v.removed], hidden: [...v.hidden], autoN: v.autoN, pos: [...(v.pos || [])] }])) : null,
                 controls: this._captureControls(this._SI_NEWTAB_CONTROLS())
             };
         } else {
@@ -1347,6 +1347,10 @@ class CorrelationExplorer {
             additionalTransLevel: mr.additionalTransLevel || 'all',
             excludedTissues: mr.excludedTissues?.size ? [...mr.excludedTissues] : null,
             minCellLines: mr.minN ?? null,
+            pValueThreshold: mr.pThreshold ?? null,
+            minGeneCoverage: document.getElementById('minGeneCoverage')?.value ?? null,
+            analysisCellLineSubset: this._analysisCellLineSubset?.size ? [...this._analysisCellLineSubset] : null,
+            analysisSubsetLabel: this._analysisSubsetLabel || '',
             metric: mr.metric || 'ge',
             oncoprintFilters: this._activeOncoprintFilters || null
         };
@@ -1417,7 +1421,7 @@ class CorrelationExplorer {
                 this._geVolcanoLabels = {};
                 for (const [k, v] of Object.entries(popout.volcanoLabels)) {
                     this._geVolcanoLabels[k] = { added: new Set(v.added || []), removed: new Set(v.removed || []),
-                        hidden: new Set(v.hidden || []), autoN: v.autoN ?? 4 };
+                        hidden: new Set(v.hidden || []), autoN: v.autoN ?? 4, pos: new Map(v.pos || []) };
                 }
             }
             this._restorePopoutControls(popout.controls, null, () => this._renderGEInspectTables());
@@ -1468,7 +1472,9 @@ class CorrelationExplorer {
     // re-render via the popout's own refresh function. `readyId` is a select
     // that gets options after the popout opens; we poll until it's ready.
     _restorePopoutControls(controls, readyId, rerender) {
-        if (!controls) return;
+        // A file without saved controls still needs the re-render, which is
+        // where its other restored layers are applied.
+        controls = controls || {};
         let tries = 0;
         const apply = () => {
             const ready = readyId ? document.getElementById(readyId) : null;
@@ -1506,8 +1512,18 @@ class CorrelationExplorer {
         // mutation_inspect (and other flat payloads) carry controls top-level,
         // not under .popout; without this the expr-view preload never fired.
         const pc = meta.popout?.controls || meta.controls || {};
-        const needsExpr = popoutDataType === 'expr' || meta.popout?.needsExpr || pc.geDataType === 'expr' || pc.xAxisDataType === 'expr' || pc.yAxisDataType === 'expr' || meta.metric === 'expr' || meta.graphType === 'expr_correlate';
-        const needsCn = pc.xAxisDataType === 'cn' || pc.yAxisDataType === 'cn';
+        const needsExpr = popoutDataType === 'expr' || meta.popout?.needsExpr || pc.geDataType === 'expr' || pc.xAxisDataType === 'expr' || pc.yAxisDataType === 'expr' || meta.metric === 'expr' || meta.graphType === 'expr_correlate'
+            || (pc.colorByCategory === 'gene' && pc.colorByGeneType === 'expr');
+        // Dots colored by a gene's expression or copy number need that matrix
+        // as much as an axis does.
+        const colorType = pc.colorByCategory === 'gene' ? pc.colorByGeneType : null;
+        // So does a cohort filter on a gene outside the curated panel: without
+        // the matrix it matches no cell line at all.
+        const cnFilters = [pc, meta.paramFilters, meta.popout?.paramFilters, meta.filters, meta.popout?.filters]
+            .flatMap(o => (o && typeof o === 'object') ? Object.keys(o).filter(k => /CnFilter$/.test(k)).map(k => o[k]) : [])
+            .filter(v => typeof v === 'string');
+        const needsCn = pc.xAxisDataType === 'cn' || pc.yAxisDataType === 'cn' || colorType === 'cn'
+            || cnFilters.some(v => this._cnFilterNeedsMatrix(v));
         const run = () => this._doApplyRestoreMeta(meta);
         const pre = [];
         if (needsExpr && !this.expressionLoaded) pre.push(this.loadExpressionData());
@@ -5936,6 +5952,23 @@ class CorrelationExplorer {
         return `${html ? this.gi(gene) : gene} ${w || hotspotWord || 'hotspot-mutated'}`;
     }
 
+    // The genes of the curated copy-number panel, upper case.
+    _cnPanel() {
+        if (!this._cnPanelSet) {
+            const panel = [].concat(this.clinicalCn?.amplificationPanel || [], this.clinicalCn?.deletionPanel || []);
+            this._cnPanelSet = new Set(panel.map(g => (typeof g === 'string' ? g : g.gene || '').toUpperCase()).filter(Boolean));
+        }
+        return this._cnPanelSet;
+    }
+
+    // True when a CN filter value names a gene outside the curated panel,
+    // which can only be answered from the full matrix.
+    _cnFilterNeedsMatrix(rawValue) {
+        if (!rawValue) return false;
+        const m = this._stripCnFilterDecoration(rawValue).match(/^(.+)_(amp|del)$/);
+        return !!m && !this._cnPanel().has(m[1].toUpperCase());
+    }
+
     // Apply the CN filter to a single cell line. Decoded value is e.g.
     // "MYC_amp" or "BAP1_del", see _populateCnFilterItems for the encoding.
     _cellLinePassesCnFilter(cl, rawValue) {
@@ -5946,11 +5979,7 @@ class CorrelationExplorer {
         const [, gene, kind] = m;
         const geneU = gene.toUpperCase();
         // Curated clinical panel (unchanged behavior for curated genes).
-        if (!this._cnPanelSet) {
-            const panel = [].concat(this.clinicalCn?.amplificationPanel || [], this.clinicalCn?.deletionPanel || []);
-            this._cnPanelSet = new Set(panel.map(g => (typeof g === 'string' ? g : g.gene || '').toUpperCase()).filter(Boolean));
-        }
-        if (this._cnPanelSet.has(geneU)) {
+        if (this._cnPanel().has(geneU)) {
             const entry = this.clinicalCn?.byCellLine?.[cl];
             if (!entry) return false;
             const list = kind === 'amp' ? (entry.amplifications || []) : (entry.deletions || []);
@@ -25235,11 +25264,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
 
     _ensureReactome() {
-        if (this.reactomePartners) return Promise.resolve();
+        if (this.reactomePartners && !this.reactomePartners.failed) return Promise.resolve();
+        // A failed download leaves an empty stand-in and is tried again on
+        // the next request.
         this._reactomeLoading ||= fetch(this._dataUrl('web_data/reactome_partners.json'))
-            .then(r => r.json())
+            .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
             .then(d => { this.reactomePartners = d; })
-            .catch(() => { this.reactomePartners = { partners: {} }; });
+            .catch(() => { this.reactomePartners = { partners: {}, failed: true }; this._reactomeLoading = null; });
         return this._reactomeLoading;
     }
 
@@ -26343,6 +26374,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const GR_LABEL = '⚡ Growth Rate';
         const GS_LABEL = this._geneSetLabel ? `📊 ${this._geneSetLabel}` : '📊 Gene Set';
         const noGeneAxis = (t) => t === 'growth' || t === 'geneset';
+        // Closing the popout while a matrix downloads cancels the update,
+        // which would otherwise open it again.
+        const inspModal = document.getElementById('inspectModal');
+        const wasOpen = !!inspModal && inspModal.style.display !== 'none';
+        const closedMeanwhile = () => wasOpen && inspModal.style.display === 'none';
 
         // A synonym in either box becomes the data's name (CD132 to IL2RG),
         // as in every gene box; an unknown name still gets the notice below.
@@ -26421,6 +26457,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 }
                 observer?.disconnect();
                 overlay.style.display = 'none';
+                if (closedMeanwhile()) return;
             }
             // Validate genes exist in expression data for the axes that need it
             if (xType === 'expr' && !this.expressionGeneIndex?.has(gene1.toUpperCase())) {
@@ -26442,6 +26479,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (ov) { ov.innerHTML = '<div>Loading copy-number matrix…</div>'; ov.style.display = 'flex'; }
             try { await this.loadCnData(); } catch (e) { if (ov) ov.style.display = 'none'; alert('Failed to load copy-number data.'); return; }
             if (ov) ov.style.display = 'none';
+            if (closedMeanwhile()) return;
             if (xType === 'cn' && !this.cnGeneIndex?.has(gene1.toUpperCase())) { this.geneNotFound(gene1, 'the copy-number matrix'); return; }
             if (yType === 'cn' && !this.cnGeneIndex?.has(gene2.toUpperCase())) { this.geneNotFound(gene2, 'the copy-number matrix'); return; }
         }
@@ -29474,6 +29512,12 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 this._netLabelItalic = (ns.labelItalic === null || ns.labelItalic === undefined) ? undefined : ns.labelItalic;
                 if (ns.minSlope) document.getElementById('minSlope').value = ns.minSlope;
                 if (ns.minCellLines) document.getElementById('minCellLines').value = ns.minCellLines;
+                // Absent in files saved before these were recorded: leave the
+                // boxes as they are then.
+                for (const [key, id] of [['expandNetwork', 'designExpandNetwork'], ['includeGrowthRate', 'includeGrowthRate']]) {
+                    const box = document.getElementById(id);
+                    if (box && typeof ns[key] === 'boolean') box.checked = ns[key];
+                }
                 if (ns.lineageFilter) document.getElementById('lineageFilter').value = ns.lineageFilter;
                 // Populate the sub-lineage options for the restored lineage BEFORE
                 // setting the sub value, otherwise the option doesn't exist yet and
@@ -29767,6 +29811,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             set('paramTranslocationLevel', meta.additionalTransLevel || 'all');
         }
         if (meta.minCellLines != null) set('minCellLines', meta.minCellLines);
+        if (meta.pValueThreshold != null) set('pValueThreshold', meta.pValueThreshold);
+        if (meta.minGeneCoverage != null && meta.minGeneCoverage !== '') set('minGeneCoverage', meta.minGeneCoverage);
+        if (meta.analysisCellLineSubset?.length) this.setAnalysisCellLineSubset(meta.analysisCellLineSubset, meta.analysisSubsetLabel);
         if (meta.metric === 'expr') this._mutAnalysisMetric = 'expr';
         // The cohort filters above re-populate the gene selectors with counts
         // scoped to the restored cohort; reassert the analysis gene and add it
@@ -29789,6 +29836,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         this._activeOncoprintFilters = meta.oncoprintFilters?.length
             ? meta.oncoprintFilters.map(f => ({ ...f }))
             : null;
+        // The analysis only honors grid picks that belong to its own mode.
+        this._gridFilterOrigin = this._activeOncoprintFilters ? 'mutation' : null;
         // Run mutation analysis, then open gene inspect after results load.
         // Drop any results the current tab already had first: with the same
         // gene selected, the poll below would otherwise catch the stale run
@@ -30048,6 +30097,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             subLineageFilter: document.getElementById('subLineageFilter')?.value || '',
             minSlope: document.getElementById('minSlope')?.value || '0.1',
             minCellLines: document.getElementById('minCellLines')?.value || '50',
+            // Run options that change which genes and edges exist.
+            expandNetwork: !!document.getElementById('designExpandNetwork')?.checked,
+            includeGrowthRate: !!document.getElementById('includeGrowthRate')?.checked,
             // The transparent-background checkbox was removed from the page;
             // the export dialog owns this setting now.
             transparentBg: false
@@ -31566,6 +31618,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         this._geDataType = dataType;
         const useExpr = dataType === 'expr';
 
+        this._geOpenSeq = (this._geOpenSeq || 0) + 1;
         // Validate gene is present in the relevant dataset.
         if (!useExpr && !this.geneIndex.has(geneUpper)) {
             this.geneNotFound(gene, 'the gene-effect data');
@@ -31575,8 +31628,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (!this.expressionLoaded) {
                 // Load and continue, rather than asking to try again.
                 this.showCopyNotification?.('Loading mRNA expression...');
+                // Only the latest request opens: another gene asked for while
+                // this one waited takes its place.
+                const seq = this._geOpenSeq = (this._geOpenSeq || 0) + 1;
                 Promise.resolve(this.loadExpressionData?.()).then(() => {
-                    if (this.expressionLoaded) this.openGeneEffectModal(gene, view, opts);
+                    if (this.expressionLoaded && this._geOpenSeq === seq) this.openGeneEffectModal(gene, view, opts);
                 }).catch(() => this.showCopyNotification?.('mRNA expression could not be loaded.'));
                 return;
             }
@@ -41045,8 +41101,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         this.cnLoading = (async () => {
             const t0 = performance.now();
             const metaRes = await fetch(this._dataUrl('web_data/cn_metadata.json'));
+            if (!metaRes.ok) throw new Error(`Copy number metadata: HTTP ${metaRes.status}`);
             const meta = await metaRes.json();
             const binRes = await fetch(this._dataUrl('web_data/cn.bin.gz'));
+            if (!binRes.ok) throw new Error(`Copy number matrix: HTTP ${binRes.status}`);
             const buf = await binRes.arrayBuffer();
             const decompressed = await this._inflate(new Uint8Array(buf));
             const int16Data = this._int16FromMatrix(decompressed, meta);
@@ -41075,6 +41133,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             this.cnLoaded = true;
             console.log(`CN matrix loaded: ${meta.nGenes} genes × ${meta.nCellLines} cell lines in ${((performance.now() - t0)/1000).toFixed(1)}s`);
         })();
+        // A failed download must not be remembered, or the next request would
+        // get the same failure back without trying again.
+        this.cnLoading.catch(() => { this.cnLoading = null; });
         return this.cnLoading;
     }
 
@@ -47427,6 +47488,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // and in-modal handlers are wired once at startup below.
         const closeCellLineWiki = () => {
             const m = document.getElementById('clbWikiModal');
+            this._wikiOpenSeq = (this._wikiOpenSeq || 0) + 1;
             if (m) {
                 m.style.display = 'none';
                 // Undo any z-index bump the heatmap's double-click-a-column
@@ -48280,15 +48342,20 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const raw = document.getElementById('clbSortGene').value || '';
             const tokens = raw.split(/[\s,;]+/).map(s => s.trim().toUpperCase()).filter(Boolean);
 
-            if (isExpr && !this.expressionLoaded) {
-                // Kick off expression load in the background; sort falls back
-                // to name for now. When expression arrives, user can switch
-                // the sort mode again to apply it.
-                try { this.loadExpressionData?.(); } catch (e) {}
+            // Expression loads on demand. The list sorts by name meanwhile and
+            // is drawn again, once, when the matrix has arrived.
+            const exprPending = isExpr && !this.expressionLoaded;
+            if (exprPending && !this._clbExprSortWaiting) {
+                this._clbExprSortWaiting = true;
+                Promise.resolve(this.loadExpressionData()).catch(() => {}).then(() => {
+                    this._clbExprSortWaiting = false;
+                    const open = document.getElementById('cellLineBrowserModal')?.style.display !== 'none';
+                    if (this.expressionLoaded && open) this.renderCellLineList();
+                });
             }
 
             const vecIdxs = [];
-            for (const gene of tokens) {
+            for (const gene of exprPending ? [] : tokens) {
                 const idx = isExpr
                     ? (this.expressionGeneIndex ? this.expressionGeneIndex.get(gene) : undefined)
                     : this.geneIndex.get(gene);
@@ -53830,13 +53897,9 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
 
     async _gbWaitExpression() {
         if (this.expressionLoaded) return true;
-        const t0 = Date.now();
-        // At once: nothing fetches the matrix in the background any more, so
-        // a wait that did not start it would wait for ever.
-        this._wantExpressionSoon();
-        while (!this.expressionLoaded && Date.now() - t0 < 120000) {
-            await new Promise(r => setTimeout(r, 400));
-        }
+        // Waits on the load itself, so a failed download answers at once
+        // instead of after a long timeout.
+        try { await this.loadExpressionData(); } catch (e) { return false; }
         return !!this.expressionLoaded;
     }
 
@@ -55676,6 +55739,8 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         // Remember which cell line the wiki is showing so the header export
         // buttons (gene-info CSV etc.) know what to export.
         this._wikiCellLineId = cellLineId;
+        // Closing the page while it waits for data cancels this open.
+        const openSeq = this._wikiOpenSeq = (this._wikiOpenSeq || 0) + 1;
         // Much of this page is mRNA (the surface panel, lineage markers, the
         // gene programs, the class I call), and those blocks drop out when the
         // matrix is absent. Open on a loading line and wait for it rather than
@@ -55688,13 +55753,14 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 m0.scrollTop = 0;
             }
             await this._gbWaitExpression();
-            if (this._wikiCellLineId !== cellLineId) return;
+            if (this._wikiOpenSeq !== openSeq) return;
         }
         // Ensure the common-essentials gene list is loaded, used to filter
         // pan-essentials out of the "uniquely essential" view below. Small
         // file; loaded once and cached for the session. Silently falls back
         // to an empty set on failure (filter becomes a no-op).
         await this._ensureCommonEssentials();
+        if (this._wikiOpenSeq !== openSeq) return;
         const name = this.getCellLineName(cellLineId);
         const m = this.cellLineMetadata || {};
         const get = (field) => m[field]?.[cellLineId] || '';
@@ -67009,6 +67075,7 @@ ${clone.innerHTML}
             const redrawBtn = document.getElementById('hmRedrawBtn');
             if (hint) hint.textContent = 'Loading expression data…';
             if (redrawBtn) redrawBtn.disabled = true;
+            const seqAtLoad = this._hmRedrawSeq;
             try { await this.loadExpressionData?.(); }
             catch (e) {
                 if (hint) hint.textContent = 'Expression data failed to load.';
@@ -67016,6 +67083,8 @@ ${clone.innerHTML}
                 return;
             }
             if (redrawBtn) redrawBtn.disabled = false;
+            // A newer redraw asked for while the matrix loaded draws instead.
+            if (seqAtLoad !== this._hmRedrawSeq) return;
         }
 
         let enteredGenes;
