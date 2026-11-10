@@ -6939,24 +6939,25 @@ class CorrelationExplorer {
 
         // Manual stats entry - now auto-loaded on Run, no button needed
 
-        // Prevent keyboard events from propagating to network when typing in textareas/inputs
-        // Use event delegation to handle all inputs including dynamically added ones
+        // Tab in a textarea inserts a tab character instead of moving focus.
         document.addEventListener('keydown', (e) => {
             const el = e.target;
-            if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
-                // Stop propagation to prevent vis-network from capturing arrow keys etc.
-                e.stopPropagation();
-
-                // Handle Tab key in textareas - insert tab character instead of changing focus
-                if (e.key === 'Tab' && el.tagName === 'TEXTAREA') {
-                    e.preventDefault();
-                    const start = el.selectionStart;
-                    const end = el.selectionEnd;
-                    el.value = el.value.substring(0, start) + '\t' + el.value.substring(end);
-                    el.selectionStart = el.selectionEnd = start + 1;
-                }
+            if (e.key === 'Tab' && el.tagName === 'TEXTAREA') {
+                e.preventDefault();
+                const start = el.selectionStart;
+                const end = el.selectionEnd;
+                el.value = el.value.substring(0, start) + '\t' + el.value.substring(end);
+                el.selectionStart = el.selectionEnd = start + 1;
             }
-        }, true); // Use capture phase to intercept before vis-network
+        }, true);
+        // A key typed in a box reaches the box and its own popout, then stops
+        // here, so page-wide shortcuts (Esc to close, arrows) never fire from
+        // typing. Stopping it earlier, in the capture phase, also silenced
+        // every Enter / Esc handler on the boxes themselves.
+        document.documentElement.addEventListener('keydown', (e) => {
+            const el = e.target;
+            if (el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT')) e.stopPropagation();
+        });
 
         // Run analysis
         document.getElementById('runAnalysis').addEventListener('click', () => this.runAnalysis());
@@ -7394,15 +7395,20 @@ class CorrelationExplorer {
         // the Cell Line Browser. The X in the upper-right is the only exit.
         // Easy to lose filter / gate / highlight state with a stray click.
 
+        // One Esc closes one layer: note which layer was on top before any
+        // handler ran, since a handler that closes it would otherwise leave
+        // the next layer looking like the top one to the handlers after it.
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape') this._escTop = this._topLayer(); }, true);
+
         // Global keyboard handler for closing modals with Enter or Escape
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' || e.key === 'Enter') {
-                // Close gene effect modal first (it sits on top of CLB at z-index 1200)
                 if (e.key === 'Escape') {
+                    const tsp = document.getElementById('textSettingsPanel');
+                    if (tsp && this._escTop === tsp) { tsp.style.display = 'none'; return; }
                     const geneEffectModal = document.getElementById('geneEffectModal');
                     if (geneEffectModal && geneEffectModal.style.display !== 'none') {
-                        geneEffectModal.style.display = 'none';
-                        this._geHighlightCellLine = null;
+                        if (this._escTop === geneEffectModal) document.getElementById('closeGeneEffect').click();
                         return;
                     }
                 }
@@ -8083,9 +8089,8 @@ class CorrelationExplorer {
         });
 
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && document.getElementById('corrAnalysisModal')?.style.display !== 'none') {
-                document.getElementById('corrAnalysisModal').style.display = 'none';
-            }
+            const ca = document.getElementById('corrAnalysisModal');
+            if (e.key === 'Escape' && ca && ca.style.display !== 'none' && this._escTop === ca) ca.style.display = 'none';
         });
 
         // Correlation Analysis Modal
@@ -8407,9 +8412,58 @@ class CorrelationExplorer {
         this.setupCutoffTool();
     }
 
+    // A gene list as typed or pasted: one per line, or separated by spaces,
+    // commas or semicolons.
+    _splitGenes(text) {
+        return String(text || '').split(/[\s,;]+/).filter(Boolean);
+    }
+
+    // A number from a table cell: accepts quotes and a decimal comma, keeps a
+    // true zero, and gives null for anything that is not a number.
+    _cellNum(cell) {
+        let t = String(cell ?? '').trim().replace(/^"|"$/g, '');
+        if (/^[-+]?\d*,\d+(e[-+]?\d+)?$/i.test(t)) t = t.replace(',', '.');
+        if (t === '') return null;
+        const v = Number(t);
+        return Number.isFinite(v) ? v : null;
+    }
+
+    // One line of a delimited table, honoring quoted cells that contain the
+    // delimiter ("Smith, J").
+    _splitDelimited(line, delim) {
+        if (!line.includes('"')) return line.split(delim).map(c => c.trim());
+        const out = [];
+        let cur = '', q = false;
+        for (let i = 0; i < line.length; i++) {
+            const ch = line[i];
+            if (ch === '"') {
+                if (q && line[i + 1] === '"') { cur += '"'; i++; } else q = !q;
+            } else if (ch === delim && !q) { out.push(cur.trim()); cur = ''; }
+            else cur += ch;
+        }
+        out.push(cur.trim());
+        return out;
+    }
+
+    // Which columns of a statistics table hold the gene, the fold change and
+    // the significance, judged from the header names (-1 when not found).
+    // The first match wins, so a MAGeCK table resolves to its neg| columns.
+    _guessStatsColumns(headers) {
+        const h = headers.map(x => String(x || '').trim().toLowerCase());
+        const find = (...tests) => {
+            for (const t of tests) { const i = h.findIndex(t); if (i >= 0) return i; }
+            return -1;
+        };
+        return {
+            gene: find(x => ['gene', 'symbol', 'geneid', 'gene_symbol', 'genename', 'gene_name', 'id'].includes(x), x => x.includes('gene'), x => x === 'name'),
+            lfc: find(x => ['lfc', 'logfc', 'log2fc', 'log2foldchange', 'log_fc'].includes(x), x => x.includes('lfc'), x => x.includes('log2f') || x.includes('logf') || x.includes('fold'), x => x.includes('log')),
+            fdr: find(x => x.includes('fdr') || x.includes('padj') || x.includes('adj.p') || x.includes('qval') || x.includes('q.val') || x === 'q', x => x.includes('pval') || x.includes('p.value') || x.includes('p-value'))
+        };
+    }
+
     updateGeneCount() {
         const text = document.getElementById('geneTextarea').value;
-        const genes = text.split(/\s+/).filter(g => g.trim() !== '');
+        const genes = this._splitGenes(text);
         const display = document.getElementById('geneCountDisplay');
 
         // Test Genes is the invitation to someone with an empty box. Once
@@ -9413,19 +9467,18 @@ class CorrelationExplorer {
         }
 
         // Parse header
-        const headers = firstLine.split(delimiter).map(h => h.trim().replace(/^"|"$/g, ''));
-        this.statsFileData = {
-            headers: headers,
-            rows: []
-        };
-
-        // Parse data rows
+        const headers = this._splitDelimited(firstLine, delimiter);
+        const rows = [];
         for (let i = 1; i < lines.length; i++) {
-            const cols = lines[i].split(delimiter).map(c => c.trim().replace(/^"|"$/g, ''));
-            if (cols.length === headers.length) {
-                this.statsFileData.rows.push(cols);
-            }
+            if (lines[i].trim()) rows.push(this._splitDelimited(lines[i], delimiter));
         }
+        // A table written by R with row names has one header fewer than it
+        // has columns: the unnamed first column is the row name.
+        if (rows.length && rows.every(r => r.length === headers.length + 1)) headers.unshift('(row names)');
+        // A short row is padded rather than dropped; its missing cells read
+        // as empty.
+        rows.forEach(r => { while (r.length < headers.length) r.push(''); });
+        this.statsFileData = { headers, rows };
 
         // Populate column selectors
         const geneColSelect = document.getElementById('statsGeneCol');
@@ -9443,18 +9496,10 @@ class CorrelationExplorer {
         });
 
         // Auto-select columns based on common names
-        headers.forEach((h, idx) => {
-            const hl = h.toLowerCase();
-            if (hl.includes('gene') || hl === 'symbol' || hl === 'name') {
-                geneColSelect.value = idx;
-            }
-            if (hl.includes('lfc') || hl.includes('log') || hl.includes('fold')) {
-                lfcColSelect.value = idx;
-            }
-            if (hl.includes('fdr') || hl.includes('padj') || hl.includes('pval') || hl.includes('p.value')) {
-                fdrColSelect.value = idx;
-            }
-        });
+        const guess = this._guessStatsColumns(headers);
+        if (guess.gene >= 0) geneColSelect.value = guess.gene;
+        if (guess.lfc >= 0) lfcColSelect.value = guess.lfc;
+        if (guess.fdr >= 0) fdrColSelect.value = guess.fdr;
 
         document.getElementById('statsColumnSelect').style.display = 'block';
     }
@@ -9487,10 +9532,10 @@ class CorrelationExplorer {
 
             const stats = { gene };
             if (lfcColIdx !== '') {
-                stats.lfc = parseFloat(row[parseInt(lfcColIdx)]) || null;
+                stats.lfc = this._cellNum(row[parseInt(lfcColIdx)]);
             }
             if (fdrColIdx !== '') {
-                stats.fdr = parseFloat(row[parseInt(fdrColIdx)]) || null;
+                stats.fdr = this._cellNum(row[parseInt(fdrColIdx)]);
             }
             this.geneStats.set(gene, stats);
         });
@@ -9547,11 +9592,10 @@ class CorrelationExplorer {
         // Determine column indices
         let geneCol = 0, lfcCol = -1, fdrCol = -1;
         if (hasHeader) {
-            firstParts.forEach((col, i) => {
-                if (['gene', 'symbol', 'geneid', 'gene_symbol', 'genename'].includes(col)) geneCol = i;
-                else if (['lfc', 'logfc', 'log2fc', 'log2foldchange', 'log_fc'].includes(col)) lfcCol = i;
-                else if (['fdr', 'padj', 'adj.p.val', 'adjpval', 'q', 'qvalue', 'q.value'].includes(col)) fdrCol = i;
-            });
+            const guess = this._guessStatsColumns(firstParts);
+            if (guess.gene >= 0) geneCol = guess.gene;
+            lfcCol = guess.lfc;
+            fdrCol = guess.fdr;
         } else {
             // Assume: Gene, LFC, FDR order if 3 columns; Gene only if 1 column
             const testParts = testLine.split(separator);
@@ -9564,18 +9608,18 @@ class CorrelationExplorer {
         const startLine = hasHeader ? 1 : 0;
 
         for (let i = startLine; i < lines.length; i++) {
-            const parts = lines[i].split(separator).map(p => p.trim());
-            const gene = parts[geneCol]?.toUpperCase();
+            const parts = this._splitDelimited(lines[i], separator);
+            const gene = parts[geneCol]?.replace(/^"|"$/g, '').toUpperCase();
             if (!gene) continue;
 
             genes.push(gene);
 
             const stats = { gene };
             if (lfcCol >= 0 && parts[lfcCol]) {
-                stats.lfc = parseFloat(parts[lfcCol]) || null;
+                stats.lfc = this._cellNum(parts[lfcCol]);
             }
             if (fdrCol >= 0 && parts[fdrCol]) {
-                stats.fdr = parseFloat(parts[fdrCol]) || null;
+                stats.fdr = this._cellNum(parts[fdrCol]);
             }
             this.geneStats.set(gene, stats);
         }
@@ -9749,9 +9793,9 @@ class CorrelationExplorer {
     getGeneList() {
         const text = document.getElementById('geneTextarea').value;
         const has = this._geneBoxHas() || ((g) => this.geneIndex.has(g));
-        const genes = text.split(/\s+/)
-            .map(g => g.toUpperCase().trim())
-            .filter(g => g !== '' && has(g));
+        const genes = this._splitGenes(text)
+            .map(g => g.toUpperCase())
+            .filter(g => has(g));
         // Remove duplicates
         return [...new Set(genes)];
     }
@@ -9919,7 +9963,7 @@ class CorrelationExplorer {
 
         const mode = document.querySelector('input[name="analysisMode"]:checked').value;
         const cutoff = parseFloat(document.getElementById('correlationCutoff').value);
-        const minN = parseInt(document.getElementById('minCellLines').value);
+        const minN = Math.round(this.numInput('minCellLines', 25));
 
         // In Expand mode this used to re-run the full genome scan once per
         // lineage, ~30 scans in one synchronous block: the page froze for
@@ -10096,7 +10140,7 @@ class CorrelationExplorer {
 
         const geneList = this.getGeneList();
         const cutoff = parseFloat(document.getElementById('correlationCutoff').value);
-        const minN = parseInt(document.getElementById('minCellLines').value);
+        const minN = Math.round(this.numInput('minCellLines', 25));
         const minSlope = parseFloat(document.getElementById('minSlope').value);
 
         if (geneList.length === 0) {
@@ -10204,8 +10248,8 @@ class CorrelationExplorer {
             : isDamaging
                 ? document.getElementById('damagingHotspotSelect').value
                 : document.getElementById('mutationHotspotSelect').value;
-        const minN = parseInt(document.getElementById('minCellLines').value);
-        const pThreshold = this.getInputNum('pValueThreshold');
+        const minN = Math.round(this.numInput('minCellLines', 25));
+        const pThreshold = this.numInput('pValueThreshold', 0.001);
         const lineageFilter = document.getElementById('lineageFilter').value;
         const subLineageFilter = document.getElementById('subLineageFilter')?.value;
 
@@ -11619,7 +11663,7 @@ class CorrelationExplorer {
                 svg += `<line x1="${pad}" y1="${y + cellH}" x2="${totalW - pad}" y2="${y + cellH}" stroke="#e5e7eb" stroke-width="0.5"/>\n`;
             });
 
-            if (metaJson) svg += `<metadata><correlate-meta>${metaJson}</correlate-meta></metadata>\n`;
+            if (metaJson) svg += this._svgMetaTag(metaJson) + '\n';
             svg += '</svg>';
             this._downloadMetaSidecar(filename, metaJson);
             const blob = new Blob([svg], { type: 'image/svg+xml' });
@@ -16575,8 +16619,8 @@ Results:
 
             if (colorStatType === 'signed_lfc') {
                 const lfcValues = stats.map(s => s.lfc).filter(v => v !== null && !isNaN(v));
-                const minLfc = Math.min(...lfcValues);
-                const maxLfc = Math.max(...lfcValues);
+                const minLfc = lfcValues.length ? Math.min(...lfcValues) : 0;
+                const maxLfc = lfcValues.length ? Math.max(...lfcValues) : 0;
 
                 // Draw gradient - Red (negative) to White (0) to Blue (positive).
                 // This is the generic "Color by stats" LFC feature (any
@@ -16600,7 +16644,7 @@ Results:
                 ctx.fillText(maxLfc.toFixed(1), legendX + gradientWidth - 20, gradY + gradientHeight + 16);
             } else if (colorStatType === 'abs_lfc') {
                 const lfcValues = stats.map(s => Math.abs(s.lfc)).filter(v => v !== null && !isNaN(v));
-                const maxLfc = Math.max(...lfcValues);
+                const maxLfc = lfcValues.length ? Math.max(...lfcValues) : 0;
 
                 const gradient = ctx.createLinearGradient(legendX, 0, legendX + gradientWidth, 0);
                 gradient.addColorStop(0, '#f5f5f5');
@@ -16619,7 +16663,7 @@ Results:
                 ctx.fillText(maxLfc.toFixed(1), legendX + gradientWidth - 20, gradY + gradientHeight + 16);
             } else if (colorStatType === 'fdr') {
                 const fdrValues = stats.map(s => s.fdr).filter(v => v !== null && !isNaN(v) && v > 0);
-                const minFdr = Math.min(...fdrValues);
+                const minFdr = fdrValues.length ? Math.min(...fdrValues) : 1;
 
                 const gradient = ctx.createLinearGradient(legendX, 0, legendX + gradientWidth, 0);
                 gradient.addColorStop(0, '#d7191c');
@@ -16957,8 +17001,8 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
 
             if (colorStatType === 'signed_lfc') {
                 const lfcValues = stats.map(s => s.lfc).filter(v => v !== null && !isNaN(v));
-                const minLfc = Math.min(...lfcValues);
-                const maxLfc = Math.max(...lfcValues);
+                const minLfc = lfcValues.length ? Math.min(...lfcValues) : 0;
+                const maxLfc = lfcValues.length ? Math.max(...lfcValues) : 0;
 
                 svg += `  <rect x="${legendX}" y="${gradY}" width="${gradientWidth}" height="${gradientHeight}" fill="url(#signedGradient)" stroke="#999"/>\n`;
                 svg += `  <text x="${legendX}" y="${gradY + gradientHeight + 16}" class="legend-small">${minLfc.toFixed(1)}</text>\n`;
@@ -16966,7 +17010,7 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
                 svg += `  <text x="${legendX + gradientWidth - 20}" y="${gradY + gradientHeight + 16}" class="legend-small">${maxLfc.toFixed(1)}</text>\n`;
             } else if (colorStatType === 'abs_lfc') {
                 const lfcValues = stats.map(s => Math.abs(s.lfc)).filter(v => v !== null && !isNaN(v));
-                const maxLfc = Math.max(...lfcValues);
+                const maxLfc = lfcValues.length ? Math.max(...lfcValues) : 0;
 
                 svg += `  <rect x="${legendX}" y="${gradY}" width="${gradientWidth}" height="${gradientHeight}" fill="url(#absGradient)" stroke="#999"/>\n`;
                 svg += `  <text x="${legendX}" y="${gradY + gradientHeight + 16}" class="legend-small">0</text>\n`;
@@ -16974,7 +17018,7 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
                 svg += `  <text x="${legendX + gradientWidth - 20}" y="${gradY + gradientHeight + 16}" class="legend-small">${maxLfc.toFixed(1)}</text>\n`;
             } else if (colorStatType === 'fdr') {
                 const fdrValues = stats.map(s => s.fdr).filter(v => v !== null && !isNaN(v) && v > 0);
-                const minFdr = Math.min(...fdrValues);
+                const minFdr = fdrValues.length ? Math.min(...fdrValues) : 1;
 
                 svg += `  <rect x="${legendX}" y="${gradY}" width="${gradientWidth}" height="${gradientHeight}" fill="url(#fdrGradient)" stroke="#999"/>\n`;
                 svg += `  <text x="${legendX - 5}" y="${gradY + gradientHeight + 16}" class="legend-small">${minFdr.toExponential(1)}</text>\n`;
@@ -16991,7 +17035,7 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
 
         // Embed metadata
         const meta = this._buildNetworkMeta();
-        svg += `<metadata><correlate-meta>${JSON.stringify(meta)}</correlate-meta></metadata>`;
+        svg += this._svgMetaTag(JSON.stringify(meta));
         svg += '</svg>';
 
         // Apply user's chosen cm dimensions to the outer svg tag so
@@ -17334,8 +17378,8 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
 
             if (colorStatType === 'signed_lfc') {
                 const lfcValues = stats.map(s => s.lfc).filter(v => v !== null && !isNaN(v));
-                const minLfc = Math.min(...lfcValues);
-                const maxLfc = Math.max(...lfcValues);
+                const minLfc = lfcValues.length ? Math.min(...lfcValues) : 0;
+                const maxLfc = lfcValues.length ? Math.max(...lfcValues) : 0;
                 const maxAbs = Math.max(Math.abs(minLfc), Math.abs(maxLfc));
 
                 this.networkData.nodes.forEach(node => {
@@ -17344,7 +17388,7 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
 
                     if (geneStat && geneStat.lfc !== null && !isNaN(geneStat.lfc)) {
                         // Red (-) to White (0) to Blue (+)
-                        const normalized = (geneStat.lfc + maxAbs) / (2 * maxAbs);
+                        const normalized = maxAbs > 0 ? (geneStat.lfc + maxAbs) / (2 * maxAbs) : 0.5;
                         bgColor = this.interpolateColor('#b2182b', '#f7f7f7', '#2166ac', normalized);
                     }
 
@@ -17364,7 +17408,7 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
                 `;
             } else if (colorStatType === 'abs_lfc') {
                 const lfcValues = stats.map(s => Math.abs(s.lfc)).filter(v => v !== null && !isNaN(v));
-                const maxLfc = Math.max(...lfcValues);
+                const maxLfc = lfcValues.length ? Math.max(...lfcValues) : 0;
 
                 this.networkData.nodes.forEach(node => {
                     const geneStat = this.geneStats.get(node.id);
@@ -17391,19 +17435,20 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
                 `;
             } else if (colorStatType === 'fdr') {
                 const fdrValues = stats.map(s => s.fdr).filter(v => v !== null && !isNaN(v) && v > 0);
-                const minFdr = Math.min(...fdrValues);
+                const minFdr = fdrValues.length ? Math.min(...fdrValues) : 1;
 
                 this.networkData.nodes.forEach(node => {
                     const geneStat = this.geneStats.get(node.id);
                     let bgColor = '#cccccc';
 
-                    if (geneStat && geneStat.fdr !== null && !isNaN(geneStat.fdr) && geneStat.fdr > 0) {
-                        // Log scale: smaller FDR = more significant = redder
+                    if (geneStat && geneStat.fdr !== null && !isNaN(geneStat.fdr) && geneStat.fdr >= 0) {
+                        // Log scale: smaller FDR = more significant = redder.
+                        // An FDR of exactly 0 is the strongest value, not a
+                        // missing one.
                         const logMin = Math.log10(minFdr);
-                        const logVal = Math.log10(geneStat.fdr);
                         const span = 0 - logMin;
-                        const normalized = span > 0
-                            ? 1 - Math.min(1, Math.max(0, (logVal - logMin) / span))
+                        const normalized = geneStat.fdr === 0 ? 1
+                            : span > 0 ? 1 - Math.min(1, Math.max(0, (Math.log10(geneStat.fdr) - logMin) / span))
                             : 0;
                         bgColor = this.interpolateColor('#f5f5f5', '#fdae61', '#d7191c', normalized);
                     }
@@ -19101,8 +19146,8 @@ Results:
 
             if (colorStatType === 'signed_lfc') {
                 const lfcValues = stats.map(s => s.lfc).filter(v => v !== null && !isNaN(v));
-                const minLfc = Math.min(...lfcValues);
-                const maxLfc = Math.max(...lfcValues);
+                const minLfc = lfcValues.length ? Math.min(...lfcValues) : 0;
+                const maxLfc = lfcValues.length ? Math.max(...lfcValues) : 0;
 
                 // Generic "Color by stats" LFC feature, not gene effect;
                 // keeps the old red/blue pair unchanged.
@@ -19123,7 +19168,7 @@ Results:
                 ctx.fillText(maxLfc.toFixed(1), legendX + gradientWidth - 20, gradY + gradientHeight + 16);
             } else if (colorStatType === 'abs_lfc') {
                 const lfcValues = stats.map(s => Math.abs(s.lfc)).filter(v => v !== null && !isNaN(v));
-                const maxLfc = Math.max(...lfcValues);
+                const maxLfc = lfcValues.length ? Math.max(...lfcValues) : 0;
 
                 const gradient = ctx.createLinearGradient(legendX, 0, legendX + gradientWidth, 0);
                 gradient.addColorStop(0, '#f5f5f5');
@@ -19142,7 +19187,7 @@ Results:
                 ctx.fillText(maxLfc.toFixed(1), legendX + gradientWidth - 20, gradY + gradientHeight + 16);
             } else if (colorStatType === 'fdr') {
                 const fdrValues = stats.map(s => s.fdr).filter(v => v !== null && !isNaN(v) && v > 0);
-                const minFdr = Math.min(...fdrValues);
+                const minFdr = fdrValues.length ? Math.min(...fdrValues) : 1;
 
                 const gradient = ctx.createLinearGradient(legendX, 0, legendX + gradientWidth, 0);
                 gradient.addColorStop(0, '#d7191c');
@@ -19413,8 +19458,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
             if (colorStatType === 'signed_lfc') {
                 const lfcValues = stats.map(s => s.lfc).filter(v => v !== null && !isNaN(v));
-                const minLfc = Math.min(...lfcValues);
-                const maxLfc = Math.max(...lfcValues);
+                const minLfc = lfcValues.length ? Math.min(...lfcValues) : 0;
+                const maxLfc = lfcValues.length ? Math.max(...lfcValues) : 0;
 
                 svg += `  <rect x="${legendX}" y="${gradY}" width="${gradientWidth}" height="${gradientHeight}" fill="url(#signedGradient)" stroke="#999"/>\n`;
                 svg += `  <text x="${legendX}" y="${gradY + gradientHeight + 16}" class="legend-small">${minLfc.toFixed(1)}</text>\n`;
@@ -19422,7 +19467,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 svg += `  <text x="${legendX + gradientWidth - 20}" y="${gradY + gradientHeight + 16}" class="legend-small">${maxLfc.toFixed(1)}</text>\n`;
             } else if (colorStatType === 'abs_lfc') {
                 const lfcValues = stats.map(s => Math.abs(s.lfc)).filter(v => v !== null && !isNaN(v));
-                const maxLfc = Math.max(...lfcValues);
+                const maxLfc = lfcValues.length ? Math.max(...lfcValues) : 0;
 
                 svg += `  <rect x="${legendX}" y="${gradY}" width="${gradientWidth}" height="${gradientHeight}" fill="url(#absGradient)" stroke="#999"/>\n`;
                 svg += `  <text x="${legendX}" y="${gradY + gradientHeight + 16}" class="legend-small">0</text>\n`;
@@ -19430,7 +19475,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 svg += `  <text x="${legendX + gradientWidth - 20}" y="${gradY + gradientHeight + 16}" class="legend-small">${maxLfc.toFixed(1)}</text>\n`;
             } else if (colorStatType === 'fdr') {
                 const fdrValues = stats.map(s => s.fdr).filter(v => v !== null && !isNaN(v) && v > 0);
-                const minFdr = Math.min(...fdrValues);
+                const minFdr = fdrValues.length ? Math.min(...fdrValues) : 1;
 
                 svg += `  <rect x="${legendX}" y="${gradY}" width="${gradientWidth}" height="${gradientHeight}" fill="url(#fdrGradient)" stroke="#999"/>\n`;
                 svg += `  <text x="${legendX - 5}" y="${gradY + gradientHeight + 16}" class="legend-small">${minFdr.toExponential(1)}</text>\n`;
@@ -20168,6 +20213,23 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         this._syncColorByGroupBtn?.();
         this._styleActiveFilters?.();
         this.clearGEGates?.();
+    }
+
+    // The axis limits typed in the four boxes. A box that is empty or not a
+    // number falls back to the default limit, as does a pair typed the wrong
+    // way round, so the plot never gets an unusable range.
+    _scatterLimits() {
+        const pair = (minId, maxId, def) => {
+            let lo = this.getInputNum(minId), hi = this.getInputNum(maxId);
+            if (!Number.isFinite(lo)) lo = def ? def[0] : -1;
+            if (!Number.isFinite(hi)) hi = def ? def[1] : 1;
+            if (!(lo < hi)) return def ? [def[0], def[1]] : [lo - 1, lo + 1];
+            return [lo, hi];
+        };
+        return {
+            xRange: pair('scatterXmin', 'scatterXmax', this.currentInspect?.defaultXlim),
+            yRange: pair('scatterYmin', 'scatterYmax', this.currentInspect?.defaultYlim)
+        };
     }
 
     resetInspectAxes() {
@@ -21171,10 +21233,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         // Build traces
         const traces = [];
-        const xRange = [this.getInputNum('scatterXmin'),
-                       this.getInputNum('scatterXmax')];
-        const yRange = [this.getInputNum('scatterYmin'),
-                       this.getInputNum('scatterYmax')];
+        const { xRange, yRange } = this._scatterLimits();
 
         if (hotspotMode === 'color' && hotspotGene) {
             // Color by mutation level, one trace per level so the legend reads
@@ -22020,10 +22079,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const mut1 = filteredData.filter(d => d[levelField] === 1);
         const mut2 = filteredData.filter(d => d[levelField] >= 2);
 
-        const xRange = [this.getInputNum('scatterXmin'),
-                       this.getInputNum('scatterXmax')];
-        const yRange = [this.getInputNum('scatterYmin'),
-                       this.getInputNum('scatterYmax')];
+        const { xRange, yRange } = this._scatterLimits();
 
         const wtStats = this.pearsonWithSlope(wt.map(d => d.x), wt.map(d => d.y));
         const mut1Stats = this.pearsonWithSlope(mut1.map(d => d.x), mut1.map(d => d.y));
@@ -26769,6 +26825,27 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         return (p >= 1e-4 && p < 1e7) ? String(Number(p.toPrecision(6))) : p.toExponential(3);
     }
 
+    // The reopen settings as an SVG metadata element. Escaped, since a title
+    // holding & or < would otherwise make the whole file invalid XML.
+    _svgMetaTag(metaJson) {
+        const esc = String(metaJson).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return `<metadata><correlate-meta enc="xml">${esc}</correlate-meta></metadata>`;
+    }
+
+    // The open layer drawn on top of the others (popout, panel or menu), or
+    // null when the plain page is showing.
+    _topLayer() {
+        let top = null, topZ = -Infinity;
+        for (const el of document.body.children) {
+            const cs = getComputedStyle(el);
+            if (cs.display === 'none' || cs.position !== 'fixed' || cs.visibility === 'hidden' || cs.pointerEvents === 'none') continue;
+            if (!el.offsetWidth || !el.offsetHeight) continue;
+            const z = parseInt(cs.zIndex) || 0;
+            if (z >= topZ) { top = el; topZ = z; }
+        }
+        return top;
+    }
+
     // 1st, 2nd, 3rd, 4th ... 11th, 12th, 13th, 21st.
     _ordinal(n) {
         const t = n % 100, u = n % 10;
@@ -29055,10 +29132,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             return this._restoreFromState(state);
         }
         // Fall back to metadata (all other exports)
-        const metaMatch = text.match(/<correlate-meta>([\s\S]*?)<\/correlate-meta>/);
+        const metaMatch = text.match(/<correlate-meta( enc="xml")?>([\s\S]*?)<\/correlate-meta>/);
         if (metaMatch) {
             let meta;
-            try { meta = JSON.parse(metaMatch[1]); } catch (e) { alert('Invalid metadata in SVG.'); return; }
+            // Files written before the settings were XML-escaped hold raw JSON.
+            const raw = metaMatch[1]
+                ? metaMatch[2].replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+                : metaMatch[2];
+            try { meta = JSON.parse(raw); } catch (e) { alert('Invalid metadata in SVG.'); return; }
             if (meta?.geCompilation) this._gcRestore(meta.geCompilation);
             return this._handleExportMeta(meta);
         }
@@ -34154,7 +34235,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 // pasting into PDF/PPT doesn't reveal composite lines.
                 outSvg = outSvg.replace(/(<svg[^>]*>)/, `$1<rect id="correlateExportBg" x="0" y="0" width="100%" height="100%" fill="white"/>`);
             }
-            if (metaJson) outSvg = outSvg.replace('</svg>', `<metadata><correlate-meta>${metaJson}</correlate-meta></metadata></svg>`);
+            if (metaJson) outSvg = outSvg.replace('</svg>', () => this._svgMetaTag(metaJson) + '</svg>');
             if (typeof this._finalizeSvgForExport === 'function') outSvg = await this._finalizeSvgForExport(outSvg);
             // Absolute units on the outer tag, so the file opens at the print
             // size that was asked for. This has to come AFTER sanitising: the
@@ -61800,7 +61881,7 @@ ${clone.innerHTML}
             gene1: this.currentInspect?.gene1,
             gene2: this.currentInspect?.gene2
         });
-        svgContent += `\n<metadata><correlate-meta>${JSON.stringify(meta)}</correlate-meta></metadata>`;
+        svgContent += '\n' + this._svgMetaTag(JSON.stringify(meta));
         svgContent += '\n</svg>';
         svgContent = await this._finalizeSvgForExport(svgContent);
 
@@ -63862,7 +63943,7 @@ ${clone.innerHTML}
         }
 
         if (fmt === 'svg') {
-            const withMeta = metaJson ? composed.replace(/<\/svg>\s*$/, `<metadata><correlate-meta>${metaJson}</correlate-meta></metadata></svg>`) : composed;
+            const withMeta = metaJson ? composed.replace(/<\/svg>\s*$/, () => this._svgMetaTag(metaJson) + '</svg>') : composed;
             const blob = new Blob([withMeta], { type: 'image/svg+xml;charset=utf-8' });
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
@@ -65865,16 +65946,22 @@ ${clone.innerHTML}
         this._tsSelectedAnnotation = null;
 
         // Listen for annotation clicks to select one
-        plotEl.removeAllListeners?.('plotly_clickannotation');
-        plotEl.on('plotly_clickannotation', (ev) => {
+        // Only this panel's own listener is replaced: the plot's other
+        // annotation-click handlers (label removal, drag) must survive.
+        if (plotEl._tsAnnClick) plotEl.removeListener?.('plotly_clickannotation', plotEl._tsAnnClick);
+        plotEl._tsAnnClick = (ev) => {
+            if (document.getElementById('textSettingsPanel')?.style.display === 'none') return;
             this._tsSelectedAnnotation = ev.index;
             // Brief visual feedback
             const el = plotEl.querySelector('.annotation[data-index="' + ev.index + '"]');
             if (el) { el.style.outline = '2px solid #3b82f6'; setTimeout(() => el.style.outline = '', 1500); }
-        });
+        };
+        plotEl.on('plotly_clickannotation', plotEl._tsAnnClick);
 
         this._tsArrowHandler = (e) => {
             if (this._tsSelectedAnnotation == null) return;
+            // Arrows nudge a label only while Text settings is open.
+            if (document.getElementById('textSettingsPanel')?.style.display === 'none') { this._tsSelectedAnnotation = null; return; }
             // Keys typed into a box move the caret, not the label.
             const t = e.target;
             if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
