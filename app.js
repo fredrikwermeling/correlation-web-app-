@@ -3887,16 +3887,6 @@ class CorrelationExplorer {
         this._tbEscHandler = (e) => { if (e.key === 'Escape') this.hideTissueBreakdownPopup(); };
         document.addEventListener('keydown', this._tbEscHandler);
 
-        // Click outside
-        setTimeout(() => {
-            this._tbOutsideHandler = (e) => {
-                const p = document.getElementById('tissueBreakdownPopup');
-                if (p && !p.contains(e.target) && e.target.id !== 'tissueBreakdownBtn' && e.target.id !== 'translocationTissueBreakdownBtn' && e.target.id !== 'damagingTissueBreakdownBtn') {
-                    this.hideTissueBreakdownPopup();
-                }
-            };
-            document.addEventListener('mousedown', this._tbOutsideHandler);
-        }, 0);
 
         this.updateTBSelectionCount();
     }
@@ -3907,10 +3897,6 @@ class CorrelationExplorer {
         if (this._tbEscHandler) {
             document.removeEventListener('keydown', this._tbEscHandler);
             this._tbEscHandler = null;
-        }
-        if (this._tbOutsideHandler) {
-            document.removeEventListener('mousedown', this._tbOutsideHandler);
-            this._tbOutsideHandler = null;
         }
     }
 
@@ -4464,7 +4450,9 @@ class CorrelationExplorer {
         });
 
         // Close on Escape
-        const escHandler = (e) => { if (e.key === 'Escape') { popup.remove(); document.removeEventListener('keydown', escHandler); } };
+        // One handler however often the grid is redrawn.
+        if (this._oncoEscHandler) document.removeEventListener('keydown', this._oncoEscHandler);
+        const escHandler = this._oncoEscHandler = (e) => { if (e.key === 'Escape') { popup.remove(); document.removeEventListener('keydown', escHandler); } };
         document.addEventListener('keydown', escHandler);
 
     }
@@ -5279,13 +5267,6 @@ class CorrelationExplorer {
         this._tbRestoreSelection(popup);
         this._tbEscHandler = (e) => { if (e.key === 'Escape') this.hideTissueBreakdownPopup(); };
         document.addEventListener('keydown', this._tbEscHandler);
-        setTimeout(() => {
-            this._tbOutsideHandler = (e) => {
-                const p = document.getElementById('tissueBreakdownPopup');
-                if (p && !p.contains(e.target) && e.target.id !== 'generalTissueBreakdownBtn') this.hideTissueBreakdownPopup();
-            };
-            document.addEventListener('mousedown', this._tbOutsideHandler);
-        }, 0);
     }
 
     getCellLineName(cellLineId) {
@@ -14124,6 +14105,9 @@ class CorrelationExplorer {
         // Kept so the off-screen high-resolution render can build a clone that
         // looks identical to what is on the page.
         this._networkOptions = options;
+        // The previous network keeps its canvas, timers and listeners until
+        // it is destroyed.
+        try { this.network?.destroy(); } catch (e) { /* already gone */ }
         this.network = new vis.Network(container, data, options);
         this.networkData = data;
 
@@ -21533,7 +21517,6 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     // the label can be taken off by clicking it, as in the gene
                     // effect popout.
                     _cellLabel: d.cellLineName,
-                    captureevents: true,
                     hovertext: `Click to remove the ${d.cellLineName} highlight`,
                     x: d.x, y: d.y,
                     xref: 'x', yref: 'y',
@@ -25311,7 +25294,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
 
     _ctBaseLines(measure) {
-        return (measure === 'expr' ? this.expressionMetadata?.cellLines : this.metadata?.cellLines || []).slice();
+        return ((measure === 'expr' ? this.expressionMetadata?.cellLines : this.metadata?.cellLines) || []).slice();
     }
 
     _ctPassesAlterations(cl, skip) {
@@ -25826,7 +25809,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         if (!el || !c?.genes) return;
         const g = c.selectedG;
         if (g == null) {
-            Plotly.purge(el);
+            Plotly.purge(el); el._ctClickWired = false;
             el.innerHTML = '<div style="padding:40px; color:#9ca3af; text-align:center;">No gene meets the criterion.</div>';
             const enr0 = document.getElementById('ctEnrich'); if (enr0) enr0.style.display = 'none';
             return;
@@ -25845,7 +25828,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const titleTop = `<b><i>${gene}</i> ${mName}</b>`;
         const sub = `n = ${vals.length.toLocaleString()} of ${cohortWords}`;
         const xTitle = `<i>${gene}</i> ${this._ctMeasureWord()}`;
-        if (!vals.length) { Plotly.purge(el); return; }
+        if (!vals.length) { Plotly.purge(el); el._ctClickWired = false; return; }
         const p = this._ctHistParts(vals, '', 11, true, unit);
         const range = this._ctXRange(p.start, p.end);
         // Highlighted cell lines: markers under the bars at their values,
@@ -29543,8 +29526,6 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     const r = document.querySelector(`input[name="colorScale"][value="${ns.colorScale}"]`);
                     if (r) r.checked = true;
                 }
-                const tbg = document.getElementById('exportNetworkTransparentBg');
-                if (tbg) tbg.checked = ns.transparentBg || false;
                 const showUncorr = document.getElementById('showUncorrelatedGenes');
                 if (showUncorr) showUncorr.checked = !!ns.showUncorrelatedGenes;
                 ['showBelowCutoff', 'showBelowCutoffClusters'].forEach(id => {
@@ -35661,11 +35642,6 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // Views and requests share one dialog; this name stays for callers.
     openAIViewDialog(prefill) {
         this.openCustomAIExport(prefill);
-    }
-
-    _setAiViewNote(msg) {
-        const el = document.getElementById('aiViewNote');
-        if (el) el.textContent = msg || '';
     }
 
     // The settings a fresh dialog, and every applied request, start from:
