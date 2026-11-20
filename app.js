@@ -10177,6 +10177,11 @@ class CorrelationExplorer {
 
         const expandNetwork = mode === 'design' && document.getElementById('designExpandNetwork')?.checked;
         const includeGrowthRate = document.getElementById('includeGrowthRate')?.checked && !!this.growthRateData;
+        // A run that recreates a saved figure, or follows a pick in the cutoff
+        // table, draws at its cutoff without asking.
+        const cutoffPicked = this._cutoffPicked;
+        this._cutoffPicked = null;
+        const askCutoff = mode === 'analysis' && !cutoffPicked && !this._pendingNetworkSettings;
         this.showStatus('info', expandNetwork ? 'Running correlation analysis (expanded network)...' : 'Running correlation analysis...');
         // Reveals a "still working" spinner if the run exceeds ~2s (see helper).
         this._showAnalysisSpinner('Analyzing gene set...');
@@ -10184,7 +10189,15 @@ class CorrelationExplorer {
         // Use setTimeout to allow UI to update
         setTimeout(() => {
             try {
-                this.results = this.calculateCorrelations(geneList, mode, cutoff, minN, minSlope, cellLineIndices, expandNetwork, includeGrowthRate);
+                const scanOut = askCutoff ? {} : null;
+                const results = this.calculateCorrelations(geneList, mode, cutoff, minN, minSlope, cellLineIndices, expandNetwork, includeGrowthRate, scanOut);
+                // Too many correlations for a readable figure: the table of
+                // cutoffs comes first, and the network is drawn from its pick.
+                if (scanOut?.rows && results.success && results.correlations.length > this._NET_READABLE) {
+                    this._showCutoffTable(scanOut.rows, cutoff, results.correlations.length, geneList.length);
+                    return;
+                }
+                this.results = results;
                 // Record the filters these results were computed under. The
                 // banner used to read the live dropdowns, so changing a filter
                 // without re-running relabeled an unchanged network.
@@ -10197,6 +10210,7 @@ class CorrelationExplorer {
                 this._resultsCellLineIndices = cellLineIndices;
                 if (this.results.success) {
                     this.displayResults();
+                    if (cutoffPicked?.fullPage && window.innerWidth > 640) setTimeout(() => this._netFullPage(true), 0);
                     this.showStatus('success',
                         `&#10003; Analysis complete: ${this.results.correlations.length} correlations, ${this.networkData?.nodes ? this.networkData.nodes.length : this.results.clusters.length} genes in network`);
                     // Auto-run best filter and show dropdown
@@ -10214,6 +10228,98 @@ class CorrelationExplorer {
                 this._hideAnalysisSpinner();
             }
         }, 50);
+    }
+
+    // Above this many correlations a network stops being readable, and above
+    // _NET_FULLPAGE it needs the larger sheet of the Full page.
+    get _NET_READABLE() { return 300; }
+    get _NET_FULLPAGE() { return 150; }
+
+    // Lists what each cutoff would keep and draws the network at the picked
+    // one. Nothing is drawn, and the previous network stays, until a pick.
+    _showCutoffTable(rows, cutoff, nNow, nGenes) {
+        document.getElementById('cutoffTableOverlay')?.remove();
+        const fmt = (n) => n.toLocaleString('en-US');
+        const same = (a, b) => Math.abs(a - b) < 1e-9;
+        // The cutoff in use joins the list when it is not one of the steps.
+        const list = rows.filter(r => r.correlations > 0).map(r => ({ ...r }));
+        if (!list.some(r => same(r.cutoff, cutoff))) {
+            list.push({ cutoff, correlations: nNow, genes: null });
+            list.sort((a, b) => a.cutoff - b.cutoff);
+        }
+        // Suggested: the lowest cutoff, not below the one in use, that gives
+        // a readable network; the strictest one when none does.
+        const from = Math.max(cutoff, this._cutoffScanSteps()[0]);
+        const suggested = list.find(r => r.cutoff >= from - 1e-9 && r.correlations <= this._NET_READABLE) || list[list.length - 1];
+        let picked = suggested.cutoff;
+
+        const ov = document.createElement('div');
+        ov.id = 'cutoffTableOverlay';
+        ov.style.cssText = 'position:fixed; inset:0; z-index:11000; background:rgba(0,0,0,0.35); display:flex; align-items:flex-start; justify-content:center; padding-top:9vh;';
+        const note = (r) => {
+            const parts = [];
+            if (same(r.cutoff, suggested.cutoff)) parts.push('<b style="color:#4c782e;">Suggested</b>');
+            if (same(r.cutoff, cutoff)) parts.push('Current setting');
+            if (r.correlations > this._NET_READABLE) parts.push('<span style="color:#b45309;">Too many for a readable figure</span>');
+            else if (r.correlations > this._NET_FULLPAGE) parts.push('Opens in Full page');
+            return parts.join(' / ');
+        };
+        ov.innerHTML = `<div style="background:#fff; border-radius:8px; box-shadow:0 20px 45px rgba(0,0,0,0.25); width:620px; max-width:94vw; max-height:80vh; display:flex; flex-direction:column; padding:16px 18px; font-size:12px; color:#374151;">
+            <div style="font-weight:700; font-size:14px; color:#4c782e; margin-bottom:6px;">Choose a correlation cutoff</div>
+            <div style="color:#6b7280; line-height:1.5; margin-bottom:10px;">${fmt(nGenes)} genes give ${fmt(nNow)} correlations at cutoff ${cutoff.toFixed(2)}. A network stays readable up to about ${fmt(this._NET_READABLE)}. Pick the cutoff to draw.</div>
+            <div style="overflow:auto; border:1px solid #e5e7eb; border-radius:6px;">
+            <table style="width:100%; border-collapse:collapse; font-size:12px;">
+                <thead><tr style="background:#f9fafb; text-align:left; position:sticky; top:0; white-space:nowrap;">
+                    <th style="padding:6px 10px;">Cutoff</th><th style="padding:6px 10px; text-align:right;">Correlations</th><th style="padding:6px 10px; text-align:right;">Genes in network</th><th style="padding:6px 10px;"></th>
+                </tr></thead>
+                <tbody>${list.map(r => `<tr data-cutoff="${r.cutoff}" tabindex="0" style="cursor:pointer; border-top:1px solid #f3f4f6;">
+                    <td style="padding:6px 10px; font-weight:600;">${r.cutoff.toFixed(2)}</td>
+                    <td style="padding:6px 10px; text-align:right;">${fmt(r.correlations)}</td>
+                    <td style="padding:6px 10px; text-align:right;">${r.genes == null ? '' : fmt(r.genes)}</td>
+                    <td style="padding:6px 10px; color:#6b7280;">${note(r)}</td></tr>`).join('')}</tbody>
+            </table></div>
+            <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:12px;">
+                <button id="cutoffTableCancel" class="btn btn-outline btn-sm">Cancel</button>
+                <button id="cutoffTableOk" class="btn btn-sm" style="background:#4c782e; color:#fff; font-weight:600;"></button>
+            </div></div>`;
+        document.body.appendChild(ov);
+        const okBtn = ov.querySelector('#cutoffTableOk');
+        const trs = [...ov.querySelectorAll('tbody tr')];
+        const mark = () => {
+            trs.forEach(tr => { tr.style.background = same(parseFloat(tr.dataset.cutoff), picked) ? '#eef6e8' : ''; });
+            okBtn.textContent = `Draw network at ${picked.toFixed(2)}`;
+        };
+        const onKey = (e) => {
+            if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancel(); }
+            if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); draw(); }
+        };
+        const close = () => {
+            document.removeEventListener('keydown', onKey, true);
+            ov.remove();
+        };
+        const cancel = () => {
+            close();
+            this.showStatus('info', 'No network drawn. Raise the cutoff or shorten the gene list, then run again.');
+        };
+        const draw = () => {
+            const row = list.find(r => same(r.cutoff, picked));
+            close();
+            const el = document.getElementById('correlationCutoff');
+            if (picked > parseFloat(el.max)) el.max = picked;
+            el.value = picked;
+            document.getElementById('cutoffValue').textContent = picked.toFixed(2);
+            this._cutoffPicked = { fullPage: row.correlations > this._NET_FULLPAGE };
+            this.runAnalysis();
+        };
+        trs.forEach(tr => {
+            tr.addEventListener('click', () => { picked = parseFloat(tr.dataset.cutoff); mark(); });
+            tr.addEventListener('dblclick', () => { picked = parseFloat(tr.dataset.cutoff); draw(); });
+        });
+        okBtn.onclick = draw;
+        ov.querySelector('#cutoffTableCancel').onclick = cancel;
+        document.addEventListener('keydown', onKey, true);
+        mark();
+        okBtn.focus();
     }
 
     runMutationAnalysis() {
@@ -12791,7 +12897,15 @@ class CorrelationExplorer {
         this.downloadFile(csv, filename, 'text/csv');
     }
 
-    calculateCorrelations(geneList, mode, cutoff, minN, minSlope, cellLineIndices, expandNetwork = false, includeGrowthRate = false) {
+    // The cutoffs offered when a gene list gives too many correlations to
+    // draw. Nothing below 0.3 is offered: weaker pairs are mostly noise.
+    _cutoffScanSteps() {
+        return [0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9];
+    }
+
+    // `scanOut`, when given, is filled with how many correlations and genes
+    // each cutoff step would keep, counted in the same pass.
+    calculateCorrelations(geneList, mode, cutoff, minN, minSlope, cellLineIndices, expandNetwork = false, includeGrowthRate = false, scanOut = null) {
         // Freeze the basis for this run; drop any expression-vector cache
         // from a previous run so a data reload can't serve stale vectors.
         this._runBasis = this._analysisBasis();
@@ -12842,6 +12956,10 @@ class CorrelationExplorer {
             geneList = [...geneList, GROWTH_RATE_LABEL];
         }
 
+        const scan = (scanOut && mode === 'analysis') ? this._cutoffScanSteps() : null;
+        const scanHist = scan ? new Int32Array(scan.length) : null;
+        const scanBest = scan ? new Float32Array(geneList.length) : null;
+
         // Calculate correlations (first pass: input genes vs target genes)
         for (let i = 0; i < geneList.length; i++) {
             const gene1 = geneList[i];
@@ -12863,6 +12981,13 @@ class CorrelationExplorer {
 
                 const result = this.pearsonWithSlope(data1, data2);
                 const absR = Math.abs(result.correlation);
+                if (scan && absR >= scan[0] && result.n >= minN && Math.abs(result.slope) >= minSlope) {
+                    let k = 0;
+                    while (k + 1 < scan.length && absR >= scan[k + 1]) k++;
+                    scanHist[k]++;
+                    if (absR > scanBest[i]) scanBest[i] = absR;
+                    if (absR > scanBest[j]) scanBest[j] = absR;
+                }
                 if (result.n >= minN && absR >= cutoff && Math.abs(result.slope) >= minSlope) {
                     correlations.push({
                         gene1: gene1,
@@ -12891,6 +13016,18 @@ class CorrelationExplorer {
                     }
                 }
             }
+        }
+
+        if (scan) {
+            // Each step keeps its own pairs and every stronger one.
+            let running = 0;
+            const corr = new Array(scan.length);
+            for (let k = scan.length - 1; k >= 0; k--) { running += scanHist[k]; corr[k] = running; }
+            scanOut.rows = scan.map((c, k) => {
+                let genes = 0;
+                for (let g = 0; g < scanBest.length; g++) if (scanBest[g] >= c) genes++;
+                return { cutoff: c, correlations: corr[k], genes };
+            });
         }
 
         // Second pass for expanded network: find correlations between discovered genes
