@@ -3224,7 +3224,7 @@
                     </div>
 
                     <div class="form-group" id="correlationParams">
-                        <label class="form-label">Correlation Cutoff: <span class="slider-value" id="cutoffValue">0.50</span></label>
+                        <label class="form-label" style="display:flex; align-items:baseline; gap:6px;"><span>Correlation Cutoff: <span class="slider-value" id="cutoffValue">0.50</span></span><button type="button" id="cutoffTableBtn" onclick="app.openCutoffTable()" title="List how many correlations and genes each cutoff would keep for the current gene list, then pick one to draw." style="margin-left:auto; font-size:11px; padding:0 6px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer; color:#374151;">Compare</button></label>
                         <div style="display:flex; gap:3px; align-items:center;">
                             <button type="button" onclick="app.adjustNumber('correlationCutoff', -0.05)" style="font-size:11px; padding:0 6px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer;">−</button>
                             <input type="range" id="correlationCutoff" min="0.1" max="0.8" step="0.05" value="0.5" data-grow-max="1" title="Drag for the usual range; the + button keeps going past 0.8 when you want only the very strongest correlations." style="flex:1; min-width:0;">
@@ -6167,7 +6167,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v92_7"></script>
+    <script src="app.js?v=v92_8"></script>
     <script src="tour.js?v=v91_99"></script>
 </body>
 </html>

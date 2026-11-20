@@ -10182,6 +10182,9 @@ class CorrelationExplorer {
         const cutoffPicked = this._cutoffPicked;
         this._cutoffPicked = null;
         const askCutoff = mode === 'analysis' && !cutoffPicked && !this._pendingNetworkSettings;
+        // Set by the Compare cutoffs button: show the table whatever the size.
+        const forceTable = askCutoff && this._cutoffTableAsked;
+        this._cutoffTableAsked = false;
         this.showStatus('info', expandNetwork ? 'Running correlation analysis (expanded network)...' : 'Running correlation analysis...');
         // Reveals a "still working" spinner if the run exceeds ~2s (see helper).
         this._showAnalysisSpinner('Analyzing gene set...');
@@ -10193,8 +10196,9 @@ class CorrelationExplorer {
                 const results = this.calculateCorrelations(geneList, mode, cutoff, minN, minSlope, cellLineIndices, expandNetwork, includeGrowthRate, scanOut);
                 // Too many correlations for a readable figure: the table of
                 // cutoffs comes first, and the network is drawn from its pick.
-                if (scanOut?.rows && results.success && results.correlations.length > this._NET_READABLE) {
-                    this._showCutoffTable(scanOut.rows, cutoff, results.correlations.length, geneList.length);
+                const nNow = results.correlations?.length || 0;
+                if (scanOut?.rows && (forceTable ? scanOut.rows[0].correlations > 0 : results.success && nNow > this._NET_READABLE)) {
+                    this._showCutoffTable(scanOut.rows, cutoff, nNow, geneList.length);
                     return;
                 }
                 this.results = results;
@@ -10234,6 +10238,18 @@ class CorrelationExplorer {
     // _NET_FULLPAGE it needs the larger sheet of the Full page.
     get _NET_READABLE() { return 300; }
     get _NET_FULLPAGE() { return 150; }
+
+    // The Compare cutoffs button: the same table, on request.
+    openCutoffTable() {
+        const mode = document.querySelector('input[name="analysisMode"]:checked')?.value;
+        if (mode !== 'analysis') {
+            this.showStatus('info', 'Compare cutoffs is available for gene set analysis.');
+            return;
+        }
+        this._cutoffTableAsked = true;
+        this.runAnalysis();
+        this._cutoffTableAsked = false;
+    }
 
     // Lists what each cutoff would keep and draws the network at the picked
     // one. Nothing is drawn, and the previous network stays, until a pick.
