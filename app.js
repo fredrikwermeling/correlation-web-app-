@@ -40343,7 +40343,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // without any p53 defect, which is too weak for this headline. It
         // stays available as a quick filter and in the export, with that caveat.
 
-        const bodyText = [s2, s2b, s3, s4].filter(Boolean).join(' ');
+        const txr = this._txIdentityOf(cellLineId);
+        const sTx = txr?.s === 'other' && txr.like
+            ? `<span style="color:#b45309;">Its gene expression looks like <b>${this.esc(txr.like)}</b>, not ${this.esc(txr.tis)}.</span>` : '';
+        const bodyText = [sTx, s2, s2b, s3, s4].filter(Boolean).join(' ');
         return warn + (bodyText
             ? `${s1} ${bodyText}`
             : `${s1} <span style="color:#6b7280;">No driver fusion, oncogene hotspot or focal copy-number change was found in the curated data. That does not prove the cell line has no driver.</span>`);
@@ -49018,8 +49021,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const virusStr = vLbl
                 ? `<span style="cursor:help; font-size:10px; opacity:0.75;" title="${this.esc(this._virusTitle(cl))}">&#129440;</span>`
                 : '';
+            // Gene expression closer to another tissue than the annotated one.
+            const txr = this.txIdentity?.byCellLine?.[cl];
+            const txNote = txr?.s === 'other' && txr.like ? `Gene expression looks like ${txr.like}, not ${lin}` : '';
+            const txStr = txNote
+                ? `<span style="color:#b45309; cursor:help; font-weight:700;" title="${this.esc(txNote)}. Its five most similar cell lines by whole transcriptome are all from other tissues.">&#8800;</span>`
+                : '';
             const org = this._originMark(cl);
-            const titleParts = [name, lin, sub, sx.title, org.title, vLbl ? vLbl + '-transformed' : '', prob ? prob.category : ''].filter(Boolean).join(' · ');
+            const titleParts = [name, lin, sub, sx.title, org.title, vLbl ? vLbl + '-transformed' : '', prob ? prob.category : '', txNote].filter(Boolean).join(' · ');
             // Which gate this line is already in. Shown while the other gate
             // is being ticked, so membership is visible rather than
             // remembered.
@@ -49030,12 +49039,13 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             // Sex, origin and the occasional warning each sit in a slot of
             // their own, so every name in the list starts at the same x
             // whichever marks a cell line happens to carry. No cell line has
-            // both a warning and a virus mark, so they share one slot; the
+            // both a warning and a virus mark, so they share one slot (a
+            // warning comes first, then the expression mark, then virus); the
             // gate slot is only there while a gate exists.
             return `<div class="${cls.join(' ')}" data-clid="${cl}">` +
                 `<input type="checkbox"${selected ? ' checked' : ''}>` +
                 `<span class="clb-marks">${sexStr}${org.html || '<span class="clb-mk-org"></span>'}` +
-                `<span class="clb-mk-badge">${probStr || virusStr}</span>` +
+                `<span class="clb-mk-badge">${probStr || txStr || virusStr}</span>` +
                 `${gating ? `<span class="clb-mk-gate">${gateStr}</span>` : ''}</span>` +
                 `<span class="clb-entry-name" data-hover-cl="${cl}" data-hover-why="Click to show its details · Shift-click to open its Wiki">${name}</span>` +
                 `<span class="clb-entry-tissue" title="${titleParts}">${lin}${sub ? ' · ' + sub : ''}</span>${sortValStr}</div>`;
