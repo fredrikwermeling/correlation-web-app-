@@ -328,6 +328,23 @@
             line-height: 1.45;
             pointer-events: none;
         }
+        /* Says what Shift-click opens for the chart point under the pointer. */
+        .plot-shift-hint {
+            position: fixed;
+            z-index: 12000;
+            padding: 1px 6px;
+            background: rgba(255, 255, 255, 0.92);
+            color: #6b7280;
+            border: 1px solid #e5e7eb;
+            border-radius: 4px;
+            font-size: 10px;
+            line-height: 1.5;
+            white-space: nowrap;
+            pointer-events: none;
+        }
+        /* The gene card replaces the chart's own hover label once it is up. */
+        .hover-card-on .hoverlayer { display: none; }
+        body:has(#geneTooltip) .plot-shift-hint, body:has(#cellLineTooltip) .plot-shift-hint { display: none; }
 
         /* Long <select> presented as a scrollable panel. The native menu opens
            taller than the screen and scrolls by growing upward with no way
@@ -2068,11 +2085,18 @@
                down column 1 top→bottom, then continues at the top of column 2,
                etc. — so the first sorted entry is top-left and you scan each
                column downward in order. */
-            columns: 3;
+            display: grid;
+            grid-auto-flow: column;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-rows: repeat(var(--clb-rows3, 1), auto);
             column-gap: 12px;
         }
+        /* Rows off screen are not drawn until scrolled to; with a thousand
+           rows that is what keeps a sort or a filter change quick. */
         .clb-entry {
-            break-inside: avoid;
+            content-visibility: auto;
+            contain-intrinsic-size: auto 27px;
+            scroll-margin: 52px 0 8px;
             display: flex;
             align-items: center;
             gap: 6px;
@@ -2134,14 +2158,15 @@
             border-radius: 3px; color: #6b7280; cursor: pointer; margin-left: 2px; vertical-align: middle; }
         .clb-heatmap-btn:hover { border-color: var(--green-500); color: var(--green-700); }
         .clb-detail-placeholder { color: var(--gray-500); font-size: 12px; padding: 20px 0; text-align: center; }
+        .clb-list > .clb-no-results, .clb-list > .clb-list-caption { grid-column: 1 / -1; grid-row: 1; }
         .clb-no-results { text-align: center; color: var(--gray-500); padding: 40px 0; font-size: 13px; }
         .clb-selection-count { font-size: 11px; color: var(--gray-500); white-space: nowrap; }
         @media (max-width: 900px) {
-            .clb-list { columns: 2; }
+            .clb-list { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(var(--clb-rows2, 1), auto); }
             .clb-detail { width: 240px; }
         }
         @media (max-width: 600px) {
-            .clb-list { columns: 1; }
+            .clb-list { grid-auto-flow: row; grid-template-columns: minmax(0, 1fr); grid-template-rows: none; }
             .clb-content { flex-direction: column; }
             .clb-detail { width: 100%; border-left: none; border-top: 1px solid var(--gray-200); max-height: 200px; }
         }
@@ -2576,7 +2601,7 @@
             /* The banner takes the title's place; at header height for a phone. */
             #cellLineBrowserModal .modal-header img { height: 28px !important; }
             #cellLineBrowserModal > div { max-width: 100% !important; height: 100% !important; max-height: 100% !important; margin-top: 0 !important; border-radius: 0 !important; }
-            .clb-list { columns: 1 !important; }
+            .clb-list { grid-auto-flow: row !important; grid-template-columns: minmax(0, 1fr) !important; grid-template-rows: none !important; }
             .clb-content { flex-direction: column !important; }
             /* One scroller, not three. On desktop the list has its own
                scrollbar inside a clipped row; stacked into a column on a phone
@@ -6174,7 +6199,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v92_10"></script>
+    <script src="app.js?v=v92_11"></script>
     <script src="tour.js?v=v92_10"></script>
 </body>
 </html>

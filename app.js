@@ -86,6 +86,49 @@
         applyHints(gd);
     };
     window.__annotationHints = applyHints;
+    // Shift-click on any point that stands for a gene or a cell line opens
+    // the Gene Browser or the cell line's Wiki, and hovering it says so. A
+    // chart's own Shift-click runs in the same event; this acts only when
+    // nothing opened. Charts drop their click listeners when they rewire,
+    // so the listeners are checked again whenever the pointer enters.
+    const wireEntity = (gd) => {
+        if (!gd?.on || onPhone()) return;
+        if (!gd._entFns) {
+            let chip = null;
+            const drop = () => { chip?.remove(); chip = null; };
+            const entOf = (ev) => window.app?._plotPointEntity?.(ev?.points?.[0]) || null;
+            const fns = gd._entFns = {
+                plotly_click: (ev) => {
+                    if (!ev?.event?.shiftKey) return;
+                    const ent = entOf(ev), a = window.app;
+                    if (!ent) return;
+                    const stamp = a._entityOpens || 0;
+                    setTimeout(() => { if ((a._entityOpens || 0) === stamp) a._openPlotEntity(ent); }, 0);
+                },
+                plotly_hover: (ev) => {
+                    drop();
+                    const ent = entOf(ev);
+                    if (!ent) return;
+                    chip = document.createElement('div');
+                    chip.className = 'plot-shift-hint';
+                    chip.textContent = `Shift-click: ${ent.kind === 'gene' ? 'Gene Browser' : 'Wiki'} for ${ent.label}`;
+                    document.body.appendChild(chip);
+                    const r = gd.getBoundingClientRect();
+                    chip.style.left = Math.round(Math.max(4, r.right - chip.offsetWidth - 6)) + 'px';
+                    chip.style.top = Math.round(Math.min(window.innerHeight - 22, r.bottom - chip.offsetHeight - 4)) + 'px';
+                },
+                plotly_unhover: drop,
+            };
+            fns.ensure = () => {
+                for (const k of ['plotly_click', 'plotly_hover', 'plotly_unhover']) {
+                    if (!(gd._ev?.listeners?.(k) || []).includes(fns[k])) gd.on(k, fns[k]);
+                }
+            };
+            gd.addEventListener('mouseenter', fns.ensure);
+            gd.addEventListener('mouseleave', drop);
+        }
+        gd._entFns.ensure();
+    };
     ['newPlot', 'react'].forEach((fn) => {
         const orig = Plotly[fn];
         if (typeof orig !== 'function') return;
@@ -103,6 +146,7 @@
             if (r && typeof r.then === 'function') {
                 r.then((gd) => { try { window.__phoneRevealResult?.(gd || div); } catch (e) {} });
                 r.then((gd) => { try { wireHints(gd || (typeof div === 'string' ? document.getElementById(div) : div)); } catch (e) {} });
+                r.then((gd) => { try { wireEntity(gd || (typeof div === 'string' ? document.getElementById(div) : div)); } catch (e) {} });
             }
             return r;
         };
@@ -1900,20 +1944,41 @@ class CorrelationExplorer {
     }
 
     // Median mRNA per cell line over every 10th gene, for the quality flag.
-    _exprCellLineMedians() {
-        const E = this.expressionData;
+    // The sampled values are gathered row by row, which is how the matrix is
+    // stored, and sorted a slice of cell lines at a time with a pause between
+    // slices so the page keeps answering clicks.
+    async _exprCellLineMedians() {
         const nC = this.expressionMetadata.nCellLines, nG = this.expressionMetadata.nGenes;
+        const nS = Math.ceil(nG / 10);
+        const buf = new Float32Array(nC * nS);
+        const fill = new Int32Array(nC);
+        this._exprGatherSampled(buf, fill, nS);
+        await new Promise(resolve => setTimeout(resolve, 0));
         const med = new Float32Array(nC);
-        const buf = new Float32Array(Math.ceil(nG / 10));
-        for (let j = 0; j < nC; j++) {
-            let k = 0;
-            for (let gi = 0; gi < nG; gi += 10) {
-                const v = E[gi * nC + j];
-                if (v === v) buf[k++] = v;
-            }
-            med[j] = k ? buf.subarray(0, k).sort()[k >> 1] : 0;
+        for (let from = 0; from < nC; from += 150) {
+            this._exprMedianSlice(buf, fill, nS, med, from, Math.min(nC, from + 150));
+            await new Promise(resolve => setTimeout(resolve, 0));
         }
         return med;
+    }
+
+    _exprGatherSampled(buf, fill, nS) {
+        const E = this.expressionData;
+        const nC = this.expressionMetadata.nCellLines, nG = this.expressionMetadata.nGenes;
+        for (let gi = 0; gi < nG; gi += 10) {
+            const off = gi * nC;
+            for (let j = 0; j < nC; j++) {
+                const v = E[off + j];
+                if (v === v) buf[j * nS + fill[j]++] = v;
+            }
+        }
+    }
+
+    _exprMedianSlice(buf, fill, nS, med, from, to) {
+        for (let j = from; j < to; j++) {
+            const k = fill[j];
+            med[j] = k ? buf.subarray(j * nS, j * nS + k).sort()[k >> 1] : 0;
+        }
     }
 
     populateLineageFilter() {
@@ -28842,10 +28907,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // matching the UX of clicking a UMAP point inside the browser.
     _openCellLineInBrowser(cellLineId) {
         if (!cellLineId) return;
+        this._entityOpens = (this._entityOpens || 0) + 1;
         this.openCellLineBrowser();
         this.showCellLineDetail(cellLineId);
         const entry = document.querySelector(`#clbList .clb-entry[data-clid="${CSS.escape(cellLineId)}"]`);
-        if (entry) entry.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        if (entry) { entry.scrollIntoView({ block: 'center' }); requestAnimationFrame(() => entry.scrollIntoView({ block: 'center' })); }
     }
 
     // Attach a click handler to a read-only scatter/box plot so clicking a
@@ -32212,6 +32278,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // within its own lineage opens on that lineage. Used by the browser's
     // Inspect and by the wiki, so the two cannot drift apart.
     openGeneScoped(gene, { dataType = 'ge', scope = 'all', lineage = '', condensed, compareSides = null } = {}) {
+        this._entityOpens = (this._entityOpens || 0) + 1;
         // condensed is left undefined on purpose: openGeneEffectModal then works
         // out whether it would open behind another overlay and lifts itself
         // above it. Passing false forced z-index 1200, under the browser's
@@ -37176,7 +37243,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             context.plotDescribesWhat = `Not a chart: the Cancer type Wiki page for ${name}, a set of sections comparing the ${cellLines.length} cell lines of this group with every other cell line in the CRISPR cohort. extras.cancerTypeWiki holds the numbers behind each section; the matrices hold only this group's cell lines, so "other cell lines" values come from the extras.`;
             description = `What sets the cancer type ${name} apart from all other cell lines.`;
             extras = { cancerTypeWiki: { ...this._ctwAi,
-                readMe: 'Every comparison is this group against all other cell lines of the CRISPR cohort. Mutation and copy-number enrichment use a one-sided Fisher test; dependencies and expression a Welch t-test. Levels: tissue = Oncotree lineage, subtype = primary disease, disease = Oncotree subtype. surfaceProteins and surfacePanel are built from mRNA of genes coding for surface proteins, not from measured protein: say so whenever you discuss them, and treat staining suggestions as needing antibody validation. The identity check flags cell lines whose closest surface-mRNA neighbors all come from other tissues; it is a prompt to check, not evidence of contamination, and STR profiling settles identity.' } };
+                readMe: 'Every comparison is this group against all other cell lines of the CRISPR cohort. Mutation and copy-number enrichment use a one-sided Fisher test; dependencies and expression a Welch t-test. Levels: tissue = Oncotree lineage, subtype = primary disease, disease = Oncotree subtype. surfaceProteins and surfacePanel are built from mRNA of genes coding for surface proteins, not from measured protein: say so whenever you discuss them, and treat staining suggestions as needing antibody validation. In surfacePanel.proteinsShown, pickedFor is the cancer type a protein was chosen for; it is specific to that type only when alsoHighIn is empty (no other cancer type has a median within twofold, see log2GapToNextCancerType). The identity check flags cell lines whose closest surface-mRNA neighbors all come from other tissues; it is a prompt to check, not evidence of contamination, and STR profiling settles identity.' } };
         } else if (source === 'exprCorrelates') {
             const ctx = this._exprCorrelateContext || {};
             context = {
@@ -40343,7 +40410,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (typeof id !== 'string' || !id) return;
             const ev = { clientX: eventData.event?.clientX, clientY: eventData.event?.clientY };
             clearTimeout(hoverTimer);
-            hoverTimer = setTimeout(() => this.showCellLineTooltip(ev, id, hint), this._HOVER_DELAY);
+            // Not when something opened over the plot in the meantime.
+            hoverTimer = setTimeout(() => { if (el.contains(document.elementFromPoint(ev.clientX, ev.clientY))) this.showCellLineTooltip(ev, id, hint); }, this._HOVER_DELAY);
         });
         el.on('plotly_unhover', () => { clearTimeout(hoverTimer); this.hideCellLineTooltip(); });
     }
@@ -41504,7 +41572,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             loadingTextEl.textContent = 'Computing quality metrics...';
             const nExprCL = this.expressionMetadata.nCellLines;
             await new Promise(resolve => setTimeout(resolve, 0));
-            const clMedians = this._exprCellLineMedians();
+            const clMedians = await this._exprCellLineMedians();
             const sortedMedians = Array.from(clMedians).sort((a, b) => a - b);
             const q1Cutoff = sortedMedians[Math.floor(sortedMedians.length * 0.01)];
             this._exprLowQualityCLs = new Set();
@@ -41521,7 +41589,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             // pause before each lets the page answer clicks in between.
             await new Promise(resolve => setTimeout(resolve, 0));
             this.expressionLoaded = true;
-            this._ensureExprGeneStats();
+            await this._ensureExprGeneStatsPaced();
             await new Promise(resolve => setTimeout(resolve, 0));
             // Re-run collection memberships now that expression-based
             // collections (NE, EMT, breast subtypes) can be computed.
@@ -48765,16 +48833,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
 
         // Caption line above the list so the inline numbers read unambiguously.
-        // column-span: all makes the caption stretch across all columns of the
-        // multi-column list (otherwise it would sit inside column 1 and push the
-        // first cell line down).
+        // Its class puts it across every column, in the first row.
         let caption = '';
         let lblForSort = '';
-        const captionStyle = 'column-span: all; break-inside: avoid; padding:4px 10px; font-size:10px; color:#6b7280; background:#f9fafb; border-bottom:1px solid #e5e7eb;';
+        const captionStyle = 'padding:4px 10px; font-size:10px; color:#6b7280; background:#f9fafb; border-bottom:1px solid #e5e7eb;';
         if (geMap && geValueLabel) {
             const fullLabel = geValueLabel === 'Expr' ? 'Expression (log2 TPM+1)' : 'Gene Effect (CERES)';
             const direction = geValueLabel === 'GE' ? ', lower = more essential' : ', higher = more expressed';
-            caption = `<div style="${captionStyle}">
+            caption = `<div class="clb-list-caption" style="${captionStyle}">
                 Values shown: <b>${fullLabel}</b> for <b>${this._italicizeGenesInHtml(this.esc(geGenesLabel))}</b>${direction}.
             </div>`;
         } else if (countMap) {
@@ -48795,7 +48861,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                       : mode === 'retro' ? `Retroelement signal, ${retroMeasureLabels[retroMeasure]}: ${retroMeasure === 'a' ? 'how many of the 750 measured full-length elements are switched on (above 0.5 CPM) in each line'
                           : `summed RNA-seq reads (counts per million), unique reads only, over the ${retroMeasure === 't' ? '750 full-length LINE-1, HERV-K and SVA' : 'full-length ' + retroMeasureLabels[retroMeasure]} elements outside genes`}.${retroMeasure === 't' ? ' The panel median is about 40 CPM and the top tenth, about 80 CPM and up, counts as retroelement-high.' : ''} 669 of 1,208 lines have a public alignment to measure; unscored lines sit at the end.`
                       : mode;
-            caption = `<div style="${captionStyle}">
+            caption = `<div class="clb-list-caption" style="${captionStyle}">
                 Values shown: <b>${lbl}</b> per cell line.
             </div>`;
         }
@@ -48974,6 +49040,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 `<span class="clb-entry-name" data-hover-cl="${cl}" data-hover-why="Click to show its details · Shift-click to open its Wiki">${name}</span>` +
                 `<span class="clb-entry-tissue" title="${titleParts}">${lin}${sub ? ' · ' + sub : ''}</span>${sortValStr}</div>`;
         }).join('');
+        // The list fills column by column, so the grid needs its row count
+        // for each column layout the stylesheet can pick.
+        const capRow = caption ? 1 : 0;
+        container.style.setProperty('--clb-rows3', Math.ceil(filtered.length / 3) + capRow);
+        container.style.setProperty('--clb-rows2', Math.ceil(filtered.length / 2) + capRow);
         container.innerHTML = caption + html;
 
         this.updateClbFilterCounts();
@@ -50550,18 +50621,12 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const filteredIndices = filteredCls.map(cl => this.metadata.cellLines.indexOf(cl)).filter(i => i >= 0);
         if (filteredIndices.length >= 3 && clIdx >= 0) {
             const zScores = [];
+            const ctx = this._clbContextGeStats(filteredIndices);
             for (let g = 0; g < this.nGenes; g++) {
-                const offset = g * this.nCellLines;
-                let s = 0, s2 = 0, n = 0;
-                for (const ci of filteredIndices) {
-                    const v = this.geneEffects[offset + ci];
-                    if (!isNaN(v) && v !== -999) { s += v; s2 += v * v; n++; }
-                }
-                if (n < 3) continue;
-                const mu = s / n;
-                const sd = Math.sqrt(s2 / n - mu * mu);
+                if (ctx.n[g] < 3) continue;
+                const mu = ctx.mu[g], sd = ctx.sd[g];
                 if (sd < 1e-6) continue;
-                const val = this.geneEffects[offset + clIdx];
+                const val = this.geneEffects[g * this.nCellLines + clIdx];
                 if (isNaN(val) || val === -999) continue;
                 zScores.push({ gene: this.geneNames[g], z: (val - mu) / sd, val });
             }
@@ -51656,11 +51721,32 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
     _ensureExprGeneStats() {
         if (this._exprGeneStats || !this.expressionLoaded || !this.expressionData || !this.expressionMetadata) return;
         const nG = this.expressionMetadata.genes.length;
-        const nC = this.expressionMetadata.nCellLines;
-        const E = this.expressionData;
         const mean = new Float32Array(nG);
         const sd = new Float32Array(nG);
-        for (let g = 0; g < nG; g++) {
+        this._exprGeneStatsRange(mean, sd, 0, nG);
+        this._exprGeneStats = { mean, sd };
+    }
+
+    // The same stats a slice of genes at a time, pausing between slices. The
+    // loader uses this; anything that needs the stats before it has finished
+    // gets them from the one-pass version above.
+    async _ensureExprGeneStatsPaced() {
+        if (this._exprGeneStats || !this.expressionLoaded || !this.expressionData || !this.expressionMetadata) return;
+        const nG = this.expressionMetadata.genes.length;
+        const mean = new Float32Array(nG);
+        const sd = new Float32Array(nG);
+        for (let from = 0; from < nG; from += 2000) {
+            this._exprGeneStatsRange(mean, sd, from, Math.min(nG, from + 2000));
+            await new Promise(resolve => setTimeout(resolve, 0));
+            if (this._exprGeneStats) return;
+        }
+        this._exprGeneStats = { mean, sd };
+    }
+
+    _exprGeneStatsRange(mean, sd, from, to) {
+        const nC = this.expressionMetadata.nCellLines;
+        const E = this.expressionData;
+        for (let g = from; g < to; g++) {
             const off = g * nC;
             let sum = 0, n = 0;
             for (let i = 0; i < nC; i++) {
@@ -51678,7 +51764,28 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
                 sd[g] = Math.sqrt(sq / (n - 1));
             }
         }
-        this._exprGeneStats = { mean, sd };
+    }
+
+    // Per-gene mean and SD of gene effect over the cell lines the browser
+    // lists, kept until that set changes: every click on a cell line asks for
+    // the same numbers.
+    _clbContextGeStats(indices) {
+        const key = indices.slice().sort((a, b) => a - b).join(',');
+        if (this._clbCtxStats?.key === key) return this._clbCtxStats;
+        const nG = this.nGenes, nC = this.nCellLines, E = this.geneEffects;
+        const idx = Int32Array.from(indices), m = idx.length;
+        const mu = new Float64Array(nG), sd = new Float64Array(nG), n = new Int32Array(nG);
+        for (let g = 0; g < nG; g++) {
+            const off = g * nC;
+            let s = 0, s2 = 0, k = 0;
+            for (let i = 0; i < m; i++) {
+                const v = E[off + idx[i]];
+                if (v === v && v !== -999) { s += v; s2 += v * v; k++; }
+            }
+            n[g] = k;
+            if (k) { mu[g] = s / k; sd[g] = Math.sqrt(s2 / k - mu[g] * mu[g]); }
+        }
+        return (this._clbCtxStats = { key, mu, sd, n });
     }
 
     // Per-gene cohort mean / SD across CRISPR gene-effect, cached on first
@@ -51760,7 +51867,64 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         return (this._gbSynMap?.get(gene) || []).slice(0, 3);
     }
 
+    // Which gene or cell line a chart point stands for, read from its id or
+    // its name; null when it stands for neither. A handful of names are both
+    // a gene and a cell line (HAP1, F5), so the rest of the trace decides.
+    _plotPointEntity(pt) {
+        const d = pt?.data;
+        if (!d || !this.metadata) return null;
+        const flat = (vals) => {
+            const out = [];
+            const add = (v) => { if (typeof v === 'string' && v) out.push(v); else if (Array.isArray(v)) v.forEach(add); };
+            vals.forEach(add);
+            return out;
+        };
+        const mine = flat([pt.customdata, pt.text, pt.hovertext, pt.label, pt.y, pt.x]);
+        for (const s of mine) {
+            const m = /ACH-\d{6}/.exec(s);
+            if (m && this.getCellLineName(m[0]) && this.getCellLineName(m[0]) !== m[0]) return { kind: 'cell', id: m[0], label: this.getCellLineName(m[0]) };
+        }
+        if (!this._clNameMap) {
+            this._clNameMap = new Map();
+            const md = this.cellLineMetadata || {};
+            for (const f of ['strippedCellLineName', 'cellLineName']) for (const id in (md[f] || {})) if (md[f][id]) this._clNameMap.set(String(md[f][id]).toLowerCase(), id);
+        }
+        const lines = (s) => { const t = s.split(/<br\s*\/?>|\n/)[0].replace(/<[^>]+>/g, '').trim(); return [t, t.split(/ \(|:|,/)[0].trim()]; };
+        const geneOf = (s) => {
+            for (const t of lines(s)) { const g = (/^[A-Za-z0-9._-]+/.exec(t) || [''])[0].toUpperCase(); if (g && (this.geneIndex?.has(g) || this.expressionGeneIndex?.has(g))) return g; }
+            return null;
+        };
+        const cellOf = (s) => { for (const t of lines(s)) { const id = this._clNameMap.get(t.toLowerCase()); if (id) return id; } return null; };
+        if (d._entKind === undefined) {
+            const at = (a, i) => Array.isArray(a) ? a[i] : null;
+            const n = Math.max(...[d.customdata, d.text, d.hovertext, d.x, d.y].map(a => Array.isArray(a) ? a.length : 0));
+            let g = 0, c = 0;
+            for (let i = 0; i < Math.min(n, 12); i++) {
+                const strs = flat([at(d.customdata, i), at(d.text, i), at(d.hovertext, i), at(d.y, i), at(d.x, i)]);
+                if (strs.some(geneOf)) g++;
+                if (strs.some(cellOf)) c++;
+            }
+            d._entKind = c > g ? 'cell' : g ? 'gene' : c ? 'cell' : null;
+        }
+        if (d._entKind === 'cell') {
+            for (const s of mine) { const id = cellOf(s); if (id) return { kind: 'cell', id, label: this.getCellLineName(id) }; }
+        } else if (d._entKind === 'gene') {
+            for (const s of mine) { const g = geneOf(s); if (g) return { kind: 'gene', id: g, label: g }; }
+        }
+        return null;
+    }
+
+    // Shift-click on a chart point: the Gene Browser or the cell line's Wiki
+    // opens on top, so closing it returns to the chart.
+    _openPlotEntity(ent) {
+        this.hideGeneTooltip?.(true);
+        this.hideCellLineTooltip?.();
+        if (ent.kind === 'gene') this.openGeneBrowser(ent.id);
+        else this.openCellLineWiki(ent.id);
+    }
+
     openGeneBrowser(gene) {
+        this._entityOpens = (this._entityOpens || 0) + 1;
         this._wantExpressionSoon();
         const modal = document.getElementById('gbModal');
         if (!modal || !this.metadata) return;
@@ -52338,8 +52502,8 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             yaxis: { automargin: true, tickfont: { size: 10 } },
             paper_bgcolor: '#ffffff', plot_bgcolor: '#ffffff', font: { family: 'Open Sans, sans-serif' }
         }, { displayModeBar: false, responsive: true });
-        this._attachDotLabel(elId, (id) => { this.closeGeneBrowser(); this._openCellLineInBrowser(id); });
-        const hint = 'Click a dot to label the cell line, shift-click to open it in the Cell Line Browser';
+        this._attachDotLabel(elId, (id) => { this.hideCellLineTooltip(); this.openCellLineWiki(id); });
+        const hint = 'Click a dot to label the cell line, Shift-click to open its Wiki';
         const row = el.nextElementSibling;
         if (row && row.classList.contains('gb-m') && row.querySelector('[data-gb-copy]') && !row.querySelector('.gb-dothint')) {
             row.style.justifyContent = 'space-between';
@@ -55193,7 +55357,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const modal = document.getElementById('ctwModal');
         const body = document.getElementById('ctwBody');
         if (!modal || !body) return;
-        document.getElementById('ctwTitle').textContent = `${this._ctwName(g)}, Cancer type Wiki`;
+        document.getElementById('ctwTitle').textContent = `${this._ctwName(g)} cell lines, Cancer type Wiki`;
         document.getElementById('ctwSubtitle').textContent = [g.tissue, g.subtype, g.disease].filter(Boolean).join(' · ');
         // Above a cell line Wiki it was opened from.
         const w = document.getElementById('clbWikiModal');
@@ -55287,7 +55451,8 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             microsatelliteInstable: nMsi,
             [childField === 'primaryDisease' ? 'subtypes' : 'diseases']: children || undefined,
         };
-        const body = this._gbDesc('What this cancer type looks like in the cohort, and how it differs from every other cell line. Each table compares the cell lines of this group with all the others.')
+        const body = `<div class="gb-mrna" style="color:#1f2937; background:#f3f4f6; border-left-color:#6b7280;"><b>About the ${c.n.toLocaleString()} cell lines of this type, not the disease in patients.</b> Every number here is counted in the DepMap cell lines. Cell lines are a selected sample (tumors that grow in culture, often advanced or metastatic), so frequencies can differ from patient tumors.</div>`
+            + this._gbDesc('Each table compares the cell lines of this group with all the other cell lines in the cohort.')
             + `<div class="gb-grid"><div>${stats}</div><div>${comp}</div></div>`;
         return this._gbSection('Overview', body, 'DepMap 26Q1 Model table (Oncotree classification, patient and sample annotation).');
     }
@@ -55311,7 +55476,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             rows.push({ gene, k, K, p: this._hypergeomUpperP(k, K, n, N) });
         }
         const cell = (r) => [this._ctwGeneLink(r.gene, 'gbMutCard'), `<b>${this._ctwPct(r.k, n)}</b> <span class="gb-m">(${r.k} of ${n})</span>`, this._ctwPct(r.K - r.k, N - n), r.p < 0.01 ? this._gbP(r.p) : '<span class="gb-m">n.s.</span>'];
-        const heads = ['Gene', 'This group', 'Other cell lines', 'Enriched, p'];
+        const heads = ['Gene', 'This group', 'Other cell lines', 'More common here, p'];
         const common = [...rows].sort((a, b) => b.k - a.k).filter(r => r.k >= 2).slice(0, 12);
         const enriched = rows.filter(r => r.k >= 3 && r.p < 0.01).sort((a, b) => a.p - b.p).slice(0, 12);
         // Codon-level calls and the curated driver fusions.
@@ -55333,12 +55498,12 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             driverFusions: Object.fromEntries([...fusC.entries()].sort((a, b) => b[1] - a[1])),
             functionalLoss: Object.fromEntries(lofGenes.map(gene => [gene, tally(this.functionalLoss.geneData[gene].mutations || {}).k]).filter(([, k]) => k > 0).sort((a, b) => b[1] - a[1])),
         };
-        const body = this._gbDesc('Mutations in cancer genes (OncoKB), counting hotspot and likely loss-of-function calls. "Enriched" tests whether the mutation is more common here than in the other cell lines (one-sided Fisher test).')
+        const body = this._gbDesc('Mutations in cancer genes (OncoKB), counting hotspot and likely loss-of-function calls. The left table ranks genes by how many cell lines of this group carry a mutation. The right table ranks them by how much more common the mutation is here than in all other cell lines of the cohort, strongest evidence first (one-sided Fisher test).')
             + this._gbRow('Specific variants', varC.size ? chips(varC) : '<span class="gb-m">none of the tracked variants</span>')
             + this._gbRow('Driver fusions', fusC.size ? chips(fusC) : '<span class="gb-m">none of the curated driver fusions</span>')
             + this._gbRow('Functional loss', lof || '<span class="gb-m">none</span>')
-            + `<div class="gb-grid" style="margin-top:6px;"><div><div class="gb-sub">Most often mutated</div>${common.length ? this._gbTable(heads, common.map(cell)) : '<div class="gb-empty">No cancer gene is mutated in two or more of these cell lines.</div>'}</div>`
-            + `<div><div class="gb-sub">Most enriched compared with other cell lines</div>${enriched.length ? this._gbTable(heads, enriched.map(cell)) : '<div class="gb-empty">No cancer gene is clearly more often mutated here (3 or more cell lines, p below 0.01).</div>'}</div></div>`;
+            + `<div class="gb-grid" style="margin-top:6px;"><div><div class="gb-sub">Most often mutated in this group</div>${common.length ? this._gbTable(heads, common.map(cell)) : '<div class="gb-empty">No cancer gene is mutated in two or more of these cell lines.</div>'}</div>`
+            + `<div><div class="gb-sub">More common here than in all other cell lines</div>${enriched.length ? this._gbTable(heads, enriched.map(cell)) : '<div class="gb-empty">No cancer gene is clearly more often mutated here (3 or more cell lines, p below 0.01).</div>'}</div></div>`;
         return this._gbSection('Common mutations and fusions', body, 'DepMap 26Q1 hotspot and damaging mutation calls, integrated functional-loss call, inferred variant and driver-fusion layers.');
     }
 
@@ -55363,7 +55528,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         };
         const amp = count('amplifications'), del = count('deletions');
         if (!amp.length && !del.length) return '';
-        const heads = ['Gene', 'This group', 'Other cell lines', 'Enriched, p'];
+        const heads = ['Gene', 'This group', 'Other cell lines', 'More common here, p'];
         const cell = (r) => [this._ctwGeneLink(r.gene, 'gbCnCard'), `<b>${this._ctwPct(r.k, n)}</b> <span class="gb-m">(${r.k} of ${n})</span>`, this._ctwPct(r.K - r.k, N - n), r.p < 0.01 ? this._gbP(r.p) : '<span class="gb-m">n.s.</span>'];
         const aiRow = (r) => ({ gene: r.gene, inGroup: r.k, groupSizeWithCopyNumber: n, inOthers: r.K - r.k, othersWithCopyNumber: N - n, pEnriched: r.p });
         c.ai.copyNumber = { amplified: amp.map(aiRow), deleted: del.map(aiRow) };
@@ -55626,8 +55791,18 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const hasOwn = (r) => { for (let k = 0; k < K; k++) if (tisOf[nn[r * K + k]] === tisOf[r]) return true; return false; };
         let ok = 0, tot = 0;
         for (let r = 0; r < M; r++) if (tIdx.has(tisOf[r])) { tot++; if (hasOwn(r)) ok++; }
-        const shown = genes.filter(p => p.rank < 3);
-        const med = tissues.map((t, k) => shown.map(p => medianIn(p.j, k)));
+        // The gap between a protein's own cancer type and the next highest one
+        // decides which three are shown; AUC alone also rewards proteins that
+        // several cancer types share.
+        for (const p of genes) {
+            p.med = tissues.map((t, k) => medianIn(p.j, k));
+            const own = p.med[tIdx.get(p.tissue)];
+            const others = tissues.map((t, k) => [t, p.med[k]]).filter(([t]) => t !== p.tissue).sort((a, b) => b[1] - a[1]);
+            p.margin = own - others[0][1];
+            p.alsoHigh = others.filter(([, v]) => v >= own - 1).map(([t]) => t);
+        }
+        const shown = tissues.flatMap(t => genes.filter(p => p.tissue === t).sort((a, b) => b.margin - a.margin).slice(0, 3));
+        const med = tissues.map((t, k) => shown.map(p => p.med[k]));
         return (this._ctwPanelCache = { tissues, nT, genes, shown, med, tisOf, K, nn, ns, hasOwn, ok, tot });
     }
 
@@ -55645,25 +55820,44 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             return `rgb(${mix(255, 63)},${mix(255, 107)},${mix(255, 37)})`;
         };
         const cellTd = (v, gene, where) => `<td data-ctw-expr="${this.esc(gene)}" title="${this.esc(gene)} in ${this.esc(where)}: median ${this._gbNum(v, 1)} log₂ TPM+1. Click to open its expression in the Gene Browser" style="background:${color(v)}; width:13px; height:13px; padding:0; border:1px solid #fff; cursor:pointer;"></td>`;
-        const head = `<tr><th></th>${P.shown.map(p => `<th data-ctw-expr="${this.esc(p.gene)}" data-ctw-why="Marks ${this.esc(p.tissue)} (specificity ${this._gbNum(p.auc)}). Click to open its expression in the Gene Browser." style="padding:0 0 3px; vertical-align:bottom; font-weight:400; cursor:pointer;"><div class="ctw-vlabel">${this.esc(p.gene)}</div></th>`).join('')}</tr>`;
+        const list = (a) => a.length > 3 ? `${a.slice(0, 2).join(', ')} and ${a.length - 2} more` : a.length > 1 ? `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}` : a.join('');
+        const whyOf = (p) => p.alsoHigh.length
+            ? `Picked for ${p.tissue}, but about as high in ${list(p.alsoHigh)}. Not a marker on its own.`
+            : `Marks ${p.tissue}: at least twofold higher than in every other cancer type.`;
+        const head = `<tr><th></th>${P.shown.map(p => {
+            const mine = p.tissue === g.tissue;
+            return `<th data-ctw-expr="${this.esc(p.gene)}" data-ctw-why="${this.esc(whyOf(p))} Click to open its expression in the Gene Browser." style="padding:0 0 3px; vertical-align:bottom; font-weight:${mine ? 700 : 400}; cursor:pointer;${mine ? ' background:#e4f0d8;' : ''}"><div class="ctw-vlabel" style="color:${p.alsoHigh.length ? '#9ca3af' : mine ? '#3f6b25' : '#111827'};">${this.esc(p.gene)}</div></th>`;
+        }).join('')}</tr>`;
+        const mine = P.shown.filter(p => p.tissue === g.tissue);
+        const nSpec = mine.filter(p => !p.alsoHigh.length).length;
+        const finer = g.subtype || g.disease;
+        const mineHtml = !mine.length
+            ? `<b>${this.esc(g.tissue || this._ctwName(g))}:</b> no surface protein is picked for this tissue. ${P.tissues.includes(g.tissue) ? 'None stands out from the other cancer types.' : 'It has fewer than 8 cell lines with mRNA data.'}`
+            : `<b>Picked for ${this.esc(g.tissue)}</b>${finer ? ` <span class="gb-m">(the tissue of ${this.esc(this._ctwName(g))})</span>` : ''}<b>:</b> `
+                + mine.map(p => `<a href="#" class="gb-cl" data-ctw-expr="${this.esc(p.gene)}" data-ctw-why="${this.esc(whyOf(p))}">${this.gi(p.gene)}</a>${p.alsoHigh.length ? ` <span class="gb-m">(also high in ${this.esc(list(p.alsoHigh))})</span>` : ''}`).join(', ')
+                + '. ' + (nSpec === mine.length ? 'Each is at least twofold higher here than in every other cancer type.'
+                    : nSpec ? `${nSpec} of ${mine.length} ${nSpec === 1 ? 'is' : 'are'} specific; the rest ${mine.length - nSpec === 1 ? 'is' : 'are'} shared with other cancer types.`
+                    : 'None is specific on its own: other cancer types reach the same level, so no single surface protein identifies this tissue.');
+        const mineBox = `<div style="font-size:12px; line-height:1.55; background:#f3f8ee; border-left:3px solid #5a8f29; border-radius:0 4px 4px 0; padding:6px 10px; margin:0 0 8px;">${mineHtml}</div>`;
         const trs = P.tissues.map((t, k) => {
             const me = t === g.tissue;
             return `<tr><td style="padding:0 8px 0 0; font-size:10.5px; white-space:nowrap; text-align:right;${me ? ' font-weight:700; color:#3f6b25;' : ''}">${me ? '▶ ' : ''}${this.esc(t)} <span class="gb-m">(${P.nT[k]})</span></td>${P.med[k].map((v, q) => cellTd(v, P.shown[q].gene, t)).join('')}</tr>`;
         });
         if (own) trs.unshift(`<tr><td style="padding:0 8px 0 0; font-size:10.5px; white-space:nowrap; text-align:right; font-weight:700; color:#3f6b25;">▶ ${this.esc(this._ctwName(g))} <span class="gb-m">(${memRows.length})</span></td>${own.map((v, q) => cellTd(v, P.shown[q].gene, this._ctwName(g))).join('')}</tr>`);
         const matrix = `<div style="overflow-x:auto;"><table style="border-collapse:collapse; margin:4px 0;">${head}${trs.join('')}</table></div>`
-            + `<div style="display:flex; align-items:center; gap:6px; margin-top:6px; font-size:11px; color:#4b5563;">0 <span style="display:inline-block; width:140px; height:11px; background:linear-gradient(90deg, ${color(0)}, ${color(7)}); border:1px solid #e5e7eb;"></span> 7+ log₂ TPM+1, median per cancer type</div>`;
+            + `<div style="display:flex; align-items:center; gap:6px; margin-top:6px; font-size:11px; color:#4b5563;">0 <span style="display:inline-block; width:140px; height:11px; background:linear-gradient(90deg, ${color(0)}, ${color(7)}); border:1px solid #e5e7eb;"></span> 7+ log₂ TPM+1, median per cancer type<span style="margin-left:14px;"><span style="color:#9ca3af; font-style:italic;">Gray name</span>: also high in another cancer type</span></div>`;
         c.ai.surfacePanel = {
             basis: 'mRNA (RNA-seq log2 TPM+1), not measured protein',
             cancerTypes: Object.fromEntries(P.tissues.map((t, k) => [t, P.nT[k]])),
-            proteinsShown: P.shown.map(p => ({ gene: p.gene, marks: p.tissue, specificityAuc: +p.auc.toFixed(3) })),
+            proteinsShown: P.shown.map(p => ({ gene: p.gene, pickedFor: p.tissue, specificityAuc: +p.auc.toFixed(3), log2GapToNextCancerType: +p.margin.toFixed(2), alsoHighIn: p.alsoHigh })),
             medianLog2TpmByCancerType: Object.fromEntries(P.tissues.map((t, k) => [t, Object.fromEntries(P.shown.map((p, q) => [p.gene, +P.med[k][q].toFixed(2)]))])),
             ...(own ? { medianLog2TpmThisGroup: Object.fromEntries(P.shown.map((p, q) => [p.gene, +own[q].toFixed(2)])) } : {}),
         };
-        const body = this._ctwMrnaNote() + this._gbDesc(`Surface proteins that best tell the cancer types apart: for each cancer type with at least 8 cell lines, the three surface proteins that best set it apart from the others. Each row is the median mRNA of a cancer type; hover a square for the value, click it or a protein name to open that gene's expression in the Gene Browser. The export and the surface opinion in the identity check below use up to eight proteins per cancer type (${P.genes.length} in all).`)
+        const body = this._ctwMrnaNote() + this._gbDesc(`One row per cancer type, one column per surface protein. Each cancer type with at least 8 cell lines brings up to three proteins: those that stand furthest above every other cancer type. Columns follow the order of the rows, so a clean marker shows as one dark square in its own row. Hover a square for the value, click it or a name to open that gene's expression in the Gene Browser. The export and the surface opinion in the identity check below use up to eight proteins per cancer type (${P.genes.length} in all).`)
+            + mineBox
             + matrix
             + `<div style="display:flex; justify-content:flex-end; margin-top:2px;"><button class="btn btn-outline btn-sm mobile-hide" data-ctw-act="panel-csv" style="font-size:10px; padding:1px 8px;" title="Download the panel as a table: cancer types by proteins, median log₂ TPM+1">Export panel (.csv)</button></div>`;
-        return this._gbSection('Surface protein panel: mRNA levels, not protein', body, 'DepMap 26Q1 OmicsExpressionTPMLogp1 (mRNA). Specificity is the area under the ROC curve of one cancer type against all other cell lines; similarity is the Pearson r of z-scored panel values.', 'ctwPanelCard');
+        return this._gbSection('Surface protein panel: mRNA levels, not protein', body, 'DepMap 26Q1 OmicsExpressionTPMLogp1 (mRNA). Candidates have an area under the ROC curve of at least 0.75 for one cancer type against all other cell lines; a protein counts as shared when another cancer type has a median within twofold. Similarity is the Pearson r of z-scored panel values.', 'ctwPanelCard');
     }
 
     // One cell line's whole-transcriptome identity record, with its nearest
@@ -55810,7 +56004,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         });
         // Gene and cell line names show the shared hover cards, as everywhere.
         let tipTimer = null;
-        const hoverSel = '[data-ctw-gene], [data-ctw-cl], th[data-ctw-expr]';
+        const hoverSel = '[data-ctw-gene], [data-ctw-cl], th[data-ctw-expr], a[data-ctw-expr]';
         document.getElementById('ctwBody')?.addEventListener('mouseover', (e) => {
             const a = e.target.closest(hoverSel);
             if (!a) return;
@@ -55887,6 +56081,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
     }
 
     async openCellLineWiki(cellLineId) {
+        this._entityOpens = (this._entityOpens || 0) + 1;
         // Remember which cell line the wiki is showing so the header export
         // buttons (gene-info CSV etc.) know what to export.
         this._wikiCellLineId = cellLineId;
@@ -60261,6 +60456,20 @@ ${clone.innerHTML}
     // The numbers already on the hovered row, restated above the gene
     // description so one box answers both "what is this gene" and "what is it
     // doing in this comparison".
+    // The same block for a volcano dot, from its row of numbers.
+    _geInspectFactsHtml(r, isExpr) {
+        const isGateAB = this._geInspectMode === 'gateAB';
+        const f = (v) => (isNaN(v) ? '-' : v.toFixed(3));
+        const q = r.q == null || isNaN(r.q) ? '' : (r.q < 0.001 ? r.q.toExponential(1) : r.q.toFixed(3));
+        return `<div style="margin:2px 0 5px; padding:4px 7px; background:#f6f8f4; border-radius:4px; color:#374151;">`
+            + `<b>In this comparison</b> (${isExpr ? 'mRNA, log\u2082(TPM+1)' : 'gene effect'}): ${isGateAB ? 'Gate A' : 'selection'} <b>${f(r.meanSel)}</b>, `
+            + `${isGateAB ? 'Gate B' : 'compared group'} <b>${f(r.meanOther)}</b>, difference `
+            + `<b style="color:${r.delta < 0 ? '#dc2626' : '#2563eb'};">${f(r.delta)}</b>`
+            + (q ? `, q ${q}` : '')
+            + `<br><span style="color:#6b7280;">Measured in ${r.nSel}/${r.nOther} cell lines (${isGateAB ? 'A / B' : 'selection / compared group'})</span>`
+            + `</div>`;
+    }
+
     _geInspectRowFactsHtml(tr) {
         const cells = [...tr.querySelectorAll('td')].map(td => td.textContent.trim());
         if (cells.length < 4) return '';
@@ -60485,13 +60694,19 @@ ${clone.innerHTML}
             ? (r.q != null && r.q > 0 ? -Math.log10(r.q) : (r.q === 0 ? 30 : null))
             : Math.abs(r.delta);
         const shown = new Set(shownRows.map(r => r.gene));
-        const bg = { x: [], y: [], t: [] }, hi = { x: [], y: [], t: [] };
+        const words = this._geInspectSideWords();
+        // Both group means, so a gene that is less negative in the selection
+        // is not read as a gene the selection gains from.
+        const tipOf = (r) => `${r.gene}<br>${words.selWord} ${r.meanSel.toFixed(2)}, ${words.cmpWord} ${r.meanOther.toFixed(2)}<br>Δ ${r.delta >= 0 ? '+' : ''}${r.delta.toFixed(2)}${anyQ && r.q != null ? `, q ${r.q < 0.001 ? r.q.toExponential(1) : r.q.toFixed(3)}` : ''}`;
+        el._rowByGene = new Map(allRows.map(r => [r.gene, r]));
+        const bg = { x: [], y: [], t: [] }, hi = { x: [], y: [], t: [], m: [] };
         for (const r of allRows) {
             const y = yOf(r);
             if (y == null || !isFinite(y) || !isFinite(r.delta)) continue;
             const into = shown.has(r.gene) ? hi : bg;
             into.x.push(r.delta); into.y.push(y);
-            into.t.push(`${r.gene}<br>Δ ${r.delta.toFixed(2)}${anyQ && r.q != null ? `<br>q ${r.q < 0.001 ? r.q.toExponential(1) : r.q.toFixed(3)}` : ''}`);
+            into.t.push(tipOf(r));
+            if (into === hi) hi.m.push(r.meanSel);
         }
         // Label the strongest few, so the plot says something on its own.
         // Taking the top N outright piles every label into one corner when the
@@ -60506,7 +60721,7 @@ ${clone.innerHTML}
             const y = yOf(r);
             if (y == null || !isFinite(y) || !isFinite(r.delta)) continue;
             found.x.push(r.delta); found.y.push(y);
-            found.t.push(`${r.gene}<br>Δ ${r.delta.toFixed(2)}${anyQ && r.q != null ? `<br>q ${r.q < 0.001 ? r.q.toExponential(1) : r.q.toFixed(3)}` : ''}`);
+            found.t.push(tipOf(r));
             foundLab.push(r);
         }
         // The automatic labels, the strongest few each way minus any the
@@ -60530,7 +60745,16 @@ ${clone.innerHTML}
             { x: bg.x, y: bg.y, text: bg.t, type: 'scattergl', mode: 'markers', name: 'below cutoff',
               hoverinfo: 'text', marker: { size: 4, color: '#d1d5db', opacity: 0.55 } },
             { x: hi.x, y: hi.y, text: hi.t, type: 'scattergl', mode: 'markers', name: 'shown in table',
-              hoverinfo: 'text', marker: { size: 6, color: hi.x.map(v => isGE ? (v < 0 ? '#e66101' : '#5e3c99') : (v < 0 ? '#dc2626' : '#2563eb')), opacity: 0.85 } }
+              hoverinfo: 'text', marker: isGE
+                // Gene effect: the x axis already says which way the difference
+                // goes, so the color carries the level itself, the selection's
+                // mean. Orange is a dependency, gray none, purple a gain.
+                ? { size: 6, color: hi.m, cmin: -1, cmax: 0.5, opacity: 0.9,
+                    colorscale: [[0, '#7f2704'], [0.33, '#e66101'], [0.53, '#fdb863'], [0.667, '#c9ccd3'], [0.8, '#b2abd2'], [1, '#5e3c99']],
+                    colorbar: { thickness: 7, len: 0.5, x: 1, xpad: 3, y: 0.02, yanchor: 'bottom', outlinewidth: 0,
+                                tickvals: [-1, -0.5, 0, 0.5], ticktext: ['≤ −1', '−0.5', '0', '≥ 0.5'], tickfont: { size: 8 }, ticklen: 2,
+                                title: { text: `Mean gene effect, ${words.selWord}`, side: 'right', font: { size: 8 } } } }
+                : { size: 6, color: hi.x.map(v => v < 0 ? '#dc2626' : '#2563eb'), opacity: 0.85 } }
         ];
         if (found.x.length) {
             traces.push({ x: found.x, y: found.y, text: found.t, type: 'scattergl', mode: 'markers',
@@ -60597,7 +60821,7 @@ ${clone.innerHTML}
             });
         }
         const layout = {
-            margin: { l: 44, r: 10, t: topMargin, b: 38 },
+            margin: { l: 44, r: isGE ? 46 : 10, t: topMargin, b: 38 },
             // Square, so the two measures are directly comparable by eye and
             // an exported figure is the shape people actually want a volcano
             // in. The container carries the 1:1 aspect ratio; height follows it.
@@ -60653,9 +60877,29 @@ ${clone.innerHTML}
                 const gene = t.split('<br>')[0];
                 if (!gene) return;
                 const e = ev.event || {};
-                if (e.shiftKey || e.metaKey || e.ctrlKey) return this._openGeneFromInspect?.(gene, side === 'Right');
+                if (e.shiftKey) { this.hideGeneTooltip?.(true); return this.openGeneBrowser(gene); }
+                if (e.metaKey || e.ctrlKey) return this._openGeneFromInspect?.(gene, side === 'Right');
                 if (e.altKey) { this._geVolcanoState(side).hidden.add(gene); this._redrawGEVolcano(side); return; }
                 this._toggleGEVolcanoLabel(side, gene);
+            });
+            // The gene card, as on a network node, with this comparison's
+            // numbers on top. The chart's own label shows until it is up.
+            let cardTimer = null;
+            el.on('plotly_hover', (ev) => {
+                const gene = (ev.points?.[0]?.text || '').split('<br>')[0];
+                const r = el._rowByGene?.get(gene);
+                clearTimeout(cardTimer);
+                if (!r || window.innerWidth <= 640) return;
+                const at = { clientX: ev.event?.clientX, clientY: (ev.event?.clientY || 0) + 10 };
+                cardTimer = setTimeout(() => {
+                    el.classList.add('hover-card-on');
+                    this.showGeneTooltip(at, gene, undefined, this._geInspectFactsHtml(r, side === 'Right'));
+                }, this._HOVER_DELAY);
+            });
+            el.on('plotly_unhover', () => {
+                clearTimeout(cardTimer);
+                el.classList.remove('hover-card-on');
+                this.hideGeneTooltip();
             });
             // Draggable labels make Plotly report one click twice; without the
             // guard the second toggle put the removed name straight back.
@@ -61127,7 +61371,7 @@ ${clone.innerHTML}
         // table looked like an answer rather than a cutoff to loosen.
         const leftMsg = hint(leftRows.length, leftCut, leftQ, rows, 'left');
         const rightMsg = hint(rightRows.length, rightCut, rightQ, exprRows, 'right');
-        const clickHint = ' Click a dot to name it, Shift+click to open the gene, Alt+click to hide it.';
+        const clickHint = ' Click a dot to name it, Shift+click for the Gene Browser, Alt+click to hide it.';
         document.getElementById('geLeftHint').textContent = leftRows.length ? leftMsg + clickHint : '';
         document.getElementById('geRightHint').textContent = rightRows.length ? rightMsg + clickHint : '';
         document.getElementById('geLeftBody').innerHTML = this._buildGEInspectTable(leftRows, 'left', leftMsg);
@@ -64405,7 +64649,7 @@ ${clone.innerHTML}
         this._updateUmapLabelAnnotations();
         this.showCellLineDetail(clId);
         const entry = document.querySelector(`#clbList .clb-entry[data-clid="${CSS.escape(clId)}"]`);
-        if (entry) entry.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        if (entry) { entry.scrollIntoView({ block: 'center' }); requestAnimationFrame(() => entry.scrollIntoView({ block: 'center' })); }
     }
 
     _updateUmapLabelAnnotations() {
