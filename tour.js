@@ -587,7 +587,7 @@ html.popout-open #tourNetHint { display: none; }
 #tourPage .tour-two .tour-shot img { aspect-ratio: 5 / 6; object-fit: contain; padding: 6px; }
 #tourPage .tour-two .tour-shot figcaption { flex: 1; }
 #tourPage .tour-two-net { align-items: stretch; }
-#tourPage .tour-two-pca { grid-template-columns: minmax(0, 99fr) minmax(0, 133fr); align-items: stretch; }
+#tourPage .tour-two-pca { grid-template-columns: minmax(0, 99fr) minmax(0, 151fr); align-items: stretch; }
 #tourPage .tour-two-pca .tour-shot img { aspect-ratio: auto; }
 #tourPage .tour-two-net .tour-shot img { aspect-ratio: 1 / 1; }
 #tourPage .tour-two-one { grid-template-columns: minmax(0, 560px); justify-content: center; }

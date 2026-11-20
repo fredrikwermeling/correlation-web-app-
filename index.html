@@ -1965,7 +1965,7 @@
             padding-top: 8px;   /* sit level with the first line of controls */
         }
         .clb-group-label { font-size: 10px; font-weight: 600; white-space: nowrap; }
-        .clb-step-label { color: var(--green-700); }
+        .clb-step-label { color: var(--green-700); white-space: nowrap; }
         /* Forces the next group onto its own line of a wrapping row. */
         .clb-break { flex-basis: 100%; height: 0; }
         .clb-listbar {
@@ -2844,6 +2844,13 @@
                 padding-top: 6px !important;
                 padding-bottom: 6px !important;
             }
+            /* The list bar scrolls with the page here: pinned, it would cover a
+               third of a phone screen. Count on its own line, sort beside its
+               arrow, and the unused sort inputs give up their reserved space. */
+            .clb-listbar { position: static !important; padding: 6px 4px !important; }
+            .clb-list-count { flex: 1 1 100% !important; min-width: 0 !important; }
+            .clb-listbar #clbSortBy { flex: 1 1 0 !important; width: auto !important; min-width: 0 !important; }
+            .clb-listbar .clb-anchor[style*="hidden"] { display: none !important; }
             /* The 1px dividers between toolbar groups read as stray vertical
                marks once the toolbar wraps into a column. */
             .clb-sep { display: none !important; }
@@ -5533,12 +5540,12 @@
           <div class="clb-row">
             <span class="clb-row-label clb-step-label">1. Filter</span>
             <div class="clb-row-items">
-              <input type="text" id="clbSearch" list="clbSearchOptions" autocomplete="off" placeholder="Search cell lines..." style="width:190px;"><datalist id="clbSearchOptions"></datalist>
-              <select id="clbTissueFilter" style="width:200px;"><option value="">All tissues</option></select>
-              <select id="clbSubtypeFilter" disabled title="Choose a tissue first to narrow by subtype" style="width:200px;"><option value="">All subtypes</option></select>
-              <select id="clbOncotreeFilter" style="width:210px;" title="Exact disease entity from Oncotree. Finer than the tissue and subtype fields, and reaches entities they cannot, for example chronic lymphocytic leukemia, which the disease field files under mature B-cell neoplasms."><option value="">All diseases</option></select>
+              <input type="text" id="clbSearch" list="clbSearchOptions" autocomplete="off" placeholder="Search cell lines..." style="width:170px;"><datalist id="clbSearchOptions"></datalist>
+              <select id="clbTissueFilter" style="width:180px;"><option value="">All tissues</option></select>
+              <select id="clbSubtypeFilter" disabled title="Choose a tissue first to narrow by subtype" style="width:180px;"><option value="">All subtypes</option></select>
+              <select id="clbOncotreeFilter" style="width:190px;" title="Exact disease entity from Oncotree. Finer than the tissue and subtype fields, and reaches entities they cannot, for example chronic lymphocytic leukemia, which the disease field files under mature B-cell neoplasms."><option value="">All diseases</option></select>
               <button id="clbCancerWikiBtn" class="btn btn-outline btn-sm" disabled title="A summary of the chosen tissue, subtype or disease: common mutations, dependencies, surface proteins for FACS and an identity check. Choose a tissue, subtype or disease first.">Cancer type Wiki</button>
-              <select id="clbSexFilter" style="width:160px;" title="Filter by sex. Annotation (from DepMap) and expression-based calls (Y-markers + XIST) are independent axes, they often disagree.">
+              <select id="clbSexFilter" style="width:150px;" title="Filter by sex. Annotation (from DepMap) and expression-based calls (Y-markers + XIST) are independent axes, they often disagree.">
                 <option value="">All sexes</option>
                 <optgroup label="By annotation">
                   <option value="ann_male">Male</option>
@@ -6167,7 +6174,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v92_9"></script>
-    <script src="tour.js?v=v91_99"></script>
+    <script src="app.js?v=v92_10"></script>
+    <script src="tour.js?v=v92_10"></script>
 </body>
 </html>

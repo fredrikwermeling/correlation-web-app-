@@ -64835,7 +64835,7 @@ ${clone.innerHTML}
             const dims = this._getUmapPlotDimensions();
             const method = this._clbUmapData?.method === 'pca' ? 'PCA' : 'UMAP';
             const cls = this._clbUmapData?.geneClass;
-            const titleText = `${method} \u2014 ${dataTypeLabel}${cls ? `, ${cls.label.toLowerCase()}` : ''} (${cellLines.length} cell lines)`;
+            const titleText = `${method}: ${dataTypeLabel}${cls ? `, ${cls.label.toLowerCase()}` : ''} (${cellLines.length} cell lines)`;
             const umapTitleAnn = {
                 x: 0.5, y: 1.0, xref: 'paper', yref: 'paper',
                 xanchor: 'center', yanchor: 'bottom',
@@ -65042,7 +65042,7 @@ ${clone.innerHTML}
         const geneColorTitleAnn = {
             x: 0.5, y: 1.0, xref: 'paper', yref: 'paper',
             xanchor: 'center', yanchor: 'bottom',
-            text: `<b>${methodLabel} \u2014 ${gene} ${typeLabel} (${cellLines.length} cell lines)</b>`,
+            text: `<b>${methodLabel}: ${gene} ${typeLabel} (${cellLines.length} cell lines)</b>`,
             showarrow: false, font: { size: 15 }, _tsRole: 'title'
         };
         const geneColorXAnn = {
