@@ -1606,10 +1606,7 @@ class CorrelationExplorer {
         this.updateLoadingText('Loading metadata...');
 
         // Load essential JSON files in parallel (synonyms loaded lazily on demand)
-        // Tie the data files to the same version as app.js, otherwise a
-        // browser keeps serving yesterday's JSON to today's code.
-        const _dv = (document.querySelector('script[src*="app.js"]')?.src.split('?v=')[1]) || '';
-        const dfetch = (path) => fetch(_dv ? `${path}?v=${_dv}` : path);
+        const dfetch = (path) => fetch(this._dataUrl(path));
 
         const [metadataRes, cellLineRes, mutationsRes, orthologsRes, translocationsRes, damagingMutRes, growthRateRes, retroRes, drugRes, clinicalFusionsRes, inferredSubtypesRes, globalSigRes, corumRes, hlaCnRes, lehmannRes, clinicalCnRes, validatedFusionsRes, functionalLossRes, curatedFusionsRes, problematicRes, virusRes, cnArtefactRes, derivativeRes, txIdentityRes, virusRnaRes] = await Promise.all([
             dfetch('web_data/metadata.json'),
@@ -17219,12 +17216,20 @@ ${svgNoteLines.map((ln, i) => `<text x="${width / 2}" y="${(filterText ? svgBann
         this._reparkUncorrelated();
     }
 
-    // Data files carry the same cache-bust token as app.js: without it a
-    // release update could pair fresh JSON indices with a stale cached
-    // binary (or vice versa), silently misindexing every value.
+    // Data files share one cache-bust token: without it an update could
+    // pair fresh JSON indices with a stale cached binary (or vice versa),
+    // silently misindexing every value.
     _dataUrl(path) {
-        const v = (document.querySelector('script[src*="app.js"]')?.src.split('?v=')[1]) || '';
+        const v = this._dataVersion();
         return v ? `${path}?v=${v}` : path;
+    }
+
+    // The token follows the data, not the release, so an update that only
+    // changes code leaves the downloaded data in the browser cache. It is
+    // written by scripts/data_version.py; the app.js token is the fallback.
+    _dataVersion() {
+        return document.querySelector('meta[name="data-version"]')?.content
+            || document.querySelector('script[src*="app.js"]')?.src.split('?v=')[1] || '';
     }
 
     // The saved/consumed value stays 'none' | 'lfc' | 'fdr'; the UI is a
