@@ -1965,6 +1965,17 @@
             padding-top: 8px;   /* sit level with the first line of controls */
         }
         .clb-group-label { font-size: 10px; font-weight: 600; white-space: nowrap; }
+        .clb-step-label { color: var(--green-700); }
+        /* Forces the next group onto its own line of a wrapping row. */
+        .clb-break { flex-basis: 100%; height: 0; }
+        .clb-listbar {
+            flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px;
+            /* -10px: the list's own top padding, so no row shows above the bar. */
+            position: sticky; top: -10px; z-index: 5;
+            padding: 4px 10px; margin-bottom: 4px;
+            background: #f9fafb; border: 0; border-bottom: 1px solid #e5e7eb;
+        }
+        .clb-list-count { font-size: 12.5px; font-weight: 600; color: #374151; min-width: 150px; }
         /* Reserve the space, hide the control. Used for the sort-direction
            arrow, which only means something once a sort basis is chosen. */
         .clb-hidden { visibility: hidden; }
@@ -5508,22 +5519,19 @@
           <img src="web_data/clb_banner.png" alt="Cell Line Browser" style="height:44px; width:auto; min-width:0; flex:0 1 auto; object-fit:contain; object-position:left center;">
           <div style="margin-left:auto; display:flex; align-items:center; gap:6px;">
             <button id="clbInfoBtn" class="btn btn-outline btn-sm clb-icon-btn" title="How the Cell Line Browser works: the filters, sorts, quick filters, symbols, warnings and where each piece of data comes from">?</button>
-            <button id="clbExportImageBtn" class="btn btn-outline btn-sm mobile-hide" title="Capture the Cell Line Browser as an image (PNG / TIFF / PDF / PowerPoint)">Export image...</button>
-            <button id="clbExportCsvBtn" class="btn btn-outline btn-sm mobile-hide" title="Spreadsheet exports: the selected cell lines across every gene, the list as it is on screen, or a few genes across the cell lines">Export CSV &#9662;</button>
-            <button id="clbUmapOpenBtn" class="btn btn-outline btn-sm mobile-hide" title="Open PCA / UMAP of the cell lines in a large window: lasso selection, gates, loadings">PCA / UMAP</button>
-            <button id="clbVirusBtn" class="btn btn-outline btn-sm" title="Which cell lines carry viral RNA in their RNA-seq data, beside the Cellosaurus virus records">Viral RNA</button>
-            <button id="clbExportAIBtn" class="btn btn-outline btn-sm mobile-hide" title="Send the cell lines currently listed, with their alterations and gene-effect data, to an AI assistant for analysis">Export for AI</button>
-            <button class="btn btn-outline btn-sm mobile-hide" onclick="app.openMethods('clb')" title="Write out how this list was arrived at, as a methods paragraph and as a plain walk-through">Methods</button>
-            <button id="clbResetFilters" class="btn btn-outline btn-sm" title="Clear every filter, sort and selection">Reset</button>
+            <button id="clbExportMenuBtn" class="btn btn-outline btn-sm mobile-hide" title="Save the browser as an image, a spreadsheet, a methods text or a file for an AI assistant">Export &#9662;</button>
+            <button id="clbExportImageBtn" class="btn btn-outline btn-sm mobile-hide" style="display:none;" title="Capture the Cell Line Browser as an image (PNG / TIFF / PDF / PowerPoint)">Export image...</button>
+            <button id="clbExportAIBtn" class="btn btn-outline btn-sm mobile-hide" style="display:none;" title="Send the cell lines currently listed, with their alterations and gene-effect data, to an AI assistant for analysis">Export for AI</button>
+            <button id="clbResetFilters" class="btn btn-outline btn-sm" style="display:none;" title="Clear every filter, sort and selection">Reset</button>
             <button id="clbCloseBtn" class="modal-close" title="Close the Cell Line Browser">&times;</button>
           </div>
         </div>
-        <!-- Toolbar -->
+        <!-- Toolbar: three numbered steps, in the order they are used. -->
         <div class="clb-toolbar">
 
-          <!-- Row 1, who is in the cohort. -->
+          <!-- Step 1, which cell lines are listed. -->
           <div class="clb-row">
-            <span class="clb-row-label">Cohort</span>
+            <span class="clb-row-label clb-step-label">1. Filter</span>
             <div class="clb-row-items">
               <input type="text" id="clbSearch" list="clbSearchOptions" autocomplete="off" placeholder="Search cell lines..." style="width:190px;"><datalist id="clbSearchOptions"></datalist>
               <select id="clbTissueFilter" style="width:200px;"><option value="">All tissues</option></select>
@@ -5549,42 +5557,7 @@
                   <option value="chr_xist_silenced">XIST silenced, two X</option>
                 </optgroup>
               </select>
-              <span class="clb-sep"></span>
-              <select id="clbSortBy" style="width:172px;" title="Sort the cell line list">
-                <option value="name">Sort: Name</option>
-                <option value="ge">Sort: GE for gene(s)</option>
-                <option value="expr">Sort: Expression of gene(s)</option>
-                <option value="drug">Sort: Drug response (PRISM AUC)</option>
-                <option value="ifn">Sort: Interferon score (ISG)</option>
-                <option value="retro">Sort: Retroelement signal (CPM)</option>
-                <option value="ychr">Sort: Y-linked expression</option>
-                <option value="xist">Sort: XIST expression</option>
-                <option value="medium">Sort: Culture medium</option>
-                <option value="origin">Sort: Primary or metastasis</option>
-              </select>
-              <button id="clbSortDir" title="Switch the sort direction" class="btn btn-outline btn-sm" style="width:32px;">&#x25B2;</button>
-              <div id="clbSortGeneWrap" class="clb-anchor" style="visibility:hidden;">
-                <input type="text" id="clbSortGene" autocomplete="off" placeholder="TP53, BRCA1, ..." style="width:160px;" title="Gene symbol(s) for GE / Expression sort, or compound name for Drug-response sort (e.g. PALBOCICLIB). Multiple values are averaged per cell line.">
-                <div id="clbSortDrugDropdown" class="clb-dropdown" style="min-width:320px;"></div>
-              </div>
-              <div id="clbSortRetroWrap" class="clb-anchor" style="visibility:hidden;">
-                <select id="clbSortRetroMeasure" style="width:160px;" title="Which retroelement measurement the sort uses">
-                  <option value="t" selected>Total signal</option>
-                  <option value="l1">LINE-1</option>
-                  <option value="hk">HERV-K</option>
-                  <option value="sva">SVA</option>
-                  <option value="a">Active elements</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          <!-- Row 2, alterations then ordering. Picking a gene keeps the cell
-               lines that carry the alteration; the wild-type and single-copy
-               variants are on the chip the filter produces. -->
-          <div class="clb-row clb-row-alt">
-            <span class="clb-row-label">Genetic alterations</span>
-            <div class="clb-row-items">
+              <span class="clb-break"></span>
               <div id="clbHotspotFilterWrap" class="clb-pair">
                 <div class="clb-anchor">
                   <input type="text" id="clbHotspotFilter" placeholder="Hotspot gene..." title="Keep cell lines carrying a hotspot mutation in this gene. Click the chip below to switch to wild-type or single-copy." autocomplete="off" style="width:158px;">
@@ -5611,13 +5584,13 @@
               </div>
 
               <span class="clb-sep"></span>
-
               <div id="clbCollectionFilterWrap" class="clb-anchor">
                 <button id="clbCollectionBtn" class="btn btn-outline btn-sm" type="button" title="Pick or exclude quick filters (include/exclude, like the alteration grids)">Quick filters<span id="clbCollectionCount" style="color:#6b7280; font-weight:400; margin-left:5px;"></span></button>
                 <div id="clbCollectionPanel" class="clb-dropdown" style="min-width:340px; width:max-content; max-width:min(1100px, calc(100vw - 80px)); max-height:min(640px, calc(100vh - 160px)); padding:8px 10px;"></div>
               </div>
               <button id="clbCollectionsInfoBtn" class="btn btn-outline btn-sm clb-icon-btn" title="What each quick filter includes, and the rule used to decide membership">?</button>
-
+              <span class="clb-sep"></span>
+              <button id="clbCustomCLBtn" class="btn btn-outline btn-sm mobile-hide" type="button" title="Restrict the list to a specific set of cell lines you paste in">Custom cell lines<span id="customCLFilterCountCLB" style="color:#6b7280; font-weight:400; margin-left:5px;"></span></button>
 
               <!-- Always present, like the scatter's: the row stays put whether
                    or not anything is filtered, so nothing jumps as chips come
@@ -5634,60 +5607,56 @@
             </div>
           </div>
 
-          <!-- Row 3, the working set and what to do with it. On a phone this
-               row is what a selection is FOR: without it you can tick cell
-               lines and then do nothing with them. The two members that a
-               phone cannot use (pasting a list, copying names to a clipboard
-               with nowhere to go) are tagged individually below. -->
+          <!-- Step 2, the working set. -->
           <div class="clb-row clb-row-actions">
-            <span class="clb-row-label">Selection</span>
+            <span class="clb-row-label clb-step-label">2. Select</span>
             <div class="clb-row-items">
-              <button id="clbCustomCLBtn" class="btn btn-outline btn-sm mobile-hide" type="button" title="Restrict the list to a specific set of cell lines you paste in">Custom cell lines<span id="customCLFilterCountCLB" style="color:#6b7280; font-weight:400; margin-left:5px;"></span></button>
-
-              <span class="clb-sep"></span>
-
               <button id="clbSelectVisible" class="btn btn-outline btn-sm" title="Select every cell line currently passing the filters">Select Visible</button>
               <button id="clbDeselectAll" class="btn btn-outline btn-sm" title="Clear the current selection">Deselect All</button>
               <button id="clbShowSelectedOnly" class="btn btn-outline btn-sm" disabled title="Tick some cell lines first, or use Select Visible.">Show only selected</button>
               <button id="clbCopyNamesBtn" class="btn btn-outline btn-sm mobile-hide" title="Copy the names of the selected cell lines (one per line) to the clipboard, ready to paste into Custom cell lines">Copy Names</button>
               <span id="clbSelectionCount" class="clb-selection-count">0 selected</span>
+            </div>
+          </div>
 
+          <!-- Step 3, what to do with the selection or the list. On a phone
+               this row is what a selection is FOR. -->
+          <div class="clb-row clb-row-actions">
+            <span class="clb-row-label clb-step-label">3. Analyze</span>
+            <div class="clb-row-items">
+              <button id="clbInspectGEBtn" class="btn btn-outline btn-sm" style="color:#5d9239; border-color:#6ba544;" title="Compare the selected cell lines against every other cell line, gene by gene. Fast (~seconds).">Inspect selected vs rest</button>
+              <button id="clbCompareGroupsBtn" class="btn btn-outline btn-sm" style="color:#5d9239; border-color:#6ba544;" aria-expanded="false" title="Compare two groups of cell lines against each other, gene by gene, instead of one group against the rest">Compare two groups &#9662;</button>
               <span class="clb-sep"></span>
+            <button id="clbUmapOpenBtn" class="btn btn-outline btn-sm mobile-hide" title="Open PCA / UMAP of the cell lines in a large window: lasso selection, gates, loadings">PCA / UMAP</button>
+            <button id="clbVirusBtn" class="btn btn-outline btn-sm" title="Which cell lines carry viral RNA in their RNA-seq data, beside the Cellosaurus virus records">Viral RNA</button>
+              <span class="clb-sep"></span>
+              <button id="clbSendToBtn" class="btn btn-outline btn-sm" style="color:#5d9239; border-color:#6ba544;" title="Carry these cell lines over to another view: highlight them on a chart, or narrow that view to them.">Send to another view</button>
 
-              <!-- Two named groups, filled from the ticks. Tick some lines,
-                   press Set Gate A, tick the others, press Set Gate B, then
-                   compare the two directly instead of either against the rest
-                   of the panel. The chips and the compare button reserve their
-                   space (visibility:hidden / disabled) rather than appearing
-                   and shoving their neighbors; see _syncClbGateUI. -->
-              <span class="clb-group-label" style="color:var(--green-700);">Gates</span>
+              <!-- Two named groups (gates), filled from the ticks. Opened by
+                   Compare two groups, and whenever a gate holds cell lines.
+                   Chips and buttons reserve their space; see _syncClbGateUI. -->
+              <div id="clbGateBox" style="display:none; width:100%; margin-top:6px; padding:5px 7px; background:#f8faf7; border:1px solid #e5e7eb; border-radius:5px; align-items:center; gap:8px; flex-wrap:wrap;">
+                <span style="font-size:10px; color:#6b7280; white-space:nowrap;">Tick cell lines, then</span>
               <span class="clb-pair">
                 <button id="clbSetGateA" class="btn btn-outline btn-sm" title="Put the ticked cell lines into gate A. The ticks then clear, ready for gate B.">Set Gate A</button>
                 <span id="clbGateAChip" class="clb-gate-chip" style="visibility:hidden; white-space:nowrap;"></span>
               </span>
+                <span style="font-size:10px; color:#6b7280; white-space:nowrap;">tick the others, then</span>
               <span class="clb-pair">
                 <button id="clbSetGateB" class="btn btn-outline btn-sm" title="Put the ticked cell lines into gate B.">Set Gate B</button>
                 <span id="clbGateBChip" class="clb-gate-chip" style="visibility:hidden; white-space:nowrap;"></span>
               </span>
-              <!-- Fill both gates from the two ends of a value sort in one go.
-                   Only the lines that actually HAVE a value for the sorted
-                   measure are eligible, so the unscored tail cannot become a
-                   gate. Disabled, not hidden, when the list is sorted by name
-                   or tissue, where "top" and "bottom" mean nothing. -->
+                <span class="clb-sep"></span>
+                <span style="font-size:10px; color:#6b7280; white-space:nowrap;">or split a sorted list:</span>
               <span class="clb-pair">
                 <button id="clbGateEnds" class="btn btn-outline btn-sm" disabled>Top / bottom</button>
                 <input type="text" inputmode="numeric" id="clbGateEndsPct" value="25" class="clb-gate-pct"
                        title="What share of the measured cell lines goes into each gate" aria-label="Percent into each gate">
                 <span class="clb-gate-chip" style="color:var(--gray-500);">%</span>
               </span>
-              <button id="clbInspectABBtn" class="btn btn-outline btn-sm clb-tall-btn" style="color:#5d9239; border-color:#6ba544;" title="Compare gate A against gate B, gene by gene." disabled>Inspect<br><span>A vs B</span></button>
-
-              <span class="clb-sep"></span>
-
-              <span class="clb-group-label" style="color:var(--green-700);">Look at</span>
-              <button id="clbInspectGEBtn" class="btn btn-outline btn-sm clb-tall-btn" style="color:#5d9239; border-color:#6ba544;" title="Compare the selected cell lines against every other cell line, gene by gene. Fast (~seconds).">Inspect<br><span>selected vs rest</span></button>
-              <button id="clbSendToBtn" class="btn btn-outline btn-sm clb-tall-btn" style="color:#5d9239; border-color:#6ba544;" title="Carry these cell lines over to another view: highlight them on a chart, or narrow that view to them.">Send to<br><span>another view</span></button>
-
+                <span class="clb-sep"></span>
+                <button id="clbInspectABBtn" class="btn btn-outline btn-sm" style="color:#5d9239; border-color:#6ba544;" title="Compare gate A against gate B, gene by gene." disabled>Inspect A vs B</button>
+              </div>
             </div>
           </div>
         </div>
@@ -5716,6 +5685,37 @@
         <div id="clbScrollableBody" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; min-height:0;">
         <div class="clb-content">
           <div class="clb-list-wrap" id="clbListContainer">
+            <!-- Count and ordering sit on the list they describe. The toolbar
+                 class is only for the shared control sizing. -->
+            <div id="clbListBar" class="clb-toolbar clb-listbar">
+              <span id="clbListCount" class="clb-list-count"></span>
+              <select id="clbSortBy" style="width:172px;" title="Sort the cell line list">
+                <option value="name">Sort: Name</option>
+                <option value="ge">Sort: GE for gene(s)</option>
+                <option value="expr">Sort: Expression of gene(s)</option>
+                <option value="drug">Sort: Drug response (PRISM AUC)</option>
+                <option value="ifn">Sort: Interferon score (ISG)</option>
+                <option value="retro">Sort: Retroelement signal (CPM)</option>
+                <option value="ychr">Sort: Y-linked expression</option>
+                <option value="xist">Sort: XIST expression</option>
+                <option value="medium">Sort: Culture medium</option>
+                <option value="origin">Sort: Primary or metastasis</option>
+              </select>
+              <button id="clbSortDir" title="Switch the sort direction" class="btn btn-outline btn-sm" style="width:32px;">&#x25B2;</button>
+              <div id="clbSortGeneWrap" class="clb-anchor" style="visibility:hidden;">
+                <input type="text" id="clbSortGene" autocomplete="off" placeholder="TP53, BRCA1, ..." style="width:160px;" title="Gene symbol(s) for GE / Expression sort, or compound name for Drug-response sort (e.g. PALBOCICLIB). Multiple values are averaged per cell line.">
+                <div id="clbSortDrugDropdown" class="clb-dropdown" style="min-width:320px;"></div>
+              </div>
+              <div id="clbSortRetroWrap" class="clb-anchor" style="visibility:hidden;">
+                <select id="clbSortRetroMeasure" style="width:160px;" title="Which retroelement measurement the sort uses">
+                  <option value="t" selected>Total signal</option>
+                  <option value="l1">LINE-1</option>
+                  <option value="hk">HERV-K</option>
+                  <option value="sva">SVA</option>
+                  <option value="a">Active elements</option>
+                </select>
+              </div>
+            </div>
             <div class="clb-list" id="clbList"></div>
           </div>
           <div class="clb-detail" id="clbDetailPanel">
@@ -6167,7 +6167,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v92_8"></script>
+    <script src="app.js?v=v92_9"></script>
     <script src="tour.js?v=v91_99"></script>
 </body>
 </html>

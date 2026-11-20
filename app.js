@@ -13922,10 +13922,11 @@ class CorrelationExplorer {
             wire(head, body, { open: false });
         });
 
-        // Cell Line Browser, the Selection row: its label heads the row and the
-        // controls live in one .clb-row-items beside it, which is exactly the
-        // shape bodyFor wants. Collapsed by default, since a selection is made
-        // in the list below and only then is there anything to do with it.
+        // Cell Line Browser, the Select and Analyze rows: each label heads its
+        // row and the controls live in one .clb-row-items beside it, which is
+        // exactly the shape bodyFor wants. Collapsed by default, since a
+        // selection is made in the list below and only then is there anything
+        // to do with it.
         scope.querySelectorAll('.clb-row-actions > .clb-row-label').forEach(head => {
             const box = head.parentElement;
             if (!box) return;
@@ -47690,6 +47691,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const _clbOnc = document.getElementById('clbOncotreeFilter');
             if (_clbOnc) _clbOnc.value = '';
             document.getElementById('clbSexFilter').value = '';
+            this._clbGateBoxOpen = false;
             document.getElementById('clbHotspotFilter').value = '';
             document.getElementById('clbTranslocationFilter').value = '';
         const _clbCn = document.getElementById('clbCnFilter'); if (_clbCn) _clbCn.value = '';
@@ -47847,16 +47849,19 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             }
         });
 
-        // The spreadsheet exports share one menu in the header, beside the
-        // other two exports, instead of a row of their own under the toolbar.
-        document.getElementById('clbExportCsvBtn')?.addEventListener('click', (e) => {
+        // Every export shares one menu in the header. The image and AI
+        // exports keep their own (hidden) buttons, which carry the handlers.
+        document.getElementById('clbExportMenuBtn')?.addEventListener('click', (e) => {
             document.getElementById('clbChipMenu')?.remove();
             this._simpleChipMenu(e.currentTarget, [
-                { label: 'Cell line: GE + expression', title: 'One or a few selected cell lines: gene effect and expression for every gene. Includes the DepMap version and citation.', act: () => this.exportCellLineBrowserCSV('minimal') },
+                { label: 'Image...', title: 'Capture the Cell Line Browser as an image (PNG / TIFF / PDF / PowerPoint)', act: () => document.getElementById('clbExportImageBtn')?.click() },
+                { sep: true, label: 'Cell line: GE + expression', title: 'One or a few selected cell lines: gene effect and expression for every gene. Includes the DepMap version and citation.', act: () => this.exportCellLineBrowserCSV('minimal') },
                 { label: 'Cell line: full profile', title: 'Selected cell lines: every gene with gene effect, expression, hotspot and damaging mutations, fusions and focal copy-number events.', act: () => this.exportCellLineBrowserCSV('comprehensive') },
                 { sep: true, label: 'List on screen: CSV', title: 'Every cell line in the list, in its current order, with tissue, subtype, disease and the value the list is sorted by.', act: () => this.exportCellLineListOnScreen('csv') },
                 { label: 'List on screen: copy', title: 'The same list as tab-separated text on the clipboard, ready to paste into a spreadsheet.', act: () => this.exportCellLineListOnScreen('copy') },
                 { sep: true, label: 'Genes: full profile', title: 'One or a few genes across the selected or listed cell lines: gene effect, expression, mutations, fusions and focal copy number.', act: () => this.exportCellLineBrowserGenesCSV() },
+                { sep: true, label: 'For AI...', title: 'Send the cell lines currently listed, with their alterations and gene-effect data, to an AI assistant for analysis', act: () => document.getElementById('clbExportAIBtn')?.click() },
+                { label: 'Methods', title: 'Write out how this list was arrived at, as a methods paragraph and as a plain walk-through', act: () => this.openMethods('clb') },
             ], () => {});
         });
         document.getElementById('clbInspectGEBtn')?.addEventListener('click', () => {
@@ -47868,6 +47873,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 () => this.inspectSelectionGE());
         });
         document.getElementById('clbCopyNamesBtn')?.addEventListener('click', () => this.copyCellLineNames());
+        document.getElementById('clbCompareGroupsBtn')?.addEventListener('click', () => {
+            this._clbGateBoxOpen = !this._clbGateBoxOpen;
+            this._syncClbGateUI();
+        });
         document.getElementById('clbSendToBtn')?.addEventListener('click', (e) => this.openSendSelectionPopout(e.currentTarget));
         document.getElementById('selectionInspectCSV')?.addEventListener('click', () => this.downloadSelectionInspectCSV());
         document.getElementById('selectionInspectCSVCells')?.addEventListener('click', () => this.downloadSelectionInspectPerCellCSV());
@@ -48743,6 +48752,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         this._syncUmapVisibleOpt();
 
         const container = document.getElementById('clbList');
+        // The count of what the filters left, on the bar above the list.
+        const totalN = this.metadata.cellLines.length;
+        const countEl = document.getElementById('clbListCount');
+        if (countEl) countEl.innerHTML = `${filtered.length} cell line${filtered.length === 1 ? '' : 's'}`
+            + `${filtered.length < totalN ? ` <span style="font-weight:400; color:#9ca3af;">of ${totalN}</span>` : ''}`;
         if (filtered.length === 0) {
             container.innerHTML = '<div class="clb-no-results">No cell lines match your filters</div>';
             this.updateClbFilterCounts();
@@ -48960,16 +48974,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 `<span class="clb-entry-name" data-hover-cl="${cl}" data-hover-why="Click to show its details · Shift-click to open its Wiki">${name}</span>` +
                 `<span class="clb-entry-tissue" title="${titleParts}">${lin}${sub ? ' · ' + sub : ''}</span>${sortValStr}</div>`;
         }).join('');
-        // Live count of the filtered list (updates as filters / quick filters change).
-        const totalN = this.metadata.cellLines.length;
-        // A quarter larger than the other captions sharing captionStyle: this
-        // one is the count of what the filters left, which is read far more
-        // often than the note about what the columns hold.
-        const countCaption = `<div style="${captionStyle} font-size:12.5px; font-weight:600; color:#374151;">`
-            + `<b>${filtered.length}</b> cell line${filtered.length === 1 ? '' : 's'}`
-            + `${filtered.length < totalN ? ` <span style="font-weight:400; color:#9ca3af;">of ${totalN}</span>` : ''}`
-            + `</div>`;
-        container.innerHTML = countCaption + caption + html;
+        container.innerHTML = caption + html;
 
         this.updateClbFilterCounts();
         this.updateClbSelectionCount();
@@ -50690,6 +50695,18 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             ends.title = ends.disabled
                 ? 'Sort the list by a measured value first (expression, drug response, copy number, interferon or retroelement signal), then this fills both gates from its two ends.'
                 : `Put the top ${Math.max(1, Math.round(measured.length * pct / 100))} into gate A and the bottom ${Math.max(1, Math.round(measured.length * pct / 100))} into gate B, of the ${measured.length.toLocaleString()} cell lines in view that have a value for this sort.`;
+        }
+        // The two-group controls stay open while a gate holds cell lines, so
+        // a gate set elsewhere or restored is never out of sight.
+        const gateBox = document.getElementById('clbGateBox');
+        const gateBtn = document.getElementById('clbCompareGroupsBtn');
+        if (gateBox && gateBtn) {
+            const held = (g.A?.size || 0) + (g.B?.size || 0) > 0;
+            const open = held || !!this._clbGateBoxOpen;
+            gateBox.style.display = open ? 'flex' : 'none';
+            gateBtn.setAttribute('aria-expanded', String(open));
+            gateBtn.style.background = open ? '#eef6e8' : '';
+            gateBtn.disabled = held;
         }
         const ab = document.getElementById('clbInspectABBtn');
         if (ab) {
