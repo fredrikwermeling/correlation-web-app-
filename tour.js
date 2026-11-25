@@ -322,7 +322,7 @@
         <div class="tour-text tour-text-wide">
             <p class="tour-eyebrow">1 &middot; Gene set analysis</p>
             <h2>Paste a gene set, get a network</h2>
-            <p>Like GeneMANIA or STRING, Correlate finds connections between the genes in your set, but from how the genes behave across more than a thousand cancer cell lines rather than from interaction databases: genes that are needed, or expressed, in the same cell lines are functionally similar. It calculates the correlation (Pearson r) between every pair of genes in your set across the cell lines, on CRISPR gene effect (${nL} cell lines)${mrnaNet ? ' or on mRNA expression' : ''}. Pairs whose correlation passes the cutoff you set are joined by a line in the network: blue for a positive correlation, red for a negative one, thicker for a stronger one. Genes that end up joined often work together, in the same complex or pathway.</p>
+            <p>Like GeneMANIA or STRING, Correlate finds connections between the genes in your set, but from how the genes behave across more than a thousand cancer cell lines rather than from interaction databases: genes that are needed, or expressed, in the same cell lines may share a function, which makes the network a way to generate hypotheses. It calculates the correlation (Pearson r) between every pair of genes in your set across the cell lines, on CRISPR gene effect (${nL} cell lines)${mrnaNet ? ' or on mRNA expression' : ''}. Pairs whose correlation passes the cutoff you set are joined by a line in the network: blue for a positive correlation, red for a negative one, thicker for a stronger one. Joined genes can point to a shared complex or pathway, to be tested further.</p>
             ${checks([
                 'Hover over a gene or an edge for details. Double-click a gene for its gene effect across the cell lines, or an edge for the correlation plot behind it.',
                 'Paste your own screen results (LFC and FDR) next to the gene list, and Correlate shows the set as a network colored by your results, or as a correlation matrix.',
@@ -371,9 +371,9 @@
                 <h2>Find the right cell lines for your project</h2>
                 <p>Narrow the ${nL} cell lines down by cancer type, mutation, functional loss, fusion, copy number, sex, drug response, how much they express or need any gene, how often they are used in papers and which cell bank sells them. Every cell line has its own Wiki, and every cancer type a Cancer type Wiki.</p>
                 ${checks([
-                    `Example: melanoma cell lines with mutated ${gi('BRAF')}. The count updates as you go.`,
+                    `Example: melanoma cell lines with mutated ${gi('BRAF')}.`,
                     `From the list: compare the selection with the rest${pca ? ', a PCA or UMAP' : ''}${heatmap ? ', a heatmap of any gene set' : ''}.`,
-                    'Download a cell line’s full tables, or the list on screen, as Excel or CSV.',
+                    'Download, as Excel or CSV, the cell lines in the list with their tissue, subtype and disease, or for chosen cell lines every gene with its gene effect, expression, mutations and copy number.',
                 ])}
             </div>
             ${shot('clb_mel', 'The Cell Line Browser filtered to melanoma cell lines with mutated BRAF, A375 selected', 'clb', { cap: `Melanoma cell lines with mutated ${gi('BRAF')}, A375 opened in the side panel.`, btn: 'Open the browser with these filters' })}
@@ -439,7 +439,7 @@
                 <h3>Export images, tables and methods</h3>
                 <p>Under every view: Export image (PNG, SVG, PDF, PowerPoint at print size) and the data as Excel or CSV. An exported PNG or SVG reopens in Correlate with its analysis.</p>
                 <p><b>Methods</b> writes the methods for the view you are looking at, from its actual settings: the DepMap release, which cell lines were included, the filters and the statistics used. You get one paragraph ready to paste into a materials and methods section, and a longer plain-language version that explains what the figure shows. Copy either or download them as a text file.</p>
-                <p><b>Export for AI</b> writes the data behind the view into one file made for a language model. Upload it to ChatGPT, Claude or Gemini and discuss the results: which of these dependencies has a drug, which cell line fits my experiment, what links these genes?</p>
+                <p><b>Export for AI</b> writes the data behind the view into one file made for a language model. Upload it to your favorite language model, for example ChatGPT or Claude, and discuss the results: which of these dependencies has a drug, which cell line fits my experiment, what links these genes?</p>
             </div>
             ${shot('export_dialog', 'The Export image dialog', null, { cls: 'tour-shot-dialog', cap: 'Export image: what to export, format, size in cm, resolution, background.' })}
         </div>
