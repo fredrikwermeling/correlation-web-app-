@@ -5789,7 +5789,7 @@
           <div id="clbUmapCard" style="background:#fff; width:100%; max-width:min(98vw, 1600px); margin-top:20px; border-radius:8px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25); position:relative;">
             <div style="position:sticky; top:0; z-index:4; display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 18px; border-bottom:1px solid #e5e7eb; background:linear-gradient(90deg,#f3faee,#fff); border-radius:8px 8px 0 0;">
               <div><h3 style="margin:0; font-size:17px; color:#4c782e;">Dimensionality reduction</h3>
-                <div id="clbUmapToggleHint" style="font-size:11px; color:var(--gray-500); margin-top:1px;">PCA or UMAP over the cell lines, with lasso selection and gate comparison. "Cell lines filtered above" uses the Cell Line Browser's current list.</div></div>
+                <div id="clbUmapToggleHint" style="font-size:11px; color:var(--gray-500); margin-top:1px;">PCA or UMAP over the cell lines, with lasso selection and gate comparison. The cell line menu can use the Cell Line Browser's current list.</div></div>
               <button id="clbUmapCloseBtn" style="background:none; border:none; font-size:24px; cursor:pointer; line-height:1; color:#6b7280;" title="Close (Esc); the Cell Line Browser stays open behind">&times;</button>
             </div>
             <div id="clbUmapBody" style="padding:12px 18px 16px;">
@@ -5810,7 +5810,7 @@
                     <option value="">Genes: most variable</option>
                 </select>
                 <button id="clbUmapRankBtn" class="clb-umap-btn" title="Compare every gene class: PC1 % on the current cell lines and data, against random gene sets of the same size">Rank classes</button>
-                <select id="clbUmapTissueFilter" class="clb-umap-ctl" style="width:auto; max-width:260px;" title="Which cell lines to include: the ones the list above currently shows (after its search and filters), every cell line, or one tissue">
+                <select id="clbUmapTissueFilter" class="clb-umap-ctl" style="width:auto; max-width:260px;" title="Which cell lines to include: the ones the Cell Line Browser list shows (after its search and filters), every cell line, or one tissue">
                     <option value="">All cell lines</option>
                 </select>
                 <select id="clbUmapSubtypeFilter" class="clb-umap-ctl" style="width:150px; display:none;">
@@ -5827,6 +5827,7 @@
                 <span class="clb-umap-spacer"></span>
                 <button id="clbUmapPngBtn" class="clb-umap-btn" title="Choose format, print size and resolution">Export image</button>
                 <button class="clb-umap-btn mobile-hide" onclick="app._copyUmapPlot()" title="Copy this as an image to the clipboard (with the loadings when they are shown), ready to paste into an email or slide">Copy</button>
+                <button class="clb-umap-btn mobile-hide" onclick="app._umapExportAI()" title="Download this plot as a file for a language model: every point with its coordinates, group and color, the loadings and the labels, plus a picture, so it can be explained or redrawn">Export for AI</button>
                 <button class="clb-umap-btn mobile-hide" onclick="app.openMethods('umap')" title="Write out how this plot was made, as a methods paragraph and as a plain walk-through">Methods</button>
                 <button id="clbUmapAaBtn" class="clb-umap-btn" title="Settings">Settings</button>
             </div>
@@ -5936,11 +5937,11 @@
                 <div id="clbUmapLoadingsSidecar" style="display:none;"></div>
             </div>
             <div id="clbUmapSelectionControls" style="display:none; margin-top:8px; flex-direction:column; gap:4px; align-items:flex-start; flex-wrap:wrap;">
-                <div style="font-size:10px; color:#6b7280; line-height:1.4;"><b>Drag on the plot to lasso a cluster</b> of cell lines, no button needed. You can then copy their names, or check them in the list above to include them in an Export GE / Full Data Export run.</div>
+                <div style="font-size:10px; color:#6b7280; line-height:1.4;">Switch on <b>Lasso select</b> and draw around a cluster of cell lines to copy their names or tick them in the Cell Line Browser list.</div>
                 <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
-                    <button id="clbUmapSelectBtn" class="btn btn-sm btn-outline" style="font-size:10px;" title="Lasso is the default drag mode. Use this to return to it after switching to zoom, pan or box select from the plot toolbar.">Back to lasso</button>
+                    <button id="clbUmapSelectBtn" class="btn btn-sm btn-outline" style="font-size:10px;" title="Switch lasso selection on or off. While it is off, dragging on the plot does nothing.">Lasso select</button>
                     <button id="clbUmapCopyBtn" class="btn btn-sm btn-outline" style="font-size:10px;" title="Copy names of the currently-selected cell lines to the clipboard (one per line)">Copy selected</button>
-                    <button id="clbUmapSelectInListBtn" class="btn btn-sm btn-outline" style="font-size:10px;" title="Tick the currently-lassoed cell lines in the list above so they're picked up by Export GE / Full Data Export">Select in list above</button>
+                    <button id="clbUmapSelectInListBtn" class="btn btn-sm btn-outline" style="font-size:10px;" title="Tick the lassoed cell lines in the Cell Line Browser list, so its exports and analyses use them">Tick in Cell Line Browser</button>
                     <span id="clbUmapSelectedCount" style="font-size:10px; color:#6b7280;"></span>
                 </div>
             </div>
@@ -6214,7 +6215,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v92_18"></script>
+    <script src="app.js?v=v92_19"></script>
     <script src="tour.js?v=v92_10"></script>
 </body>
 </html>

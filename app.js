@@ -37517,6 +37517,31 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             context.plotDescribesWhat = `A threshold scan: every gene's share of cell lines with ${ctab.measure} ${cutWords}, across ${ctab.cohortN.toLocaleString()} cell lines${ctab.filters ? ' (' + ctab.filters + ')' : ' (every line with data)'}, listing the genes with ${ctab.listRule}${ctab.selected ? `, with a histogram of ${ctab.selected.gene}` : ''}. The matrices in this file carry the first 30 listed genes${ctab.selected ? ' and the histogram gene' : ''}; the table itself is extras.thresholdScan.`;
             description = `Threshold scan (${ctab.measure}, ${cutWords}) across ${ctab.cohortN.toLocaleString()} cell lines.`;
         }
+        // PCA / UMAP: the plotted points themselves, ready to redraw.
+        const pcaX = opts.pca ? this._aiPca : null;
+        if (pcaX) {
+            extras = {
+                pcaPoints: { columns: pcaX.columns, rows: pcaX.rows },
+                pcaPoints_readMe: `One row per plotted cell line (${pcaX.rows.length.toLocaleString()}). x and y are the plotted coordinates (${pcaX.axes.x} and ${pcaX.axes.y}); ${pcaX.method === 'PCA' ? 'PC1 to PC' + (pcaX.columns.filter(c => /^PC\d+$/.test(c)).length) + ' are the scores on each principal component' : 'UMAP1.. are the embedding coordinates'}. group is the category the points are colored by (${pcaX.colorBy}); its color is in pcaGroupColors. papers is the Europe PMC full-text hit count for the line's names next to "cell(s)" (null: not counted, the name is too short or has other meanings); literatureUse is its tier (very common 2,000+, common 300 to 1,999, uncommon 30 to 299, rare under 30). cellBanks lists the collections that currently sell the line (Cellosaurus). gate is A or B when the line is in a drawn gate; labeled is true when its name is shown on the plot.`,
+                pcaGroupColors: pcaX.groupColors,
+                pcaLabels: pcaX.labels,
+                pcaLabels_readMe: 'Cell lines named on the plot. offsetPx is where the name sits relative to its dot in screen pixels [right, down]; a thin line joins name and dot.'
+            };
+            if (pcaX.loadings) {
+                extras.pcaLoadings = pcaX.loadings;
+                extras.pcaLoadings_readMe = `For each principal component, the 25 genes with the largest absolute loading, as [gene, loading]${pcaX.data.includes('and') ? ' with the layer (CRISPR or mRNA)' : ''}. A positive loading pulls a line toward the positive end of that component. ${pcaX.nGenes.toLocaleString()} genes went into the analysis; the list is cut to 25 per component.`;
+            }
+            if (pcaX.explained) extras.pcaVarianceExplainedPercent = pcaX.explained;
+            cellLineGroups = {};
+            context = {
+                type: 'pca_umap', plotType: `${pcaX.method} scatter of cell lines`, stratification: 'none',
+                method: pcaX.method, dataUsed: pcaX.data, genesUsed: `${pcaX.genes} (${pcaX.nGenes.toLocaleString()} genes)`,
+                cohort: pcaX.cohort, axes: pcaX.axes, colorBy: pcaX.colorBy, gates: pcaX.gates,
+                inputGenes: custom?.geneList || []
+            };
+            context.plotDescribesWhat = `A ${pcaX.method} of ${pcaX.rows.length.toLocaleString()} cell lines on ${pcaX.data}, using ${pcaX.genes}, plotted as ${pcaX.axes.x} against ${pcaX.axes.y} and colored by ${pcaX.colorBy}. extras.pcaPoints has every point with its coordinates, group, literature use and cell banks, extras.pcaGroupColors the colors used, and extras.pcaLabels the names shown, so the figure can be redrawn exactly. The matrices carry ${pcaX.method === 'PCA' ? 'the top-loading genes of the two plotted components' : 'the first 30 analysis genes'}.`;
+            description = `${pcaX.method} of ${pcaX.rows.length.toLocaleString()} cell lines (${pcaX.data}).`;
+        }
         function genesInCompilation(c) { return [...new Set(c.panels.flatMap(p => [p.x.gene, p.y.gene]))]; }
         context.description = description;
         // Record the visible-title cross-check in the export; warn on mismatch.
@@ -39292,6 +39317,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const _reqDriven = exportData.context?.type === 'custom_export';
         const _label = exportData.context?.type === 'correlation_compilation' ? 'compilation'
             : exportData.context?.type === 'threshold_scan' ? 'threshold_scan'
+            : exportData.context?.type === 'pca_umap' ? String(exportData.context.method || 'pca').toLowerCase()
             : _reqDriven ? 'request' : `${source}_${analysisGene || context.gene1 || 'analysis'}`;
         const _now = new Date();
         const _hhmmss = [_now.getHours(), _now.getMinutes(), _now.getSeconds()].map(x => String(x).padStart(2, '0')).join('');
@@ -39313,6 +39339,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             // just dropped for not describing this cohort.
             if (!wantCompanionImage || exportData.context?.type === 'custom_export' || exportData.context?.type === 'correlation_compilation' || exportData.context?.type === 'threshold_scan') {
                 // no companion image, by choice or deliberately
+            } else if (exportData.context?.type === 'pca_umap') {
+                // The plot with its loadings box, as on screen.
+                const el = document.getElementById('clbUmapPlotWrap');
+                if (el && el.offsetParent !== null) _pngUrl = await timed(this._domToPngUrl(el));
             } else if (source === 'correlations' || source === 'clusters') {
                 // The network is a vis-network canvas, not a Plotly chart:
                 // reuse the same composition path "Copy network" / "Export
@@ -62645,8 +62675,8 @@ ${clone.innerHTML}
         const full = words.join(', ');
         const short = full.length > 34 ? full.slice(0, 33).trimEnd() + '\u2026' : full;
         const nTxt = `n=${(n || 0).toLocaleString()}`;
-        return { text: words.length ? `Cell lines filtered above (${short}, ${nTxt})` : `Cell lines in the list above (${nTxt})`,
-                 title: words.length ? `Cell lines filtered above: ${full} (${nTxt})` : '' };
+        return { text: words.length ? `Cell Line Browser filters (${short}, ${nTxt})` : `Cell Line Browser list (${nTxt})`,
+                 title: words.length ? `The cell lines the Cell Line Browser shows with its filters: ${full} (${nTxt})` : '' };
     }
 
     _syncUmapVisibleOpt() {
@@ -62656,7 +62686,7 @@ ${clone.innerHTML}
         const t = this._clbVisibleOptText(this._clbVisibleCellLines?.length || 0);
         opt.textContent = t.text;
         opt.title = t.title;
-        sel.title = sel.value === '__visible__' && t.title ? t.title : 'Which cell lines to include: the ones the Cell Line Browser list currently shows (after its search and filters), every cell line, or one tissue';
+        sel.title = sel.value === '__visible__' && t.title ? t.title : 'Which cell lines to include: the ones the Cell Line Browser list shows (after its search and filters), every cell line, or one tissue';
     }
 
     populateUmapFilters() {
@@ -62810,6 +62840,7 @@ ${clone.innerHTML}
         const gcSel = document.getElementById('clbUmapGeneClass');
         if (gcSel) gcSel.value = '';
         document.getElementById('clbUmapColorBy').value = 'usage';
+        if (this._umapLassoOn) this.clbUmapSelectMode(false);
         if (this._umapBig) {
             this._umapBig = false;
             const bw = document.getElementById('clbUmapPlotWidth'); if (bw) bw.value = this._umapNormalW || 600;
@@ -62864,7 +62895,9 @@ ${clone.innerHTML}
         // Otherwise, set flag and switch to lasso mode for next selection
         this._umapGateSelecting = gate;
         const status = document.getElementById('clbUmapGateStatus');
-        status.textContent = `Lasso/box-select cell lines for Gate ${gate}`;
+        // Dragging on the plot draws only while a gate is being set, so a stray
+        // drag never starts a selection.
+        status.textContent = `Draw around the cell lines for Gate ${gate}`;
         status.style.color = gate === 'A' ? '#2563eb' : '#dc2626';
         const plotDiv = document.getElementById('clbUmapPlot');
         Plotly.relayout(plotDiv, { dragmode: 'lasso' });
@@ -62940,7 +62973,7 @@ ${clone.innerHTML}
                 document.getElementById('clbUmapGateStatus').style.color = '#5d9239';
             }
             this._umapGateSelecting = null;
-            Plotly.relayout(plotDiv, { shapes: currentShapes, dragmode: 'lasso' });
+            Plotly.relayout(plotDiv, { shapes: currentShapes, dragmode: this._umapIdleDrag() });
             return;
         }
 
@@ -63015,7 +63048,7 @@ ${clone.innerHTML}
             }
             if (removeIdx.length > 0) Plotly.deleteTraces(plotDiv, removeIdx);
         }
-        if (plotDiv?.layout) Plotly.relayout(plotDiv, { shapes: [], annotations: [], dragmode: 'lasso' });
+        if (plotDiv?.layout) Plotly.relayout(plotDiv, { shapes: [], annotations: [], dragmode: this._umapIdleDrag() });
     }
 
     _checkUmapGateSelection() {
@@ -63081,7 +63114,7 @@ ${clone.innerHTML}
         }
 
         if (newTraces.length > 0) Plotly.addTraces(plotDiv, newTraces);
-        Plotly.relayout(plotDiv, { annotations, dragmode: 'lasso' });
+        Plotly.relayout(plotDiv, { annotations, dragmode: this._umapIdleDrag() });
     }
 
     async compareUmapGates() {
@@ -65262,6 +65295,76 @@ ${clone.innerHTML}
     }
 
     // Fixed order and colors for the ordered color-by modes, or null.
+    // Export for AI from the PCA / UMAP: every plotted point with its
+    // coordinates, group and color, the loadings and the labels, so a
+    // language model can redraw the figure or reason about it.
+    async _umapExportAI() {
+        const d = this._clbUmapData;
+        const status = document.getElementById('clbUmapGateStatus');
+        if (!d?.cellLines?.length) { if (status) status.textContent = 'Run the analysis first.'; return; }
+        const pd = document.getElementById('clbUmapPlot');
+        const v = (id) => document.getElementById(id)?.value || '';
+        const isPca = d.method === 'pca';
+        const scores = this._clbUmapAllScores || [];
+        const nComp = scores[0]?.length || 2;
+        const compX = isPca ? (parseInt(v('clbUmapCompX')) || 0) : 0;
+        const compY = isPca ? (parseInt(v('clbUmapCompY')) || 1) : 1;
+        const colorBy = v('clbUmapColorBy') || 'tissue';
+        // Group colors as drawn: from the plotted traces (name "Group (n)").
+        const colors = {};
+        (pd?.data || []).forEach(t => {
+            const name = String(t.name || '').replace(/\s*\(\d+\)$/, '');
+            const c = t.marker?.color;
+            if (name && typeof c === 'string' && !t._gateOverlay) colors[name] = c;
+        });
+        const gA = new Set(this._umapGateA || []), gB = new Set(this._umapGateB || []);
+        const labeled = this._clbUmapClickedLabels || new Set();
+        const r3 = (n) => n == null || isNaN(n) ? null : Math.round(n * 1000) / 1000;
+        const compNames = Array.from({ length: nComp }, (_, k) => isPca ? `PC${k + 1}` : `UMAP${k + 1}`);
+        const columns = ['cellLineId', 'name', 'tissue', 'subtype', 'x', 'y', ...compNames, 'group', 'papers', 'literatureUse', 'cellBanks', 'gate', 'labeled'];
+        const rows = d.cellLines.map((cl, i) => {
+            const u = this._clUsageOf(cl);
+            return [cl, this._clShortName(cl), this.getCellLineLineage(cl) || null, this.getCellLineSublineage(cl) || null,
+                r3(d.x[i]), r3(d.y[i]), ...compNames.map((_, k) => r3(scores[i]?.[k])),
+                this._umapCategoryOf(cl, colorBy), u?.pubs ?? null, this._clUsageTier(cl)?.label || null,
+                this._clDistributors(cl).map(b => b.bank).join('/') || null,
+                gA.has(cl) ? 'A' : gB.has(cl) ? 'B' : null, labeled.has(cl)];
+        });
+        let loadings = null;
+        if (isPca && d.pcaLoadings) {
+            loadings = {};
+            Object.entries(d.pcaLoadings).forEach(([pc, arr]) => {
+                loadings[pc.toUpperCase()] = arr.slice(0, 25).map(l => [l.gene, d.mixedSrc ? (l.src === 'expr' ? 'mRNA' : 'CRISPR') : undefined, r3(l.loading)].filter(x => x !== undefined));
+            });
+        }
+        const labels = [...labeled].filter(cl => d.cellLines.includes(cl)).map(cl => {
+            const o = this._clbUmapLabelOffsets?.get(cl);
+            return { cellLineId: cl, name: this._clShortName(cl), offsetPx: o ? [o.ax, o.ay] : [0, -16] };
+        });
+        const dt = v('clbUmapDataType') || 'ge';
+        const geneList = isPca && d.pcaLoadings
+            ? [...new Set([`pc${compX + 1}`, `pc${compY + 1}`].flatMap(k => (d.pcaLoadings[k] || []).slice(0, 10).map(l => l.gene)))]
+            : (d.geneNames || []).slice(0, 30);
+        this._aiPca = {
+            method: isPca ? 'PCA' : 'UMAP',
+            data: dt === 'expr' ? 'mRNA expression, log2(TPM+1)' : dt === 'both' ? 'CRISPR gene effect (Chronos) and mRNA expression, each gene z-scored' : 'CRISPR gene effect (Chronos)',
+            genes: this._parseUmapGeneList()?.length ? 'a typed gene list' : (document.getElementById('clbUmapGeneClass')?.selectedOptions[0]?.textContent || 'the most variable genes'),
+            nGenes: d.geneNames?.length || 0,
+            cohort: document.getElementById('clbUmapTissueFilter')?.selectedOptions[0]?.textContent || '',
+            axes: { x: d.axisLabels?.[0] || compNames[compX], y: d.axisLabels?.[1] || compNames[compY], xComponent: compNames[compX], yComponent: compNames[compY] },
+            explained: isPca && this._clbUmapAllExplained ? Object.fromEntries(this._clbUmapAllExplained.map((e, k) => [`PC${k + 1}`, r3(e * 100)])) : null,
+            colorBy: v('clbUmapColorGene') ? `${v('clbUmapColorGene')} ${v('clbUmapColorGeneType') === 'expr' ? 'expression' : 'gene effect'}` : (document.getElementById('clbUmapColorBy')?.selectedOptions[0]?.textContent || colorBy).replace(/^Color by /, ''),
+            groupColors: colors,
+            columns, rows, loadings, labels,
+            gates: (gA.size || gB.size) ? { A: gA.size, B: gB.size } : null
+        };
+        const q = document.getElementById('aiQuestion'); if (q) q.value = '';
+        const custom = { active: true, cohort: 'list', cohortList: d.cellLines.slice(), genes: 'list', geneList, geneCap: 0, scanTop: 30,
+            layers: { drugResponse: false, fullCopyNumber: false, viralTransformation: false, identityWarnings: false, derivativePairs: false }, drugFilter: [], question: '' };
+        try { await this.exportFullAIAnalysis({ custom, statusId: 'clbUmapGateStatus', pca: true }); }
+        finally { this._aiPca = null; }
+    }
+
     _umapOrderedGroups(colorBy) {
         if (colorBy === 'usage') return [...this._clUsageTiers().map(t => ({ label: t.label, color: t.color })), { label: 'Not counted', color: '#f3f4f6' }];
         if (colorBy === 'access') return [
@@ -65346,7 +65449,7 @@ ${clone.innerHTML}
             yaxis: { title: axLabels[1], ...axStyle, scaleanchor: 'x', scaleratio: 1 },
             font: { family: 'Arial, Helvetica, sans-serif' },
             hovermode: 'closest',
-            dragmode: 'lasso',
+            dragmode: this._umapIdleDrag(),
             paper_bgcolor: 'white',
             plot_bgcolor: '#fafafa'
         };
@@ -65474,7 +65577,7 @@ ${clone.innerHTML}
             };
             Plotly.newPlot(plotDiv, traces, layout, {
                 responsive: true, displayModeBar: true,
-                modeBarButtonsToAdd: ['select2d', 'lasso2d'], displaylogo: false,
+                displaylogo: false,
                 edits: { annotationPosition: true, annotationTail: true }
             });
             if (this._clbUmapData) this._clbUmapData.baseAnnotations = [umapTitleAnn, umapXAnn, umapYAnn];
@@ -65499,30 +65602,28 @@ ${clone.innerHTML}
         }
     }
 
-    // Lasso is already the plot's default drag mode, so pressing this when
-    // nothing has changed it does nothing visible, which reads as a dead
-    // button. It exists to get back to lasso after the plot toolbar has been
-    // used to switch to zoom, pan or box select, and it now says so.
-    clbUmapSelectMode() {
-        const cur = document.getElementById('clbUmapPlot')?.layout?.dragmode;
-        this.showCopyNotification?.(cur === 'lasso'
-            ? 'Already in lasso mode, drag on the plot to encircle cell lines.'
-            : 'Lasso mode on, drag on the plot to encircle cell lines.');
-        // If 3-panel split, set lasso on all sub-plots
-        const umapAll = document.getElementById('umapAll');
-        if (umapAll) {
-            ['umapAll', 'umapWT', 'umapMut'].forEach(id => {
-                const el = document.getElementById(id);
-                if (el) Plotly.relayout(el, { dragmode: 'lasso' });
-            });
-        } else {
-            Plotly.relayout(document.getElementById('clbUmapPlot'), { dragmode: 'lasso' });
+    // Dragging on the plot does nothing until Lasso select is switched on
+    // (or a gate is being set), so a stray drag never starts a selection.
+    _umapIdleDrag() { return this._umapLassoOn ? 'lasso' : false; }
+
+    clbUmapSelectMode(force) {
+        this._umapLassoOn = typeof force === 'boolean' ? force : !this._umapLassoOn;
+        const btn = document.getElementById('clbUmapSelectBtn');
+        if (btn) {
+            btn.textContent = this._umapLassoOn ? 'Lasso select: on' : 'Lasso select';
+            btn.style.background = this._umapLassoOn ? '#4c782e' : '';
+            btn.style.color = this._umapLassoOn ? '#fff' : '';
         }
+        const dm = this._umapIdleDrag();
+        ['clbUmapPlot', 'umapAll', 'umapWT', 'umapMut'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el?.layout) Plotly.relayout(el, { dragmode: dm });
+        });
     }
 
     clbUmapCopySelected() {
         if (!this._clbUmapSelectedPoints || this._clbUmapSelectedPoints.size === 0) {
-            this.showCopyNotification('No points selected. Use lasso or box select first.');
+            this.showCopyNotification('No cell lines selected. Switch on Lasso select and draw around some first.');
             return;
         }
         const lines = [...this._clbUmapSelectedPoints].map(cl => this.getCellLineName(cl)).join('\n');
@@ -65536,7 +65637,7 @@ ${clone.innerHTML}
     // reflect the new check state.
     clbUmapSelectInList() {
         if (!this._clbUmapSelectedPoints || this._clbUmapSelectedPoints.size === 0) {
-            this.showCopyNotification('No points selected. Use lasso or box select first.');
+            this.showCopyNotification('No cell lines selected. Switch on Lasso select and draw around some first.');
             return;
         }
         let added = 0;
@@ -65545,7 +65646,7 @@ ${clone.innerHTML}
         });
         this.renderCellLineList();
         this.updateClbSelectionCount();
-        this.showCopyNotification(`Ticked ${added} in list above (${this._clbSelectedCellLines.size} total selected)`);
+        this.showCopyNotification(`Ticked ${added} in the Cell Line Browser (${this._clbSelectedCellLines.size} total selected)`);
     }
 
     async applyUmapGeneColor() {
@@ -65666,7 +65767,7 @@ ${clone.innerHTML}
             annotations: [geneColorTitleAnn, geneColorXAnn, geneColorYAnn],
             margin: { t: 50, r: 170, b: 58, l: 60, autoexpand: false },
             height: this._getUmapPlotDimensions().height, width: this._getUmapPlotDimensions().width,
-            hovermode: 'closest', dragmode: 'lasso',
+            hovermode: 'closest', dragmode: this._umapIdleDrag(),
             paper_bgcolor: 'white', plot_bgcolor: '#fafafa'
         };
 
