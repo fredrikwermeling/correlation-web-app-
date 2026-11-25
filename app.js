@@ -44848,12 +44848,21 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
     // Literature-use tiers by paper count. One place for the cutoffs: the
     // quick filters, the card and the PCA coloring all read them here.
+    // The name people write (LNCaP, MDA-MB-231), not DepMap's stripped key;
+    // a trailing clone designation is dropped.
+    _clShortName(cl) {
+        const full = this.cellLineMetadata?.cellLineName?.[cl];
+        if (!full) return this.getCellLineName(cl);
+        return String(full).replace(/[ ,]*\(?\s*clone\b.*$/i, '').trim() || String(full);
+    }
+
     _clUsageTiers() {
         return [
-            { key: 'very_common', label: 'Very common', min: 2000, color: '#1e3a8a' },
-            { key: 'common', label: 'Common', min: 300, color: '#3b82f6' },
-            { key: 'uncommon', label: 'Uncommon', min: 30, color: '#93c5fd' },
-            { key: 'rare', label: 'Rare', min: 0, color: '#d1d5db' },
+            // Distinct hues, strongest for the most used, so the PCA reads at a glance.
+            { key: 'very_common', label: 'Very common', min: 2000, color: '#d7191c' },
+            { key: 'common', label: 'Common', min: 300, color: '#2ca02c' },
+            { key: 'uncommon', label: 'Uncommon', min: 30, color: '#74a9e0' },
+            { key: 'rare', label: 'Rare', min: 0, color: '#d9d9d9' },
         ];
     }
 
@@ -48222,6 +48231,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         document.getElementById('clbUmapAaBtn').addEventListener('click', () => this.openTextSettings('clbUmapPlot'));
         // Width/Height inputs
         document.getElementById('clbUmapPlotWidth').addEventListener('change', () => this._resizeUmapPlot());
+        document.getElementById('clbUmapBigBtn')?.addEventListener('click', () => this._toggleUmapBig());
         document.getElementById('clbUmapPlotHeight').addEventListener('change', () => this._resizeUmapPlot());
         // Method change → update button text
         document.getElementById('clbUmapMethod').addEventListener('change', () => {
@@ -50247,6 +50257,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // Collapse the cell-line detail panel back to the placeholder. Used by the
     // phone-only Close button, since on a phone the detail stacks under the list
     // and the executive summary otherwise takes over the screen with no way out.
+    _syncClbDetailMore() {
+        const more = document.getElementById('clbDetailMore');
+        const t = document.getElementById('clbDetailMoreToggle');
+        if (!more || !t) return;
+        more.style.display = this._clbCardMoreOpen ? '' : 'none';
+        t.innerHTML = this._clbCardMoreOpen ? 'Fewer details &#9652;' : 'More details &#9662;';
+    }
+
     closeCellLineDetail() {
         const panel = document.getElementById('clbDetailPanel');
         const content = document.getElementById('clbDetailContent');
@@ -50447,6 +50465,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         top += `<div class="clb-detail-section clb-keep-mobile" style="margin-bottom:12px;">`;
         top += `<button id="clbWikiBtn" class="btn btn-outline btn-sm" style="width:100%; font-size:11px; padding:5px 8px; color:var(--green-700); border-color:var(--green-400);" title="Open the cell line Wiki (patient origin, classification, mutation profile, fusions, signatures, STR authentication)">Wiki, deep dive on this cell line</button>`;
         top += `</div>`;
+        // The summary and Wiki cover most needs; the detail rows below sit
+        // behind the "More details" toggle.
+        const headEnd = top.length;
         top += `<div class="clb-detail-section">`;
         top += `<div class="clb-stat-row"><span class="clb-stat-label">Tissue</span><span class="clb-stat-value">${lineage || '-'}</span></div>`;
         // Subtype row, plus Lehmann TNBC subtype tag for breast lines
@@ -50781,11 +50802,18 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         top += `<div class="clb-stat-row"><span class="clb-stat-label">Mean</span><span class="clb-stat-value">${this.formatNum(mean)}</span></div>`;
         top += `<div class="clb-stat-row"><span class="clb-stat-label">Range</span><span class="clb-stat-value">${count > 0 ? this.formatNum(min) + ' to ' + this.formatNum(max) : '-'}</span></div>`;
         top += `</div>`;
-        document.getElementById('clbDetailTop').innerHTML = top;
+        document.getElementById('clbDetailTop').innerHTML = top.slice(0, headEnd);
+        document.getElementById('clbDetailRest').innerHTML = top.slice(headEnd);
+        this._syncClbDetailMore();
 
         // Wire the deep-dive entry point and gene-list toggles (re-wired on every
         // re-render because the DOM is replaced in place).
         document.getElementById('clbWikiBtn')?.addEventListener('click', () => this.openCellLineWiki(cellLineId));
+        const moreT = document.getElementById('clbDetailMoreToggle');
+        if (moreT && !moreT._wired) {
+            moreT._wired = true;
+            moreT.addEventListener('click', (e) => { e.preventDefault(); this._clbCardMoreOpen = !this._clbCardMoreOpen; this._syncClbDetailMore(); });
+        }
         ['clb-hotspot', 'clb-damaging', 'clb-fusion'].forEach(id => {
             const btn = document.getElementById(id + '-btn');
             if (!btn) return;
@@ -62782,6 +62810,11 @@ ${clone.innerHTML}
         const gcSel = document.getElementById('clbUmapGeneClass');
         if (gcSel) gcSel.value = '';
         document.getElementById('clbUmapColorBy').value = 'usage';
+        if (this._umapBig) {
+            this._umapBig = false;
+            const bw = document.getElementById('clbUmapPlotWidth'); if (bw) bw.value = this._umapNormalW || 600;
+            const bb = document.getElementById('clbUmapBigBtn'); if (bb) bb.textContent = 'Large plot';
+        }
         document.getElementById('clbUmapTissueFilter').value = '';
         document.getElementById('clbUmapSubtypeFilter').value = '';
         document.getElementById('clbUmapSubtypeFilter').style.display = 'none';
@@ -64751,6 +64784,34 @@ ${clone.innerHTML}
         Plotly.relayout(plotDiv, { width, height });
     }
 
+    // Large plot: the square data area grows to the window height (and the
+    // width left beside the loadings), then the plot is scrolled into view.
+    _toggleUmapBig() {
+        const wEl = document.getElementById('clbUmapPlotWidth');
+        const btn = document.getElementById('clbUmapBigBtn');
+        const wrap = document.getElementById('clbUmapPlotWrap');
+        if (!wEl || !wrap) return;
+        this._umapBig = !this._umapBig;
+        if (this._umapBig) {
+            this._umapNormalW = parseInt(wEl.value) || 600;
+            const side = document.getElementById('clbUmapLoadingsSidecar');
+            const sideW = side && side.offsetParent ? side.offsetWidth + 14 : 0;
+            const availW = wrap.clientWidth - 26 - sideW;
+            const dataSide = Math.max(300, Math.min(availW - 230, window.innerHeight - 60 - 108));
+            wEl.value = dataSide + 230;
+        } else {
+            wEl.value = this._umapNormalW || 600;
+        }
+        if (btn) btn.textContent = this._umapBig ? 'Normal size' : 'Large plot';
+        this._resizeUmapPlot();
+        if (this._umapBig) {
+            // The popout header is sticky; keep the plot title clear of it.
+            const head = document.querySelector('#clbUmapCard > div');
+            wrap.style.scrollMarginTop = ((head?.offsetHeight || 60) + 8) + 'px';
+            wrap.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        }
+    }
+
     _getUmapPlotDimensions() {
         // Treat the W input as the canvas width and derive height so that the
         // data area (canvas minus left+right margin for tissue legend /
@@ -64896,7 +64957,7 @@ ${clone.innerHTML}
             if (!clicked.has(cellLines[i])) continue;
             labels.push({
                 x: x[i], y: y[i],
-                text: this.getCellLineName(cellLines[i]),
+                text: this._clShortName(cellLines[i]),
                 showarrow: false, yshift: 12,
                 font: { size: 10, color: '#111827' },
                 bgcolor: 'rgba(255,255,255,0.92)',
