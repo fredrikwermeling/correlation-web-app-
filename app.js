@@ -389,6 +389,7 @@ class CorrelationExplorer {
         this.cnLoading = null;            // Promise while in-flight
         this.growthRateData = null;
         this.retroData = null;
+        this.clUsage = null;
         this._commonEssentials = null;
         this._geneSetScores = null; // cached {modelId: score} for current gene set
         this._geneSetLabel = null;  // current gene set name
@@ -1652,7 +1653,7 @@ class CorrelationExplorer {
         // Load essential JSON files in parallel (synonyms loaded lazily on demand)
         const dfetch = (path) => fetch(this._dataUrl(path));
 
-        const [metadataRes, cellLineRes, mutationsRes, orthologsRes, translocationsRes, damagingMutRes, growthRateRes, retroRes, drugRes, clinicalFusionsRes, inferredSubtypesRes, globalSigRes, corumRes, hlaCnRes, lehmannRes, clinicalCnRes, validatedFusionsRes, functionalLossRes, curatedFusionsRes, problematicRes, virusRes, cnArtefactRes, derivativeRes, txIdentityRes, virusRnaRes] = await Promise.all([
+        const [metadataRes, cellLineRes, mutationsRes, orthologsRes, translocationsRes, damagingMutRes, growthRateRes, retroRes, drugRes, clinicalFusionsRes, inferredSubtypesRes, globalSigRes, corumRes, hlaCnRes, lehmannRes, clinicalCnRes, validatedFusionsRes, functionalLossRes, curatedFusionsRes, problematicRes, virusRes, cnArtefactRes, derivativeRes, txIdentityRes, virusRnaRes, usageRes] = await Promise.all([
             dfetch('web_data/metadata.json'),
             dfetch('web_data/cellLineMetadata.json'),
             dfetch('web_data/mutations.json'),
@@ -1680,7 +1681,8 @@ class CorrelationExplorer {
             dfetch('web_data/cn_artefact.json').catch(() => null),
             dfetch('web_data/derivative_lines.json').catch(() => null),
             dfetch('web_data/transcriptome_identity.json').catch(() => null),
-            dfetch('web_data/virus_rna.json').catch(() => null)
+            dfetch('web_data/virus_rna.json').catch(() => null),
+            dfetch('web_data/cellline_usage.json').catch(() => null)
         ]);
 
         this.metadata = await metadataRes.json();
@@ -1703,6 +1705,9 @@ class CorrelationExplorer {
         }
         if (retroRes && retroRes.ok) {
             this.retroData = await retroRes.json();
+        }
+        if (usageRes && usageRes.ok) {
+            this.clUsage = await usageRes.json();
         }
         if (drugRes && drugRes.ok) {
             this.drugResponse = await drugRes.json();
@@ -35518,6 +35523,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             interferon: 'ifn', ifn: 'ifn', isg: 'ifn',
             retroelement: 'retro', retro: 'retro', 'line-1': 'retro', line1: 'retro',
             medium: 'medium', culture: 'medium', 'culture-medium': 'medium', media: 'medium',
+            literature: 'pubs', papers: 'pubs', publications: 'pubs', pubs: 'pubs', popularity: 'pubs',
             name: 'name'
         };
         const MEAS = { ge: 'ge', 'gene-effect': 'ge', dependency: 'ge', expr: 'expr', expression: 'expr', mrna: 'expr', cn: 'cn', 'copy-number': 'cn' };
@@ -43358,6 +43364,61 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 category: 'Provenance',
                 description: '<b>Inclusion:</b> cell lines whose five most similar cell lines by whole transcriptome (the 5,000 most variable genes; cell lines from the same patient left out) all come from other tissues. <b>Why it matters:</b> such a cell line may be misclassified, mixed up or contaminated, or have changed in culture, so an analysis grouped by tissue may place it wrongly. <b>Use:</b> exclude this collection to keep only cell lines that look like their own tissue, or include it to see which of your hits rest on them. <b>Caveat:</b> some cancer types simply look alike (squamous carcinomas of different organs, many sarcomas), so a flag is a reason to check, not proof. STR profiling settles identity. Across the cohort about 86% of cell lines look like their own tissue.'
             },
+            avail_any: {
+                label: 'Available from a cell bank',
+                category: 'Use and access',
+                description: '<b>Inclusion:</b> cell lines that at least one public cell bank or cell-line vendor currently sells, according to Cellosaurus (ATCC, DSMZ, ECACC, JCRB, RIKEN, KCLB, CLS and others). <b>Use:</b> include it to keep only lines you can order. <b>Caveat:</b> catalogs change and Cellosaurus can lag behind them, so check the bank before ordering. Many lines outside this set can still be had from the lab that made them.'
+            },
+            avail_atcc: {
+                label: 'Available from ATCC',
+                category: 'Use and access',
+                description: '<b>Inclusion:</b> cell lines ATCC currently lists in its catalog, according to Cellosaurus. <b>Caveat:</b> catalogs change; check the bank before ordering. Lines Cellosaurus records as discontinued at ATCC are left out.'
+            },
+            avail_dsmz: {
+                label: 'Available from DSMZ',
+                category: 'Use and access',
+                description: '<b>Inclusion:</b> cell lines DSMZ currently lists in its catalog, according to Cellosaurus. <b>Caveat:</b> catalogs change; check the bank before ordering. Lines Cellosaurus records as discontinued at DSMZ are left out.'
+            },
+            avail_ecacc: {
+                label: 'Available from ECACC',
+                category: 'Use and access',
+                description: '<b>Inclusion:</b> cell lines ECACC currently lists in its catalog, according to Cellosaurus. <b>Caveat:</b> catalogs change; check the bank before ordering. Lines Cellosaurus records as discontinued at ECACC are left out.'
+            },
+            avail_japan: {
+                label: 'Available from JCRB or RIKEN',
+                category: 'Use and access',
+                description: '<b>Inclusion:</b> cell lines the Japanese banks JCRB or RIKEN BRC currently list, according to Cellosaurus. Many Japanese lines are only available there. <b>Caveat:</b> catalogs change; check the bank before ordering.'
+            },
+            avail_none: {
+                label: 'Not in any cell bank',
+                category: 'Use and access',
+                description: '<b>Inclusion:</b> cell lines with no current listing at any public cell bank or vendor in Cellosaurus. <b>What these usually are:</b> lines kept by the lab that derived them, or lines made for a consortium (many pediatric and organoid-derived models). Ask the originating lab. <b>Caveat:</b> Cellosaurus can lag behind a catalog, so a line may already be sold somewhere.'
+            },
+            lit_very_common: {
+                label: 'Very common (2,000+ papers)',
+                category: 'Use and access',
+                description: '<b>Inclusion:</b> cell lines with at least 2,000 papers. The workhorse lines, with a large literature to compare against. Papers are counted in Europe PMC as the line name followed by &ldquo;cells&rdquo;, with common spellings (MCF-7, MCF7). <b>Caveat:</b> a rough count. Names that are also other terms can inflate it; names too short to search, or known to be shared with another line or a common word, are not counted and sit in no tier.'
+            },
+            lit_common_plus: {
+                label: 'Common or very common (300+ papers)',
+                category: 'Use and access',
+                description: '<b>Inclusion:</b> cell lines with at least 300 papers. Combine with &ldquo;Available from a cell bank&rdquo; for lines that are well studied and easy to get. Papers are counted in Europe PMC as the line name followed by &ldquo;cells&rdquo;, with common spellings (MCF-7, MCF7). <b>Caveat:</b> a rough count. Names that are also other terms can inflate it; names too short to search, or known to be shared with another line or a common word, are not counted and sit in no tier.'
+            },
+            lit_common: {
+                label: 'Common (300 to 1,999 papers)',
+                category: 'Use and access',
+                description: '<b>Inclusion:</b> cell lines with 300 to 1,999 papers. Papers are counted in Europe PMC as the line name followed by &ldquo;cells&rdquo;, with common spellings (MCF-7, MCF7). <b>Caveat:</b> a rough count. Names that are also other terms can inflate it; names too short to search, or known to be shared with another line or a common word, are not counted and sit in no tier.'
+            },
+            lit_uncommon: {
+                label: 'Uncommon (30 to 299 papers)',
+                category: 'Use and access',
+                description: '<b>Inclusion:</b> cell lines with 30 to 299 papers. Papers are counted in Europe PMC as the line name followed by &ldquo;cells&rdquo;, with common spellings (MCF-7, MCF7). <b>Caveat:</b> a rough count. Names that are also other terms can inflate it; names too short to search, or known to be shared with another line or a common word, are not counted and sit in no tier.'
+            },
+            lit_rare: {
+                label: 'Rare (under 30 papers)',
+                category: 'Use and access',
+                description: '<b>Inclusion:</b> cell lines with fewer than 30 papers. Often new or consortium-made lines; little is known about them outside large screens. Papers are counted in Europe PMC as the line name followed by &ldquo;cells&rdquo;, with common spellings (MCF-7, MCF7). <b>Caveat:</b> a rough count. Names that are also other terms can inflate it; names too short to search, or known to be shared with another line or a common word, are not counted and sit in no tier.'
+            },
             msi_high_functional: {
                 label: 'MSI-high (functional; MSIsensor2 ≥ 20)',
                 category: 'DNA repair / damage response',
@@ -44043,6 +44104,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             // covers them), so these three could never match a single cell line.
             'myc_family_amp', 'erbb2_amp', 'mdm2_amp', 'g1s_amp',
             'smarcb1_del', 'setd2_del', 'fat1_del', 'fbxw7_del', 'tet2_del',
+            // Availability and literature use
+            'lit_very_common', 'lit_common_plus', 'lit_common', 'lit_uncommon', 'lit_rare',
+            'avail_any', 'avail_atcc', 'avail_dsmz', 'avail_ecacc', 'avail_japan', 'avail_none',
             // Patient age at diagnosis
             'age_infant', 'age_pediatric', 'age_aya', 'age_adult', 'age_elderly',
         ]);
@@ -44761,6 +44825,61 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
     // Top-decile cutoff among measured lines for one retro measure
     // (t / l1 / hk / sva); computed once per key.
+    // Literature use and availability (web_data/cellline_usage.json).
+    // pubs = Europe PMC papers writing "<name> cells"; null where the name is
+    // too short to search or means something else too (amb: 1). dist = cell banks selling the line now.
+    _clUsageOf(cl) {
+        return this.clUsage?.lines?.[cl] || null;
+    }
+
+    // Share of cohort lines with fewer papers, 0-100; null when unsearched.
+    _clPubsPercentile(cl) {
+        const n = this._clUsageOf(cl)?.pubs;
+        if (n == null) return null;
+        if (!this._clPubsSorted) {
+            const v = (this.metadata?.cellLines || []).map(c => this._clUsageOf(c)?.pubs).filter(x => x != null);
+            this._clPubsSorted = v.sort((a, b) => a - b);
+        }
+        const arr = this._clPubsSorted;
+        let lo = 0, hi = arr.length;
+        while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m] < n) lo = m + 1; else hi = m; }
+        return arr.length ? Math.round(100 * lo / arr.length) : null;
+    }
+
+    // Literature-use tiers by paper count. One place for the cutoffs: the
+    // quick filters, the card and the PCA coloring all read them here.
+    _clUsageTiers() {
+        return [
+            { key: 'very_common', label: 'Very common', min: 2000, color: '#1e3a8a' },
+            { key: 'common', label: 'Common', min: 300, color: '#3b82f6' },
+            { key: 'uncommon', label: 'Uncommon', min: 30, color: '#93c5fd' },
+            { key: 'rare', label: 'Rare', min: 0, color: '#d1d5db' },
+        ];
+    }
+
+    _clUsageTier(cl) {
+        const n = this._clUsageOf(cl)?.pubs;
+        if (n == null) return null;
+        return this._clUsageTiers().find(t => n >= t.min) || null;
+    }
+
+    _fmtPubs(n) {
+        if (n == null) return '';
+        if (n >= 10000) return `${Math.round(n / 1000)}k`;
+        if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+        return String(n);
+    }
+
+    // Cell banks in a fixed order: the large general collections first.
+    _clDistributors(cl) {
+        const d = this._clUsageOf(cl)?.dist || {};
+        const ORDER = ['ATCC', 'DSMZ', 'ECACC', 'JCRB', 'RIKEN', 'KCLB', 'CLS', 'BCRJ', 'BCRC', 'CCTCC', 'TKG', 'IZSLER', 'Coriell', 'NCI-DTP', 'Lonza', 'AddexBio', 'Ximbio', 'Kerafast'];
+        return Object.keys(d).sort((a, b) => {
+            const ia = ORDER.indexOf(a), ib = ORDER.indexOf(b);
+            return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+        }).map(k => ({ bank: k, id: d[k] }));
+    }
+
     _retroHighCutoff(key = 't') {
         this._retroP90 = this._retroP90 || {};
         if (this._retroP90[key] !== undefined) return this._retroP90[key];
@@ -44849,6 +44968,26 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // element transcription. Unmeasured lines simply never qualify.
         // Same logic per family (LINE-1 / HERV-K / SVA), each against its
         // own top-decile cutoff.
+        // Availability (Cellosaurus) and literature use (Europe PMC). Lines
+        // with no usage record are in none of these sets.
+        for (const k of ['avail_any', 'avail_atcc', 'avail_dsmz', 'avail_ecacc', 'avail_japan', 'avail_none',
+            'lit_very_common', 'lit_common_plus', 'lit_common', 'lit_uncommon', 'lit_rare']) mem[k] = new Set();
+        if (this.clUsage?.lines) {
+            for (const cl of clLines) {
+                const u = this._clUsageOf(cl);
+                if (!u) continue;
+                const d = u.dist || {};
+                if (Object.keys(d).length) mem.avail_any.add(cl); else mem.avail_none.add(cl);
+                if (d.ATCC) mem.avail_atcc.add(cl);
+                if (d.DSMZ) mem.avail_dsmz.add(cl);
+                if (d.ECACC) mem.avail_ecacc.add(cl);
+                if (d.JCRB || d.RIKEN) mem.avail_japan.add(cl);
+                const tier = this._clUsageTier(cl)?.key;
+                if (tier) mem['lit_' + tier].add(cl);
+                if (tier === 'very_common' || tier === 'common') mem.lit_common_plus.add(cl);
+            }
+        }
+
         mem.retro_high = new Set();
         mem.retro_l1_high = new Set();
         mem.retro_hervk_high = new Set();
@@ -45597,6 +45736,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             virus_hpv: 'Cellosaurus', virus_hbv: 'Cellosaurus', virus_rna: 'RNA-seq',
             // Provenance
             problematic_identity: 'Cellosaurus', problematic_classification: 'Cellosaurus',
+            avail_any: 'Cellosaurus', avail_atcc: 'Cellosaurus', avail_dsmz: 'Cellosaurus', avail_ecacc: 'Cellosaurus',
+            avail_japan: 'Cellosaurus', avail_none: 'Cellosaurus',
+            lit_very_common: 'Europe PMC', lit_common_plus: 'Europe PMC', lit_common: 'Europe PMC', lit_uncommon: 'Europe PMC', lit_rare: 'Europe PMC',
             tx_identity_other: 'whole transcriptome',
             // Genome / ploidy / instability
             wgd_positive: 'genome signature', high_aneuploidy: 'genome signature',
@@ -47515,7 +47657,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             // where the answer belongs. Ascending for name and gene-effect
             // (lowest GE = most dependent, typical interest).
             if (mode === 'hotspot' || mode === 'damaging' || mode === 'fusion'
-                || mode === 'expr' || mode === 'cn' || mode === 'ifn' || mode === 'retro') {
+                || mode === 'expr' || mode === 'cn' || mode === 'ifn' || mode === 'retro' || mode === 'pubs') {
                 this._clbSortAsc = false;
             } else {
                 this._clbSortAsc = true;
@@ -48059,10 +48201,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (clearHl) clearHl.style.display = 'none';
             const colorBy = document.getElementById('clbUmapColorBy').value;
             const { x, y, cellLines, mutStatus, splitGene } = this._clbUmapData;
-            const categories = cellLines.map(cl => {
-                if (colorBy === 'subtissue') return this.getCellLineSublineage(cl) || this.getCellLineLineage(cl) || 'Unknown';
-                return this.getCellLineLineage(cl) || 'Unknown';
-            });
+            const categories = cellLines.map(cl => this._umapCategoryOf(cl, colorBy));
             this._clbUmapData.categories = categories;
             this._renderUmapPlot(x, y, cellLines, categories, mutStatus, colorBy, splitGene);
             // Refresh cluster-stats panel if open, the Group by in that
@@ -48079,6 +48218,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         document.getElementById('clbUmapClusterStatsBtn')?.addEventListener('click', () => this.showUmapClusterStats());
         document.getElementById('clbUmapRankBtn')?.addEventListener('click', () => this.rankUmapGeneClasses());
         document.getElementById('clbUmapClearLabelsBtn')?.addEventListener('click', () => this._clearUmapLabels());
+        document.getElementById('clbUmapLabelTopBtn')?.addEventListener('click', () => this._labelUmapMostUsed(15));
         document.getElementById('clbUmapClusterGroupBy')?.addEventListener('change', () => {
             // Different grouping renders a different set of rows, drop any
             // active highlight from the old mode so the plot doesn't keep a
@@ -48779,6 +48919,23 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 if (va === vb) return this.getCellLineName(a).localeCompare(this.getCellLineName(b));
                 return (va - vb) * dir;
             };
+        } else if (mode === 'pubs') {
+            // Papers using the line; names too short to search have no count
+            // and go to the end.
+            countMap = new Map();
+            for (const cl of filtered) {
+                const n = this._clUsageOf(cl)?.pubs;
+                if (n != null) countMap.set(cl, n);
+            }
+            secondaryCmp = (a, b) => {
+                const va = countMap.get(a);
+                const vb = countMap.get(b);
+                if (va == null && vb == null) return this.getCellLineName(a).localeCompare(this.getCellLineName(b));
+                if (va == null) return 1;
+                if (vb == null) return -1;
+                if (va === vb) return this.getCellLineName(a).localeCompare(this.getCellLineName(b));
+                return (va - vb) * dir;
+            };
         } else if (mode === 'retro') {
             // Retroelement signal. Lines without public RNA-seq have no
             // score and go to the end, same as the other measured sorts.
@@ -48860,6 +49017,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                       : mode === 'ychr' ? `Y-linked expression: the mean log-TPM of six Y-linked genes (RPS4Y1, DDX3Y, EIF1AY, KDM5D, UTY, USP9Y). Below 1 in an annotated male line is called <b>functional loss of Y</b>; an expression call, not a DNA one. Female lines sit near 0 by nature. Lines with no expression data are unscored and sit at the end.`
                       : mode === 'medium' ? 'Culture medium of the screen (model default where not recorded). Hover a value for the full formulation'
                       : mode === 'origin' ? 'Whether the cell line came from the primary tumor or a metastasis (DepMap Model table)'
+                      : mode === 'pubs' ? 'Literature use: papers in Europe PMC that write the cell line name followed by &ldquo;cells&rdquo;, counting its common spellings (MCF-7, MCF7). A guide to how widely a line is used, not an exact count. Names too short to search, or shared with another line or a common word, are not counted and sit at the end'
                       : mode === 'xist' ? `XIST expression (log-TPM), the RNA that keeps the inactive X silent. Below 1 in an annotated female line means XIST is silenced, with the inactive X either lost (one X copy) or eroded / duplicated (two copies), see the card. Male lines sit near 0 by nature. Lines with no expression data are unscored and sit at the end.`
                       : mode === 'retro' ? `Retroelement signal, ${retroMeasureLabels[retroMeasure]}: ${retroMeasure === 'a' ? 'how many of the 750 measured full-length elements are switched on (above 0.5 CPM) in each line'
                           : `summed RNA-seq reads (counts per million), unique reads only, over the ${retroMeasure === 't' ? '750 full-length LINE-1, HERV-K and SVA' : 'full-length ' + retroMeasureLabels[retroMeasure]} elements outside genes`}.${retroMeasure === 't' ? ' The panel median is about 40 CPM and the top tenth, about 80 CPM and up, counts as retroelement-high.' : ''} 669 of 1,208 lines have a public alignment to measure; unscored lines sit at the end.`
@@ -48906,6 +49064,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     : mode === 'xist' ? 'XIST expression (log-TPM)'
                     : mode === 'medium' ? 'Culture medium'
                     : mode === 'origin' ? 'Primary or metastasis'
+                    : mode === 'pubs' ? 'Papers (Europe PMC)'
                     : mode === 'retro' ? (retroMeasure === 'a' ? 'Active elements (count)' : `Retroelement signal, ${retroMeasureLabels[retroMeasure]} (CPM)`)
                     : String(mode))
                 : '';
@@ -48990,6 +49149,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     } else if (mode === 'medium') {
                         const full = this.cellLineMetadata?.culture?.[cl]?.medium || this.cellLineMetadata?.culture?.[cl]?.why || '';
                         sortValStr = `<span style="font-size:10px; color:${raw === 'Medium not recorded' ? '#9ca3af' : '#374151'}; margin-left:auto; flex-shrink:0;" title="${this.esc(full)}">${this.esc(raw)}</span>`;
+                    } else if (mode === 'pubs') {
+                        const pct = this._clPubsPercentile(cl);
+                        sortValStr = `<span style="font-size:10px; color:#374151; margin-left:auto; flex-shrink:0; font-variant-numeric:tabular-nums;" title="${raw.toLocaleString('en-US')} papers${pct != null ? `, more than ${pct}% of cell lines` : ''}">${this._fmtPubs(raw)} <span style="color:#9ca3af;">papers</span></span>`;
                     } else if (mode === 'retro') {
                         const retroTitle = retroMeasure === 'a' ? 'Active elements (count)' : `Retroelement signal, ${retroMeasureLabels[retroMeasure]} (CPM)`;
                         const retroValStr = retroMeasure === 'a' ? `${raw}` : `${Number(raw).toFixed(1)} CPM`;
@@ -50265,6 +50427,22 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const rec = this._getSexChromosomes(cellLineId);
             if (rec) {
                 top += `<div class="clb-stat-row"><span class="clb-stat-label">Sex chromosomes</span><span class="clb-stat-value" style="color:#6b7280;" title="Mean log-TPM of six Y-linked genes (RPS4Y1, DDX3Y, EIF1AY, KDM5D, UTY, USP9Y), XIST log-TPM, and the median relative copy number over chrX genes outside the pseudoautosomal regions (one X in a diploid line reads about 0.5). Expression calls, not DNA sequencing.">${this._sexChromosomeNumbers(rec, true)}</span></div>`;
+            }
+        }
+        {
+            const u = this._clUsageOf(cellLineId);
+            if (u) {
+                const pct = this._clPubsPercentile(cellLineId);
+                const pubTxt = u.pubs == null ? '<span style="color:#9ca3af;">not counted, the name is too short or has other meanings</span>'
+                    : `${this.esc(this._clUsageTier(cellLineId)?.label || '')}, ${this._fmtPubs(u.pubs)} papers${pct != null ? `<span style="color:#9ca3af; font-weight:400;"> (more than ${pct}% of lines)</span>` : ''}`;
+                top += `<div class="clb-stat-row"><span class="clb-stat-label">Literature use</span><span class="clb-stat-value" title="Papers in Europe PMC that write the cell line name followed by &ldquo;cells&rdquo;, counting common spellings. A guide to how widely the line is used, not an exact count.">${pubTxt}</span></div>`;
+                const dist = this._clDistributors(cellLineId);
+                const rrid = this.cellLineMetadata?.rrid?.[cellLineId] || '';
+                const shown = dist.slice(0, 4).map(d => this.esc(d.bank)).join(', ');
+                const more = dist.length > 4 ? ` +${dist.length - 4}` : '';
+                const distTitle = dist.map(d => `${d.bank} ${d.id}`).join('\n');
+                const link = rrid ? ` <a href="https://www.cellosaurus.org/${this.esc(rrid)}" target="_blank" rel="noopener" style="color:var(--green-700); font-size:10px;" title="Cellosaurus lists every bank with its catalog number">&#8599;</a>` : '';
+                top += `<div class="clb-stat-row"><span class="clb-stat-label">Available from</span><span class="clb-stat-value" title="${this.esc(distTitle)}">${dist.length ? shown + more : '<span style="color:#9ca3af;">no cell bank listed</span>'}${link}</span></div>`;
             }
         }
         // Genome-wide signatures (PureCN ploidy + WGD, Ben-David aneuploidy,
@@ -57869,6 +58047,15 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const _cellosaurusUrl = rrid ? `https://www.cellosaurus.org/${rrid}` : null;
         const _atccSearchUrl = `https://www.atcc.org/search?text=${encodeURIComponent(name)}`;
         const _dsmzSearchUrl = `https://www.dsmz.de/collection/catalog/search?q=${encodeURIComponent(name)}`;
+        const _usage = this._clUsageOf(cellLineId);
+        const _usageHtml = _usage ? (() => {
+            const dist = this._clDistributors(cellLineId);
+            const pct = this._clPubsPercentile(cellLineId);
+            return `<div style="margin:6px 0 10px; font-size:11px; color:#374151; line-height:1.6;">`
+                + `<div><b>Available from:</b> ${dist.length ? dist.map(d => `${this.esc(d.bank)} <span style="color:#9ca3af;">${this.esc(d.id)}</span>`).join(', ') : '<span style="color:#6b7280;">no public cell bank lists it in Cellosaurus; ask the lab that derived it.</span>'}</div>`
+                + `<div><b>Literature use:</b> ${_usage.pubs == null ? '<span style="color:#6b7280;">not counted, the name is too short or also means something else (another cell line, a common word or abbreviation).</span>' : `about ${_usage.pubs.toLocaleString('en-US')} papers in Europe PMC write &ldquo;${this.esc(name)} cells&rdquo; or a common spelling of it${pct != null ? `, more than ${pct}% of cell lines here` : ''}.`}</div>`
+                + `</div>`;
+        })() : '';
         const _strLinksHtml = `<div style="margin:6px 0 10px; padding:6px 10px; background:#eef2ff; border-left:3px solid #3730a3; font-size:11px;">
             <b style="color:#3730a3;">Validate against the source:</b>
             ${_cellosaurusUrl ? ` <a href="${_cellosaurusUrl}" target="_blank" rel="noopener" style="color:#3730a3; font-weight:600; text-decoration:underline;">Cellosaurus${rrid ? ' (' + rrid + ')' : ''} ↗</a>` : ` <span style="color:#9ca3af;">Cellosaurus link unavailable (no RRID).</span>`}
@@ -57891,7 +58078,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const atccLink = `https://www.atcc.org/search#q=${encodeURIComponent(stripped)}`;
         const cosmic = `https://cancer.sanger.ac.uk/cell_lines/search?q=${encodeURIComponent(stripped)}`;
         const linkStyle = 'display:inline-block; margin:3px 8px 3px 0; padding:4px 10px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:4px; color:#4c782e; text-decoration:none; font-size:11px;';
-        const extHtml = `
+        const extHtml = `${_usageHtml}
             <a href="${depmapLink}" target="_blank" rel="noopener" style="${linkStyle}">DepMap Portal ↗</a>
             ${cellosaurusLink ? `<a href="${cellosaurusLink}" target="_blank" rel="noopener" style="${linkStyle}">Cellosaurus (${rrid}) ↗</a>` : ''}
             <a href="${cosmic}" target="_blank" rel="noopener" style="${linkStyle}">COSMIC ↗</a>
@@ -57968,9 +58155,9 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             section('STR authentication',
                 authHtml + `<div style="margin-top:6px;">${row('Identity check, whole transcriptome', this._txIdentityWikiHtml(cellLineId))}</div><div id="wikiSurfaceIdentity"></div>`,
                 'Panel definitions: ANSI/ATCC ASN-0002-2011, Promega PowerPlex, Eurofins Genomics. Reference profiles: Cellosaurus.'),
-            section('External resources',
+            section('Where to get it, and external resources',
                 extHtml,
-                'Links to external databases. Nothing is fetched from them by this page.'),
+                'Cell banks: Cellosaurus distributor records, discontinued listings removed. Literature use: Europe PMC full-text search. Both captured when the data was built; the links below go to the live sources.'),
         ].join(''));
 
         const wikiModal = document.getElementById('clbWikiModal');
@@ -63432,10 +63619,7 @@ ${clone.innerHTML}
             }
 
             const cellLines = cellLineIndices.map(i => allCellLines[i]);
-            const categories = cellLines.map(cl => {
-                if (colorBy === 'subtissue') return this.getCellLineSublineage(cl) || this.getCellLineLineage(cl) || 'Unknown';
-                return this.getCellLineLineage(cl) || 'Unknown';
-            });
+            const categories = cellLines.map(cl => this._umapCategoryOf(cl, colorBy));
 
             this._clbUmapData = { cellLines, cellLineIndices, x, y, categories, matrix, geneNames,
                 mutStatus: null, splitGene: null, method, axisLabels, pcaLoadings, geneSrc, mixedSrc: dataType === 'both', geneClass: genePool ? this._umapClassInfo() : null };
@@ -63636,10 +63820,7 @@ ${clone.innerHTML}
             }
 
             const cellLines = cellLineIndices.map(i => allCellLines[i]);
-            const categories = cellLines.map(cl => {
-                if (colorBy === 'subtissue') return this.getCellLineSublineage(cl) || this.getCellLineLineage(cl) || 'Unknown';
-                return this.getCellLineLineage(cl) || 'Unknown';
-            });
+            const categories = cellLines.map(cl => this._umapCategoryOf(cl, colorBy));
 
             this._clbUmapData = { cellLines, cellLineIndices, x, y, categories, matrix, geneNames,
                 mutStatus: null, splitGene: null, method, axisLabels, pcaLoadings, geneSrc, mixedSrc: dataType === 'both', geneClass: genePool ? this._umapClassInfo() : null };
@@ -64686,6 +64867,18 @@ ${clone.innerHTML}
         if (clearBtn) clearBtn.style.display = clicked.size > 0 ? '' : 'none';
     }
 
+    // Labels the n most-used plotted lines, added to any labels already set.
+    _labelUmapMostUsed(n) {
+        if (!this._clbUmapData) return;
+        if (!this._clbUmapClickedLabels) this._clbUmapClickedLabels = new Set();
+        this._clbUmapData.cellLines
+            .filter(cl => this._clUsageOf(cl)?.pubs != null)
+            .sort((a, b) => this._clUsageOf(b).pubs - this._clUsageOf(a).pubs)
+            .slice(0, n)
+            .forEach(cl => this._clbUmapClickedLabels.add(cl));
+        this._updateUmapLabelAnnotations();
+    }
+
     _clearUmapLabels() {
         this._clbUmapClickedLabels = new Set();
         this._updateUmapLabelAnnotations();
@@ -64931,6 +65124,29 @@ ${clone.innerHTML}
         }
     }
 
+    // The group a point is colored by. Literature use and availability are
+    // ordered scales with fixed colors; tissue and subtype use the palette.
+    _umapCategoryOf(cl, colorBy) {
+        if (colorBy === 'subtissue') return this.getCellLineSublineage(cl) || this.getCellLineLineage(cl) || 'Unknown';
+        if (colorBy === 'usage') return this._clUsageTier(cl)?.label || 'Not counted';
+        if (colorBy === 'access') {
+            const d = this._clUsageOf(cl)?.dist;
+            if (!d) return 'Unknown';
+            if (d.ATCC) return 'ATCC';
+            return Object.keys(d).length ? 'Other cell bank' : 'No cell bank';
+        }
+        return this.getCellLineLineage(cl) || 'Unknown';
+    }
+
+    // Fixed order and colors for the ordered color-by modes, or null.
+    _umapOrderedGroups(colorBy) {
+        if (colorBy === 'usage') return [...this._clUsageTiers().map(t => ({ label: t.label, color: t.color })), { label: 'Not counted', color: '#f3f4f6' }];
+        if (colorBy === 'access') return [
+            { label: 'ATCC', color: '#4c782e' }, { label: 'Other cell bank', color: '#a3c585' },
+            { label: 'No cell bank', color: '#d97706' }, { label: 'Unknown', color: '#e5e7eb' }];
+        return null;
+    }
+
     _renderUmapPlot(x, y, cellLines, categories, mutStatus, colorBy, splitGene) {
         const plotDiv = document.getElementById('clbUmapPlot');
         // Always start from a clean slate. Without this, re-rendering after a
@@ -64965,6 +65181,8 @@ ${clone.innerHTML}
             const dam = damMap.get(cl) || 0;
             const fus = fusMap.get(cl) || 0;
             text += `<br>Hotspot ${hot}  \u00B7  Damaging ${dam}  \u00B7  Fusions ${fus}`;
+            const u = this._clUsageOf(cl);
+            if (u?.pubs != null) text += `<br>${this._clUsageTier(cl)?.label || ''}, ${this._fmtPubs(u.pubs)} papers`;
             text += `<br><i>click to inspect</i>`;
             return text;
         };
@@ -64976,14 +65194,21 @@ ${clone.innerHTML}
                 if (!catGroups[cat]) catGroups[cat] = [];
                 catGroups[cat].push(i);
             });
-            const sortedCats = Object.keys(catGroups).sort((a, b) => catGroups[b].length - catGroups[a].length);
+            // Ordered scales draw their least-used group first so the
+            // well-known lines sit on top; the legend lists them top-down.
+            const ordered = this._umapOrderedGroups(colorBy);
+            const sortedCats = ordered
+                ? ordered.map(g => g.label).filter(l => catGroups[l]).reverse()
+                : Object.keys(catGroups).sort((a, b) => catGroups[b].length - catGroups[a].length);
             return sortedCats.map((cat, ci) => {
                 const idx = catGroups[cat];
+                const oc = ordered?.find(g => g.label === cat)?.color;
                 return {
                     x: idx.map(i => x[i]), y: idx.map(i => y[i]),
                     text: idx.map(i => makeHoverText(i)), customdata: idx.map(i => cellLines[i]),
                     mode: 'markers', type: 'scattergl', name: `${cat} (${idx.length})`,
-                    marker: CorrelationExplorer.categoryMarker(ci, markerSize, 0.85),
+                    legendrank: ordered ? 1000 - ci : undefined,
+                    marker: oc ? { size: markerSize, color: oc, opacity: 0.9, line: { width: 0.5, color: '#6b7280' } } : CorrelationExplorer.categoryMarker(ci, markerSize, 0.85),
                     hoverinfo: 'text', showlegend: showLegend
                 };
             });
@@ -72851,7 +73076,7 @@ ${clone.innerHTML}
                 ? `   A principal component is a direction through the data along which the cell lines spread out most; the first explains the most, the second the next most, and so on.${explained ? `\n   Variance explained by the first components: ${explained.slice(0, 5).map((e, i) => `PC${i + 1} ${(e * 100).toFixed(1)} percent`).join(', ')}.` : ''}\n   Distances on a PCA plot are meaningful in the plotted directions, and the components can be read back to the genes that drive them (the loadings option shows this).\n   The loadings figure draws the four genes with the largest weight on each plotted axis, as arrows whose ends are each gene's weights on the two axes. A component that many genes share gives each of them a small weight, so the arrows along the first component can be shorter than those along the second even though the first explains more; Top Genes lists the weights per component.`
                 : '   UMAP is a non-linear method: it preserves which cell lines are near each other, and it does NOT preserve distances between clusters. How far apart two groups sit on a UMAP plot is not a measure of how different they are, and the size of a cluster is not a measure of anything. Re-running UMAP will move the picture even on the same data.'),
             'MARKS ON THE PLOT\n'
-            + `   Points are colored by ${v('clbUmapColorBy') === 'subtissue' ? 'subtype' : 'tissue'}${v('clbUmapColorGene') ? `, or by ${v('clbUmapColorGene')} ${v('clbUmapColorGeneType') === 'expr' ? 'expression' : 'gene effect'} where that is set` : ''}.\n`
+            + `   Points are colored by ${({ subtissue: 'subtype', usage: 'literature use (papers in Europe PMC)', access: 'cell bank availability (Cellosaurus)' })[v('clbUmapColorBy')] || 'tissue'}${v('clbUmapColorGene') ? `, or by ${v('clbUmapColorGene')} ${v('clbUmapColorGeneType') === 'expr' ? 'expression' : 'gene effect'} where that is set` : ''}.\n`
             + (lasso ? `   ${this._mNum(lasso)} point${lasso === 1 ? ' is' : 's are'} lasso-selected. A lasso is a selection made by hand; it does not change the projection.\n` : '   No lasso selection is active.\n')
             + ((gA || gB) ? `   Gate A holds ${this._mNum(gA)} cell lines and gate B holds ${this._mNum(gB)}. Gates are rectangles placed by hand, not thresholds.\n` : '   No gates were placed on the plot.\n'),
             ...(this._umapRank?.rows?.length ? [`GENE-CLASS RANKING (Rank classes)\n   For each curated class, PC1's share of the total variance was computed on ${this._umapRank.dataWord} for ${this._mNum(this._umapRank.nCL)} cell lines (${this._umapRank.cohort}), using the class's most variable genes (up to 1,000 per layer) exactly as a run on that class would, and compared with ${this._umapRank.nRandom} random gene sets of the same size drawn from all genes in the data (seeded, so the table is reproducible). The ratio is the class's PC1 share over the random median; raw PC1 shares favor small sets, the ratio does not.\n   Top classes: ${this._umapRank.rows.slice(0, 5).map(r => `${r.label} ${(r.pc1 * 100).toFixed(1)} percent vs ${(r.med * 100).toFixed(1)} random (ratio ${r.ratio.toFixed(2)})`).join('; ')}.\n   A class above random shares more structure than chance among these cell lines; it does not make that class the right one to look at.`] : []),

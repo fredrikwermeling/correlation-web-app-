@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="data-version" content="208ebee236">
+    <meta name="data-version" content="f2f54734f5">
     <title>Correlate</title>
     <link rel="icon" type="image/x-icon" href="favicon.ico">
     <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
@@ -5733,6 +5733,7 @@
                 <option value="xist">Sort: XIST expression</option>
                 <option value="medium">Sort: Culture medium</option>
                 <option value="origin">Sort: Primary or metastasis</option>
+                <option value="pubs">Sort: Literature use (papers)</option>
               </select>
               <button id="clbSortDir" title="Switch the sort direction" class="btn btn-outline btn-sm" style="width:32px;">&#x25B2;</button>
               <div id="clbSortGeneWrap" class="clb-anchor" style="visibility:hidden;">
@@ -5809,6 +5810,8 @@
                 <select id="clbUmapColorBy" class="clb-umap-ctl">
                     <option value="tissue">Color by tissue</option>
                     <option value="subtissue">Color by subtype</option>
+                    <option value="usage">Color by literature use</option>
+                    <option value="access">Color by cell bank</option>
                 </select>
                 <button id="clbUmapRunBtn" class="clb-umap-btn" style="background:#5d9239; color:white; border-color:#5d9239;">Run Analysis</button>
                 <button id="clbUmapResetBtn" class="clb-umap-btn" style="background:#ef4444; color:white; border-color:#ef4444;" title="Clear everything and start fresh">Reset</button>
@@ -5838,6 +5841,7 @@
                 <span class="clb-umap-sep"></span>
                 <button id="clbUmapTopGenesBtn" class="clb-umap-btn" title="Show top genes correlated with axes">Top Genes</button>
                 <button id="clbUmapClusterStatsBtn" class="clb-umap-btn" title="Rank tissues by how tightly they cluster in this projection (silhouette score). Click a tissue in the table to highlight its cell lines.">Cluster stats</button>
+                <button id="clbUmapLabelTopBtn" class="clb-umap-btn" title="Name the 15 most-used cell lines in the plot (by papers), as landmarks for finding your way around it">Label most used</button>
                 <button id="clbUmapClearLabelsBtn" class="clb-umap-btn" title="Remove all cell-line labels from the plot" style="display:none;">Clear labels</button>
                 <label id="clbUmapLoadingsToggle" class="clb-umap-lbl" style="display:none; cursor:pointer;">
                     <input type="checkbox" id="clbUmapShowLoadings" style="vertical-align:middle;" checked> Loadings
@@ -6200,7 +6204,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v92_12"></script>
+    <script src="app.js?v=v92_13"></script>
     <script src="tour.js?v=v92_10"></script>
 </body>
 </html>
