@@ -275,7 +275,7 @@
     function pageHTML() {
         const nL = num(D.nLines()), nE = num(D.nExprLines()), nG = num(D.nGenes()), nSet = HERO_SET.length;
         const mrnaNet = HAS.mrnaNet(), pca = HAS.pca(), heatmap = HAS.heatmap();
-        const ways = ['against all other cell lines', pca && 'as a PCA', heatmap && 'as a heatmap of a gene set'].filter(Boolean);
+        const ways = ['as a volcano plot against all other cell lines', pca && 'as a PCA', heatmap && 'as a heatmap of a gene set'].filter(Boolean);
         const otherTools = ['mutation analysis', 'gene effect or expression of one gene', 'the correlation plot',
             heatmap && 'the gene set heatmap', HAS.cutoff() && 'the threshold scan', 'Paste from AI', 'opening a saved figure'].filter(Boolean);
         return `
@@ -395,7 +395,7 @@
             <p>The same 50 <i>BRAF</i>-mutated melanoma cell lines${ways.length > 1 ? `, ${ways.length === 3 ? 'three' : 'two'} ways: ${ways.slice(0, -1).join(', ')}${ways.length === 3 ? ',' : ''} and ${ways[ways.length - 1]}` : ` ${ways[0]}`}.</p>
         </div>
         <div class="tour-two tour-two-tight ${pca ? 'tour-two-pca' : 'tour-two-one'}">
-            ${shot('volcano_mel', 'Volcano plot comparing the 50 BRAF-mutant melanoma cell lines with every other cell line', 'compare', { cap: `Compare: the 50 selected cell lines against the other 1,158. ${gi('BRAF')}, ${gi('SOX10')} and ${gi('MAPK1')} are their dependencies.`, btn: 'Compare these cell lines with the rest' })}
+            ${shot('volcano_mel', 'Volcano plot comparing the 50 BRAF-mutant melanoma cell lines with every other cell line', 'compare', { cap: `Volcano plot of the 50 selected cell lines against the other 1,158: each dot is a gene, by difference in gene effect and significance. ${gi('BRAF')}, ${gi('SOX10')} and ${gi('MAPK1')} are their dependencies.`, btn: 'Open this volcano plot' })}
             ${pca ? shot('pca_mitf', 'PCA of the melanoma cell lines on mRNA, colored by MITF expression, with loadings', 'pca', { cap: `PCA of the same 50 cell lines on mRNA, colored by ${gi('MITF')} expression. The loadings name the genes behind the axes.`, btn: 'Open this PCA' }) : ''}
         </div>
         ${heatmap ? `<div class="tour-wide-shot">
