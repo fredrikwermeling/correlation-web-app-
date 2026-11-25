@@ -47834,6 +47834,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             document.getElementById('clbUmapOpenBtn')?.addEventListener('click', () => {
                 umapSec.style.display = 'flex';
                 umapSec.scrollTop = 0;
+                // Expression is the default input; fetch it now so Run does not wait.
+                if (document.getElementById('clbUmapDataType')?.value !== 'ge') this.loadExpressionData?.().catch(() => { });
                 const plot = document.getElementById('clbUmapPlot');
                 if (plot?.data && window.Plotly) { try { Plotly.Plots.resize(plot); } catch (e) { /* not drawn yet */ } }
             });
@@ -62776,7 +62778,7 @@ ${clone.innerHTML}
         document.getElementById('clbUmapSplitGene').value = '';
         document.getElementById('clbUmapSplitType').textContent = '';
         document.getElementById('clbUmapClearSplitBtn').style.display = 'none';
-        document.getElementById('clbUmapDataType').value = 'ge';
+        document.getElementById('clbUmapDataType').value = 'expr';
         const gcSel = document.getElementById('clbUmapGeneClass');
         if (gcSel) gcSel.value = '';
         document.getElementById('clbUmapColorBy').value = 'tissue';
