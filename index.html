@@ -3830,7 +3830,7 @@
                         <button class="btn btn-outline btn-sm" id="filterCorrelationsToggle" title="Toggle column filters">Filters</button>
                         <label id="showBelowCutoffWrap" style="display:none; align-items:center; gap:4px; font-size:11px; color:#374151; cursor:pointer; white-space:nowrap;" title="Also list the pairs that fell just short of the correlation cutoff, so a borderline result is still visible. They appear grayed below a divider and are not part of the network or the clusters."><input type="checkbox" id="showBelowCutoff"> below cutoff</label>
                         <button class="btn btn-outline btn-sm" id="copyCorrelationGenes" title="Copy gene names to clipboard">Copy Genes</button>
-                        <button class="btn btn-outline btn-sm" id="downloadCorrelations" title="Download the correlation table as a CSV file">Download CSV</button>
+                        <button class="btn btn-outline btn-sm" id="downloadCorrelations" title="Download the correlation table as a CSV file">Download table</button>
                         <button class="btn btn-outline btn-sm mobile-hide" onclick="app.openMethods('correlations')" title="Write out how this table was made, as a methods paragraph and as a plain walk-through">Methods</button>
                         <button class="btn btn-secondary btn-sm enrichrBtn" data-source="correlations" title="Pathway enrichment analysis via Enrichr">Enrichr</button><a href="https://maayanlab.cloud/Enrichr/" target="_blank" rel="noopener" title="Enrichr, Ma'ayan Lab" style="color:#9ca3af; font-size:10px; margin-left:2px; text-decoration:none;">&#8599;</a>
                         <!-- AI button removed, Full Export supersedes it -->
@@ -3869,7 +3869,7 @@
                         <label style="display:inline-flex; align-items:center; gap:4px; font-size:11px; color:#374151; cursor:pointer; white-space:nowrap;" title="Order the genes by the network's clusters; unticked, they follow the order you entered them in"><input type="checkbox" id="matrixClusterOrder" checked> Cluster order</label>
                         <label style="display:inline-flex; align-items:center; gap:4px; font-size:11px; color:#374151; cursor:pointer; white-space:nowrap;" title="Blank every pair whose correlation did not clear the cutoff, so only the pairs in the network are colored"><input type="checkbox" id="matrixAboveCutoff"> Above cutoff only</label>
                         <button class="btn btn-outline btn-sm mobile-hide" id="matrixExportPng" title="Export the matrix, choose PNG / TIFF / PDF / PowerPoint in the popup">Export image...</button>
-                        <button class="btn btn-outline btn-sm" id="matrixDownloadCsv" title="Download the grid of correlations as a CSV file">Download CSV</button>
+                        <button class="btn btn-outline btn-sm" id="matrixDownloadCsv" title="Download the grid of correlations as a CSV file">Download table</button>
                     </div>
                     <div style="display:flex; align-items:center; flex-wrap:wrap; gap:4px; margin-bottom:6px;"><span id="matrixBasisBadge" style="display:none;"></span><span id="matrixNote" style="font-size:11px; color:#6b7280;"></span></div>
                     <div id="matrixScroll" style="width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch;"><div id="matrixPlot" style="min-height:120px;"><div style="text-align:center; color:var(--gray-500); padding:40px;">Run analysis to see the matrix</div></div></div>
@@ -3886,7 +3886,7 @@
                         <button class="btn btn-outline btn-sm" id="filterClustersToggle" title="Toggle column filters">Filters</button>
                         <label id="showBelowCutoffClustersWrap" style="display:none; align-items:center; gap:4px; font-size:11px; color:#374151; cursor:pointer; white-space:nowrap;" title="Also list the input genes without correlations, grayed. Genes whose best pair just missed the cutoff say Below cutoff in the Correlation column; any such gene not otherwise listed is added at the bottom. Context only: these are not in the network and have no cluster."><input type="checkbox" id="showBelowCutoffClusters"> below cutoff</label>
                         <button class="btn btn-outline btn-sm" id="copyClustersGenes" title="Copy gene names to clipboard">Copy Genes</button>
-                        <button class="btn btn-outline btn-sm" id="downloadClusters" title="Download the cluster table as a CSV file">Download CSV</button>
+                        <button class="btn btn-outline btn-sm" id="downloadClusters" title="Download the cluster table as a CSV file">Download table</button>
                         <button class="btn btn-outline btn-sm mobile-hide" onclick="app.openMethods('clusters')" title="Write out how these clusters were made, as a methods paragraph and as a plain walk-through">Methods</button>
                         <button class="btn btn-secondary btn-sm enrichrBtn" data-source="clusters" title="Pathway enrichment analysis via Enrichr">Enrichr</button><a href="https://maayanlab.cloud/Enrichr/" target="_blank" rel="noopener" title="Enrichr, Ma'ayan Lab" style="color:#9ca3af; font-size:10px; margin-left:2px; text-decoration:none;">&#8599;</a>
                         <!-- AI button removed, Full Export supersedes it -->
@@ -4018,7 +4018,7 @@
                         <div>
                             <input type="text" id="synonymsSearch" class="form-control" placeholder="Search genes..." style="width: 200px; display: inline-block; margin-right: 10px;">
                         </div>
-                        <button class="btn btn-outline btn-sm" id="downloadSynonyms">Export CSV</button>
+                        <button class="btn btn-outline btn-sm" id="downloadSynonyms">Export table</button>
                     </div>
                     <p class="help-text" id="synonymsHelpText" style="margin-bottom: 10px; font-size: 11px;">
                         <strong>Low Risk:</strong> Exact synonyms from HGNC. <strong>Mid Risk:</strong> Less certain synonyms. <strong>Orthologs:</strong> Mouse-to-human gene mappings.
@@ -4682,7 +4682,7 @@
                     <button class="btn btn-outline btn-sm mobile-hide" onclick="app.copyPlotToClipboard('geneEffectPlot', 'Chart')" title="Copy this as an image to the clipboard, ready to paste into an email or slide">Copy</button>
                     <button class="btn btn-sm btn-outline" id="geExpandFullBtn" title="Show the full analysis (filters + statistics table)" style="font-size:11px;">&#10530; Full view</button>
                     </span>
-                    <span style="display:inline-flex; align-items:center; gap:6px; white-space:nowrap; margin-left: 10px;"><span style="font-size: 12px; color: #6b7280;">Export CSV:</span>
+                    <span style="display:inline-flex; align-items:center; gap:6px; white-space:nowrap; margin-left: 10px;"><span style="font-size: 12px; color: #6b7280;">Export table:</span>
                     <button class="btn btn-outline btn-sm" id="downloadGETableCSV" title="Download the table above as a CSV file">By Group</button>
                     <button class="btn btn-outline btn-sm" id="downloadGECellLineCSV" title="Download the per-cell-line values behind this view as a CSV file">By Cell Line</button>
                     </span>
@@ -4722,7 +4722,7 @@
                             </div>
                             <button class="btn btn-sm" id="runExprCorrelatesBtn" style="background: #6ba544; color: white;">Run</button>
                             <span id="exprCorrelatesStatus" style="font-size: 12px; color: #6b7280;"></span>
-                            <button class="btn btn-outline btn-sm" id="downloadExprCorrelatesCSV" style="display: none; margin-left: auto; border-color: #6ba544; color: #5d9239;" title="Download the correlate list as a CSV file">Export CSV</button>
+                            <button class="btn btn-outline btn-sm" id="downloadExprCorrelatesCSV" style="display: none; margin-left: auto; border-color: #6ba544; color: #5d9239;" title="Download the correlate list as a CSV file">Export table</button>
                             <button class="btn btn-outline btn-sm mobile-hide" onclick="app.openMethods('exprCorrelates')" style="border-color: #6ba544; color: #5d9239;" title="Write out how this list was made, as a methods paragraph and as a plain walk-through">Methods</button>
                         </div>
 
@@ -4931,7 +4931,7 @@
                     <button class="btn btn-outline btn-sm mobile-hide" id="downloadCorrAnalysisPNG" title="Export the chart, choose PNG / SVG / TIFF / PDF / PowerPoint in the popup">Export image...</button>
                     <button class="btn btn-outline btn-sm mobile-hide" onclick="app.copyPlotToClipboard(app._caView === 'tissue' ? 'corrAnalysisTissuePlot' : 'corrAnalysisHotspotPlot', 'Chart')" title="Copy this as an image to the clipboard, ready to paste into an email or slide">Copy</button>
                     </span>
-                    <span style="display:inline-flex; align-items:center; gap:6px; white-space:nowrap; margin-left: 10px;"><span style="font-size: 12px; color: #6b7280;">Export CSV:</span>
+                    <span style="display:inline-flex; align-items:center; gap:6px; white-space:nowrap; margin-left: 10px;"><span style="font-size: 12px; color: #6b7280;">Export table:</span>
                     <button class="btn btn-outline btn-sm" id="downloadCorrAnalysisCSV" title="Download the table above as a CSV file">By Group</button>
                     <button class="btn btn-outline btn-sm" id="downloadCACellLineCSV" title="Download the per-cell-line values behind this view as a CSV file">By Cell Line</button>
                     </span>
@@ -5314,7 +5314,7 @@
           <div style="display:flex; gap:8px; align-items:center;">
 
             <button id="enrichrExportAIBtn" class="btn btn-outline btn-sm" title="Download the enrichment as a text file for a language model: the genes sent, the significant sets in every library with their genes and scores, and the gene of interest if one is set">Export for AI</button>
-            <button id="enrichrDownloadBtn" class="btn btn-outline btn-sm" title="The active library's full result table as CSV">Download CSV</button>
+            <button id="enrichrDownloadBtn" class="btn btn-outline btn-sm" title="The active library's full result table as CSV">Download table</button>
             <button id="enrichrCloseBtn" style="background:none; border:none; color:#6b7280; font-size:24px; cursor:pointer; padding:0 4px; line-height:1;">&times;</button>
           </div>
         </div>
@@ -5404,7 +5404,7 @@
           <div class="pop-head-btns" style="display:flex; align-items:center; gap:8px;">
             <button id="clbWikiDownloadBtn" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px; padding:4px 10px;" title="Save this Wiki as a multi-page PDF (charts embedded as images, white background)">Export PDF</button>
             <button onclick="app.screenshotPopout('clbWikiBody','correlate_wiki')" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px; padding:4px 10px;" title="Save the wiki as an image, choosing format, resolution and whether to capture the whole page or just what is on screen">Export image...</button>
-            <button id="clbWikiExportGenesBtn" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px; padding:4px 10px;" title="Export the full per-gene profile for this cell line (GE, Expression, Hotspot, Damaging, Fusion, focal CN amplifications / deletions) as a CSV">Export gene info (.csv)</button>
+            <button id="clbWikiExportGenesBtn" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px; padding:4px 10px;" title="Export the full per-gene profile for this cell line (GE, Expression, Hotspot, Damaging, Fusion, focal CN amplifications / deletions) as a CSV">Export gene info</button>
             <button id="clbWikiAnalyzeWithAI" class="btn btn-outline btn-sm mobile-hide" style="font-size:11px; padding:4px 10px;" title="Package this cell line as one compressed file for a language model, so you can ask questions about it">Export for AI</button>
             <button id="clbWikiCloseBtn" style="background:none; border:none; font-size:24px; cursor:pointer; line-height:1; color:#6b7280;" title="Close the wiki">&times;</button>
           </div>
@@ -6222,7 +6222,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v92_26"></script>
-    <script src="tour.js?v=v92_24"></script>
+    <script src="app.js?v=v92_27"></script>
+    <script src="tour.js?v=v92_27"></script>
 </body>
 </html>

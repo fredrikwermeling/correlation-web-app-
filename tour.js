@@ -373,7 +373,7 @@
                 ${checks([
                     `Example: melanoma cell lines with mutated ${gi('BRAF')}. The count updates as you go.`,
                     `From the list: compare the selection with the rest${pca ? ', a PCA or UMAP' : ''}${heatmap ? ', a heatmap of any gene set' : ''}.`,
-                    'Download a cell line’s full tables, or the list on screen, as CSV.',
+                    'Download a cell line’s full tables, or the list on screen, as Excel or CSV.',
                 ])}
             </div>
             ${shot('clb_mel', 'The Cell Line Browser filtered to melanoma cell lines with mutated BRAF, A375 selected', 'clb', { cap: `Melanoma cell lines with mutated ${gi('BRAF')}, A375 opened in the side panel.`, btn: 'Open the browser with these filters' })}
@@ -437,7 +437,7 @@
         <div class="tour-feature tour-flip">
             <div class="tour-text">
                 <h3>Export images, tables and methods</h3>
-                <p>Under every view: Export image (PNG, SVG, PDF, PowerPoint at print size) and CSV. An exported PNG or SVG reopens in Correlate with its analysis.</p>
+                <p>Under every view: Export image (PNG, SVG, PDF, PowerPoint at print size) and the data as Excel or CSV. An exported PNG or SVG reopens in Correlate with its analysis.</p>
                 <p><b>Methods</b> writes the methods for the view you are looking at, from its actual settings: the DepMap release, which cell lines were included, the filters and the statistics used. You get one paragraph ready to paste into a materials and methods section, and a longer plain-language version that explains what the figure shows. Copy either or download them as a text file.</p>
                 <p><b>Export for AI</b> writes the data behind the view into one file made for a language model. Upload it to ChatGPT, Claude or Gemini and discuss the results: which of these dependencies has a drug, which cell line fits my experiment, what links these genes?</p>
             </div>

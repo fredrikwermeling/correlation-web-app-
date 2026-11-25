@@ -4268,7 +4268,7 @@ class CorrelationExplorer {
         if (!_oncoPhone) {
         html += `<button onclick="app._oncoprintExport('image')" style="font-size:10px;padding:2px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:#f9fafb;" title="Choose format, print size and resolution">Export image...</button>`;
         html += `<button onclick="app._oncoprintCopy()" style="font-size:10px;padding:2px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:#f9fafb;" title="Copy the whole grid as an image to the clipboard, ready to paste into an email or slide">Copy</button>`;
-        html += `<button onclick="app._oncoprintExport('csv')" style="font-size:10px;padding:2px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:#f9fafb;" title="The gene x cell line matrix as data">Export data (CSV)</button>`;
+        html += `<button onclick="app._oncoprintExport('csv')" style="font-size:10px;padding:2px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:#f9fafb;" title="The gene x cell line matrix as data">Export data</button>`;
         html += `<span style="border-left:1px solid #d1d5db;height:16px;margin:0 2px;"></span>`;
         }
         html += `<button onclick="app._showUpsetSetup()" style="font-size:10px;padding:2px 8px;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;background:#f0fdf4;color:#5d9239;font-weight:500;" title="Pick which genes to compare, then draw the UpSet plot">UpSet...</button>`;
@@ -16264,9 +16264,33 @@ Results:
         return s ? `_${s}` : '';
     }
 
+    // Every table export comes through here as CSV. The user picks CSV or
+    // Excel once (or each time); Excel keeps numbers numeric in any region,
+    // where a CSV with '.' decimals opens as text in a decimal-comma locale.
     downloadFile(content, filename, mimeType) {
-        if (/csv|tab-separated/i.test(mimeType || '')) content = this._csvGuard(String(content));
-        const blob = new Blob([content], { type: mimeType });
+        const isTable = /csv|tab-separated/i.test(mimeType || '') && typeof content === 'string';
+        if (isTable && !this._tableFormatChosen) {
+            const pref = (() => { try { return localStorage.getItem('correlateTableFormat'); } catch (e) { return null; } })();
+            const go = (fmt) => {
+                this._tableFormatChosen = true;
+                try {
+                    if (fmt === 'xlsx') return this._downloadXlsx(content, filename, mimeType);
+                    return this.downloadFile(content, filename, mimeType);
+                } finally { this._tableFormatChosen = false; }
+            };
+            if (pref === 'xlsx' || pref === 'csv') {
+                go(pref);
+                this._tableFormatNotice(pref);
+                return;
+            }
+            this._askTableFormat(go);
+            return;
+        }
+        if (isTable) content = this._csvGuard(String(content));
+        this._saveBlob(new Blob([content], { type: mimeType }), filename);
+    }
+
+    _saveBlob(blob, filename) {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
@@ -16277,6 +16301,122 @@ Results:
         document.body.appendChild(a);
         a.click();
         setTimeout(() => { a.remove(); URL.revokeObjectURL(url); }, 2000);
+    }
+
+    // Exports that save two tables at once queue behind one question.
+    _askTableFormat(go) {
+        (this._tableFormatQueue ||= []).push(go);
+        if (document.getElementById('tableFormatDlg')) return;
+        const dlg = document.createElement('div');
+        dlg.id = 'tableFormatDlg';
+        dlg.style.cssText = 'position:fixed; inset:0; z-index:20000; display:flex; align-items:center; justify-content:center; background:rgba(17,24,39,.25);';
+        dlg.innerHTML = `<div role="dialog" aria-label="Save table as" style="background:#fff; border-radius:10px; box-shadow:0 20px 50px rgba(0,0,0,.25); padding:16px 18px 14px; width:min(360px, calc(100vw - 32px)); font-size:13px; color:#374151; position:relative;">
+            <button type="button" data-x title="Cancel (Esc)" style="position:absolute; top:6px; right:8px; background:none; border:none; font-size:20px; line-height:1; color:#9ca3af; cursor:pointer;">&times;</button>
+            <div style="font-weight:700; font-size:14px; color:#1f2937; margin-bottom:4px;">Save table as</div>
+            <div style="color:#6b7280; margin-bottom:12px; line-height:1.45;">Excel keeps numbers as numbers in any language setting. CSV is plain text, for R, Python or a language model.</div>
+            <div style="display:flex; gap:8px; margin-bottom:10px;">
+                <button type="button" data-fmt="xlsx" class="btn btn-primary btn-sm" style="flex:1;">Excel (.xlsx)</button>
+                <button type="button" data-fmt="csv" class="btn btn-outline btn-sm" style="flex:1;">CSV (.csv)</button>
+            </div>
+            <label style="display:flex; align-items:center; gap:6px; color:#6b7280; font-size:12px; cursor:pointer;"><input type="checkbox" data-remember> Remember my choice</label>
+        </div>`;
+        const close = () => { dlg.remove(); document.removeEventListener('keydown', onKey, true); this._tableFormatQueue = []; };
+        const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+        document.addEventListener('keydown', onKey, true);
+        dlg.querySelector('[data-x]').addEventListener('click', close);
+        dlg.querySelectorAll('[data-fmt]').forEach(b => b.addEventListener('click', () => {
+            const fmt = b.dataset.fmt;
+            if (dlg.querySelector('[data-remember]').checked) { try { localStorage.setItem('correlateTableFormat', fmt); } catch (e) { /* not stored */ } }
+            const queued = this._tableFormatQueue || [];
+            close();
+            queued.forEach((fn, i) => setTimeout(() => fn(fmt), i * 300));
+        }));
+        document.body.appendChild(dlg);
+        dlg.querySelector('[data-fmt="xlsx"]').focus();
+    }
+
+    // After a download in the remembered format: a short note with the way
+    // back to the choice.
+    _tableFormatNotice(fmt) {
+        document.getElementById('tableFormatNote')?.remove();
+        const n = document.createElement('div');
+        n.id = 'tableFormatNote';
+        n.style.cssText = 'position:fixed; top:20px; right:20px; z-index:10001; background:#6ba544; color:#fff; padding:8px 14px; border-radius:6px; font-size:13px; box-shadow:0 2px 8px rgba(0,0,0,.15); transition:opacity .3s;';
+        n.innerHTML = `Saved as ${fmt === 'xlsx' ? 'Excel' : 'CSV'}. <a href="#" style="color:#fff; text-decoration:underline; margin-left:4px;">Change format</a>`;
+        n.querySelector('a').addEventListener('click', (e) => {
+            e.preventDefault();
+            try { localStorage.removeItem('correlateTableFormat'); } catch (err) { /* ignore */ }
+            n.textContent = 'The next table export will ask again.';
+        });
+        document.body.appendChild(n);
+        setTimeout(() => { n.style.opacity = '0'; setTimeout(() => n.remove(), 300); }, 4000);
+    }
+
+    _parseDelimited(text, sep) {
+        const rows = [];
+        let row = [], field = '', inQ = false;
+        text = text.replace(/^\uFEFF/, '');
+        for (let i = 0; i < text.length; i++) {
+            const c = text[i];
+            if (inQ) {
+                if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else inQ = false; }
+                else field += c;
+            } else if (c === '"' && field === '') inQ = true;
+            else if (c === sep) { row.push(field); field = ''; }
+            else if (c === '\n' || c === '\r') {
+                if (c === '\r' && text[i + 1] === '\n') i++;
+                row.push(field); rows.push(row); row = []; field = '';
+            } else field += c;
+        }
+        if (field !== '' || row.length) { row.push(field); rows.push(row); }
+        return rows;
+    }
+
+    // A one-sheet .xlsx from CSV text: numbers stored as numbers, text as
+    // inline strings (never formulas), the table header bold and frozen.
+    async _downloadXlsx(text, filename, mimeType) {
+        if (typeof JSZip === 'undefined') { this.downloadFile(text, filename, mimeType); return; }
+        const rows = this._parseDelimited(String(text), /tab-separated/i.test(mimeType) ? '\t' : ',');
+        while (rows.length && rows[rows.length - 1].every(v => v === '')) rows.pop();
+        const nCols = Math.max(1, ...rows.map(r => r.length));
+        // The table header: the first row that fills most columns. Rows above
+        // it are a notes block (title, source, column key).
+        let head = rows.findIndex(r => r.filter(v => v !== '').length >= Math.max(2, Math.ceil(nCols * 0.8)));
+        if (head < 0) head = 0;
+        const colName = (c) => { let n = ''; c++; while (c) { const m = (c - 1) % 26; n = String.fromCharCode(65 + m) + n; c = Math.floor((c - 1) / 26); } return n; };
+        const esc = (v) => v.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const isNum = (v) => /^-?(?:0|[1-9]\d{0,14})(?:\.\d+)?(?:[eE][-+]?\d+)?$/.test(v) || /^-?\.\d+$/.test(v);
+        const widths = new Array(nCols).fill(8);
+        for (let r = head; r < rows.length; r++) rows[r].forEach((v, c) => { widths[c] = Math.max(widths[c], Math.min(45, v.length + 2)); });
+        const parts = [];
+        rows.forEach((r, ri) => {
+            const cells = r.map((v, c) => {
+                if (v === '') return '';
+                const ref = colName(c) + (ri + 1);
+                const st = ri === head ? ' s="1"' : '';
+                if (ri !== head && isNum(v)) return `<c r="${ref}"${st}><v>${v}</v></c>`;
+                return `<c r="${ref}"${st} t="inlineStr"><is><t xml:space="preserve">${esc(v)}</t></is></c>`;
+            }).join('');
+            parts.push(`<row r="${ri + 1}">${cells}</row>`);
+        });
+        // Numbers turns frozen rows into header rows and refuses a file with
+        // more than five, so a table under a long notes block is not frozen.
+        const freeze = head + 1;
+        const sheet = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+            + '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            + (freeze <= 5 ? `<sheetViews><sheetView workbookViewId="0"><pane ySplit="${freeze}" topLeftCell="A${freeze + 1}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>` : '')
+            + `<cols>${widths.map((w, c) => `<col min="${c + 1}" max="${c + 1}" width="${w}" customWidth="1"/>`).join('')}</cols>`
+            + `<sheetData>${parts.join('')}</sheetData></worksheet>`;
+        const zip = new JSZip();
+        zip.file('[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>');
+        zip.file('_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
+        zip.file('xl/workbook.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>');
+        zip.file('xl/_rels/workbook.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>');
+        zip.file('xl/styles.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs></styleSheet>');
+        zip.file('xl/worksheets/sheet1.xml', sheet);
+        const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 },
+            mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        this._saveBlob(blob, String(filename).replace(/\.(csv|tsv|txt)$/i, '') + '.xlsx');
     }
 
     // The banner describes the results on screen, so it uses the filter state
@@ -22994,7 +23134,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             </div>
             <div style="margin-top: 12px;">
                 <button class="btn btn-primary btn-sm" id="backToGraphBtn2" style="margin-right: 8px;">← Back to Graph</button>
-                <button class="btn btn-success btn-sm" id="downloadCompareCSV">Download CSV</button>
+                <button class="btn btn-success btn-sm" id="downloadCompareCSV">Download table</button>
             </div>
         `;
 
@@ -23180,7 +23320,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 <h4 style="margin: 0;">Mutations affecting ${this.gi(gene1)} vs ${this.gi(gene2)}</h4>
                 <div>
                     <button class="btn btn-primary btn-sm" id="backToGraphBtn" style="margin-right: 8px;">← Back to Graph</button>
-                    <button class="btn btn-success btn-sm" id="downloadMutCompareCSV">Download CSV</button>
+                    <button class="btn btn-success btn-sm" id="downloadMutCompareCSV">Download table</button>
                 </div>
             </div>
             ${filterInfo}
@@ -23373,7 +23513,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
         rows.sort((a, b) => a.pR - b.pR);
         const filterInfo = filterDesc ? `<p style="font-size:11px;color:#333;margin-bottom:8px;background:#f0f9ff;padding:4px 8px;border-radius:4px;"><b>Filter:</b> ${filterDesc}</p>` : '';
-        let html = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;"><h4 style="margin:0;">${o.heading || `${carrierWord} affecting ${this.gi(gene1)} vs ${this.gi(gene2)}`}</h4><div><button class="btn btn-primary btn-sm" id="backToGraphBtnSubset" style="margin-right:8px;">← Back to Graph</button><button class="btn btn-success btn-sm" id="downloadSubsetCSV">Download CSV</button></div></div>${filterInfo}<p style="font-size:11px;color:#666;margin-bottom:6px;">Comparing WT vs ${carrierWord}. Sorted by p-value.</p>${o.clickNote ? `<p style="font-size:11px;color:#059669;margin-bottom:8px;">${o.clickNote}</p>` : ''}<div class="table-container" style="max-height:380px;overflow-y:auto;"><table id="${tableId}" class="data-table" style="width:100%;font-size:11px;"><thead><tr><th data-sort="label" data-type="string" style="cursor:pointer;">${o.subsetCol || carrierWord} ↕</th><th data-sort="nWT" data-type="number" style="cursor:pointer;border-left:2px solid #2563eb;">N(WT) ↕</th><th data-sort="rWT" data-type="number" style="cursor:pointer;">r(WT) ↕</th><th data-sort="nC" data-type="number" style="cursor:pointer;border-left:2px solid #dc2626;">N(${carrierWord}) ↕</th><th data-sort="rC" data-type="number" style="cursor:pointer;">r(${carrierWord}) ↕</th><th data-sort="deltaR" data-type="number" style="cursor:pointer;border-left:2px solid #6b7280;">Δr ↕</th><th data-sort="pR" data-type="number" style="cursor:pointer;">p(Δr) ↕</th></tr></thead><tbody>`;
+        let html = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;"><h4 style="margin:0;">${o.heading || `${carrierWord} affecting ${this.gi(gene1)} vs ${this.gi(gene2)}`}</h4><div><button class="btn btn-primary btn-sm" id="backToGraphBtnSubset" style="margin-right:8px;">← Back to Graph</button><button class="btn btn-success btn-sm" id="downloadSubsetCSV">Download table</button></div></div>${filterInfo}<p style="font-size:11px;color:#666;margin-bottom:6px;">Comparing WT vs ${carrierWord}. Sorted by p-value.</p>${o.clickNote ? `<p style="font-size:11px;color:#059669;margin-bottom:8px;">${o.clickNote}</p>` : ''}<div class="table-container" style="max-height:380px;overflow-y:auto;"><table id="${tableId}" class="data-table" style="width:100%;font-size:11px;"><thead><tr><th data-sort="label" data-type="string" style="cursor:pointer;">${o.subsetCol || carrierWord} ↕</th><th data-sort="nWT" data-type="number" style="cursor:pointer;border-left:2px solid #2563eb;">N(WT) ↕</th><th data-sort="rWT" data-type="number" style="cursor:pointer;">r(WT) ↕</th><th data-sort="nC" data-type="number" style="cursor:pointer;border-left:2px solid #dc2626;">N(${carrierWord}) ↕</th><th data-sort="rC" data-type="number" style="cursor:pointer;">r(${carrierWord}) ↕</th><th data-sort="deltaR" data-type="number" style="cursor:pointer;border-left:2px solid #6b7280;">Δr ↕</th><th data-sort="pR" data-type="number" style="cursor:pointer;">p(Δr) ↕</th></tr></thead><tbody>`;
         rows.forEach(row => {
             const dc = row.deltaR < 0 ? '#dc2626' : '#6ba544';
             const hl = row.pR < 0.05 ? 'background:#fef3c7;' : '';
@@ -23508,7 +23648,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 <h4 style="margin: 0;">Fusions affecting ${this.gi(gene1)} vs ${this.gi(gene2)}</h4>
                 <div>
                     <button class="btn btn-primary btn-sm" id="backToGraphBtnTrans" style="margin-right: 8px;">← Back to Graph</button>
-                    <button class="btn btn-success btn-sm" id="downloadTransCompareCSV">Download CSV</button>
+                    <button class="btn btn-success btn-sm" id="downloadTransCompareCSV">Download table</button>
                 </div>
             </div>
             ${filterInfo}
@@ -26950,7 +27090,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 <h4 style="margin: 0;">${this.gi(gene1)} vs ${this.gi(gene2)} - By Cancer Type</h4>
                 <div>
                     <button class="btn btn-primary btn-sm" id="backToGraphBtn2" style="margin-right: 8px;">← Back to Graph</button>
-                    <button class="btn btn-success btn-sm" id="downloadCancerCompareCSV">Download CSV</button>
+                    <button class="btn btn-success btn-sm" id="downloadCancerCompareCSV">Download table</button>
                 </div>
             </div>
             ${filterDesc ? `<p style="font-size: 11px; color: #666; margin-bottom: 10px;">Filter: ${filterDesc}</p>` : ''}
@@ -48197,7 +48337,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 { label: 'Image...', title: 'Capture the Cell Line Browser as an image (PNG / TIFF / PDF / PowerPoint)', act: () => document.getElementById('clbExportImageBtn')?.click() },
                 { sep: true, label: 'Cell line: GE + expression', title: 'One or a few selected cell lines: gene effect and expression for every gene. Includes the DepMap version and citation.', act: () => this.exportCellLineBrowserCSV('minimal') },
                 { label: 'Cell line: full profile', title: 'Selected cell lines: every gene with gene effect, expression, hotspot and damaging mutations, fusions and focal copy-number events.', act: () => this.exportCellLineBrowserCSV('comprehensive') },
-                { sep: true, label: 'List on screen: CSV', title: 'Every cell line in the list, in its current order, with tissue, subtype, disease and the value the list is sorted by.', act: () => this.exportCellLineListOnScreen('csv') },
+                { sep: true, label: 'List on screen: download', title: 'Every cell line in the list, in its current order, with tissue, subtype, disease and the value the list is sorted by.', act: () => this.exportCellLineListOnScreen('csv') },
                 { label: 'List on screen: copy', title: 'The same list as tab-separated text on the clipboard, ready to paste into a spreadsheet.', act: () => this.exportCellLineListOnScreen('copy') },
                 { sep: true, label: 'Genes: full profile', title: 'One or a few genes across the selected or listed cell lines: gene effect, expression, mutations, fusions and focal copy number.', act: () => this.exportCellLineBrowserGenesCSV() },
                 { sep: true, label: 'For AI...', title: 'Send the cell lines currently listed, with their alterations and gene-effect data, to an AI assistant for analysis', act: () => document.getElementById('clbExportAIBtn')?.click() },
