@@ -45993,6 +45993,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // filter labels and category notes; the title="" descriptions are
         // attributes, so they stay plain.
         panel.innerHTML = this._italicizeGenesInHtml(html);
+        // Rows can arrive after opening (expression-based filters) and widen it.
+        if (panel.style.display === 'block') requestAnimationFrame(() => this._fitPopupInViewport(panel));
 
         // Wire row toggles
         panel.querySelectorAll('button[data-coll-id]').forEach(btn => {
@@ -47278,26 +47280,35 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // fixed positioning only when it would overflow, so nothing (e.g. the last
     // quick-filter rows) ends up below the fold on small screens. The element
     // keeps its own max-height / overflow for internal scrolling.
+    // Inside a popout card with overflow:hidden the card edge is the limit,
+    // not the window, or the panel is clipped by the card.
     _fitPopupInViewport(el, margin = 12) {
         if (!el) return;
         const rect = el.getBoundingClientRect();
-        const vw = window.innerWidth, vh = window.innerHeight;
-        const overflowsRight = rect.right > vw - margin;
-        const overflowsBottom = rect.bottom > vh - margin;
-        const overflowsLeft = rect.left < margin;
-        const overflowsTop = rect.top < margin;
+        const card = el.closest('#clbModalCard');
+        const cr = card ? card.getBoundingClientRect() : null;
+        const bx0 = Math.max(0, cr ? cr.left : 0), by0 = Math.max(0, cr ? cr.top : 0);
+        const bx1 = Math.min(window.innerWidth, cr ? cr.right : Infinity);
+        const by1 = Math.min(window.innerHeight, cr ? cr.bottom : Infinity);
+        const overflowsRight = rect.right > bx1 - margin;
+        const overflowsBottom = rect.bottom > by1 - margin;
+        const overflowsLeft = rect.left < bx0 + margin;
+        const overflowsTop = rect.top < by0 + margin;
         if (!overflowsRight && !overflowsBottom && !overflowsLeft && !overflowsTop) return;
-        const w = Math.min(rect.width, vw - 2 * margin);
-        const h = Math.min(rect.height, vh - 2 * margin);
+        const bw = bx1 - bx0, bh = by1 - by0;
+        const w = Math.min(rect.width, bw - 2 * margin);
+        const h = Math.min(rect.height, bh - 2 * margin);
+        if (rect.width > w) el.style.maxWidth = w + 'px';
+        if (rect.height > h) el.style.maxHeight = h + 'px';
         // A wide panel anchored under its button opens off to one side and, on
         // a small screen, runs off the edge. Once it is wide enough that its
         // position no longer says anything useful, center it instead of
         // shoving it back from whichever edge it hit.
-        const wide = w > vw * 0.5;
+        const wide = w > bw * 0.5;
         const left = wide
-            ? Math.round((vw - w) / 2)
-            : Math.max(margin, Math.min(rect.left, vw - w - margin));
-        const top = Math.max(margin, Math.min(rect.top, vh - h - margin));
+            ? Math.round(bx0 + (bw - w) / 2)
+            : Math.max(bx0 + margin, Math.min(rect.left, bx1 - w - margin));
+        const top = Math.max(by0 + margin, Math.min(rect.top, by1 - h - margin));
         el.style.position = 'fixed';
         el.style.margin = '0';
         el.style.right = 'auto';
@@ -47306,10 +47317,36 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         el.style.top = top + 'px';
     }
 
+    // Scrolling over a floating panel scrolls only the panel: at its top or
+    // bottom, or when it has nothing to scroll, the wheel is swallowed instead
+    // of moving the list behind it.
+    _containWheel(el) {
+        if (!el || el._wheelContained) return;
+        el._wheelContained = true;
+        el.style.overscrollBehavior = 'contain';
+        el.addEventListener('wheel', (e) => {
+            let n = e.target;
+            while (n && n !== el) {
+                if (n.scrollHeight > n.clientHeight + 1 && /(auto|scroll)/.test(getComputedStyle(n).overflowY)) {
+                    const up = e.deltaY < 0;
+                    if (up ? n.scrollTop > 0 : n.scrollTop + n.clientHeight < n.scrollHeight - 1) return;
+                }
+                n = n.parentElement;
+            }
+            const up = e.deltaY < 0;
+            const canScroll = up ? el.scrollTop > 0 : el.scrollTop + el.clientHeight < el.scrollHeight - 1;
+            if (!canScroll) e.preventDefault();
+        }, { passive: false });
+    }
+
     // Restore a panel to its anchored (under-the-button) default after a drag
     // or viewport-fit pinned it to fixed coordinates.
     _resetPanelAnchor(el, top = '100%', left = '0') {
         if (!el) return;
+        // Undo a size clamp from _fitPopupInViewport, the markup's own limits return.
+        if (el.dataset.baseMaxW === undefined) { el.dataset.baseMaxW = el.style.maxWidth; el.dataset.baseMaxH = el.style.maxHeight; }
+        el.style.maxWidth = el.dataset.baseMaxW;
+        el.style.maxHeight = el.dataset.baseMaxH;
         el.style.position = 'absolute';
         el.style.top = top;
         el.style.left = left;
@@ -47537,8 +47574,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     requestAnimationFrame(() => this._fitPopupInViewport(clbCollectionPanel));
                 }
             });
+            document.querySelectorAll('.clb-dropdown').forEach(el => this._containWheel(el));
             document.addEventListener('click', (e) => {
-                if (!clbCollectionPanel.contains(e.target) && e.target !== clbCollectionBtn) {
+                // composedPath, not contains: a +/- click re-renders the panel,
+                // so the clicked button is already detached here.
+                if (!e.composedPath().includes(clbCollectionPanel) && e.target !== clbCollectionBtn) {
                     clbCollectionPanel.style.display = 'none';
                 }
             });
