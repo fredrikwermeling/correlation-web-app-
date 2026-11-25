@@ -62012,28 +62012,34 @@ ${clone.innerHTML}
         // previews (Quick Look, Numbers) size each column to its longest cell,
         // so a long sentence in column B pushed every data column off screen:
         // the summary goes one sentence per row and the key one column per row.
-        const sani = (s) => String(s == null ? '' : s).replace(/,/g, ';').replace(/\s+/g, ' ')
-            .replace(/\s+([.;:)])/g, '$1').replace(/\(\s+/g, '(').replace(/\s+\/(\S)/g, '/$1').trim();
+        // No semicolons anywhere: Numbers in a decimal-comma region (Sweden)
+        // guesses the separator from the text and split the rows on them.
+        // Commas inside a value are quoted instead.
+        const sani = (s) => {
+            const t = String(s == null ? '' : s).replace(/;/g, ',').replace(/\s+/g, ' ')
+                .replace(/\s+([.,:)])/g, '$1').replace(/\(\s+/g, '(').replace(/\s+\/(\S)/g, '/$1').trim();
+            return /[",]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+        };
         const lines = ['Correlate full per-gene profile'];
         for (let c = 0; c < clIndices.length; c++) {
             const clId = this.metadata.cellLines[clIndices[c]];
             const tissue = this.getCellLineLineage(clId) || '';
             const subtype = this.getCellLineSublineage(clId) || '';
-            let summary = '';
-            try { summary = sani((this._cellLineExecutiveSummary(clId) || '').replace(/<[^>]*>/g, ' ')); } catch (e) {}
             lines.push(`Cell line,${sani(`${clNames[c]} (${clId})`)}`);
             if (tissue) lines.push(`Tissue,${sani(tissue)}`);
             if (subtype) lines.push(`Subtype,${sani(subtype)}`);
+            let summary = '';
+            try { summary = (this._cellLineExecutiveSummary(clId) || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' '); } catch (e) {}
             summary.split(/(?<=\.)\s+(?=[A-Z])/).filter(Boolean)
-                .forEach((sent, i) => lines.push(`${i ? '' : 'Summary'},${sent}`));
+                .forEach((sent, i) => lines.push(`${i ? '' : 'Summary'},${sani(sent)}`));
         }
-        lines.push(`Data source,${sani(`DepMap ${DEPMAP_VERSION} (depmap.org); cite Tsherniak et al. Cell 2017`)}`);
+        lines.push(`Data source,${sani(`DepMap ${DEPMAP_VERSION} (depmap.org), cite Tsherniak et al. Cell 2017`)}`);
         lines.push(`Date,${new Date().toISOString().slice(0, 10)}`);
         lines.push('');
-        [['Columns', ''], ['Chr / Cytoband', 'GRCh38 gene location'], ['_GE', 'CRISPR gene effect'], ['_Expr', 'mRNA; log2 TPM+1'],
-         ['_Hotspot', 'hotspot mutation copies; 0/1/2'], ['_Damaging', 'damaging mutation; 0/1'], ['_Fusion', 'fusion; 0/1/2'],
-         ['_CancerCN', 'curated driver focal call (tier:CN); ~30 genes'], ['_CN', 'relative copy number; 1.0 = baseline']]
-            .forEach(([k, v]) => lines.push(`${k},${v}`));
+        [['Columns', ''], ['Chr / Cytoband', 'GRCh38 gene location'], ['_GE', 'CRISPR gene effect'], ['_Expr', 'mRNA (log2 TPM+1)'],
+         ['_Hotspot', 'hotspot mutation copies (0 to 2)'], ['_Damaging', 'damaging mutation (0 or 1)'], ['_Fusion', 'fusion (0 to 2)'],
+         ['_CancerCN', 'curated driver focal call (tier:CN), about 30 genes'], ['_CN', 'relative copy number (1.0 = baseline)']]
+            .forEach(([k, v]) => lines.push(`${k},${sani(v)}`));
         lines.push('');
         lines.push(headerParts.join(','));
         for (let g = 0; g < this.nGenes; g++) {
