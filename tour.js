@@ -105,15 +105,13 @@
         [...document.querySelectorAll('#clbModalCard button')].find(b => /PCA \/ UMAP/.test(b.textContent))?.click();
         await wait(800);
         setVal('clbUmapMethod', 'pca'); setVal('clbUmapDataType', 'expr');
-        tick('clbUmapShowLoadings');
+        setVal('clbUmapColorBy', 'usage');
         const before = a._clbUmapData;
         document.getElementById('clbUmapRunBtn')?.click();
         await until(() => a._clbUmapData && a._clbUmapData !== before, 120);
         await wait(500);
-        const cg = document.getElementById('clbUmapColorGene');
-        if (cg) { cg.value = 'MITF'; cg.dispatchEvent(new Event('input', { bubbles: true })); }
-        setVal('clbUmapColorGeneType', 'expr');
-        document.getElementById('clbUmapColorGeneBtn')?.click();
+        a._clearUmapLabels?.();
+        a._labelUmapMostUsed?.(6);
     }
     async function heatmapMelanoma(a) {
         await openMelanoma(a, 'BRAF');
@@ -277,7 +275,7 @@
         const mrnaNet = HAS.mrnaNet(), pca = HAS.pca(), heatmap = HAS.heatmap();
         const ways = ['as a volcano plot against all other cell lines', pca && 'as a PCA', heatmap && 'as a heatmap of a gene set'].filter(Boolean);
         const otherTools = ['mutation analysis', 'gene effect or expression of one gene', 'the correlation plot',
-            heatmap && 'the gene set heatmap', HAS.cutoff() && 'the threshold scan', 'Paste from AI', 'opening a saved figure'].filter(Boolean);
+            heatmap && 'the gene set heatmap', 'Paste from AI', 'opening a saved figure'].filter(Boolean);
         return `
 <header class="tour-top">
     <div class="tour-wrap tour-top-in">
@@ -324,7 +322,7 @@
         <div class="tour-text tour-text-wide">
             <p class="tour-eyebrow">1 &middot; Gene set analysis</p>
             <h2>Paste a gene set, get a network</h2>
-            <p>Correlate calculates the correlation (Pearson r) between every pair of genes in your set across the cell lines, on CRISPR gene effect (${nL} cell lines)${mrnaNet ? ' or on mRNA expression' : ''}. Pairs whose correlation passes the cutoff you set are joined by a line in the network: blue for a positive correlation, red for a negative one, thicker for a stronger one. Genes that end up joined often work together, in the same complex or pathway.</p>
+            <p>Like GeneMANIA or STRING, Correlate finds connections between the genes in your set, but from how the genes behave across more than a thousand cancer cell lines rather than from interaction databases: genes that are needed, or expressed, in the same cell lines are functionally similar. It calculates the correlation (Pearson r) between every pair of genes in your set across the cell lines, on CRISPR gene effect (${nL} cell lines)${mrnaNet ? ' or on mRNA expression' : ''}. Pairs whose correlation passes the cutoff you set are joined by a line in the network: blue for a positive correlation, red for a negative one, thicker for a stronger one. Genes that end up joined often work together, in the same complex or pathway.</p>
             ${checks([
                 'Hover over a gene or an edge for details. Double-click a gene for its gene effect across the cell lines, or an edge for the correlation plot behind it.',
                 'Paste your own screen results (LFC and FDR) next to the gene list, and Correlate shows the set as a network colored by your results, or as a correlation matrix.',
@@ -371,7 +369,7 @@
             <div class="tour-text">
                 <p class="tour-eyebrow">3 &middot; Cell Line Browser</p>
                 <h2>Find the right cell lines for your project</h2>
-                <p>Narrow the ${nL} cell lines down by cancer type, mutation, fusion, copy number, sex, drug response, or how much they express or need any gene. Every cell line has its own Wiki, a comprehensive summary.</p>
+                <p>Narrow the ${nL} cell lines down by cancer type, mutation, functional loss, fusion, copy number, sex, drug response, how much they express or need any gene, how often they are used in papers and which cell bank sells them. Every cell line has its own Wiki, and every cancer type a Cancer type Wiki.</p>
                 ${checks([
                     `Example: melanoma cell lines with mutated ${gi('BRAF')}. The count updates as you go.`,
                     `From the list: compare the selection with the rest${pca ? ', a PCA or UMAP' : ''}${heatmap ? ', a heatmap of any gene set' : ''}.`,
@@ -396,7 +394,7 @@
         </div>
         <div class="tour-two tour-two-tight ${pca ? 'tour-two-pca' : 'tour-two-one'}">
             ${shot('volcano_mel', 'Volcano plot comparing the 50 BRAF-mutant melanoma cell lines with every other cell line', 'compare', { cap: `Volcano plot of the 50 selected cell lines against the other 1,158: each dot is a gene, by difference in gene effect and significance. ${gi('BRAF')}, ${gi('SOX10')} and ${gi('MAPK1')} are their dependencies.`, btn: 'Open this volcano plot' })}
-            ${pca ? shot('pca_mitf', 'PCA of the melanoma cell lines on mRNA, colored by MITF expression, with loadings', 'pca', { cap: `PCA of the same 50 cell lines on mRNA, colored by ${gi('MITF')} expression. The loadings name the genes behind the axes.`, btn: 'Open this PCA' }) : ''}
+            ${pca ? shot('pca_usage', 'PCA of the 50 BRAF-mutated melanoma cell lines on mRNA, colored by how often each is used in papers', 'pca', { cap: `PCA of the same 50 cell lines on mRNA, colored by how often each cell line appears in papers, the most used named. They all sit on the left, where the melanocyte genes (${gi('MLANA')}, ${gi('TYR')}, ${gi('DCT')}) are lowest: most of these cell lines are rarely studied.`, btn: 'Open this PCA' }) : ''}
         </div>
         ${heatmap ? `<div class="tour-wide-shot">
             ${shot('heatmap_tp53', 'Heatmap of the TP53 pathway members across the 50 BRAF-mutated melanoma cell lines, with a TP53 mutation row', 'heatmap', { cap: `Heatmap: each column is one of the same 50 cell lines, each row a gene of the ${gi('TP53')} pathway. Cell lines with wild-type ${gi('TP53')} depend on ${gi('MDM2')} and ${gi('USP7')}; the ${gi('TP53')}-mutated ones, on the right, do not.`, btn: 'Open this heatmap' })}
@@ -405,13 +403,21 @@
             <div class="tour-text">
                 <h3>The Wiki: a comprehensive summary of every cell line</h3>
                 ${checks([
-                    'Many sections, gathered from DepMap, Cellosaurus and other sources: origin and history, classification, mutations, copy number, dependencies, drug response and more.',
-                    'Which pathways are altered, pointing to the ones involved in transforming the cell line.',
+                    'What sets the cell line apart from others of its cancer type: selective dependencies, genes it expresses strongly, and altered pathways that may have driven its transformation.',
                     'Suggested antigens for FACS: surface proteins the cell line expresses strongly and fairly uniquely.',
+                    'Many sections, gathered from DepMap, Cellosaurus, COSMIC and other sources: origin and history, classification, mutations, copy number, drug response and more.',
                     'Open it from the Cell Line Browser, or Shift-click a cell line in any plot.',
                 ])}
             </div>
             ${shot('wiki_a375', 'The Wiki for A375: overview, history and cancer classification', 'wiki', { cap: 'The start of the A375 Wiki: an overview, its history and derived cell lines, and how it is classified.', btn: 'Open the A375 Wiki' })}
+        </div>
+        <div class="tour-text tour-text-wide" style="margin-top:56px;">
+            <h3>Know what you are working with</h3>
+            ${checks([
+                'Cell lines reported as misidentified or contaminated, or filed under the wrong cancer type, are flagged, with a transcriptome check of whether each cell line looks like its own tissue.',
+                'Cell lines with a reported virus, such as EBV or HPV, are marked, and the RNA sequencing reads of each cell line are searched for viral genes.',
+                'Quick filters include or exclude any of these groups in one click.',
+            ])}
         </div>
     </div>
     <div class="tour-wrap tour-next-row">${nextBtn('tour-more', 'Other features')}</div>
@@ -541,7 +547,7 @@ html.popout-open #tourNetHint { display: none; }
 #tourPage .tour-two .tour-shot img { aspect-ratio: 5 / 6; object-fit: contain; padding: 6px; }
 #tourPage .tour-two .tour-shot figcaption { flex: 1; }
 #tourPage .tour-two-net { align-items: stretch; }
-#tourPage .tour-two-pca { grid-template-columns: minmax(0, 99fr) minmax(0, 151fr); align-items: stretch; }
+#tourPage .tour-two-pca { grid-template-columns: minmax(0, 99fr) minmax(0, 123fr); align-items: stretch; }
 #tourPage .tour-two-pca .tour-shot img { aspect-ratio: auto; }
 #tourPage .tour-two-net .tour-shot img { aspect-ratio: 1 / 1; }
 #tourPage .tour-two-one { grid-template-columns: minmax(0, 560px); justify-content: center; }
