@@ -162,7 +162,6 @@
                 <li><span>Hover</span> a gene or an edge to see what it is.</li>
                 <li><span>Double-click a gene</span> for its gene effect across the cell lines.</li>
                 <li><span>Double-click an edge</span> for the correlation plot behind it.</li>
-                <li><span>Shift-click a gene</span> to open it in the Gene Browser.</li>
             </ul>`;
         card.querySelector('button').addEventListener('click', () => card.remove());
         document.body.appendChild(card);
@@ -224,9 +223,6 @@
         compare: (a) => compareMelanoma(a),
         pca: (a) => pcaMelanoma(a),
         heatmap: (a) => heatmapMelanoma(a),
-        myc: (a) => a.openGeneBrowser('MYC'),
-        tp53seq: async (a) => { a.openGeneBrowser('TP53'); await wait(2500); document.getElementById('gbStructCard')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); },
-        tsc1: (a) => a.openGeneBrowser('TSC1'),
         clb: (a) => openMelanoma(a, 'BRAF'),
         oncoprint: async (a) => {
             await openMelanoma(a, '');
@@ -290,7 +286,6 @@
             <a href="#tour-network">Gene set analysis</a>
             <a href="#tour-corr">Correlation plot</a>
             <a href="#tour-cells">Cell Line Browser</a>
-            <a href="#tour-gene">Gene Browser</a>
             <a href="#tour-more">Other features</a>
         </nav>
         <button type="button" class="tour-close" id="tourClose" title="Close the tour (Esc)">Close tour <span aria-hidden="true">&times;</span></button>
@@ -305,7 +300,6 @@
         <ul class="tour-hero-list">
             <li class="tour-hero-fn"><button type="button" class="tour-modebtn" data-next="#tour-network">Gene set<br>analysis</button><span>Find connections within your gene list, for example hits from a CRISPR screen or a transcriptomics experiment, from unbiased correlations of CRISPR gene effect${mrnaNet ? ' or mRNA' : ''} across the cell lines.</span></li>
             <li class="tour-hero-fn"><button type="button" class="tour-modebtn" data-next="#tour-cells">Cell Line<br>Browser</button><span>Find the right cell lines for your project, by mutations, mutation patterns and cancer type, and compare omics data between groups of cell lines.</span></li>
-            <li class="tour-hero-fn"><button type="button" class="tour-modebtn" data-next="#tour-gene">Gene<br>Browser</button><span>Get extensive information about any gene: dependency, expression, mutations, protein complexes, drugs and literature, gathered from DepMap, UniProt, Cellosaurus and other sources.</span></li>
             <li>Export any view for AI, to discuss the data with your favorite language model.</li>
         </ul>
         </div>
@@ -420,50 +414,10 @@
             ${shot('wiki_a375', 'The Wiki for A375: overview, history and cancer classification', 'wiki', { cap: 'The start of the A375 Wiki: an overview, its history and derived cell lines, and how it is classified.', btn: 'Open the A375 Wiki' })}
         </div>
     </div>
-    <div class="tour-wrap tour-next-row">${nextBtn('tour-gene', 'Gene Browser')}</div>
-</section>
-
-<section class="tour-sec tour-alt" id="tour-gene">
-    <div class="tour-wrap">
-        <div class="tour-feature tour-flip">
-            <div class="tour-text">
-                <p class="tour-eyebrow">4 &middot; Gene Browser</p>
-                <h2>A comprehensive summary of every gene</h2>
-                <p>Type a gene and get a summary over many sections: how much cells need it and which cancers need it most, how it is expressed, which genes follow it, which complexes and pathways it belongs to, its mutations, structure and sequence. Save it as a PDF. Open it from <b>Other</b> in the app, or shift-click a gene name.</p>
-                ${checks([
-                    'A verdict for dependency and for expression, ranked against every gene.',
-                    'Co-dependencies and co-expression, with complex partners ringed.',
-                    'Mutations, fusions, copy number, drug response, structure and sequence.',
-                ])}
-            </div>
-            ${shot('gb_myc', 'The Gene Browser page for MYC: description, chromosome position and records', 'myc', { cap: `${gi('MYC')} in the Gene Browser: description, chromosome position and the records it links to.`, btn: 'Open MYC in the Gene Browser' })}
-        </div>
-        <div class="tour-feature">
-            <div class="tour-text">
-                <h3>Which genes work with it?</h3>
-                ${checks([
-                    'Co-dependencies: the genes whose knockout affects the same cell lines, with known complex and pathway partners marked.',
-                    'Protein complexes from the EBI Complex Portal, showing how closely each member follows the gene.',
-                ])}
-            </div>
-            ${shot('gb_codep', 'Co-dependencies of TSC1 as a table and a fan figure', 'tsc1', { cap: `Co-dependencies of ${gi('TSC1')}, complex partners ringed.`, btn: 'Open TSC1 in the Gene Browser' })}
-        </div>
-        <div class="tour-text tour-text-wide" style="margin-top:56px;">
-            <h3>Exons and sequence</h3>
-            ${checks([
-                'The exon structure of the reference transcript (MANE Select) or any other transcript, with mutation hotspots marked.',
-                'A sequence viewer for the gene, mRNA, coding sequence or protein, with search and the exon junctions marked.',
-                'Download GenBank or FASTA files that open in SnapGene and other sequence editors.',
-            ])}
-        </div>
-        <div class="tour-wide-shot" style="margin-top:0;">
-            ${shot('gb_seq', 'The TP53 exon structure and its genomic sequence in the sequence viewer', 'tp53seq', { cap: `${gi('TP53')}: the exons of its MANE Select transcript, and the gene in the sequence viewer, exons in green between the introns and the start codon marked.`, btn: 'Open TP53 in the Gene Browser' })}
-        </div>
-    </div>
     <div class="tour-wrap tour-next-row">${nextBtn('tour-more', 'Other features')}</div>
 </section>
 
-<section class="tour-sec" id="tour-more">
+<section class="tour-sec tour-alt" id="tour-more">
     <div class="tour-wrap">
         <p class="tour-eyebrow">Other features</p>
         <p class="tour-lead-note">Found under <b>Other</b> in the app: ${otherTools.slice(0, -1).join(', ')} and ${otherTools[otherTools.length - 1]}.</p>
