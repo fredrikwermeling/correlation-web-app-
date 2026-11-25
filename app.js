@@ -62781,7 +62781,7 @@ ${clone.innerHTML}
         document.getElementById('clbUmapDataType').value = 'expr';
         const gcSel = document.getElementById('clbUmapGeneClass');
         if (gcSel) gcSel.value = '';
-        document.getElementById('clbUmapColorBy').value = 'tissue';
+        document.getElementById('clbUmapColorBy').value = 'usage';
         document.getElementById('clbUmapTissueFilter').value = '';
         document.getElementById('clbUmapSubtypeFilter').value = '';
         document.getElementById('clbUmapSubtypeFilter').style.display = 'none';
