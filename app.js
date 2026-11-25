@@ -2813,7 +2813,7 @@ class CorrelationExplorer {
         }
         if (v('clbTranslocationFilter')) bits.push(`fusion ${v('clbTranslocationFilter')}`);
         if (v('clbCnFilter')) bits.push(`copy-number event in ${v('clbCnFilter')}`);
-        for (const f of (this._activeOncoprintFilters || [])) bits.push(`${f.gene} ${this._gridStateWord(f.state)}`);
+        for (const f of (this._activeOncoprintFilters || [])) bits.push(`${f.gene} ${this._gridStateWord(f.state, f.gene)}`);
         for (const [k, s] of (this._clbCollectionStates || new Map())) bits.push(`quick filter "${k}" ${s}`);
         return bits;
     }
@@ -3184,6 +3184,14 @@ class CorrelationExplorer {
             // Build the missing entries from the matrix rather than dropping
             // them, or the plot silently refuses to open.
             const fromMatrix = (name) => {
+                if (this._oncoprintKind === 'lof') {
+                    const m = this.functionalLoss?.geneData?.[name.replace(/ function$/, '')]?.mutations;
+                    if (!m) return null;
+                    const cls = data.allFilteredCLs || data.sortedCLs || [];
+                    let n = 0;
+                    for (const cl of cls) if (m[cl] >= 1) n++;
+                    return { gene: name, n, muts: m };
+                }
                 const src = this._oncoprintKind === 'fusion' ? this.translocations?.geneData
                     : this._oncoprintKind === 'cn' ? null
                     : (this.mutations?.geneData || this.damagingMutations?.geneData);
@@ -3222,7 +3230,8 @@ class CorrelationExplorer {
                 if (!used.has(g.gene)) { upsetGenes.push(g); used.add(g.gene); }
             }
             const kindWord = this._oncoprintKind === 'fusion' ? 'by fusion count'
-                : this._oncoprintKind === 'cn' ? 'by event count' : 'most mutated';
+                : this._oncoprintKind === 'cn' ? 'by event count'
+                : this._oncoprintKind === 'lof' ? 'most often lost' : 'most mutated';
             upsetLabel = hotspotGene ? `${hotspotGene} + Top ${upsetGenes.length - 1}` : `Top ${upsetGenes.length} ${kindWord}`;
         }
         if (upsetGenes.length < 2) {
@@ -3360,6 +3369,7 @@ class CorrelationExplorer {
                 const upKind = this._oncoprintKind;
                 const upHit = upKind === 'fusion' ? (b === '1' ? 'Fusion called' : 'No fusion called')
                     : upKind === 'cn' ? (b === '1' ? 'Event present' : 'No event')
+                    : upKind === 'lof' ? (b === '1' ? 'Function lost' : 'Intact')
                     : (b === '1' ? 'Mutated' : 'WT');
                 dotText.push(`${upsetGenes[row].gene}: ${upHit}`);
             });
@@ -4100,6 +4110,15 @@ class CorrelationExplorer {
             for (const [gene, muts] of Object.entries(rows)) {
                 geneCounts.push({ gene, n: Object.keys(muts).length, muts });
             }
+        } else if (gridKind === 'lof') {
+            const fd = this.functionalLoss?.geneData || {};
+            for (const g of Object.keys(fd)) {
+                const src = fd[g].mutations || {};
+                const muts = {};
+                let n = 0;
+                for (const cl of clsToShow) if (src[cl] >= 1) { muts[cl] = 1; n++; }
+                if (n > 0) geneCounts.push({ gene: `${g} function`, n, muts });
+            }
         } else {
             for (const gene of Object.keys(this.mutations.geneData)) {
                 if (this._isPolymorphicLocus(gene)) continue;
@@ -4116,7 +4135,8 @@ class CorrelationExplorer {
         if (topGenes.length === 0) {
             // Silently doing nothing reads as a broken button.
             const emptyWord = gridKind === 'fusion' ? 'curated driver fusion'
-                            : gridKind === 'cn' ? 'focal copy-number event' : 'hotspot mutation';
+                            : gridKind === 'cn' ? 'focal copy-number event'
+                            : gridKind === 'lof' ? 'functional loss call' : 'hotspot mutation';
             const empty = document.createElement('div');
             empty.id = 'oncoprintPopup';
             // Capped to the screen: a fixed 420px pinned to the right edge
@@ -4219,6 +4239,7 @@ class CorrelationExplorer {
         // reader who has not met it, so the plain description leads.
         const gridTitle = gridKind === 'fusion' ? `Fusion grid, ${topGenes.length} curated driver fusions`
                         : gridKind === 'cn' ? `Copy-number grid, top ${topGenes.length} focal events`
+                        : gridKind === 'lof' ? `Functional loss grid, ${topGenes.length} tumor suppressors`
                         : `Mutation grid, top ${topGenes.length} hotspot genes`;
         // On a phone the header has to give: nowrap on both spans made it wider
         // than the popup, which pushed the close button off the right edge with
@@ -4233,8 +4254,9 @@ class CorrelationExplorer {
             ? ['called', 'high-confidence or published call', 'not called']
             : gridKind === 'cn'
                 ? ['single-copy change', 'deep change', 'no event']
+                : gridKind === 'lof' ? ['lost (deep deletion, loss-of-function mutation or silenced)', null, 'intact']
                 : ['1 mut', '2 mut', 'WT'];
-        html += `<div style="font-size:9px; color:#9ca3af; margin-bottom:4px;"><span style="color:#5d9239;">■</span> include · <span style="color:#dc2626;">■</span> exclude · <span style="display:inline-block;width:8px;height:8px;background:#3b82f6;vertical-align:middle;"></span> ${legendWords[0]} · <span style="display:inline-block;width:8px;height:8px;background:#1e40af;vertical-align:middle;"></span> ${legendWords[1]} · <span style="display:inline-block;width:8px;height:8px;background:#f3f4f6;border:1px solid #d1d5db;vertical-align:middle;"></span> ${legendWords[2]}</div>`;
+        html += `<div style="font-size:9px; color:#9ca3af; margin-bottom:4px;"><span style="color:#5d9239;">■</span> include · <span style="color:#dc2626;">■</span> exclude · <span style="display:inline-block;width:8px;height:8px;background:#3b82f6;vertical-align:middle;"></span> ${legendWords[0]} · ${legendWords[1] ? `<span style="display:inline-block;width:8px;height:8px;background:#1e40af;vertical-align:middle;"></span> ${legendWords[1]} · ` : ''}<span style="display:inline-block;width:8px;height:8px;background:#f3f4f6;border:1px solid #d1d5db;vertical-align:middle;"></span> ${legendWords[2]}</div>`;
         html += `<div style="display:flex; align-items:flex-start; width:100%;">`;
         html += `<canvas id="oncoprintLabelCanvas" style="flex:none; cursor:pointer;"></canvas>`;
         html += `<div id="oncoprintGridScroll" style="flex:1 1 auto; min-width:0; overflow-x:auto; overflow-y:hidden;"><canvas id="oncoprintGridCanvas" style="display:block;"></canvas></div>`;
@@ -4415,7 +4437,7 @@ class CorrelationExplorer {
                 }
                 const tags = activeFilters.map(([gene, state]) => {
                     const on = !self._gridStateIsWT(state);
-                    return `<span style="display:inline-flex;align-items:center;gap:2px;padding:1px 6px;border-radius:10px;font-size:10px;background:${on ? '#dcfce7' : '#fef2f2'};color:${on ? '#5d9239' : '#dc2626'};border:1px solid ${on ? '#86efac' : '#fecaca'};">${self.gi(gene)} ${self._gridStateWord(state)}<button data-gene="${self.esc(gene)}" onclick="app._oncoprintClearGene(this.dataset.gene)" style="background:none;border:none;cursor:pointer;font-size:10px;color:#999;padding:0 0 0 2px;">×</button></span>`;
+                    return `<span style="display:inline-flex;align-items:center;gap:2px;padding:1px 6px;border-radius:10px;font-size:10px;background:${on ? '#dcfce7' : '#fef2f2'};color:${on ? '#5d9239' : '#dc2626'};border:1px solid ${on ? '#86efac' : '#fecaca'};">${self.gi(gene)} ${self._gridStateWord(state, gene)}<button data-gene="${self.esc(gene)}" onclick="app._oncoprintClearGene(this.dataset.gene)" style="background:none;border:none;cursor:pointer;font-size:10px;color:#999;padding:0 0 0 2px;">×</button></span>`;
                 }).join('');
                 statusEl.innerHTML = `${tags} <span style="color:#6b7280;">${matchCount}/${filteredCLs.length} CLs</span> <button onclick="app._oncoprintApplyFilters()" style="padding:5px 16px;font-size:12px;font-weight:700;background:#4c782e;color:white;border:none;border-radius:5px;cursor:pointer;box-shadow:0 2px 6px rgba(76, 120, 46,0.35);" title="Apply these include / exclude choices and close the grid">Apply &rarr;</button> <button onclick="app._oncoprintClearAll()" style="padding:2px 8px;font-size:10px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:4px;cursor:pointer;">Clear</button>`;
             }
@@ -4512,6 +4534,7 @@ class CorrelationExplorer {
             const hasIt = g.muts[cl] > 0;
             const hitWord = gridKind === 'fusion' ? (hasIt ? 'Fusion called' : 'No fusion called')
                           : gridKind === 'cn' ? (hasIt ? 'Event present' : 'No event')
+                          : gridKind === 'lof' ? (hasIt ? 'Function lost' : 'Intact')
                           : (hasIt ? 'Mutated' : 'WT');
             gridCanvas.title = `${g.gene} · ${this.getCellLineName(cl)} · ${hitWord}`;
         });
@@ -4548,7 +4571,7 @@ class CorrelationExplorer {
             // Browser-scoped picks are not part of the analysis cohort, so
             // they have no business in the parameters box.
             if (filters.length > 0 && this._gridFilterOrigin !== 'clb') {
-                const parts = filters.map(([gene, state]) => `${gene} ${this._gridStateWord(state)}`);
+                const parts = filters.map(([gene, state]) => `${gene} ${this._gridStateWord(state, gene)}`);
                 label.innerHTML = `Grid filter: ${parts.join(', ')} <span style="font-size:9px;color:#9ca3af;">(click to clear)</span>`;
                 label.style.display = '';
                 label.onclick = () => { this._oncoprintClearAll(); };
@@ -4777,6 +4800,9 @@ class CorrelationExplorer {
             // Same test the filters and the analysis use, so a published call
             // counts here too rather than the grid alone disagreeing.
             return this._geFusionPasses(cellLine, label);
+        }
+        if (kind === 'lof') {
+            return this.functionalLoss?.geneData?.[label.replace(/ function$/, '')]?.mutations?.[cellLine] >= 1;
         }
         if (kind === 'cn') {
             const m = /^(.*) (amp|del)$/.exec(label);
@@ -11613,7 +11639,7 @@ class CorrelationExplorer {
         if (this._activeOncoprintFilters && this._activeOncoprintFilters.length > 0) {
             for (const f of this._activeOncoprintFilters) {
                 if (!shownGenes.has(f.gene)) {
-                    mutFilterParts.push(`${this.gi(f.gene)} ${this.esc(this._gridStateWord(f.state))}`);
+                    mutFilterParts.push(`${this.gi(f.gene)} ${this.esc(this._gridStateWord(f.state, f.gene))}`);
                     shownGenes.add(f.gene);
                 }
             }
@@ -11914,7 +11940,7 @@ class CorrelationExplorer {
             const shown = new Set([mr.hotspotGene, this._stripMutDecoration(mr.additionalHotspot)].filter(Boolean));
             for (const f of this._activeOncoprintFilters) {
                 if (!shown.has(f.gene)) {
-                    allMutFilters.push(`${f.gene} ${this._gridStateWord(f.state)}`);
+                    allMutFilters.push(`${f.gene} ${this._gridStateWord(f.state, f.gene)}`);
                     shown.add(f.gene);
                 }
             }
@@ -12361,7 +12387,7 @@ class CorrelationExplorer {
             const shown = new Set([mr.hotspotGene, this._stripMutDecoration(mr.additionalHotspot), mr.additionalTransGene].filter(Boolean));
             for (const f of this._activeOncoprintFilters) {
                 if (!shown.has(f.gene)) {
-                    filterInfo.push(`${this.gi(f.gene)} ${this._gridStateWord(f.state)}`);
+                    filterInfo.push(`${this.gi(f.gene)} ${this._gridStateWord(f.state, f.gene)}`);
                 }
             }
         }
@@ -16307,7 +16333,7 @@ Results:
             if (translocGene) shown.add(translocGene);
             for (const f of this._activeOncoprintFilters) {
                 if (!shown.has(f.gene)) {
-                    parts.push(`${f.gene} ${this._gridStateWord(f.state)}`);
+                    parts.push(`${f.gene} ${this._gridStateWord(f.state, f.gene)}`);
                     shown.add(f.gene);
                 }
             }
@@ -19996,7 +20022,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // with the same gene in the scatter's own hotspot / fusion / CN
         // selector, so a gene already named above is not named twice.
         const named = new Set([this._stripMutDecoration(mutFilterGene), this._stripFusionFilterDecoration(transFilterGene), this._stripCnFilterDecoration(cnFilterVal).replace(/_(amp|del)$/, '')].filter(Boolean).map(g => g.toUpperCase()));
-        const gridWord = (f) => `${g(f.gene)} ${this._gridStateWord(f.state)}`;
+        const gridWord = (f) => `${g(f.gene)} ${this._gridStateWord(f.state, f.gene)}`;
         (this._activeOncoprintFilters || []).forEach(f => { if (!named.has(String(f.gene).toUpperCase())) { parts.push(gridWord(f)); named.add(String(f.gene).toUpperCase()); } });
         (this._scatterGridActive || []).forEach(f => { if (!named.has(String(f.gene).toUpperCase())) { parts.push(gridWord(f)); named.add(String(f.gene).toUpperCase()); } });
         if (this._gateFilter) parts.push(`Gate ${this._gateFilter.gate} (${this._gateFilter.n} cell lines)`);
@@ -20856,10 +20882,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // Picks made from an alteration grid, when they apply to the analysis.
         if (this._gridAppliesToAnalysis?.()) {
             for (const f of (this._activeOncoprintFilters || [])) {
-                add(`${f.gene} ${this._gridStateWord(f.state)}`,
+                add(`${f.gene} ${this._gridStateWord(f.state, f.gene)}`,
                     () => { delete this._oncoprintFilters[f.gene]; this._oncoprintSyncFilters?.(); },
                     'Picked from the alteration grid', undefined,
-                    `${this.gi(f.gene)} ${this._gridStateWord(f.state)}`);
+                    `${this.gi(f.gene)} ${this._gridStateWord(f.state, f.gene)}`);
             }
         }
         if (this._customCellLineFilter?.size) add(`${this._customCellLineFilter.size} pasted cell line${this._customCellLineFilter.size === 1 ? '' : 's'}`,
@@ -23285,7 +23311,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
         if (transFilterGene) parts.push(`Fusion: ${this.giFusion(this._stripFusionFilterDecoration(transFilterGene))}`);
         if (cnFilterVal) parts.push(`CN: ${this.giCn(cnFilterVal)}`);
-        (this._scatterGridActive || []).forEach(f => parts.push(`${this.gi(f.gene)} ${this._gridStateWord(f.state)}`));
+        (this._scatterGridActive || []).forEach(f => parts.push(`${this.gi(f.gene)} ${this._gridStateWord(f.state, f.gene)}`));
         if (this._customCellLineFilter) parts.push(`Custom: ${this._customCellLineFilter.size} CLs`);
         return { filteredData: fd, filterDesc: parts.join(' | ') };
     }
@@ -25705,7 +25731,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const label = this._stripCnFilterDecoration(cnRaw).replace(/_(amp|del)$/, (_, k) => k === 'amp' ? ' amp' : ' del');
             parts.push(`${label} ${this._filterIsWildType('cn', v('ctCnLevel') || 'altered') ? 'absent' : 'present'}`);
         }
-        (this._activeOncoprintFilters || []).forEach(f => parts.push(`${f.gene} ${this._gridStateWord(f.state)} (grid)`));
+        (this._activeOncoprintFilters || []).forEach(f => parts.push(`${f.gene} ${this._gridStateWord(f.state, f.gene)} (grid)`));
         return parts;
     }
 
@@ -32394,7 +32420,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const tags = this._activeOncoprintFilters.map(f => {
                 const bg = !this._gridStateIsWT(f.state) ? '#dcfce7' : '#fef2f2';
                 const color = !this._gridStateIsWT(f.state) ? '#5d9239' : '#dc2626';
-                return `<span style="background:${bg};color:${color};padding:1px 6px;border-radius:10px;font-size:10px;">${this.gi(f.gene)} ${this._gridStateWord(f.state)}</span>`;
+                return `<span style="background:${bg};color:${color};padding:1px 6px;border-radius:10px;font-size:10px;">${this.gi(f.gene)} ${this._gridStateWord(f.state, f.gene)}</span>`;
             }).join(' ');
             el.innerHTML = tags + ` <span style="font-size:10px;color:#6b7280;">(${filteredN}/${totalN} cell lines)</span>`;
             el.style.display = 'inline-flex';
@@ -32854,7 +32880,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         // _gridAppliesToAnalysis), and naming them anyway credited the chart
         // with a filter it had ignored.
         if (this._gridAppliesToAnalysis?.() && this._activeOncoprintFilters?.length > 0) {
-            this._activeOncoprintFilters.forEach(f => parts.push(`${f.gene} ${this._gridStateWord(f.state)}`));
+            this._activeOncoprintFilters.forEach(f => parts.push(`${f.gene} ${this._gridStateWord(f.state, f.gene)}`));
         }
         // A pasted cell-line list is the only filter here that leaves no mark
         // on any control: the lineage box still reads "All lineages" while the
@@ -36525,7 +36551,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const clickedLabelled = this.clickedCells?.size ? [...this.clickedCells] : null;
             // Grid picks scoped to this scatter alone (distinct from the
             // shared alteration-grid filters, which apply everywhere).
-            const scatterGridBits = (this._scatterGridActive || []).map(f => `${f.gene} ${this._gridStateWord(f.state)}`);
+            const scatterGridBits = (this._scatterGridActive || []).map(f => `${f.gene} ${this._gridStateWord(f.state, f.gene)}`);
             context = {
                 type: 'scatter_correlation', gene1: ci?.gene1, gene2: ci?.gene2,
                 correlation: ci?.correlation, xType: ci?.xType, yType: ci?.yType,
@@ -36691,7 +36717,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const transGene = document.getElementById('paramTranslocationGene')?.value;
             const transLevel = document.getElementById('paramTranslocationLevel')?.value;
             if (transGene) filterParts.push(`Fusion: ${transGene} ${transLevel === '1+2' ? 'Fused' : transLevel === '0' ? 'Not fused' : `level ${transLevel}`}`);
-            if (this._activeOncoprintFilters) for (const f of this._activeOncoprintFilters) filterParts.push(`Oncoprint: ${f.gene} ${this._gridStateWord(f.state)}`);
+            if (this._activeOncoprintFilters) for (const f of this._activeOncoprintFilters) filterParts.push(`Oncoprint: ${f.gene} ${this._gridStateWord(f.state, f.gene)}`);
             if (this._customCellLineFilter?.size) filterParts.push(`Custom CL list (n=${this._customCellLineFilter.size})`);
             const inputGenes = (this.getGeneList && this.getGeneList()) || [];
             context = {
@@ -44283,7 +44309,10 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     }
 
     // How a grid pick reads in a chip or a caption.
-    _gridStateWord(state) {
+    // Functional-loss grid rows are keyed "GENE function" so they never
+    // collide with the same gene's hotspot row; they read lost / intact.
+    _gridStateWord(state, gene) {
+        if (/ function$/.test(gene || '')) return this._gridStateIsWT(state) ? 'intact' : 'lost';
         return { '1': 'Mut (1 copy)', '2': 'Mut (2 copies)', '1+2': 'Mut', mut: 'Mut', altered: 'Mut', wt: 'WT', '0': 'WT' }[state] || 'Mut';
     }
 
@@ -46901,7 +46930,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         }
         if (this._activeOncoprintFilters?.length) {
             push('Alteration grid filters', this._activeOncoprintFilters
-                .map(f => `${f.gene} ${this._gridStateWord(f.state)} (${f.kind})`).join(', '));
+                .map(f => `${f.gene} ${this._gridStateWord(f.state, f.gene)} (${f.kind})`).join(', '));
         }
         push('Cell lines currently listed', String(this._clbVisibleCellLines?.length ?? ''));
         push('Cell lines ticked', String(this._clbSelectedCellLines?.size ?? ''));
@@ -47222,6 +47251,14 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 // least 60px stays on screen to grab it by.
                 const minTop = -(h - 60);
                 const maxTop = window.innerHeight - 60;
+                // A panel inside the Cell Line Browser card is clipped by the
+                // card, so it stays within the card rather than the window.
+                const cr = el.closest('#clbModalCard')?.getBoundingClientRect();
+                if (cr) {
+                    put('left', Math.min(Math.max(cr.left, cr.right - w), Math.max(cr.left, e2.clientX - dx)) + 'px');
+                    put('top', Math.max(cr.top, Math.min(cr.bottom - h, e2.clientY - dy)) + 'px');
+                    return;
+                }
                 put('left', Math.min(maxLeft, Math.max(0, e2.clientX - dx)) + 'px');
                 put('top', Math.min(maxTop, Math.max(minTop, e2.clientY - dy)) + 'px');
             };
@@ -47383,7 +47420,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     _resetPanelAnchor(el, top = '100%', left = '0') {
         if (!el) return;
         // Undo a size clamp from _fitPopupInViewport, the markup's own limits return.
-        if (el.dataset.baseMaxW === undefined) { el.dataset.baseMaxW = el.style.maxWidth; el.dataset.baseMaxH = el.style.maxHeight; }
+        if (el.dataset.baseMaxW === undefined) { el.dataset.baseMaxW = el.style.maxWidth; el.dataset.baseMaxH = el.style.maxHeight; el.dataset.baseW = el.style.width; }
+        el.style.width = el.dataset.baseW;
         el.style.maxWidth = el.dataset.baseMaxW;
         el.style.maxHeight = el.dataset.baseMaxH;
         el.style.position = 'absolute';
@@ -47613,6 +47651,11 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                     requestAnimationFrame(() => this._fitPopupInViewport(clbCollectionPanel));
                 }
             });
+            // Its content can widen after it opens (counts arrive, a filter
+            // changes), so it is refitted whenever its size or the window changes.
+            const refit = () => { if (clbCollectionPanel.style.display === 'block') this._fitPopupInViewport(clbCollectionPanel); };
+            new ResizeObserver(refit).observe(clbCollectionPanel);
+            window.addEventListener('resize', refit);
             document.querySelectorAll('.clb-dropdown').forEach(el => this._containWheel(el));
             document.addEventListener('click', (e) => {
                 // composedPath, not contains: a +/- click re-renders the panel,
@@ -47831,6 +47874,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         document.getElementById('clbGridHotspotBtn')?.addEventListener('click', () => this.showOncoprint('clb', 'hotspot'));
         document.getElementById('clbGridFusionBtn')?.addEventListener('click', () => this.showOncoprint('clb', 'fusion'));
         document.getElementById('clbGridCnBtn')?.addEventListener('click', () => this.showOncoprint('clb', 'cn'));
+        document.getElementById('clbGridLofBtn')?.addEventListener('click', () => this.showOncoprint('clb', 'lof'));
+        document.getElementById('clbLofFilter')?.addEventListener('change', () => this._onClbLofMenu());
+        for (const id of Object.keys(this._CLB_ACCESS_MENUS())) document.getElementById(id)?.addEventListener('change', () => this._onClbAccessMenu(id));
 
         // Custom cell lines moved from a text box in the toolbar to a popout,
         // anchored under its button.
@@ -48470,6 +48516,82 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // Set of cell lines passing all active CLB filters EXCEPT the named kind, so
     // the hotspot / fusion / CN dropdowns only list options present in that cohort
     // (e.g. with a tissue or hotspot filter on, fusions show only those in scope).
+    // Literature use, cell bank and functional loss menus in the filter row.
+    // They set the same quick filters and grid picks as the panel and the
+    // grid, so chips, saved views and exports need nothing of their own.
+    _CLB_ACCESS_MENUS() {
+        return {
+            clbUsageFilter: { all: 'Any literature use', kind: 'usage', ids: ['lit_very_common', 'lit_common_plus', 'lit_common', 'lit_uncommon', 'lit_rare'] },
+            clbBankFilter: { all: 'Any cell bank', kind: 'bank', ids: ['avail_any', 'avail_atcc', 'avail_dsmz', 'avail_ecacc', 'avail_japan', 'avail_none'] },
+        };
+    }
+
+    _clbLofPick() {
+        return Object.entries(this._oncoprintFilters || {}).find(([g, v]) => / function$/.test(g) && v && v !== 'none') || null;
+    }
+
+    _syncClbAccessMenus() {
+        const mem = this._collectionMembership || {};
+        const opt = (v, t, cur) => `<option value="${this.esc(v)}"${v === cur ? ' selected' : ''}>${this.esc(t)}</option>`;
+        for (const [selId, m] of Object.entries(this._CLB_ACCESS_MENUS())) {
+            const sel = document.getElementById(selId);
+            if (!sel) continue;
+            const cohort = this._clbCohortExcluding(m.kind);
+            const cur = m.ids.find(id => this._clbCollectionStates.get(id) === 'include') || '';
+            sel.innerHTML = opt('', `${m.all} (n=${cohort.size})`, cur) + m.ids.map(id => {
+                let n = 0;
+                const set = mem[id];
+                if (set) for (const cl of cohort) if (set.has(cl)) n++;
+                return opt(id, `${this._getCollectionLabel(id)} (n=${n})`, cur);
+            }).join('');
+            sel.value = cur;
+        }
+        const lsel = document.getElementById('clbLofFilter');
+        const fd = this.functionalLoss?.geneData;
+        if (lsel && fd) {
+            const cohort = this._clbCohortExcluding('lof');
+            const pick = this._clbLofPick();
+            const cur = pick ? `${pick[0].replace(/ function$/, '')}|${this._gridStateIsWT(pick[1]) ? 'wt' : 'lost'}` : '';
+            const genes = Object.keys(fd).map(g => {
+                const m = fd[g].mutations || {};
+                let n = 0;
+                for (const cl of cohort) if (m[cl] >= 1) n++;
+                return { g, n };
+            }).sort((a, b) => b.n - a.n);
+            lsel.innerHTML = opt('', 'Functional loss...', cur)
+                + `<optgroup label="Function lost">${genes.map(x => opt(`${x.g}|lost`, `${x.g} lost (n=${x.n})`, cur)).join('')}</optgroup>`
+                + `<optgroup label="Function intact">${genes.map(x => opt(`${x.g}|wt`, `${x.g} intact (n=${cohort.size - x.n})`, cur)).join('')}</optgroup>`;
+            lsel.value = cur;
+        }
+    }
+
+    _onClbAccessMenu(selId) {
+        const m = this._CLB_ACCESS_MENUS()[selId];
+        const v = document.getElementById(selId)?.value || '';
+        for (const id of m.ids) if (this._clbCollectionStates.get(id) === 'include') this._clbCollectionStates.delete(id);
+        if (v) this._clbCollectionStates.set(v, 'include');
+        this._renderCollectionPanel();
+        this.renderCellLineList();
+    }
+
+    // The menu replaces the pick it shows; other functional loss picks made
+    // in the grid stay.
+    _onClbLofMenu() {
+        const v = document.getElementById('clbLofFilter')?.value || '';
+        if (!this._oncoprintFilters) this._oncoprintFilters = {};
+        if (!this._oncoprintFilterKinds) this._oncoprintFilterKinds = {};
+        const pick = this._clbLofPick();
+        if (pick) delete this._oncoprintFilters[pick[0]];
+        if (v) {
+            const [g, side] = v.split('|');
+            const key = `${g} function`;
+            this._oncoprintFilters[key] = side === 'wt' ? 'wt' : 'mut';
+            this._oncoprintFilterKinds[key] = 'lof';
+        }
+        this._oncoprintContext = 'clb';
+        this._oncoprintSyncFilters();
+    }
+
     _clbCohortExcluding(kind) {
         const search = document.getElementById('clbSearch').value.trim().toLowerCase();
         const tissue = document.getElementById('clbTissueFilter').value;
@@ -48490,6 +48612,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const hotspotMuts = hotspotGene && this._mutCalls(hotspotGene);
         const collectionStates = this._clbCollectionStates;
         const collectionMem = this._collectionMembership || {};
+        const skipPrefix = kind === 'usage' ? 'lit_' : kind === 'bank' ? 'avail_' : '';
+        const gridPicks = kind === 'lof' ? (this._activeOncoprintFilters || []).filter(f => f.kind !== 'lof') : undefined;
         const set = new Set();
         for (const cl of this.metadata.cellLines) {
             if (tissue && this.getCellLineLineage(cl) !== tissue) continue;
@@ -48499,7 +48623,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (hotspotMuts) { const l = hotspotMuts[cl] || 0; if (hotspotLvl === '0' ? l !== 0 : hotspotLvl === '1' ? l !== 1 : hotspotLvl === '2' ? l < 2 : l < 1) continue; }
             if (transGene) { const has = this._geFusionPasses(cl, transGene); if (fusionLvl === '0' ? has : !has) continue; }
             if (cnFilterValue) { const has = this._cellLinePassesCnFilter(cl, cnFilterValue); if (cnLvl === 'wt' ? has : !has) continue; }
-            if (!this._cellLinePassesOncoprintFilters(cl)) continue;
+            if (!this._cellLinePassesOncoprintFilters(cl, gridPicks)) continue;
             if (this._customCellLineFilterCLB && !this._customCellLineFilterCLB.has(cl)) continue;
             if (search) {
                 const name = this.getCellLineName(cl).toLowerCase();
@@ -48509,6 +48633,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             if (collectionStates && collectionStates.size > 0) {
                 let ok = true;
                 for (const [id, state] of collectionStates) {
+                    if (skipPrefix && id.startsWith(skipPrefix)) continue;
                     const inSet = collectionMem[id]?.has(cl);
                     if (state === 'include' && !inSet) { ok = false; break; }
                     if (state === 'exclude' && inSet) { ok = false; break; }
@@ -49057,6 +49182,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
 
         this._clbVisibleCellLines = filtered;
         this._updateClbActiveFilterLabel();
+        this._syncClbAccessMenus();
         // Keep the UMAP/PCA "Visible in list above" option count in sync with
         // the browser's current filter state.
         this._syncUmapVisibleOpt();
@@ -49600,7 +49726,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             const on = !this._gridStateIsWT(f.state);
             parts.push(`<span class="clb-chip" data-chip="grid" data-grid-gene="${this.esc(f.gene)}" title="Click to change which cell lines are kept, or to remove"`
                 + ` style="background:${on ? '#dcfce7' : '#fef2f2'};color:${on ? '#5d9239' : '#dc2626'};padding:1px 6px;border-radius:10px;cursor:pointer;">`
-                + `${this.gi(f.gene)} ${this._gridStateWord(f.state)} &#9662;</span>`);
+                + `${this.gi(f.gene)} ${this._gridStateWord(f.state, f.gene)} &#9662;</span>`);
         }
         // The scatter's own grid picks, scoped to that plot alone.
         if (ctxName === 'scatter') {
@@ -49609,7 +49735,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 const on = !this._gridStateIsWT(f.state);
                 parts.push(`<span class="clb-chip" data-chip="sgrid" data-grid-gene="${this.esc(f.gene)}" title="Grid pick for this scatter only. Click to change which cell lines are kept, or to remove"`
                     + ` style="background:${on ? '#dcfce7' : '#fef2f2'};color:${on ? '#5d9239' : '#dc2626'};padding:1px 6px;border-radius:10px;cursor:pointer;">`
-                    + `${this.gi(f.gene)} ${this._gridStateWord(f.state)} &#9662;</span>`);
+                    + `${this.gi(f.gene)} ${this._gridStateWord(f.state, f.gene)} &#9662;</span>`);
             }
         }
 
@@ -49857,6 +49983,9 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 { label: 'One copy mutated', active: cur === '1', act: () => { this._oncoprintFilters[gene] = '1'; } },
                 { label: 'Both copies mutated', active: cur === '2', act: () => { this._oncoprintFilters[gene] = '2'; } },
                 { label: 'Wild-type', active: cur === 'wt' || cur === '0', act: () => { this._oncoprintFilters[gene] = 'wt'; } },
+            ] : gKind === 'lof' ? [
+                { label: 'Function lost', active: cur === 'mut', act: () => { this._oncoprintFilters[gene] = 'mut'; } },
+                { label: 'Function intact', active: cur === 'wt', act: () => { this._oncoprintFilters[gene] = 'wt'; } },
             ] : [
                 { label: 'Require altered', active: cur === 'mut', act: () => { this._oncoprintFilters[gene] = 'mut'; } },
                 { label: 'Require wild-type', active: cur === 'wt', act: () => { this._oncoprintFilters[gene] = 'wt'; } },
@@ -49967,7 +50096,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
                 if (!shown.has(f.gene)) {
                     const bg = !this._gridStateIsWT(f.state) ? '#dcfce7' : '#fef2f2';
                     const color = !this._gridStateIsWT(f.state) ? '#5d9239' : '#dc2626';
-                    parts.push(`<span class="clb-chip" data-chip="grid" data-grid-gene="${this.esc(f.gene)}" title="Click to switch side or remove" style="background:${bg};color:${color};padding:1px 6px;border-radius:10px;">${this.gi(f.gene)} ${this._gridStateWord(f.state)} &#9662;</span>`);
+                    parts.push(`<span class="clb-chip" data-chip="grid" data-grid-gene="${this.esc(f.gene)}" title="Click to switch side or remove" style="background:${bg};color:${color};padding:1px 6px;border-radius:10px;">${this.gi(f.gene)} ${this._gridStateWord(f.state, f.gene)} &#9662;</span>`);
                 }
             }
         }
@@ -50932,7 +51061,7 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             if (this._activeOncoprintFilters) {
                 const shown = new Set([this._stripMutDecoration(hotspotVal), transVal].filter(Boolean));
                 for (const f of this._activeOncoprintFilters) {
-                    if (!shown.has(f.gene)) filterParts.push(`${f.gene} ${this._gridStateWord(f.state)}`);
+                    if (!shown.has(f.gene)) filterParts.push(`${f.gene} ${this._gridStateWord(f.state, f.gene)}`);
                 }
             }
             const filterLabel = `filtered (n=${filteredIndices.length})${filterParts.length > 0 ? ': ' + filterParts.join(', ') : ''}`;
@@ -51513,6 +51642,8 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         const t = String(g == null ? '' : g);
         if (!t) return '';
         if (t === '⚡ Growth Rate' || t.startsWith('📊')) return this.esc(t);
+        const fn = /^(\S+) function$/.exec(t);
+        if (fn) return `<i>${this.esc(fn[1])}</i> function`;
         return `<i>${this.esc(t)}</i>`;
     }
 
@@ -72478,8 +72609,8 @@ ${clone.innerHTML}
         if (v('scatterCancerFilter')) bits.push(`tissue ${v('scatterCancerFilter')}`);
         if (v('scatterSubtypeFilter')) bits.push(`subtype ${v('scatterSubtypeFilter')}`);
         if (v('scatterOncotreeFilter')) bits.push(`disease ${v('scatterOncotreeFilter')}`);
-        for (const f of (this._activeOncoprintFilters || [])) bits.push(`${f.gene} ${this._gridStateWord(f.state)} (from the analysis panel)`);
-        for (const f of (this._scatterGridActive || [])) bits.push(`${f.gene} ${this._gridStateWord(f.state)} (picked on this plot)`);
+        for (const f of (this._activeOncoprintFilters || [])) bits.push(`${f.gene} ${this._gridStateWord(f.state, f.gene)} (from the analysis panel)`);
+        for (const f of (this._scatterGridActive || [])) bits.push(`${f.gene} ${this._gridStateWord(f.state, f.gene)} (picked on this plot)`);
         const mg = v('mutationFilterGene');
         if (mg) {
             const lvl = v('mutationFilterLevel') || '1+2';
@@ -72823,7 +72954,7 @@ ${clone.innerHTML}
         if (mr.excludedTissues?.size) cohortBits.push(`${mr.excludedTissues.size} tissue${mr.excludedTissues.size === 1 ? '' : 's'} excluded (${[...mr.excludedTissues].join(', ')})`);
         if (mr.additionalHotspot && mr.additionalHotspotLevel !== 'all') cohortBits.push(this._mutFilterPhrase(mr.additionalHotspot, mr.additionalHotspotLevel, `hotspot level ${mr.additionalHotspotLevel}`));
         if (mr.additionalTransGene && mr.additionalTransLevel !== 'all') cohortBits.push(`${mr.additionalTransGene} fusion level ${mr.additionalTransLevel}`);
-        for (const f of (this._activeOncoprintFilters || [])) cohortBits.push(`${f.gene} ${this._gridStateWord(f.state)}`);
+        for (const f of (this._activeOncoprintFilters || [])) cohortBits.push(`${f.gene} ${this._gridStateWord(f.state, f.gene)}`);
         if (this._analysisCellLineSubset?.size) cohortBits.push(`a cell-line subset of ${this._mNum(this._analysisCellLineSubset.size)} lines carried over from another view${this._analysisSubsetLabel ? ` (${this._analysisSubsetLabel})` : ''}`);
         if (this._customCellLineFilter?.size) cohortBits.push(`a pasted list of ${this._mNum(this._customCellLineFilter.size)} cell lines`);
 
@@ -73563,6 +73694,7 @@ document.addEventListener('DOMContentLoaded', () => {
      'ctGeneSet', 'ctLineage', 'ctSubtype', 'ctDisease', 'ctFocus',
      'hmPreset', 'hmLineage', 'hmSubtype', 'hmDisease',
      'clbTissueFilter', 'clbSubtypeFilter', 'clbOncotreeFilter', 'clbSexFilter', 'clbSortBy',
+     'clbUsageFilter', 'clbBankFilter', 'clbLofFilter',
      'clbUmapTissueFilter', 'clbUmapSubtypeFilter', 'clbUmapHighlightGene'
     ].forEach(id => window.app?._enhanceSelect(id));
 });
