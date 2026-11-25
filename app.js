@@ -62832,7 +62832,7 @@ ${clone.innerHTML}
         const geneListClear = document.getElementById('clbUmapGeneListClear');
         if (geneListClear) geneListClear.style.display = 'none';
         this._populateUmapHighlightGeneDropdown(null);
-        this._clbUmapClickedLabels = new Set();
+        this._clbUmapClickedLabels = new Set(); this._clbUmapLabelOffsets = new Map();
         this._clbUmapHighlightGroup = null;
         this._clbUmapGeneColorActive = null;
         const clusterPanel = document.getElementById('clbUmapClusterStatsPanel');
@@ -63850,7 +63850,7 @@ ${clone.innerHTML}
             document.getElementById('clbUmapLoadingsLabel').style.display = 'none';
             document.getElementById('clbUmapGatePanel').style.display = 'none';
             document.getElementById('clbUmapShowLoadings').checked = true;
-            this._clbUmapClickedLabels = new Set();
+            this._clbUmapClickedLabels = new Set(); this._clbUmapLabelOffsets = new Map();
             this._clbUmapHighlightGroup = null;
             this._clbUmapGeneColorActive = null;
             const _clusterPanelEl = document.getElementById('clbUmapClusterStatsPanel');
@@ -64955,10 +64955,15 @@ ${clone.innerHTML}
         const labels = [];
         for (let i = 0; i < cellLines.length; i++) {
             if (!clicked.has(cellLines[i])) continue;
+            // A leader line ties the name to its dot; a dragged name keeps its
+            // offset (ax/ay, px) when labels are added or the plot redraws.
+            const off = this._clbUmapLabelOffsets?.get(cellLines[i]);
             labels.push({
                 x: x[i], y: y[i],
                 text: this._clShortName(cellLines[i]),
-                showarrow: false, yshift: 12,
+                showarrow: true, arrowhead: 0, arrowwidth: 0.8, arrowcolor: '#6b7280', standoff: 4,
+                ax: off?.ax ?? 0, ay: off?.ay ?? -16,
+                _cl: cellLines[i],
                 font: { size: 10, color: '#111827' },
                 bgcolor: 'rgba(255,255,255,0.92)',
                 bordercolor: '#9ca3af', borderwidth: 0.5, borderpad: 2,
@@ -64982,8 +64987,23 @@ ${clone.innerHTML}
         this._updateUmapLabelAnnotations();
     }
 
+    // Remember where the user dragged each name, keyed by cell line, so the
+    // next relayout (another label, Label most used) does not snap it back.
+    _captureUmapLabelMoves(data) {
+        const anns = document.getElementById('clbUmapPlot')?.layout?.annotations;
+        if (!data || !anns) return;
+        for (const k of Object.keys(data)) {
+            const m = /^annotations\[(\d+)\]\.(ax|ay)$/.exec(k);
+            const a = m && anns[+m[1]];
+            if (!a?._cl) continue;
+            if (!this._clbUmapLabelOffsets) this._clbUmapLabelOffsets = new Map();
+            this._clbUmapLabelOffsets.set(a._cl, { ax: a.ax, ay: a.ay });
+        }
+    }
+
     _clearUmapLabels() {
         this._clbUmapClickedLabels = new Set();
+        this._clbUmapLabelOffsets = new Map();
         this._updateUmapLabelAnnotations();
     }
 
@@ -65455,7 +65475,7 @@ ${clone.innerHTML}
             Plotly.newPlot(plotDiv, traces, layout, {
                 responsive: true, displayModeBar: true,
                 modeBarButtonsToAdd: ['select2d', 'lasso2d'], displaylogo: false,
-                edits: { annotationPosition: true }
+                edits: { annotationPosition: true, annotationTail: true }
             });
             if (this._clbUmapData) this._clbUmapData.baseAnnotations = [umapTitleAnn, umapXAnn, umapYAnn];
             this._updateUmapLabelAnnotations();
@@ -65475,7 +65495,7 @@ ${clone.innerHTML}
             plotDiv.on('plotly_click', (eventData) => this._handleUmapPointClick(eventData));
             this._attachDotHoverSummary(plotDiv.id, null, 'Click to label this cell line \u00b7 Shift-click to open its Wiki');
             this._umapAxisClicks(plotDiv);
-            plotDiv.on('plotly_relayout', (data) => this._handleUmapGateShapeRelayout(data));
+            plotDiv.on('plotly_relayout', (data) => { this._captureUmapLabelMoves(data); this._handleUmapGateShapeRelayout(data); });
         }
     }
 
@@ -65650,7 +65670,7 @@ ${clone.innerHTML}
             paper_bgcolor: 'white', plot_bgcolor: '#fafafa'
         };
 
-        Plotly.newPlot(plotDiv, [trace], layout, { responsive: true, displayModeBar: true, displaylogo: false, edits: { annotationPosition: true } });
+        Plotly.newPlot(plotDiv, [trace], layout, { responsive: true, displayModeBar: true, displaylogo: false, edits: { annotationPosition: true, annotationTail: true } });
         // Keep labels and click-to-label working in gene-color mode too.
         if (this._clbUmapData) this._clbUmapData.baseAnnotations = [geneColorTitleAnn, geneColorXAnn, geneColorYAnn];
         this._updateUmapLabelAnnotations();
@@ -65669,7 +65689,7 @@ ${clone.innerHTML}
         plotDiv.on('plotly_click', (eventData) => this._handleUmapPointClick(eventData));
         this._attachDotHoverSummary(plotDiv.id, null, 'Click to label this cell line \u00b7 Shift-click to open its Wiki');
         this._umapAxisClicks(plotDiv);
-        plotDiv.on('plotly_relayout', (data) => this._handleUmapGateShapeRelayout(data));
+        plotDiv.on('plotly_relayout', (data) => { this._captureUmapLabelMoves(data); this._handleUmapGateShapeRelayout(data); });
 
         statusEl.textContent = `Colored by ${gene} (${typeLabel})`;
         statusEl.style.color = '#7c3aed';
