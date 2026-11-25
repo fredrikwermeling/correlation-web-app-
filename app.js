@@ -55786,12 +55786,15 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             driverFusions: Object.fromEntries([...fusC.entries()].sort((a, b) => b[1] - a[1])),
             functionalLoss: Object.fromEntries(lofGenes.map(gene => [gene, tally(this.functionalLoss.geneData[gene].mutations || {}).k]).filter(([, k]) => k > 0).sort((a, b) => b[1] - a[1])),
         };
-        const body = this._gbDesc('Mutations in cancer genes (OncoKB), counting hotspot and likely loss-of-function calls. The left table ranks genes by how many cell lines of this group carry a mutation. The right table ranks them by how much more common the mutation is here than in all other cell lines of the cohort, strongest evidence first (one-sided Fisher test).')
+        const body = `<div class="gb-part gb-part-first">Specific changes</div>`
+            + this._gbDesc(`Share of the ${n} cell lines with each exact change. Functional loss means the gene is switched off by a deep deletion, a loss-of-function mutation or silencing, so it can be higher than the mutation counts below; one variant can be lower than all mutations in its gene.`)
             + this._gbRow('Specific variants', varC.size ? chips(varC) : '<span class="gb-m">none of the tracked variants</span>')
             + this._gbRow('Driver fusions', fusC.size ? chips(fusC) : '<span class="gb-m">none of the curated driver fusions</span>')
             + this._gbRow('Functional loss', lof || '<span class="gb-m">none</span>')
-            + `<div class="gb-grid" style="margin-top:6px;"><div><div class="gb-sub">Most often mutated in this group</div>${common.length ? this._gbTable(heads, common.map(cell)) : '<div class="gb-empty">No cancer gene is mutated in two or more of these cell lines.</div>'}</div>`
-            + `<div><div class="gb-sub">More common here than in all other cell lines</div>${enriched.length ? this._gbTable(heads, enriched.map(cell)) : '<div class="gb-empty">No cancer gene is clearly more often mutated here (3 or more cell lines, p below 0.01).</div>'}</div></div>`;
+            + `<div class="gb-part">Mutated cancer genes</div>`
+            + this._gbDesc('Any hotspot or likely loss-of-function mutation in a cancer gene (OncoKB), counted per gene. Left: the genes mutated in most cell lines of this group. Right: the genes mutated more often here than in all other cell lines, strongest evidence first (one-sided Fisher test).')
+            + `<div class="gb-grid"><div><div class="gb-sub" style="margin-top:0;">Most often mutated in this group</div>${common.length ? this._gbTable(heads, common.map(cell)) : '<div class="gb-empty">No cancer gene is mutated in two or more of these cell lines.</div>'}</div>`
+            + `<div><div class="gb-sub" style="margin-top:0;">More common here than in all other cell lines</div>${enriched.length ? this._gbTable(heads, enriched.map(cell)) : '<div class="gb-empty">No cancer gene is clearly more often mutated here (3 or more cell lines, p below 0.01).</div>'}</div></div>`;
         return this._gbSection('Common mutations and fusions', body, 'DepMap 26Q1 hotspot and damaging mutation calls, integrated functional-loss call, inferred variant and driver-fusion layers.');
     }
 
