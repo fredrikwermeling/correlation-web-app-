@@ -62008,25 +62008,32 @@ ${clone.innerHTML}
         const cnNCL = this.cnLoaded ? this.cnMetadata.nCellLines : 0;
         const cnCi = clIndices.map(ci => this.cnLoaded ? this.cnCellLineIndex.get(this.metadata.cellLines[ci]) : undefined);
         const locs = this.geneLocations || null;
-        // Metadata as a compact, aligned 2-column (Field,Value) block so it opens
-        // tidily in Excel / text-to-columns instead of long single comment cells.
-        // Values are stripped of commas (-> ';') so each row stays exactly Field|Value.
-        const sani = (s) => String(s == null ? '' : s).replace(/,/g, ';').replace(/\s+/g, ' ').trim();
-        const lines = ['# Correlate full per-gene profile'];
+        // Metadata as short Field,Value rows above the table. Spreadsheet
+        // previews (Quick Look, Numbers) size each column to its longest cell,
+        // so a long sentence in column B pushed every data column off screen:
+        // the summary goes one sentence per row and the key one column per row.
+        const sani = (s) => String(s == null ? '' : s).replace(/,/g, ';').replace(/\s+/g, ' ')
+            .replace(/\s+([.;:)])/g, '$1').replace(/\(\s+/g, '(').replace(/\s+\/(\S)/g, '/$1').trim();
+        const lines = ['Correlate full per-gene profile'];
         for (let c = 0; c < clIndices.length; c++) {
             const clId = this.metadata.cellLines[clIndices[c]];
             const tissue = this.getCellLineLineage(clId) || '';
             const subtype = this.getCellLineSublineage(clId) || '';
             let summary = '';
-            try { summary = (this._cellLineExecutiveSummary(clId) || '').replace(/<[^>]*>/g, ' '); } catch (e) {}
+            try { summary = sani((this._cellLineExecutiveSummary(clId) || '').replace(/<[^>]*>/g, ' ')); } catch (e) {}
             lines.push(`Cell line,${sani(`${clNames[c]} (${clId})`)}`);
             if (tissue) lines.push(`Tissue,${sani(tissue)}`);
             if (subtype) lines.push(`Subtype,${sani(subtype)}`);
-            if (summary) lines.push(`Summary,${sani(summary)}`);
+            summary.split(/(?<=\.)\s+(?=[A-Z])/).filter(Boolean)
+                .forEach((sent, i) => lines.push(`${i ? '' : 'Summary'},${sent}`));
         }
-        lines.push(`Column key,${sani('GE = CRISPR gene effect; Expr = log2 TPM+1; Hotspot = 0/1/2; Damaging = 0/1; Fusion = 0/1/2; CancerCN = curated cancer-driver focal call (tier:relativeCN) only for the ~30 driver genes in the curated panel; blank otherwise; CN = relative copy number for EVERY gene (1.0 = baseline; >1 gain; <1 loss) so an amplicon shows many neighboring genes with high CN; Chr/Cytoband = GRCh38 gene location')}`);
-        lines.push(`Data source,${sani(`DepMap ${DEPMAP_VERSION} (depmap.org); please cite Tsherniak et al. Cell 2017`)}`);
+        lines.push(`Data source,${sani(`DepMap ${DEPMAP_VERSION} (depmap.org); cite Tsherniak et al. Cell 2017`)}`);
         lines.push(`Date,${new Date().toISOString().slice(0, 10)}`);
+        lines.push('');
+        [['Columns', ''], ['Chr / Cytoband', 'GRCh38 gene location'], ['_GE', 'CRISPR gene effect'], ['_Expr', 'mRNA; log2 TPM+1'],
+         ['_Hotspot', 'hotspot mutation copies; 0/1/2'], ['_Damaging', 'damaging mutation; 0/1'], ['_Fusion', 'fusion; 0/1/2'],
+         ['_CancerCN', 'curated driver focal call (tier:CN); ~30 genes'], ['_CN', 'relative copy number; 1.0 = baseline']]
+            .forEach(([k, v]) => lines.push(`${k},${v}`));
         lines.push('');
         lines.push(headerParts.join(','));
         for (let g = 0; g < this.nGenes; g++) {
@@ -62052,7 +62059,8 @@ ${clone.innerHTML}
             }
             lines.push(row.join(','));
         }
-        return lines.join('\n');
+        // The byte-order mark makes Excel for Mac read the file as UTF-8.
+        return '\uFEFF' + lines.join('\n');
     }
 
     // The visible list, in its current sort order, with the value column the
