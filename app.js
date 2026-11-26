@@ -48697,8 +48697,8 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // grid, so chips, saved views and exports need nothing of their own.
     _CLB_ACCESS_MENUS() {
         return {
-            clbUsageFilter: { all: 'Any literature use', kind: 'usage', ids: ['lit_very_common', 'lit_common_plus', 'lit_common', 'lit_uncommon', 'lit_rare'] },
-            clbBankFilter: { all: 'Any cell bank', kind: 'bank', ids: ['avail_any', 'avail_atcc', 'avail_dsmz', 'avail_ecacc', 'avail_japan', 'avail_none'] },
+            clbUsageFilter: { all: 'Literature use: all cell lines', kind: 'usage', ids: ['lit_very_common', 'lit_common_plus', 'lit_common', 'lit_uncommon', 'lit_rare'] },
+            clbBankFilter: { all: 'Cell bank: all cell lines', kind: 'bank', ids: ['avail_any', 'avail_atcc', 'avail_dsmz', 'avail_ecacc', 'avail_japan', 'avail_none'] },
         };
     }
 

@@ -5552,7 +5552,7 @@
     <!-- Cell Line Browser Modal -->
     <div id="cellLineBrowserModal" style="display:none; position:fixed; inset:0; z-index:1350; background:rgba(0,0,0,0.5); justify-content:center; align-items:flex-start; padding:20px;">
       <!-- min-width:0 everywhere: the card and the list are flex items, whose default min-width:auto can override the max-width and push the card past the window. -->
-      <div id="clbModalCard" style="background:#fff; border-radius:8px; width:100%; min-width:0; max-width:min(98vw, 1600px); max-height:calc(100vh - 40px); margin-top:20px; display:flex; flex-direction:column; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25); overflow:hidden;">
+      <div id="clbModalCard" style="background:#fff; border-radius:8px; width:100%; min-width:0; max-width:min(98vw, 1600px); max-height:calc(100vh - 40px); margin-top:20px; display:flex; flex-direction:column; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25); overflow-x:hidden; overflow-y:auto;">
         <!-- Header -->
         <div class="modal-header">
           <img src="web_data/clb_banner.png" alt="Cell Line Browser" style="height:44px; width:auto; min-width:0; flex:0 1 auto; object-fit:contain; object-position:left center;">
@@ -5627,8 +5627,8 @@
               </div>
 
               <span class="clb-break"></span>
-              <select id="clbUsageFilter" style="width:200px;" title="Filter by how often a cell line appears in papers (Europe PMC)"><option value="">Any literature use</option></select>
-              <select id="clbBankFilter" style="width:190px;" title="Filter by which cell bank sells the line, according to Cellosaurus"><option value="">Any cell bank</option></select>
+              <select id="clbUsageFilter" style="width:250px;" title="Filter by how often a cell line appears in papers (Europe PMC). Unfiltered, every cell line is listed."><option value="">Literature use: all cell lines</option></select>
+              <select id="clbBankFilter" style="width:230px;" title="Filter by which cell bank sells the cell line, according to Cellosaurus. Unfiltered, every cell line is listed, also those in no cell bank."><option value="">Cell bank: all cell lines</option></select>
               <span class="clb-sep"></span>
               <div id="clbCollectionFilterWrap" class="clb-anchor">
                 <button id="clbCollectionBtn" class="btn btn-outline btn-sm" type="button" title="Pick or exclude quick filters (include/exclude, like the alteration grids)">Quick filters<span id="clbCollectionCount" style="color:#6b7280; font-weight:400; margin-left:5px;"></span></button>
@@ -5728,7 +5728,7 @@
           </div>
         </div>
         <!-- Content (scrollable wrapper for list + UMAP) -->
-        <div id="clbScrollableBody" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; min-height:0;">
+        <div id="clbScrollableBody" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; min-height:260px;">
         <div class="clb-content">
           <div class="clb-list-wrap" id="clbListContainer">
             <!-- Count and ordering sit on the list they describe. The toolbar
@@ -6240,7 +6240,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v92_32"></script>
+    <script src="app.js?v=v92_33"></script>
     <script src="tour.js?v=v92_28"></script>
 </body>
 </html>
