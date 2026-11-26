@@ -7636,9 +7636,12 @@ class CorrelationExplorer {
         cbGene?.addEventListener('change', applyCbGene);
         cbGene?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); cbGene.blur(); } });
         document.getElementById('colorByGeneType')?.addEventListener('change', async () => { await cbLoad(); this.updateInspectPlot(); });
-        document.getElementById('colorByGeneSuggestBtn')?.addEventListener('click', async () => { await cbLoad(); this._colorByGeneSuggest(); });
+        document.getElementById('colorByGeneSuggestBtn')?.addEventListener('click', async () => {
+            if (document.getElementById('colorByGeneSuggest')?.style.display === 'block') { this._hideColorBySuggest(); return; }
+            await cbLoad(); this._colorByGeneSuggest();
+        });
         document.getElementById('colorByGeneSuggest')?.addEventListener('click', (e) => {
-            if (e.target.closest('[data-cbs-close]')) { e.currentTarget.style.display = 'none'; return; }
+            if (e.target.closest('[data-cbs-close]')) { this._hideColorBySuggest(); return; }
             const a = e.target.closest('[data-cbs-gene]');
             if (!a) return;
             e.preventDefault();
@@ -21547,8 +21550,18 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
     // lines: r with each line's place along the trend (the first principal
     // axis of the standardized x and y) and with its distance above or below
     // the regression line. The two plotted genes are left out.
+    // The suggested genes only show while Color by is Gene and Suggest is on.
+    _hideColorBySuggest() {
+        const box = document.getElementById('colorByGeneSuggest');
+        if (box) { box.style.display = 'none'; box.innerHTML = ''; }
+        const btn = document.getElementById('colorByGeneSuggestBtn');
+        if (btn) { btn.classList.remove('btn-active'); btn.setAttribute('aria-pressed', 'false'); btn.textContent = 'Suggest'; }
+    }
+
     async _colorByGeneSuggest() {
         const box = document.getElementById('colorByGeneSuggest');
+        const sBtn = document.getElementById('colorByGeneSuggestBtn');
+        if (sBtn) { sBtn.classList.add('btn-active'); sBtn.setAttribute('aria-pressed', 'true'); sBtn.textContent = 'Hide'; }
         const pts = (this._currentFilteredData || []).filter(d => Number.isFinite(d.x) && Number.isFinite(d.y));
         if (!box) return;
         box.style.display = 'block';
@@ -21605,7 +21618,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
             return `<div style="display:flex; justify-content:space-between; gap:8px;"><a href="#" data-cbs-gene="${this.esc(r.g)}" data-hover-gene="${this.esc(r.g)}" style="color:#4f46e5;">${this.gi(r.g)}</a><span style="color:${col};${b === 'strong' ? ' font-weight:600;' : ''}" title="${b}">${r.ra.toFixed(2)}</span></div>`;
         };
         const half = Math.ceil(top.length / 2);
-        box.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:3px;"><span style="color:#374151;">Genes whose <b>${word}</b> best follows the trend in the ${n.toLocaleString()} plotted cell lines</span><button type="button" data-cbs-close style="border:none; background:none; color:#9ca3af; cursor:pointer; font-size:14px; line-height:1;" title="Close">&times;</button></div>`
+        box.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:3px;"><span style="color:#374151;">Genes whose <b>${word}</b> best follows the trend in the ${n.toLocaleString()} plotted cell lines</span><button type="button" data-cbs-close style="border:none; background:none; color:#9ca3af; cursor:pointer; font-size:14px; line-height:1;" title="Hide the suggested genes">&times;</button></div>`
             + `<div style="display:flex; gap:16px; flex-wrap:wrap;">`
             + `<div style="flex:1 1 180px; min-width:0;">${top.slice(0, half).map(row).join('')}</div>`
             + `<div style="flex:1 1 180px; min-width:0;">${top.slice(half).map(row).join('')}</div>`
@@ -46761,6 +46774,7 @@ ${filterText ? `<text x="${this._netBannerPos ? this._netBannerPos.x : width / 2
         const on = mode === 'tissue' || mode === 'subtype' || mode === 'disease' || mode === 'medium';
         const gRow = document.getElementById('colorByGeneRow');
         if (gRow) gRow.style.display = mode === 'gene' ? 'inline-flex' : 'none';
+        if (mode !== 'gene') this._hideColorBySuggest();
         btn.style.display = on ? '' : 'none';
         const statSel = document.getElementById('colorByLegendStat');
         if (statSel) statSel.style.display = on ? '' : 'none';
