@@ -52531,6 +52531,11 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             const z = parseInt(getComputedStyle(el).zIndex) || 0;
             if (z > topZ) topZ = z;
         });
+        // Opened over a Cancer type Wiki, the by-cancer-type figures mark the
+        // group that Wiki is about.
+        const ctw = document.getElementById('ctwModal');
+        const wasOpen = getComputedStyle(modal).display !== 'none';
+        if (!wasOpen) this._gbFocus = (ctw && getComputedStyle(ctw).display !== 'none' && this._ctwGroup) ? { ...this._ctwGroup } : null;
         modal.style.zIndex = String(Math.max(1365, topZ + 10));
         modal.style.display = 'flex';
         this._ensureAliasTables?.();
@@ -53069,8 +53074,39 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
         if (!groups.size) return;
         const rows = [...groups.entries()].map(([name, pts]) => ({ name, pts, mean: this.mean(pts.map(p => p[0])) }))
             .sort((a, b) => a.mean - b.mean);
+        // The group of the Cancer type Wiki this page was opened from: a whole
+        // tissue is marked in its own row, a narrower group gets a row on top.
+        const fg = this._gbFocus;
+        const GREEN = '#5d9239';
+        let focusName = '';
+        if (fg) {
+            focusName = this._ctwName(fg);
+            if (!fg.subtype && !fg.disease) {
+                const r = rows.find(r => r.name === fg.tissue);
+                if (r) r.focus = true; else focusName = '';
+            } else {
+                const onc = this.cellLineMetadata?.oncotreeSubtype || {};
+                const inG = (id) => (!fg.tissue || this.getCellLineLineage(id) === fg.tissue)
+                    && (!fg.subtype || this.getCellLineSublineage(id) === fg.subtype)
+                    && (!fg.disease || (onc[id] || '') === fg.disease);
+                const pts = [];
+                for (const r of rows) for (const p of r.pts) if (inG(p[1])) pts.push(p);
+                if (pts.length) rows.push({ name: focusName, pts, mean: this.mean(pts.map(p => p[0])), focus: true });
+                else focusName = '';
+            }
+        }
         const MAX = 34;
-        const traces = rows.map(r => ({
+        const traces = rows.map(r => r.focus ? ({
+            type: 'box', orientation: 'h',
+            name: `<b><span style="color:${GREEN}">${(r.name.length > MAX ? r.name.slice(0, MAX - 1).trimEnd() + '…' : r.name).replace(/[<>&]/g, '')} (n=${r.pts.length})</span></b>`,
+            x: r.pts.map(p => p[0]),
+            text: r.pts.map(p => this.getCellLineName(p[1])),
+            customdata: r.pts.map(p => p[1]),
+            boxpoints: 'all', jitter: 0.3, pointpos: 0,
+            marker: { color: 'rgba(93,146,57,0.75)', size: 5 },
+            line: { color: GREEN, width: 1.5 }, fillcolor: 'rgba(107,165,68,0.25)',
+            hovertemplate: `<b>%{text}</b><br>${r.name.replace(/[<>&]/g, '')}<br>${hoverLabel}: %{x:.2f}<extra></extra>`
+        }) : ({
             type: 'box', orientation: 'h',
             name: `${r.name.length > MAX ? r.name.slice(0, MAX - 1).trimEnd() + '…' : r.name} (n=${r.pts.length})`,
             hovertext: r.name.length > MAX ? r.name : undefined,
@@ -53098,7 +53134,9 @@ The "⚠ atypical" badge means the cell line tissue isn't the usual disease for 
             paper_bgcolor: '#ffffff', plot_bgcolor: '#ffffff', font: { family: 'Open Sans, sans-serif' }
         }, { displayModeBar: false, responsive: true });
         this._attachDotLabel(elId, (id) => { this.hideCellLineTooltip(); this.openCellLineWiki(id); });
-        const hint = 'Click a dot to label the cell line, Shift-click to open its Wiki';
+        const hint = (focusName ? `<span style="color:${GREEN}; font-weight:600;">Green: ${this.esc(focusName)}, the cancer type you came from.</span> ` : '')
+            + 'Click a dot to label the cell line, Shift-click to open its Wiki';
+        el.parentNode.querySelectorAll('.gb-dothint').forEach(h => { if (h.previousElementSibling === el || h.parentNode.previousElementSibling === el) h.remove(); });
         const row = el.nextElementSibling;
         if (row && row.classList.contains('gb-m') && row.querySelector('[data-gb-copy]') && !row.querySelector('.gb-dothint')) {
             row.style.justifyContent = 'space-between';
