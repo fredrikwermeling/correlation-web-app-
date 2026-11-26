@@ -2142,13 +2142,15 @@
         .clb-detail-section { margin-bottom: 10px; }
         .clb-detail-section strong { display: inline; margin-bottom: 2px; color: #374151; }
         /* Dimensionality-reduction control rows — uniform heights and alignment */
-        .clb-umap-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 5px; }
-        .clb-umap-row .clb-umap-ctl { font-size: 11px; padding: 2px 6px; height: 24px; box-sizing: border-box; border: 1px solid #d1d5db; border-radius: 3px; background: #fff; line-height: 1; }
-        .clb-umap-row .clb-umap-btn { font-size: 11px; padding: 0 10px; height: 24px; box-sizing: border-box; border: 1px solid #d1d5db; border-radius: 3px; background: #fff; color: #374151; cursor: pointer; line-height: 1; white-space: nowrap; }
+        .clb-umap-row { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-bottom: 7px; }
+        .clb-umap-row .clb-umap-ctl { font-size: 13px; padding: 2px 7px; height: 28px; box-sizing: border-box; border: 1px solid #d1d5db; border-radius: 4px; background: #fff; line-height: 1; }
+        .clb-umap-row .clb-umap-btn { font-size: 13px; padding: 0 11px; height: 28px; box-sizing: border-box; border: 1px solid #d1d5db; border-radius: 4px; background: #fff; color: #374151; cursor: pointer; line-height: 1; white-space: nowrap; }
         .clb-umap-row .clb-umap-btn:hover { border-color: #9ca3af; }
         .clb-umap-row .clb-umap-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        .clb-umap-row .clb-umap-lbl { font-size: 11px; color: #6b7280; white-space: nowrap; }
-        .clb-umap-row .clb-umap-sep { display: inline-block; width: 1px; height: 18px; background: #e5e7eb; margin: 0 4px; }
+        .clb-umap-row .clb-umap-lbl { font-size: 13px; color: #6b7280; white-space: nowrap; }
+        .clb-umap-row .clb-umap-head { flex: 0 0 74px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #4c782e; white-space: nowrap; }
+        .clb-umap-row .clb-umap-step { font-size: 13px; padding: 0 7px; height: 28px; border: 1px solid #d1d5db; border-radius: 4px; background: #f9fafb; cursor: pointer; margin: 0 -4px; }
+        .clb-umap-row .clb-umap-sep { display: inline-block; width: 1px; height: 20px; background: #e5e7eb; margin: 0 5px; }
         .clb-umap-row .clb-umap-spacer { flex: 1; }
         .clb-detail-section .clb-stat-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 1px 0; }
         .clb-detail-section .clb-stat-label { color: var(--gray-500); flex-shrink: 0; }
@@ -5796,12 +5798,20 @@
           <div id="clbUmapCard" style="background:#fff; width:100%; max-width:min(98vw, 1600px); margin-top:20px; border-radius:8px; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25); position:relative;">
             <div style="position:sticky; top:0; z-index:4; display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 18px; border-bottom:1px solid #e5e7eb; background:linear-gradient(90deg,#f3faee,#fff); border-radius:8px 8px 0 0;">
               <div><h3 style="margin:0; font-size:17px; color:#4c782e;">Dimensionality reduction</h3>
-                <div id="clbUmapToggleHint" style="font-size:11px; color:var(--gray-500); margin-top:1px;">PCA or UMAP over the cell lines, with lasso selection and gate comparison. The cell line menu can use the Cell Line Browser's current list.</div></div>
+                <div id="clbUmapToggleHint" style="font-size:12px; color:var(--gray-500); margin-top:1px;">PCA or UMAP over the cell lines, with lasso selection and gate comparison. The cell line menu can use the Cell Line Browser's current list.</div></div>
+              <div class="clb-umap-row" style="margin:0 0 0 auto; flex-wrap:nowrap;">
+                <button id="clbUmapPngBtn" class="clb-umap-btn" title="Choose format, print size and resolution">Export image</button>
+                <button class="clb-umap-btn mobile-hide" onclick="app._copyUmapPlot()" title="Copy this as an image to the clipboard (with the loadings when they are shown), ready to paste into an email or slide">Copy</button>
+                <button class="clb-umap-btn mobile-hide" onclick="app._umapExportAI()" title="Download this plot as a file for a language model: every point with its coordinates, group and color, the loadings and the labels, plus a picture, so it can be explained or redrawn">Export for AI</button>
+                <button class="clb-umap-btn mobile-hide" onclick="app.openMethods('umap')" title="Write out how this plot was made, as a methods paragraph and as a plain walk-through">Methods</button>
+                <button id="clbUmapAaBtn" class="clb-umap-btn" title="Settings">Settings</button>
+              </div>
               <button id="clbUmapCloseBtn" style="background:none; border:none; font-size:24px; cursor:pointer; line-height:1; color:#6b7280;" title="Close (Esc); the Cell Line Browser stays open behind">&times;</button>
             </div>
             <div id="clbUmapBody" style="padding:12px 18px 16px;">
-            <!-- Row 1: Compute, what to analyze + run -->
+            <!-- Row 1: what goes into the analysis, and run -->
             <div class="clb-umap-row">
+                <span class="clb-umap-head">Data</span>
                 <select id="clbUmapMethod" class="clb-umap-ctl">
                     <option value="pca" selected>PCA</option>
                     <option value="umap">UMAP</option>
@@ -5811,64 +5821,34 @@
                     <option value="ge">Gene Effect</option>
                     <option value="both">GE + Expression</option>
                 </select>
-                <input type="text" id="clbUmapGeneList" class="clb-umap-ctl" placeholder="Genes (optional)" title="Optional: restrict the analysis to this gene list (comma / semicolon / whitespace separated). Leave empty to use the top-variance genes across the dataset." style="width:120px;" autocomplete="off">
-                <button id="clbUmapGeneListClear" class="clb-umap-btn" style="display:none;" title="Clear custom gene list">&times;</button>
-                <select id="clbUmapGeneClass" class="clb-umap-ctl" style="max-width:165px;" title="Restrict the analysis to one curated class of genes (the lists Green Listed uses); the most variable genes within it are used. A gene list typed in the box takes precedence.">
-                    <option value="">Genes: most variable</option>
-                </select>
-                <button id="clbUmapRankBtn" class="clb-umap-btn" title="Compare every gene class: PC1 % on the current cell lines and data, against random gene sets of the same size">Rank classes</button>
+                <span class="clb-umap-lbl">of</span>
                 <select id="clbUmapTissueFilter" class="clb-umap-ctl" style="width:auto; max-width:260px;" title="Which cell lines to include: the ones the Cell Line Browser list shows (after its search and filters), every cell line, or one tissue">
                     <option value="">All cell lines</option>
                 </select>
                 <select id="clbUmapSubtypeFilter" class="clb-umap-ctl" style="width:150px; display:none;">
                     <option value="">All subtypes</option>
                 </select>
-                <select id="clbUmapColorBy" class="clb-umap-ctl">
-                    <option value="usage" selected>Color by literature use</option>
-                    <option value="tissue">Color by tissue</option>
-                    <option value="subtissue">Color by subtype</option>
-                    <option value="access">Color by cell bank</option>
+                <span class="clb-umap-sep"></span>
+                <select id="clbUmapGeneClass" class="clb-umap-ctl" style="max-width:165px;" title="Restrict the analysis to one curated class of genes (the lists Green Listed uses); the most variable genes within it are used. A gene list typed in the box takes precedence.">
+                    <option value="">Genes: most variable</option>
                 </select>
-                <button id="clbUmapRunBtn" class="clb-umap-btn" style="background:#5d9239; color:white; border-color:#5d9239;">Run Analysis</button>
+                <span class="clb-umap-lbl">or</span>
+                <input type="text" id="clbUmapGeneList" class="clb-umap-ctl" placeholder="your own gene list" title="Optional: restrict the analysis to this gene list (comma / semicolon / whitespace separated). Leave empty to use the top-variance genes across the dataset." style="width:150px;" autocomplete="off">
+                <button id="clbUmapGeneListClear" class="clb-umap-btn" style="display:none;" title="Clear custom gene list">&times;</button>
+                <span class="clb-umap-sep"></span>
+                <button id="clbUmapRunBtn" class="clb-umap-btn" style="background:#5d9239; color:white; border-color:#5d9239;">Run analysis</button>
                 <button id="clbUmapResetBtn" class="clb-umap-btn" style="background:#ef4444; color:white; border-color:#ef4444;" title="Clear everything and start fresh">Reset</button>
-                <span class="clb-umap-spacer"></span>
-                <button id="clbUmapPngBtn" class="clb-umap-btn" title="Choose format, print size and resolution">Export image</button>
-                <button class="clb-umap-btn mobile-hide" onclick="app._copyUmapPlot()" title="Copy this as an image to the clipboard (with the loadings when they are shown), ready to paste into an email or slide">Copy</button>
-                <button class="clb-umap-btn mobile-hide" onclick="app._umapExportAI()" title="Download this plot as a file for a language model: every point with its coordinates, group and color, the loadings and the labels, plus a picture, so it can be explained or redrawn">Export for AI</button>
-                <button class="clb-umap-btn mobile-hide" onclick="app.openMethods('umap')" title="Write out how this plot was made, as a methods paragraph and as a plain walk-through">Methods</button>
-                <button id="clbUmapAaBtn" class="clb-umap-btn" title="Settings">Settings</button>
             </div>
-            <!-- Row 2: Display, axes, size (shown once data is loaded) -->
-            <div id="clbUmapComponentRow" class="clb-umap-row" style="display:none;">
-                <span class="clb-umap-lbl">Axes</span>
-                <select id="clbUmapCompX" class="clb-umap-ctl"></select>
-                <span class="clb-umap-lbl">vs</span>
-                <select id="clbUmapCompY" class="clb-umap-ctl"></select>
-                <span class="clb-umap-sep"></span>
-                <span class="clb-umap-lbl">Size</span>
-                <input type="range" id="clbUmapMarkerSize" min="2" max="14" value="9" style="width:60px; vertical-align:middle;" title="Marker size">
-                <span class="clb-umap-lbl">W</span>
-                <button onclick="app.adjustNumber('clbUmapPlotWidth', -20)" style="font-size:10px; padding:0 5px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer; height:24px;">−</button>
-                <input type="number" id="clbUmapPlotWidth" class="clb-umap-ctl" value="600" min="300" max="2400" step="20" style="width:50px; text-align:center;" title="Plot width">
-                <button onclick="app.adjustNumber('clbUmapPlotWidth', 20)" style="font-size:10px; padding:0 5px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer; height:24px;">+</button>
-                <span class="clb-umap-lbl">H</span>
-                <button onclick="app.adjustNumber('clbUmapPlotHeight', -20)" style="font-size:10px; padding:0 5px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer; height:24px;">−</button>
-                <input type="number" id="clbUmapPlotHeight" class="clb-umap-ctl" value="500" min="250" max="1000" step="20" style="width:50px; text-align:center;" title="Plot height">
-                <button onclick="app.adjustNumber('clbUmapPlotHeight', 20)" style="font-size:10px; padding:0 5px; border:1px solid #ddd; border-radius:3px; background:#f9f9f9; cursor:pointer; height:24px;">+</button>
-                <span class="clb-umap-sep"></span>
-                <button id="clbUmapBigBtn" class="clb-umap-btn" title="Make the plot as large as the window allows, for lasso selection, labels and hovering; click again to return to the normal size">Large plot</button>
-                <button id="clbUmapTopGenesBtn" class="clb-umap-btn" title="Show top genes correlated with axes">Top Genes</button>
-                <button id="clbUmapClusterStatsBtn" class="clb-umap-btn" title="Rank tissues by how tightly they cluster in this projection (silhouette score). Click a tissue in the table to highlight its cell lines.">Cluster stats</button>
-                <button id="clbUmapLabelTopBtn" class="clb-umap-btn" title="Name the 15 most-used cell lines in the plot (by papers), as landmarks for finding your way around it">Label most used</button>
-                <button id="clbUmapClearLabelsBtn" class="clb-umap-btn" title="Remove all cell-line labels from the plot" style="display:none;">Clear labels</button>
-                <label id="clbUmapLoadingsToggle" class="clb-umap-lbl" style="display:none; cursor:pointer;">
-                    <input type="checkbox" id="clbUmapShowLoadings" style="vertical-align:middle;" checked> Loadings
-                </label>
-                <span id="clbUmapLoadingsLabel" class="clb-umap-lbl" style="display:none;"></span>
-            </div>
-            <!-- Row 3: Overlays, color-by-gene, split, gate compare -->
+            <!-- Row 2: how the dots are colored and named -->
             <div class="clb-umap-row">
-                <span class="clb-umap-lbl">Color by gene</span>
+                <span class="clb-umap-head">Color</span>
+                <select id="clbUmapColorBy" class="clb-umap-ctl">
+                    <option value="usage" selected>Literature use</option>
+                    <option value="tissue">Tissue</option>
+                    <option value="subtissue">Subtype</option>
+                    <option value="access">Cell bank</option>
+                </select>
+                <span class="clb-umap-lbl">or by gene</span>
                 <input type="text" id="clbUmapColorGene" class="clb-umap-ctl" placeholder="Symbol" style="width:110px;" autocomplete="off">
                 <select id="clbUmapColorGeneType" class="clb-umap-ctl">
                     <option value="ge">GE</option>
@@ -5881,7 +5861,40 @@
                 </select>
                 <span id="clbUmapColorGeneStatus" class="clb-umap-lbl"></span>
                 <span class="clb-umap-sep"></span>
-                <span class="clb-umap-lbl">Split</span>
+                <span class="clb-umap-lbl">Labels</span>
+                <button id="clbUmapLabelTopBtn" class="clb-umap-btn" title="Name the 15 most-used cell lines in the plot (by papers), as landmarks for finding your way around it">Most used cell lines</button>
+                <button id="clbUmapClearLabelsBtn" class="clb-umap-btn" title="Remove all cell-line labels from the plot" style="display:none;">Clear labels</button>
+            </div>
+            <!-- Row 3: axes and size (shown once there is a plot) -->
+            <div id="clbUmapComponentRow" class="clb-umap-row" style="display:none;">
+                <span class="clb-umap-head">Plot</span>
+                <span class="clb-umap-lbl">Axes</span>
+                <select id="clbUmapCompX" class="clb-umap-ctl"></select>
+                <span class="clb-umap-lbl">vs</span>
+                <select id="clbUmapCompY" class="clb-umap-ctl"></select>
+                <span class="clb-umap-sep"></span>
+                <span class="clb-umap-lbl">Dot size</span>
+                <input type="range" id="clbUmapMarkerSize" min="2" max="14" value="9" style="width:70px; vertical-align:middle;" title="Marker size">
+                <span class="clb-umap-sep"></span>
+                <span class="clb-umap-lbl">Width</span>
+                <button class="clb-umap-step" onclick="app.adjustNumber('clbUmapPlotWidth', -20)">−</button>
+                <input type="number" id="clbUmapPlotWidth" class="clb-umap-ctl" value="640" min="300" max="2400" step="20" style="width:58px; text-align:center;" title="Plot width">
+                <button class="clb-umap-step" onclick="app.adjustNumber('clbUmapPlotWidth', 20)">+</button>
+                <span class="clb-umap-lbl">Height</span>
+                <button class="clb-umap-step" onclick="app.adjustNumber('clbUmapPlotHeight', -20)">−</button>
+                <input type="number" id="clbUmapPlotHeight" class="clb-umap-ctl" value="500" min="250" max="1000" step="20" style="width:58px; text-align:center;" title="Plot height">
+                <button class="clb-umap-step" onclick="app.adjustNumber('clbUmapPlotHeight', 20)">+</button>
+                <button id="clbUmapBigBtn" class="clb-umap-btn" title="Make the plot as large as the window allows, for lasso selection, labels and hovering; click again to return to the normal size">Large plot</button>
+                <span class="clb-umap-sep"></span>
+                <label id="clbUmapLoadingsToggle" class="clb-umap-lbl" style="display:none; cursor:pointer;">
+                    <input type="checkbox" id="clbUmapShowLoadings" style="vertical-align:middle;" checked> Loadings
+                </label>
+                <span id="clbUmapLoadingsLabel" class="clb-umap-lbl" style="display:none;"></span>
+            </div>
+            <!-- Row 4: compare groups of cell lines, and the tables behind the plot -->
+            <div class="clb-umap-row">
+                <span class="clb-umap-head">Compare</span>
+                <span class="clb-umap-lbl">Split by</span>
                 <select id="clbUmapSplitSource" class="clb-umap-ctl">
                     <option value="hotspot">Hotspot</option>
                     <option value="translocation">Fusion</option>
@@ -5892,13 +5905,18 @@
                 <button id="clbUmapClearSplitBtn" class="clb-umap-btn" style="display:none;">Clear</button>
                 <span id="clbUmapSplitType" class="clb-umap-lbl"></span>
                 <span class="clb-umap-sep"></span>
-                <span class="clb-umap-lbl">Gate</span>
+                <span class="clb-umap-lbl">Gates</span>
                 <button id="clbUmapSetGateA" class="clb-umap-btn" style="background:#2563eb; color:white; border-color:#2563eb;">Set A</button>
                 <button id="clbUmapSetGateB" class="clb-umap-btn" style="background:#dc2626; color:white; border-color:#dc2626;" disabled>Set B</button>
                 <button id="clbUmapCompareGates" class="clb-umap-btn" style="background:#5d9239; color:white; border-color:#5d9239; display:none;">Compare</button>
                 <button id="clbUmapUmapFromGate" class="clb-umap-btn" style="background:#7c3aed; color:white; border-color:#7c3aed; display:none;" title="Run new analysis using only Gate A cell lines">From A</button>
                 <button id="clbUmapClearGates" class="clb-umap-btn" style="display:none;">Clear</button>
                 <span id="clbUmapGateStatus" class="clb-umap-lbl"></span>
+                <span class="clb-umap-sep"></span>
+                <span class="clb-umap-lbl">Tables</span>
+                <button id="clbUmapTopGenesBtn" class="clb-umap-btn" title="Show top genes correlated with axes">Top genes</button>
+                <button id="clbUmapClusterStatsBtn" class="clb-umap-btn" title="Rank tissues by how tightly they cluster in this projection (silhouette score). Click a tissue in the table to highlight its cell lines.">Cluster stats</button>
+                <button id="clbUmapRankBtn" class="clb-umap-btn" title="Compare every gene class: PC1 % on the current cell lines and data, against random gene sets of the same size">Rank gene classes</button>
             </div>
             <div id="clbUmapTopGenesPanel" style="display:none; position:fixed; z-index:1000; width:380px; max-height:500px; overflow-y:auto; padding:8px 12px; background:white; border:1px solid #d1d5db; border-radius:8px; box-shadow:0 4px 16px rgba(0,0,0,0.15); font-size:10px; cursor:default;">
                 <div id="clbUmapTopGenesDragHandle" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; cursor:move; user-select:none;">
@@ -6222,7 +6240,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v92_31"></script>
+    <script src="app.js?v=v92_32"></script>
     <script src="tour.js?v=v92_28"></script>
 </body>
 </html>

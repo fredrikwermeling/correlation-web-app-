@@ -64302,7 +64302,7 @@ ${clone.innerHTML}
             // Show loadings label for PCA
             if (pcaLoadings) {
                 document.getElementById('clbUmapLoadingsLabel').style.display = '';
-                document.getElementById('clbUmapLoadingsLabel').textContent = 'PCA: click "Top Genes" for loadings';
+                document.getElementById('clbUmapLoadingsLabel').textContent = 'PCA: click "Top genes" for loadings';
             }
         } catch (err) {
             console.error(`${method} error:`, err);
@@ -65212,7 +65212,7 @@ ${clone.innerHTML}
         // data area (canvas minus left+right margin for tissue legend /
         // colorbar and top+bottom margin for title / axis) is actually square.
         // Keep the H input in sync so the slider reflects the real number.
-        const LEFT = 60, RIGHT = 170, TOP = 50, BOTTOM = 58;
+        const LEFT = 60, RIGHT = 210, TOP = 50, BOTTOM = 58;
         const MIN_SIDE = 200;
         const w = parseInt(document.getElementById('clbUmapPlotWidth')?.value) || 600;
         const dataSide = Math.max(MIN_SIDE, w - LEFT - RIGHT);
@@ -65358,8 +65358,8 @@ ${clone.innerHTML}
                 text: this._clShortName(cellLines[i]),
                 showarrow: true, arrowhead: 0, arrowwidth: 0.8, arrowcolor: '#6b7280', standoff: 4,
                 ax: off?.ax ?? 0, ay: off?.ay ?? -16,
-                _cl: cellLines[i],
-                font: { size: 10, color: '#111827' },
+                _cl: cellLines[i], _dotLabel: cellLines[i],
+                font: { size: this._umapLabelSize || 12, color: '#111827' },
                 bgcolor: 'rgba(255,255,255,0.92)',
                 bordercolor: '#9ca3af', borderwidth: 0.5, borderpad: 2,
                 _isCellLineLabel: true
@@ -65849,7 +65849,7 @@ ${clone.innerHTML}
                     height: 380,
                     xaxis: { ...baseLayout.xaxis, range: [axRange.xMin, axRange.xMax] },
                     yaxis: { ...baseLayout.yaxis, range: [axRange.yMin, axRange.yMax] },
-                    legend: panel.showLegend ? { font: { size: 8 }, itemsizing: 'constant', tracegroupgap: 1, y: 0.5, yanchor: 'middle' } : { visible: false }
+                    legend: panel.showLegend ? { font: { size: 10 }, itemsizing: 'constant', tracegroupgap: 1, y: 0.5, yanchor: 'middle' } : { visible: false }
                 };
                 const div = document.getElementById(panel.id);
                 Plotly.newPlot(div, traces, layout, { responsive: true, displayModeBar: false, displaylogo: false });
@@ -65923,6 +65923,8 @@ ${clone.innerHTML}
                 showarrow: false, font: { size: 14 }, captureevents: true, hovertext: 'Click to choose the component on this axis',
                 _tsRole: 'ylabel'
             };
+            // A long key holds long tissue names, which have to fit the margin.
+            const legendPx = traces.length > 12 ? 11 : 13;
             const layout = {
                 ...baseLayout,
                 xaxis: { ...baseLayout.xaxis, title: undefined },
@@ -65930,12 +65932,12 @@ ${clone.innerHTML}
                 annotations: [umapTitleAnn, umapXAnn, umapYAnn],
                 // Keep the right margin constant across tissue / subtype / gene-color
                 // / highlight views so the plot area doesn't shrink or grow when
-                // the user toggles the coloring mode. 170 leaves room for long
+                // the user toggles the coloring mode. 210 leaves room for long
                 // tissue names or a horizontal-title colorbar without overlapping
                 // the axis.
-                margin: { t: 50, r: 170, b: 58, l: 60, autoexpand: false },
+                margin: { t: 50, r: 210, b: 58, l: 60, autoexpand: false },
                 height: dims.height, width: dims.width,
-                legend: { font: { size: 9 }, itemsizing: 'constant', tracegroupgap: 2, x: 1.02, xanchor: 'left', y: 0.5, yanchor: 'middle' }
+                legend: { font: { size: legendPx }, itemsizing: 'constant', tracegroupgap: legendPx >= 13 ? 4 : 1, x: 1.02, xanchor: 'left', y: 0.5, yanchor: 'middle' }
             };
             Plotly.newPlot(plotDiv, traces, layout, {
                 responsive: true, displayModeBar: true,
@@ -66127,7 +66129,7 @@ ${clone.innerHTML}
             yaxis: { ...axStyleG, scaleanchor: 'x', scaleratio: 1 },
             font: { family: 'Arial, Helvetica, sans-serif' },
             annotations: [geneColorTitleAnn, geneColorXAnn, geneColorYAnn],
-            margin: { t: 50, r: 170, b: 58, l: 60, autoexpand: false },
+            margin: { t: 50, r: 210, b: 58, l: 60, autoexpand: false },
             height: this._getUmapPlotDimensions().height, width: this._getUmapPlotDimensions().width,
             hovermode: 'closest', dragmode: this._umapIdleDrag(),
             paper_bgcolor: 'white', plot_bgcolor: '#fafafa'
@@ -66439,8 +66441,10 @@ ${clone.innerHTML}
         // Names clicked onto the plot are annotations of their own, and were
         // the one piece of text with no size control.
         const dotAnns = (layout.annotations || []).filter(a => a._dotLabel);
-        const nDotLabels = dotAnns.length;
-        const dotLabelSize = dotAnns[0]?.font?.size || this._geDotLabelSize || 11;
+        const isUmap = plotDivId === 'clbUmapPlot';
+        // The PCA / UMAP always offers the size, names are a click away there.
+        const nDotLabels = dotAnns.length || (isUmap ? -1 : 0);
+        const dotLabelSize = dotAnns[0]?.font?.size || (isUmap ? (this._umapLabelSize || 12) : (this._geDotLabelSize || 11));
         const hasLegend = layout.showlegend !== false && plotEl.data?.some(t => t.showlegend !== false && t.name);
 
         // Track visibility states
@@ -66540,7 +66544,7 @@ ${clone.innerHTML}
             <div style="border-top:1px solid #e5e7eb;margin:6px 0;"></div>
             <div style="font-weight:600;margin-bottom:4px;color:#1f2937;font-size:11px;">Cell line dots</div>
             ${sizeRow('Size', 'ts_marker', markerSize, 1, 40, null, true)}
-            ${nDotLabels ? `<div style="font-weight:600;margin:8px 0 4px;color:#1f2937;font-size:11px;">${/Volcano$/.test(plotDivId || '') ? 'Gene names' : 'Cell line names'} <span style="font-weight:400;color:#6b7280;">, the ${nDotLabels} on the plot</span></div>`
+            ${nDotLabels ? `<div style="font-weight:600;margin:8px 0 4px;color:#1f2937;font-size:11px;">${/Volcano$/.test(plotDivId || '') ? 'Gene names' : 'Cell line names'} <span style="font-weight:400;color:#6b7280;">${nDotLabels > 0 ? `, the ${nDotLabels} on the plot` : ''}</span></div>`
                 + sizeRow('Size', 'ts_dotLabel', dotLabelSize, 5, 30, null, true) : ''}
             ${plotDivId === 'scatterPlot' ? `
             <div style="display:flex;align-items:center;margin-bottom:5px;gap:4px;">
@@ -67183,7 +67187,8 @@ ${clone.innerHTML}
         // Placed cell-line names, which are annotations rather than traces.
         const dotLabelSize = getVal('ts_dotLabel');
         if (dotLabelSize) {
-            this._geDotLabelSize = dotLabelSize;
+            if (plotEl.id === 'clbUmapPlot') this._umapLabelSize = dotLabelSize;
+            else this._geDotLabelSize = dotLabelSize;
             const dotUpdates = {};
             (plotEl.layout?.annotations || []).forEach((ann, i) => {
                 if (ann._dotLabel) dotUpdates[`annotations[${i}].font.size`] = dotLabelSize;
@@ -73608,7 +73613,7 @@ ${clone.innerHTML}
     _methodsUmap() {
         const title = 'UMAP / PCA';
         const u = this._clbUmapData;
-        if (!u) return this._methodsNotReady(title, 'Press Run Analysis in the UMAP / PCA panel first.');
+        if (!u) return this._methodsNotReady(title, 'Press Run analysis in the UMAP / PCA panel first.');
 
         const method = u.method === 'umap' ? 'UMAP' : 'PCA';
         const v = (id) => document.getElementById(id)?.value || '';
@@ -73665,7 +73670,7 @@ ${clone.innerHTML}
             + `   Points are colored by ${({ subtissue: 'subtype', usage: 'literature use (papers in Europe PMC)', access: 'cell bank availability (Cellosaurus)' })[v('clbUmapColorBy')] || 'tissue'}${v('clbUmapColorGene') ? `, or by ${v('clbUmapColorGene')} ${v('clbUmapColorGeneType') === 'expr' ? 'expression' : 'gene effect'} where that is set` : ''}.\n`
             + (lasso ? `   ${this._mNum(lasso)} point${lasso === 1 ? ' is' : 's are'} lasso-selected. A lasso is a selection made by hand; it does not change the projection.\n` : '   No lasso selection is active.\n')
             + ((gA || gB) ? `   Gate A holds ${this._mNum(gA)} cell lines and gate B holds ${this._mNum(gB)}. Gates are rectangles placed by hand, not thresholds.\n` : '   No gates were placed on the plot.\n'),
-            ...(this._umapRank?.rows?.length ? [`GENE-CLASS RANKING (Rank classes)\n   For each curated class, PC1's share of the total variance was computed on ${this._umapRank.dataWord} for ${this._mNum(this._umapRank.nCL)} cell lines (${this._umapRank.cohort}), using the class's most variable genes (up to 1,000 per layer) exactly as a run on that class would, and compared with ${this._umapRank.nRandom} random gene sets of the same size drawn from all genes in the data (seeded, so the table is reproducible). The ratio is the class's PC1 share over the random median; raw PC1 shares favor small sets, the ratio does not.\n   Top classes: ${this._umapRank.rows.slice(0, 5).map(r => `${r.label} ${(r.pc1 * 100).toFixed(1)} percent vs ${(r.med * 100).toFixed(1)} random (ratio ${r.ratio.toFixed(2)})`).join('; ')}.\n   A class above random shares more structure than chance among these cell lines; it does not make that class the right one to look at.`] : []),
+            ...(this._umapRank?.rows?.length ? [`GENE-CLASS RANKING (Rank gene classes)\n   For each curated class, PC1's share of the total variance was computed on ${this._umapRank.dataWord} for ${this._mNum(this._umapRank.nCL)} cell lines (${this._umapRank.cohort}), using the class's most variable genes (up to 1,000 per layer) exactly as a run on that class would, and compared with ${this._umapRank.nRandom} random gene sets of the same size drawn from all genes in the data (seeded, so the table is reproducible). The ratio is the class's PC1 share over the random median; raw PC1 shares favor small sets, the ratio does not.\n   Top classes: ${this._umapRank.rows.slice(0, 5).map(r => `${r.label} ${(r.pc1 * 100).toFixed(1)} percent vs ${(r.med * 100).toFixed(1)} random (ratio ${r.ratio.toFixed(2)})`).join('; ')}.\n   A class above random shares more structure than chance among these cell lines; it does not make that class the right one to look at.`] : []),
             'WHAT THIS DOES NOT SAY\nA projection is a summary, not a test. Nothing here carries a p-value, and two groups that separate on the plot have not been shown to differ in any particular gene. Which genes went into the matrix decides most of what the picture looks like, so a plot built on the most variable genes and one built on a chosen gene list are answering different questions.'
         ]);
 
