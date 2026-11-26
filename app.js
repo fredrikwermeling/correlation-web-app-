@@ -450,7 +450,9 @@ class CorrelationExplorer {
                 bump('netEdgeWidth', 7);
                 bump('netFontSize', 24);
             }
-            this.hideLoading();
+            // A new-tab copy keeps the loading screen up until its view is
+            // back, instead of flashing the empty start page first.
+            if (!/^#restore=/.test(window.location.hash || '')) this.hideLoading();
             // URL-hash deep links, open a specific view directly so
             // external apps (greenlisted / mouseclb / lab pages) can
             // route the user straight into Correlate at the right tab.
@@ -1543,6 +1545,7 @@ class CorrelationExplorer {
         if (!meta || typeof meta !== 'object') return;
         // Clear the hash so a manual refresh doesn't replay the restore.
         try { history.replaceState(null, '', window.location.pathname + window.location.search); } catch (e) {}
+        this._holdLoadingUntilRestored(meta);
         this._applyRestoreMeta(meta);
     }
 
@@ -1611,6 +1614,25 @@ class CorrelationExplorer {
                 this._handleExportMeta(meta);
             }
         } catch (e) { console.warn('Restore failed:', e); }
+    }
+
+    // Keeps the loading screen over the start page while a new-tab copy is
+    // rebuilt: until its popout is open, or its analysis is back when the copy
+    // has no popout. Gives up after 30 s so a failed restore never locks the page.
+    _holdLoadingUntilRestored(meta) {
+        const overlay = document.getElementById('loadingOverlay');
+        if (!overlay) return;
+        overlay.classList.remove('hidden');
+        this.updateLoadingText('Reopening your view...');
+        const wantsPopout = !!meta.popout || (meta.graphType && meta.graphType !== 'network');
+        const t0 = Date.now();
+        const tick = () => {
+            const open = document.documentElement.classList.contains('popout-open');
+            const done = wantsPopout ? open : (open || this.results?.success);
+            if (done || Date.now() - t0 > 30000) setTimeout(() => this.hideLoading(), done ? 400 : 0);
+            else setTimeout(tick, 150);
+        };
+        setTimeout(tick, 150);
     }
 
     hideLoading() {
