@@ -5557,6 +5557,7 @@
         <div class="modal-header">
           <img src="web_data/clb_banner.png" alt="Cell Line Browser" style="height:44px; width:auto; min-width:0; flex:0 1 auto; object-fit:contain; object-position:left center;">
           <div style="margin-left:auto; display:flex; align-items:center; gap:6px;">
+            <button id="clbVirusBtn" class="btn btn-outline btn-sm" title="Overview of the viral RNA scan: which cell lines carry viral RNA in their RNA-seq data, beside the Cellosaurus virus records">Viral RNA</button>
             <button id="clbInfoBtn" class="btn btn-outline btn-sm clb-icon-btn" title="How the Cell Line Browser works: the filters, sorts, quick filters, symbols, warnings and where each piece of data comes from">?</button>
             <button id="clbExportMenuBtn" class="btn btn-outline btn-sm mobile-hide" title="Save the browser as an image, a spreadsheet, a methods text or a file for an AI assistant">Export &#9662;</button>
             <button id="clbExportImageBtn" class="btn btn-outline btn-sm mobile-hide" style="display:none;" title="Capture the Cell Line Browser as an image (PNG / TIFF / PDF / PowerPoint)">Export image...</button>
@@ -5674,7 +5675,6 @@
               <button id="clbCompareGroupsBtn" class="btn btn-outline btn-sm" style="color:#5d9239; border-color:#6ba544;" aria-expanded="false" title="Compare two groups of cell lines against each other, gene by gene, instead of one group against the rest">Compare two groups &#9662;</button>
               <span class="clb-sep"></span>
             <button id="clbUmapOpenBtn" class="btn btn-outline btn-sm mobile-hide" title="Open PCA / UMAP of the cell lines in a large window: lasso selection, gates, loadings">PCA / UMAP</button>
-            <button id="clbVirusBtn" class="btn btn-outline btn-sm" title="Which cell lines carry viral RNA in their RNA-seq data, beside the Cellosaurus virus records">Viral RNA</button>
               <span class="clb-sep"></span>
               <button id="clbSendToBtn" class="btn btn-outline btn-sm" style="color:#5d9239; border-color:#6ba544;" title="Carry these cell lines over to another view: highlight them on a chart, or narrow that view to them.">Send to another view</button>
 
@@ -6240,7 +6240,7 @@
       </div>
     </div>
 
-    <script src="app.js?v=v92_33"></script>
+    <script src="app.js?v=v92_34"></script>
     <script src="tour.js?v=v92_28"></script>
 </body>
 </html>
